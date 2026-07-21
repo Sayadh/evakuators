@@ -1,0 +1,170 @@
+// Evakuators.am — dynamic business data only.
+// Static geography (regions, cities, districts) and static dictionaries
+// (service types, vehicle types) live in the FRONTEND as TypeScript constants
+// and are referenced here by their slugs.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RegistrationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum UserRole {
+  ADMIN
+}
+
+model TowTruck {
+  id             Int     @id @default(autoincrement())
+  slug           String  @unique
+  driverName     String
+  companyName    String?
+  phone          String
+  secondaryPhone String?
+  whatsapp       String?
+  telegram       String?
+  email          String?
+  works24Hours   Boolean @default(false)
+  description    String
+
+  // Vehicle
+  vehicleBrand    String
+  vehicleModel    String?
+  vehicleYear     Int
+  /// VehicleType slug from frontend constants (flatbed, sliding-platform, ...)
+  vehicleType     String
+  capacityTons    Float
+  platformLengthM Float?
+  platformWidthM  Float?
+  winch           Boolean @default(true)
+  manipulator     Boolean @default(false)
+  plateNumber     String?
+  showPlateNumber Boolean @default(false)
+
+  // Base location — slugs reference frontend static data
+  regionSlug   String?
+  citySlug     String?
+  districtSlug String?
+  locationName String
+
+  /// ServiceType slugs from frontend constants
+  services     String[]
+  /// [{ name, slug, type: "city" | "district" | "region" }]
+  serviceAreas Json
+
+  // Pricing — fully optional; missing values are simply not displayed
+  priceCityCallout           Int?
+  pricePerKm                 Int?
+  priceWaitingPerHour        Int?
+  priceNightSurchargePercent Int?
+  priceExtraLoading          Int?
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  images  TowTruckImage[]
+  reviews Review[]
+
+  @@index([citySlug])
+  @@index([districtSlug])
+  @@index([regionSlug])
+  @@index([isActive])
+}
+
+model TowTruckImage {
+  id        Int      @id @default(autoincrement())
+  /// Storage object path inside the Supabase bucket
+  path      String   @unique
+  /// Public URL served by Supabase Storage
+  url       String
+  width     Int
+  height    Int
+  sizeBytes Int
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  towTruckId Int?
+  towTruck   TowTruck? @relation(fields: [towTruckId], references: [id], onDelete: Cascade)
+
+  registrationRequestId Int?
+  registrationRequest   RegistrationRequest? @relation(fields: [registrationRequestId], references: [id], onDelete: SetNull)
+
+  @@index([towTruckId])
+  @@index([registrationRequestId])
+}
+
+model Review {
+  id         Int      @id @default(autoincrement())
+  towTruckId Int
+  towTruck   TowTruck @relation(fields: [towTruckId], references: [id], onDelete: Cascade)
+  authorName String
+  rating     Int
+  text       String
+  cityName   String?
+  isApproved Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([towTruckId])
+}
+
+model RegistrationRequest {
+  id     Int                @id @default(autoincrement())
+  status RegistrationStatus @default(PENDING)
+
+  firstName      String
+  lastName       String
+  companyName    String?
+  phone          String
+  secondaryPhone String?
+  whatsapp       String?
+  telegram       String?
+  email          String?
+
+  vehicleBrand       String
+  vehicleModel       String?
+  vehicleYear        Int
+  vehicleType        String
+  /// CAPACITY_RANGE_OPTIONS value from frontend constants (e.g. "2-3.5")
+  capacityRange      String?
+  /// Free-form, validated on the frontend (e.g. "5.5 մ × 2.2 մ")
+  platformDimensions String?
+  winch              Boolean @default(false)
+  manipulator        Boolean @default(false)
+  works24Hours       Boolean @default(false)
+
+  mainRegionSlug String
+  citySlugs      String[]
+  services       String[]
+
+  priceCityCallout           Int?
+  pricePerKm                 Int?
+  priceWaitingPerHour        Int?
+  priceNightSurchargePercent Int?
+  priceExtraLoading          Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  images TowTruckImage[]
+
+  @@index([status])
+}
+
+/// Future-ready admin/user accounts (auth is not implemented yet)
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(ADMIN)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}

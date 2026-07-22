@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Post, Query } from '@nestjs/common'
 import { RegistrationStatus } from '@prisma/client'
 import type { RegistrationWithImages } from '../registration/registration.repository'
+import type { ReviewWithTruck } from '../reviews/reviews.repository'
 import { AdminService } from './admin.service'
 import { ApproveRegistrationDto } from './dto/approve-registration.dto'
 
@@ -31,5 +32,20 @@ export class AdminController {
     @Param('id', ParseIntPipe) id: number,
   ): Promise<{ id: number; status: RegistrationStatus }> {
     return this.adminService.reject(id)
+  }
+
+  @Get('reviews')
+  listReviews(): Promise<ReviewWithTruck[]> {
+    return this.adminService.listPendingReviews()
+  }
+
+  @Post('reviews/:id/approve')
+  approveReview(@Param('id', ParseIntPipe) id: number): Promise<{ id: number; isApproved: boolean }> {
+    return this.adminService.approveReview(id)
+  }
+
+  @Post('reviews/:id/reject')
+  rejectReview(@Param('id', ParseIntPipe) id: number): Promise<{ id: number }> {
+    return this.adminService.rejectReview(id)
   }
 }

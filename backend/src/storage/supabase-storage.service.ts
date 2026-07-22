@@ -2,6 +2,11 @@ import { Injectable, InternalServerErrorException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { SupabaseClient, createClient } from '@supabase/supabase-js'
 import { randomUUID } from 'node:crypto'
+// supabase-js always spins up a Realtime client internally, which needs a
+// WebSocket implementation. Node < 22 has no native WebSocket, so we hand it
+// the `ws` polyfill explicitly — we never use Realtime (Storage only), but
+// without this the client constructor throws and crashes the app on boot.
+import WebSocket from 'ws'
 import type { AppConfig } from '../config/configuration'
 
 export interface StoredObject {
@@ -25,6 +30,7 @@ export class SupabaseStorageService {
     this.bucket = supabase.bucket
     this.client = createClient(supabase.url, supabase.serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
+      realtime: { transport: WebSocket as never },
     })
   }
 

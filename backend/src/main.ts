@@ -8,6 +8,11 @@ async function bootstrap(): Promise<void> {
 
   const config = app.get(ConfigService)
 
+  // Every route is served under /api/v1 — the frontend's NUXT_PUBLIC_API_BASE_URL
+  // already includes this prefix (e.g. https://api.evakuators.am/api/v1), so
+  // repositories keep calling plain paths like "/tow-trucks".
+  app.setGlobalPrefix('api/v1')
+
   app.enableCors({
     origin: config.getOrThrow<string[]>('corsOrigins'),
     methods: ['GET', 'POST', 'PATCH', 'DELETE'],

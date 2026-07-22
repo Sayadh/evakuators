@@ -1,7 +1,9 @@
+import type { H3Event } from 'h3'
 import { staticCities } from '~/data/cities'
 import { staticDistricts } from '~/data/districts'
 import { staticRegions } from '~/data/regions'
 import { mockTowTrucks } from '~/mocks/towTrucks'
+import type { TowTruck } from '~/types/towTruck'
 
 const SITE_URL = 'https://evakuators.am'
 
@@ -10,7 +12,28 @@ interface SitemapEntry {
   priority: string
 }
 
-function buildEntries(): SitemapEntry[] {
+/**
+ * Same data-source switch as `towTrucksService`: with a configured API base,
+ * read real slugs from the backend; otherwise fall back to mock data.
+ * Never hardcode mocks here — this route runs in production too.
+ */
+async function getTowTruckSlugs(event: H3Event): Promise<string[]> {
+  const apiBase = useRuntimeConfig(event).public.apiBaseUrl
+  if (!apiBase) {
+    return mockTowTrucks.map((truck) => truck.slug)
+  }
+
+  try {
+    const trucks = await $fetch<TowTruck[]>('/tow-trucks', { baseURL: apiBase })
+    return trucks.map((truck) => truck.slug)
+  } catch {
+    // Backend unreachable — better to serve a sitemap without truck pages
+    // than to fail the whole route or leak stale mock URLs.
+    return []
+  }
+}
+
+function buildEntries(towTruckSlugs: string[]): SitemapEntry[] {
   const regionSlugById = new Map(staticRegions.map((region) => [region.id, region.slug]))
 
   return [
@@ -34,15 +57,16 @@ function buildEntries(): SitemapEntry[] {
       path: `/yerevan/${district.slug}`,
       priority: '0.9',
     })),
-    ...mockTowTrucks.map((truck) => ({
-      path: `/tow-trucks/${truck.slug}`,
+    ...towTruckSlugs.map((slug) => ({
+      path: `/tow-trucks/${slug}`,
       priority: '0.7',
     })),
   ]
 }
 
-export default defineEventHandler((event) => {
-  const urls = buildEntries()
+export default defineEventHandler(async (event) => {
+  const towTruckSlugs = await getTowTruckSlugs(event)
+  const urls = buildEntries(towTruckSlugs)
     .map(
       (entry) =>
         `  <url><loc>${SITE_URL}${entry.path}</loc><priority>${entry.priority}</priority></url>`,

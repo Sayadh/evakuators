@@ -6,8 +6,9 @@ import { FetchError } from 'ofetch'
  * they go through the repositories built on top of this client.
  */
 
+/** Full backend base URL, already including the /api/v1 prefix (NUXT_PUBLIC_API_BASE_URL) */
 export function getApiBase(): string {
-  return useRuntimeConfig().public.apiBase
+  return useRuntimeConfig().public.apiBaseUrl
 }
 
 /** When no API base is configured the app runs on local mock data */

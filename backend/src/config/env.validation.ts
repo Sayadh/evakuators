@@ -5,8 +5,8 @@ const envSchema = z.object({
   SUPABASE_URL: z.string().url('SUPABASE_URL must be a valid URL'),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, 'SUPABASE_SERVICE_ROLE_KEY is required'),
   SUPABASE_STORAGE_BUCKET: z.string().min(1, 'SUPABASE_STORAGE_BUCKET is required'),
-  PORT: z.coerce.number().int().positive().default(3001),
-  CORS_ORIGIN: z.string().default('http://localhost:3000'),
+  PORT: z.coerce.number().int().positive().default(4002),
+  CORS_ORIGIN: z.string().default('http://localhost:3002'),
 })
 
 export type Env = z.infer<typeof envSchema>

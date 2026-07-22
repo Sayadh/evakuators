@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma, RegistrationStatus } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 import type { RegistrationWithImages } from '../registration/registration.repository'
+import { ReviewsRepository, ReviewWithTruck } from '../reviews/reviews.repository'
 import type { ApproveRegistrationDto } from './dto/approve-registration.dto'
 
 const DEFAULT_DESCRIPTION = (locationName: string): string =>
@@ -9,7 +10,10 @@ const DEFAULT_DESCRIPTION = (locationName: string): string =>
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly reviewsRepository: ReviewsRepository,
+  ) {}
 
   listRegistrations(status?: RegistrationStatus): Promise<RegistrationWithImages[]> {
     return this.prisma.registrationRequest.findMany({
@@ -96,5 +100,29 @@ export class AdminService {
     })
 
     return { id: updated.id, status: updated.status }
+  }
+
+  listPendingReviews(): Promise<ReviewWithTruck[]> {
+    return this.reviewsRepository.listPending()
+  }
+
+  async approveReview(id: number): Promise<{ id: number; isApproved: boolean }> {
+    const review = await this.reviewsRepository.findById(id)
+    if (!review) throw new NotFoundException(`Review ${id} not found`)
+    if (review.isApproved) {
+      throw new BadRequestException(`Review ${id} is already approved`)
+    }
+
+    const updated = await this.reviewsRepository.approve(id)
+    return { id: updated.id, isApproved: updated.isApproved }
+  }
+
+  /** Rejecting a review deletes it — there is no public "rejected" state to show */
+  async rejectReview(id: number): Promise<{ id: number }> {
+    const review = await this.reviewsRepository.findById(id)
+    if (!review) throw new NotFoundException(`Review ${id} not found`)
+
+    await this.reviewsRepository.delete(id)
+    return { id }
   }
 }

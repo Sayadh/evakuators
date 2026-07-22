@@ -9,8 +9,9 @@ export interface AppConfig {
 }
 
 export default (): AppConfig => ({
-  port: Number(process.env.PORT ?? 3001),
-  corsOrigins: (process.env.CORS_ORIGIN ?? 'http://localhost:3000')
+  // 4002 is reserved for this backend — 3002 is the Evakuators frontend, never swap them
+  port: Number(process.env.PORT ?? 4002),
+  corsOrigins: (process.env.CORS_ORIGIN ?? 'http://localhost:3002')
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean),

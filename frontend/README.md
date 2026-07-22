@@ -8,7 +8,7 @@
 
 ```bash
 npm install
-npm run dev      # http://localhost:3000
+npm run dev      # http://localhost:3002 (reserved port, see nuxt.config.ts)
 npm run build    # production build
 npm run lint     # ESLint
 npm run format   # Prettier
@@ -47,8 +47,9 @@ npm run format   # Prettier
 UI-ն կապված չէ mock ֆայլերին. ամեն ինչ անցնում է `services/*.service.ts` շերտով, որն էլ
 HTTP հարցումների համար օգտագործում է `repositories/` API շերտը (NestJS backend)։
 
-- `NUXT_PUBLIC_API_BASE` դատարկ է → mock ռեժիմ (`/mocks`), backend պետք չէ
-- `NUXT_PUBLIC_API_BASE=https://api.evakuators.am` → բոլոր տվյալները գալիս են API-ից,
+- `NUXT_PUBLIC_API_BASE_URL` դատարկ է → mock ռեժիմ (`/mocks`), backend պետք չէ
+- `NUXT_PUBLIC_API_BASE_URL=https://api.evakuators.am/api/v1` (prod) կամ
+  `http://localhost:4002/api/v1` (local dev) → բոլոր տվյալները գալիս են API-ից,
   գրանցման ձևը նկարներով submit է անում backend
 
 `regions/cities/districts` service-ները միշտ կարդում են `/data`-ից․ միայն

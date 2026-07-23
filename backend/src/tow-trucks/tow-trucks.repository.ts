@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common'
+import type { Prisma, TowTruck } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 import type { TowTruckFilters, TowTruckWhere, TowTruckWithImages } from './tow-truck.types'
 
@@ -19,6 +20,53 @@ export class TowTrucksRepository {
   findBySlug(slug: string): Promise<TowTruckWithImages | null> {
     return this.prisma.towTruck.findFirst({
       where: { slug, isActive: true },
+      include: { images: true },
+    })
+  }
+
+  findById(id: number): Promise<TowTruckWithImages | null> {
+    return this.prisma.towTruck.findUnique({
+      where: { id },
+      include: { images: true },
+    })
+  }
+
+  /** Matches either the main or the secondary phone, exactly as stored */
+  findByPhone(phone: string): Promise<TowTruck | null> {
+    return this.prisma.towTruck.findFirst({
+      where: { OR: [{ phone }, { secondaryPhone: phone }], isActive: true },
+    })
+  }
+
+  findByTelegramLinkToken(token: string): Promise<TowTruck | null> {
+    return this.prisma.towTruck.findFirst({
+      where: { telegramLinkToken: token, telegramLinkTokenExpiresAt: { gt: new Date() } },
+    })
+  }
+
+  findByTelegramChatId(chatId: bigint): Promise<TowTruck | null> {
+    return this.prisma.towTruck.findUnique({ where: { telegramChatId: chatId } })
+  }
+
+  setTelegramLinkToken(id: number, token: string, expiresAt: Date): Promise<TowTruck> {
+    return this.prisma.towTruck.update({
+      where: { id },
+      data: { telegramLinkToken: token, telegramLinkTokenExpiresAt: expiresAt },
+    })
+  }
+
+  /** Consumes the link token and stores the chat id — one-time, then the token is gone */
+  linkTelegramChat(id: number, chatId: bigint): Promise<TowTruck> {
+    return this.prisma.towTruck.update({
+      where: { id },
+      data: { telegramChatId: chatId, telegramLinkToken: null, telegramLinkTokenExpiresAt: null },
+    })
+  }
+
+  updateOwnProfile(id: number, data: Prisma.TowTruckUpdateInput): Promise<TowTruckWithImages> {
+    return this.prisma.towTruck.update({
+      where: { id },
+      data,
       include: { images: true },
     })
   }

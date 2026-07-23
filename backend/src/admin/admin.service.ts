@@ -1,18 +1,25 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
 import { Prisma, RegistrationStatus } from '@prisma/client'
+import { randomBytes } from 'node:crypto'
 import { PrismaService } from '../prisma/prisma.service'
 import type { RegistrationWithImages } from '../registration/registration.repository'
 import { ReviewsRepository, ReviewWithTruck } from '../reviews/reviews.repository'
+import { TelegramService } from '../telegram/telegram.service'
+import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
 import type { ApproveRegistrationDto } from './dto/approve-registration.dto'
 
 const DEFAULT_DESCRIPTION = (locationName: string): string =>
   `Էվակուատորի ծառայություններ ${locationName}ում և հարակից բնակավայրերում։`
+
+const TELEGRAM_LINK_TTL_DAYS = 7
 
 @Injectable()
 export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly reviewsRepository: ReviewsRepository,
+    private readonly towTrucksRepository: TowTrucksRepository,
+    private readonly telegram: TelegramService,
   ) {}
 
   listRegistrations(status?: RegistrationStatus): Promise<RegistrationWithImages[]> {
@@ -24,7 +31,10 @@ export class AdminService {
   }
 
   /** Turns an approved request into a live TowTruck profile */
-  async approve(id: number, dto: ApproveRegistrationDto): Promise<{ towTruckId: number }> {
+  async approve(
+    id: number,
+    dto: ApproveRegistrationDto,
+  ): Promise<{ towTruckId: number; telegramLinkUrl: string }> {
     const request = await this.prisma.registrationRequest.findUnique({
       where: { id },
       include: { images: true },
@@ -87,7 +97,20 @@ export class AdminService {
       return created
     })
 
-    return { towTruckId: towTruck.id }
+    const telegramLinkUrl = await this.generateTelegramLink(towTruck.id)
+    return { towTruckId: towTruck.id, telegramLinkUrl }
+  }
+
+  /**
+   * (Re)generates the one-time t.me deep-link a driver taps to connect their
+   * Telegram for OTP login. Safe to call again later if the original link
+   * expired (7 days) or was lost before the driver used it.
+   */
+  async generateTelegramLink(towTruckId: number): Promise<string> {
+    const token = randomBytes(24).toString('hex')
+    const expiresAt = new Date(Date.now() + TELEGRAM_LINK_TTL_DAYS * 24 * 60 * 60 * 1000)
+    await this.towTrucksRepository.setTelegramLinkToken(towTruckId, token, expiresAt)
+    return this.telegram.buildLinkUrl(token)
   }
 
   async reject(id: number): Promise<{ id: number; status: RegistrationStatus }> {

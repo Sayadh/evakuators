@@ -1,0 +1,162 @@
+<script setup lang="ts">
+import { FetchError } from 'ofetch'
+import { SITE_NAME } from '~/constants/site'
+import { driverAuthRepository, isApiEnabled } from '~/repositories'
+import { useDriverAuthStore } from '~/stores/driverAuth'
+
+useSeoMetaData({
+  title: `Վարորդի մուտք | ${SITE_NAME}`,
+  description: 'Մուտք գործեք Ձեր էվակուատորի պրոֆիլը խմբագրելու համար։',
+  path: '/login',
+  noindex: true,
+})
+
+const driverAuth = useDriverAuthStore()
+const apiEnabled = isApiEnabled()
+
+if (import.meta.client && driverAuth.isLoggedIn) {
+  await navigateTo('/dashboard')
+}
+
+type Step = 'phone' | 'code'
+const step = ref<Step>('phone')
+const phone = ref('')
+const code = ref('')
+const submitting = ref(false)
+const error = ref('')
+
+function extractErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof FetchError) {
+    const data = err.data as { message?: string | string[] } | undefined
+    if (typeof data?.message === 'string') return data.message
+    if (Array.isArray(data?.message)) return data.message.join(', ')
+  }
+  return fallback
+}
+
+async function submitPhone(): Promise<void> {
+  error.value = ''
+  submitting.value = true
+  try {
+    await driverAuthRepository.requestCode(phone.value.trim())
+    step.value = 'code'
+  } catch (err) {
+    error.value = extractErrorMessage(err, 'Կոդ ուղարկել չհաջողվեց, ստուգիր հեռախոսահամարը')
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function submitCode(): Promise<void> {
+  error.value = ''
+  submitting.value = true
+  try {
+    const session = await driverAuthRepository.verifyCode(phone.value.trim(), code.value.trim())
+    driverAuth.login(session)
+    await navigateTo('/dashboard')
+  } catch (err) {
+    error.value = extractErrorMessage(err, 'Սխալ կոդ, փորձիր նորից')
+  } finally {
+    submitting.value = false
+  }
+}
+
+function backToPhone(): void {
+  step.value = 'phone'
+  code.value = ''
+  error.value = ''
+}
+</script>
+
+<template>
+  <div class="container login-page">
+    <div class="login-card">
+      <h1>Վարորդի մուտք</h1>
+
+      <EmptyState
+        v-if="!apiEnabled"
+        title="Backend API-ն միացված չէ"
+        description="Այս էջն աշխատում է միայն իրական backend-ի հետ։"
+        icon="info"
+      />
+
+      <template v-else>
+        <p class="login-card__hint">
+          Մուտք գործելու համար անհրաժեշտ է Telegram-ը կապակցված ունենալ (link-ը ստացել եք
+          admin-ից պրոֆիլի հաստատումից հետո)։
+        </p>
+
+        <form v-if="step === 'phone'" class="login-form" @submit.prevent="submitPhone">
+          <AppInput
+            v-model="phone"
+            type="tel"
+            label="Հեռախոսահամար"
+            placeholder="+374 XX XXX XXX"
+            required
+          />
+          <p v-if="error" class="login-error">{{ error }}</p>
+          <AppButton type="submit" variant="success" block :disabled="submitting">
+            {{ submitting ? 'Ուղարկվում է…' : 'Ուղարկել կոդ Telegram-ով' }}
+          </AppButton>
+        </form>
+
+        <form v-else class="login-form" @submit.prevent="submitCode">
+          <p class="login-card__hint">Կոդն ուղարկվեց Ձեր Telegram-ին։</p>
+          <AppInput
+            v-model="code"
+            type="text"
+            label="6-նիշանոց կոդ"
+            placeholder="123456"
+            required
+          />
+          <p v-if="error" class="login-error">{{ error }}</p>
+          <AppButton type="submit" variant="success" block :disabled="submitting">
+            {{ submitting ? 'Ստուգվում է…' : 'Մուտք' }}
+          </AppButton>
+          <AppButton variant="ghost" block type="button" @click="backToPhone">
+            Փոխել հեռախոսահամարը
+          </AppButton>
+        </form>
+      </template>
+    </div>
+  </div>
+</template>
+
+<style scoped lang="scss">
+.login-page {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-7) var(--space-4);
+}
+
+.login-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+
+  h1 {
+    margin-bottom: var(--space-3);
+  }
+
+  &__hint {
+    color: var(--color-text-secondary);
+    font-size: 0.9rem;
+    margin-bottom: var(--space-4);
+  }
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.login-error {
+  color: var(--color-danger);
+  margin: 0;
+  font-size: 0.9rem;
+}
+</style>

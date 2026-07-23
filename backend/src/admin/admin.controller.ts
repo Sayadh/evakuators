@@ -23,8 +23,16 @@ export class AdminController {
   approve(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: ApproveRegistrationDto,
-  ): Promise<{ towTruckId: number }> {
+  ): Promise<{ towTruckId: number; telegramLinkUrl: string }> {
     return this.adminService.approve(id, dto)
+  }
+
+  /** (Re)generate the Telegram-login link for an existing tow truck (e.g. if the first one expired) */
+  @Post('tow-trucks/:id/telegram-link')
+  regenerateTelegramLink(@Param('id', ParseIntPipe) id: number): Promise<{ telegramLinkUrl: string }> {
+    return this.adminService
+      .generateTelegramLink(id)
+      .then((telegramLinkUrl) => ({ telegramLinkUrl }))
   }
 
   @Post('registration-requests/:id/reject')

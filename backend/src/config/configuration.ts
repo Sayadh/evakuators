@@ -6,6 +6,12 @@ export interface AppConfig {
     serviceRoleKey: string
     bucket: string
   }
+  telegram: {
+    botToken: string
+    botUsername: string
+    webhookSecret: string
+  }
+  driverJwtSecret: string
 }
 
 export default (): AppConfig => ({
@@ -20,4 +26,10 @@ export default (): AppConfig => ({
     serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
     bucket: process.env.SUPABASE_STORAGE_BUCKET ?? '',
   },
+  telegram: {
+    botToken: process.env.TELEGRAM_BOT_TOKEN ?? '',
+    botUsername: process.env.TELEGRAM_BOT_USERNAME ?? '',
+    webhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET ?? '',
+  },
+  driverJwtSecret: process.env.DRIVER_JWT_SECRET ?? '',
 })

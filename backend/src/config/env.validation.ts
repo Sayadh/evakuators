@@ -7,6 +7,12 @@ const envSchema = z.object({
   SUPABASE_STORAGE_BUCKET: z.string().min(1, 'SUPABASE_STORAGE_BUCKET is required'),
   PORT: z.coerce.number().int().positive().default(4002),
   CORS_ORIGIN: z.string().default('http://localhost:3002'),
+
+  // Driver self-service login (Telegram OTP)
+  TELEGRAM_BOT_TOKEN: z.string().min(1, 'TELEGRAM_BOT_TOKEN is required'),
+  TELEGRAM_BOT_USERNAME: z.string().min(1, 'TELEGRAM_BOT_USERNAME is required'),
+  TELEGRAM_WEBHOOK_SECRET: z.string().min(1, 'TELEGRAM_WEBHOOK_SECRET is required'),
+  DRIVER_JWT_SECRET: z.string().min(16, 'DRIVER_JWT_SECRET must be at least 16 characters'),
 })
 
 export type Env = z.infer<typeof envSchema>

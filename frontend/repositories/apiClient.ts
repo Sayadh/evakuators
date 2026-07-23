@@ -17,9 +17,11 @@ export function isApiEnabled(): boolean {
 }
 
 interface ApiRequestOptions {
-  method?: 'GET' | 'POST'
+  method?: 'GET' | 'POST' | 'PATCH'
   query?: Record<string, string | number | boolean | undefined>
   body?: BodyInit | Record<string, unknown>
+  /** e.g. { Authorization: `Bearer ${token}` } for driver-authenticated calls */
+  headers?: Record<string, string>
 }
 
 export function apiFetch<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
@@ -28,6 +30,7 @@ export function apiFetch<T>(path: string, options: ApiRequestOptions = {}): Prom
     method: options.method ?? 'GET',
     query: options.query,
     body: options.body,
+    headers: options.headers,
   })
 }
 

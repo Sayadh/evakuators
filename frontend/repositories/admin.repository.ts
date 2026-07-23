@@ -67,10 +67,17 @@ export const adminRepository = {
   approveRegistration(
     id: number,
     payload: ApproveRegistrationPayload,
-  ): Promise<{ towTruckId: number }> {
-    return apiFetch<{ towTruckId: number }>(`/admin/registration-requests/${id}/approve`, {
+  ): Promise<{ towTruckId: number; telegramLinkUrl: string }> {
+    return apiFetch<{ towTruckId: number; telegramLinkUrl: string }>(
+      `/admin/registration-requests/${id}/approve`,
+      { method: 'POST', body: payload as unknown as Record<string, unknown> },
+    )
+  },
+
+  /** (Re)generate the Telegram-login link, e.g. if the driver lost the first one */
+  regenerateTelegramLink(towTruckId: number): Promise<{ telegramLinkUrl: string }> {
+    return apiFetch<{ telegramLinkUrl: string }>(`/admin/tow-trucks/${towTruckId}/telegram-link`, {
       method: 'POST',
-      body: payload as unknown as Record<string, unknown>,
     })
   },
 

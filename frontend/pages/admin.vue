@@ -138,6 +138,9 @@ const approveForm = reactive({
 })
 const approveError = ref('')
 const approveSubmitting = ref(false)
+const telegramLinkModalOpen = ref(false)
+const telegramLinkUrl = ref('')
+const telegramLinkCopied = ref(false)
 
 const baseLocationOptions = computed(() =>
   (approveTarget.value?.citySlugs ?? []).map((slug) => ({
@@ -197,14 +200,27 @@ async function submitApprove(): Promise<void> {
   approveSubmitting.value = true
   approveError.value = ''
   try {
-    await adminRepository.approveRegistration(approveTarget.value.id, payload)
+    const result = await adminRepository.approveRegistration(approveTarget.value.id, payload)
     approveModalOpen.value = false
     await loadRegistrations()
+
+    telegramLinkUrl.value = result.telegramLinkUrl
+    telegramLinkCopied.value = false
+    telegramLinkModalOpen.value = true
   } catch (error) {
     approveError.value =
       error instanceof Error ? error.message : 'Հաստատել չհաջողվեց, ստուգիր դաշտերը։'
   } finally {
     approveSubmitting.value = false
+  }
+}
+
+async function copyTelegramLink(): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(telegramLinkUrl.value)
+    telegramLinkCopied.value = true
+  } catch {
+    telegramLinkCopied.value = false
   }
 }
 
@@ -426,6 +442,19 @@ async function rejectReview(review: AdminReview): Promise<void> {
         </AppButton>
       </form>
     </AppModal>
+
+    <AppModal v-model="telegramLinkModalOpen" title="Պրոֆիլը ստեղծված է">
+      <p>
+        Ուղարկիր այս link-ը վարորդին (Telegram/WhatsApp-ով) — մեկ սեղմումով նրա Telegram-ը
+        կապակցվում է, հետո login-ի կոդերը կստանա այնտեղ։ Link-ը վավեր է 7 օր։
+      </p>
+      <div class="telegram-link-box">
+        <code>{{ telegramLinkUrl }}</code>
+      </div>
+      <AppButton variant="success" block @click="copyTelegramLink">
+        {{ telegramLinkCopied ? 'Պատճենված է ✓' : 'Պատճենել link-ը' }}
+      </AppButton>
+    </AppModal>
   </div>
 </template>
 
@@ -555,5 +584,15 @@ async function rejectReview(review: AdminReview): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+}
+
+.telegram-link-box {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin: var(--space-4) 0;
+  word-break: break-all;
+  font-size: 0.9rem;
 }
 </style>

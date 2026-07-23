@@ -74,10 +74,35 @@ model TowTruck {
   images  TowTruckImage[]
   reviews Review[]
 
+  // Driver self-service login (Telegram OTP) — see DriverOtp
+  /// Telegram numeric chat id, captured once the driver taps the bot deep-link.
+  /// Null until linked; the driver cannot log in before that.
+  telegramChatId BigInt? @unique
+  /// One-time token embedded in the t.me/<bot>?start=<token> link. Cleared once used.
+  telegramLinkToken          String?   @unique
+  telegramLinkTokenExpiresAt DateTime?
+  otps                       DriverOtp[]
+
   @@index([citySlug])
   @@index([districtSlug])
   @@index([regionSlug])
   @@index([isActive])
+}
+
+/// Short-lived login codes sent to the driver's linked Telegram chat.
+model DriverOtp {
+  id         Int       @id @default(autoincrement())
+  towTruckId Int
+  towTruck   TowTruck  @relation(fields: [towTruckId], references: [id], onDelete: Cascade)
+  /// SHA-256 hash of the 6-digit code — the raw code is never stored
+  codeHash   String
+  expiresAt  DateTime
+  /// Failed verify attempts against this code — locked out after 5
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([towTruckId])
 }
 
 model TowTruckImage {

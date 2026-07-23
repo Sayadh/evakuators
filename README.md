@@ -63,7 +63,34 @@ Frontend (set in `ecosystem.config.js` or the shell):
 | `PORT` | Frontend port — **reserved: `3002`**, never `4002` (that's the backend) |
 | `NUXT_PUBLIC_API_BASE_URL` | Full backend URL **including** `/api/v1`, e.g. `https://api.evakuators.am/api/v1` (prod) or `http://localhost:4002/api/v1` (dev). Empty = mock mode |
 
-## 3. Database
+## 3. Driver login (Telegram OTP)
+
+Drivers log into `/dashboard` with their phone number; the login code is delivered
+through a Telegram bot (Telegram has no way to message a user who hasn't first
+started a chat with the bot, so admin sends each approved driver a one-time
+`t.me/<bot>?start=<token>` link — shown automatically in `/admin` right after
+approving a registration).
+
+1. In Telegram, message **@BotFather** → `/newbot` → follow the prompts → copy the token.
+2. Fill in `backend/.env`:
+
+   | Variable | Description |
+   | --- | --- |
+   | `TELEGRAM_BOT_TOKEN` | Token from @BotFather |
+   | `TELEGRAM_BOT_USERNAME` | Bot username **without** the `@` |
+   | `TELEGRAM_WEBHOOK_SECRET` | Random string, e.g. `openssl rand -hex 32` |
+   | `DRIVER_JWT_SECRET` | Random string, e.g. `openssl rand -hex 32` |
+
+3. After the backend is deployed and reachable at `https://api.evakuators.am`, register
+   the webhook **once**:
+
+   ```bash
+   curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=https://api.evakuators.am/api/v1/telegram/webhook&secret_token=<TELEGRAM_WEBHOOK_SECRET>"
+   ```
+
+   (Response should be `{"ok":true,"result":true,...}`. Re-run this any time the domain changes.)
+
+## 4. Database
 
 ```bash
 cd backend
@@ -73,20 +100,20 @@ npx prisma generate
 
 For local development use `npm run prisma:migrate` (creates new migrations).
 
-## 4. Supabase Storage
+## 5. Supabase Storage
 
 1. Create a project at supabase.com (the database and auth of that project are NOT used).
 2. Storage → New bucket → name it (e.g. `tow-truck-images`), mark it **Public**.
 3. Copy the project URL and the `service_role` key into `backend/.env`.
 
-## 5. Build
+## 6. Build
 
 ```bash
 cd frontend && npm run build     # → frontend/.output
 cd ../backend && npm run build   # → backend/dist
 ```
 
-## 6. Run with PM2
+## 7. Run with PM2
 
 ```bash
 pm2 start ecosystem.config.js
@@ -97,7 +124,7 @@ pm2 startup       # start on server reboot
 - `evakuators-frontend` → port 3002
 - `evakuators-backend` → port 4002 (reads `backend/.env`), routes under `/api/v1`
 
-## 7. Nginx
+## 8. Nginx
 
 ```bash
 cp nginx/evakuators.am.conf /etc/nginx/sites-available/evakuators.am
@@ -109,7 +136,7 @@ certbot --nginx -d evakuators.am -d www.evakuators.am -d api.evakuators.am
 - `evakuators.am` → Nuxt frontend
 - `api.evakuators.am` → NestJS API
 
-## 8. Deploying updates
+## 9. Deploying updates
 
 ```bash
 git pull
@@ -137,6 +164,12 @@ All paths are served under the `/api/v1` prefix, e.g. `GET https://api.evakuator
 | `GET` | `/api/v1/admin/reviews` | List reviews pending moderation |
 | `POST` | `/api/v1/admin/reviews/:id/approve` | Publish a review |
 | `POST` | `/api/v1/admin/reviews/:id/reject` | Delete a review |
+| `POST` | `/api/v1/admin/tow-trucks/:id/telegram-link` | (Re)generate a driver's Telegram-login link |
+| `POST` | `/api/v1/driver-auth/request-code` | Driver login step 1 — sends an OTP via Telegram |
+| `POST` | `/api/v1/driver-auth/verify-code` | Driver login step 2 — returns a JWT |
+| `GET` | `/api/v1/my/tow-truck` | Driver-only — read own profile (Bearer JWT) |
+| `PATCH` | `/api/v1/my/tow-truck` | Driver-only — edit own profile (Bearer JWT) |
+| `POST` | `/api/v1/telegram/webhook` | Telegram bot webhook (internal, secret-token protected) |
 
 > The `User` model is prepared for future JWT-based authentication (not implemented
 > yet). Until then, both `/admin` (frontend panel) and `/api/v1/admin` (backend) are

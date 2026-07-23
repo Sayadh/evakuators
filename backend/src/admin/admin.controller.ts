@@ -1,15 +1,13 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Query } from '@nestjs/common'
+import { Body, Controller, Get, Param, ParseIntPipe, Post, Query, UseGuards } from '@nestjs/common'
 import { RegistrationStatus } from '@prisma/client'
+import { AdminJwtGuard } from '../admin-auth/admin-jwt.guard'
 import type { RegistrationWithImages } from '../registration/registration.repository'
 import type { ReviewWithTruck } from '../reviews/reviews.repository'
 import { AdminService } from './admin.service'
 import { ApproveRegistrationDto } from './dto/approve-registration.dto'
 
-/**
- * Moderation endpoints. Authentication is intentionally not implemented yet —
- * in production this controller must sit behind the future auth guard
- * (see the User model in Prisma, which is already prepared for it).
- */
+/** Moderation endpoints — every route requires a valid admin JWT (see AdminAuthModule) */
+@UseGuards(AdminJwtGuard)
 @Controller('admin')
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}

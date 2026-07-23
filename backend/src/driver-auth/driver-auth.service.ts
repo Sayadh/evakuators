@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { JwtService } from '@nestjs/jwt'
-import { createHash, randomInt } from 'node:crypto'
+import { createHash, randomInt, timingSafeEqual } from 'node:crypto'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
 import { TelegramService } from '../telegram/telegram.service'
 import { DriverOtpRepository } from './driver-otp.repository'
@@ -81,7 +81,7 @@ export class DriverAuthService {
       throw new BadRequestException('Չափազանց շատ սխալ փորձեր, խնդրեք նոր կոդ')
     }
 
-    if (otp.codeHash !== this.hashCode(code)) {
+    if (!this.hashesMatch(otp.codeHash, this.hashCode(code))) {
       await this.otpRepository.incrementAttempts(otp.id)
       throw new UnauthorizedException('Սխալ կոդ')
     }
@@ -98,5 +98,12 @@ export class DriverAuthService {
 
   private hashCode(code: string): string {
     return createHash('sha256').update(`${code}:${this.pepper}`).digest('hex')
+  }
+
+  /** Constant-time compare — plain `!==` on secrets leaks timing info */
+  private hashesMatch(a: string, b: string): boolean {
+    const bufA = Buffer.from(a)
+    const bufB = Buffer.from(b)
+    return bufA.length === bufB.length && timingSafeEqual(bufA, bufB)
   }
 }

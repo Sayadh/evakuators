@@ -6,6 +6,7 @@ import { SERVICE_LABELS } from '~/constants/services'
 import { SITE_NAME } from '~/constants/site'
 import { VEHICLE_TYPE_LABELS } from '~/constants/vehicles'
 import {
+  adminAuthRepository,
   adminRepository,
   isApiEnabled,
   type AdminRegistrationRequest,
@@ -17,10 +18,9 @@ import type { ServiceType, VehicleType } from '~/types/enums'
 
 /**
  * Internal moderation panel — not linked from the public site and excluded
- * from the sitemap. nginx protects both this page and /api/v1/admin with
- * HTTP Basic Auth (see README). The page itself is gated by the browser's
- * native prompt, but cross-origin fetch() calls to api.evakuators.am need
- * the same credentials attached explicitly — see stores/adminAuth.ts.
+ * from the sitemap. Protected by a real backend JWT (POST /admin-auth/login,
+ * see backend/src/admin-auth) issued to the User accounts with role ADMIN.
+ * Create one on the server with `npm run admin:create -- <email> <password>`.
  */
 useSeoMetaData({
   title: `Ադմին վահանակ | ${SITE_NAME}`,
@@ -32,7 +32,7 @@ useSeoMetaData({
 const apiEnabled = isApiEnabled()
 const adminAuth = useAdminAuthStore()
 
-const loginUsername = ref('')
+const loginEmail = ref('')
 const loginPassword = ref('')
 const loginSubmitting = ref(false)
 const loginError = ref('')
@@ -44,14 +44,12 @@ function isUnauthorized(error: unknown): boolean {
 async function submitLogin(): Promise<void> {
   loginError.value = ''
   loginSubmitting.value = true
-  adminAuth.login(loginUsername.value, loginPassword.value)
   try {
-    // Lightweight probe to verify the credentials before showing the panel
-    await adminRepository.listRegistrations('PENDING')
+    const session = await adminAuthRepository.login(loginEmail.value.trim(), loginPassword.value)
+    adminAuth.login(session.token)
   } catch (error) {
-    adminAuth.logout()
     loginError.value = isUnauthorized(error)
-      ? 'Սխալ մուտքանուն կամ գաղտնաբառ։'
+      ? 'Սխալ email կամ գաղտնաբառ։'
       : 'Կապի սխալ, փորձիր կրկին։'
     loginSubmitting.value = false
     return
@@ -310,7 +308,7 @@ async function rejectReview(review: AdminReview): Promise<void> {
 
     <div v-else-if="!adminAuth.isLoggedIn" class="admin-login">
       <form class="admin-login__form" @submit.prevent="submitLogin">
-        <AppInput v-model="loginUsername" label="Մուտքանուն" required />
+        <AppInput v-model="loginEmail" type="email" label="Email" required />
         <AppInput v-model="loginPassword" type="password" label="Գաղտնաբառ" required />
         <p v-if="loginError" class="admin-error">{{ loginError }}</p>
         <AppButton type="submit" variant="success" block :disabled="loginSubmitting">

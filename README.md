@@ -165,16 +165,31 @@ All paths are served under the `/api/v1` prefix, e.g. `GET https://api.evakuator
 | `POST` | `/api/v1/admin/reviews/:id/approve` | Publish a review |
 | `POST` | `/api/v1/admin/reviews/:id/reject` | Delete a review |
 | `POST` | `/api/v1/admin/tow-trucks/:id/telegram-link` | (Re)generate a driver's Telegram-login link |
+| `POST` | `/api/v1/admin-auth/login` | Admin login — returns a JWT |
 | `POST` | `/api/v1/driver-auth/request-code` | Driver login step 1 — sends an OTP via Telegram |
 | `POST` | `/api/v1/driver-auth/verify-code` | Driver login step 2 — returns a JWT |
 | `GET` | `/api/v1/my/tow-truck` | Driver-only — read own profile (Bearer JWT) |
 | `PATCH` | `/api/v1/my/tow-truck` | Driver-only — edit own profile (Bearer JWT) |
 | `POST` | `/api/v1/telegram/webhook` | Telegram bot webhook (internal, secret-token protected) |
 
-> The `User` model is prepared for future JWT-based authentication (not implemented
-> yet). Until then, both `/admin` (frontend panel) and `/api/v1/admin` (backend) are
-> protected at the nginx layer with HTTP Basic Auth — see `nginx/evakuators.am.conf`.
-> Create the password file once on the server: `htpasswd -c /etc/nginx/.htpasswd admin`.
+## Admin panel
+
+`/admin` (frontend) and every `/api/v1/admin/*` route (backend) are protected by a
+real JWT issued at login — the same pattern as driver auth, just email/password
+instead of Telegram OTP. `AdminJwtGuard` checks the token on the backend itself
+(not nginx), so it works the same whether nginx is in front or not.
+
+1. Add to `backend/.env`: `ADMIN_JWT_SECRET` (generate with `openssl rand -hex 32`).
+2. Create the admin account once (uses the `User` model, role `ADMIN`):
+
+   ```bash
+   cd backend
+   npm run admin:create -- admin@evakuators.am 'a-strong-password'
+   ```
+
+   Re-run the same command any time to change the password (it upserts by email).
+3. Log in at `https://evakuators.am/admin` with that email/password. The token is
+   kept in the browser (localStorage) and expires after 24h.
 
 ## Frontend details
 

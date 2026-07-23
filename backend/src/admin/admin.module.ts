@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common'
+import { AdminAuthModule } from '../admin-auth/admin-auth.module'
 import { RegistrationModule } from '../registration/registration.module'
 import { ReviewsModule } from '../reviews/reviews.module'
 import { TelegramModule } from '../telegram/telegram.module'
@@ -7,7 +8,7 @@ import { AdminController } from './admin.controller'
 import { AdminService } from './admin.service'
 
 @Module({
-  imports: [RegistrationModule, ReviewsModule, TowTrucksModule, TelegramModule],
+  imports: [RegistrationModule, ReviewsModule, TowTrucksModule, TelegramModule, AdminAuthModule],
   controllers: [AdminController],
   providers: [AdminService],
 })

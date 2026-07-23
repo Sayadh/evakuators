@@ -13,6 +13,9 @@ const envSchema = z.object({
   TELEGRAM_BOT_USERNAME: z.string().min(1, 'TELEGRAM_BOT_USERNAME is required'),
   TELEGRAM_WEBHOOK_SECRET: z.string().min(1, 'TELEGRAM_WEBHOOK_SECRET is required'),
   DRIVER_JWT_SECRET: z.string().min(16, 'DRIVER_JWT_SECRET must be at least 16 characters'),
+
+  // Admin panel login (see User model, role ADMIN)
+  ADMIN_JWT_SECRET: z.string().min(16, 'ADMIN_JWT_SECRET must be at least 16 characters'),
 })
 
 export type Env = z.infer<typeof envSchema>

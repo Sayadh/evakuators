@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
 import { toTowTruckApi } from '../tow-trucks/tow-truck.mapper'
 import type { TowTruckApi } from '../tow-trucks/tow-truck.types'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
@@ -11,10 +11,17 @@ export class MyTowTruckService {
   async getMine(towTruckId: number): Promise<TowTruckApi> {
     const towTruck = await this.towTrucksRepository.findById(towTruckId)
     if (!towTruck) throw new NotFoundException('Profile not found')
+    // The JWT itself never expires early — if admin deactivates a driver
+    // (ban / removed from platform) their still-valid 30-day token must
+    // stop working immediately, not just disappear from the public listing.
+    if (!towTruck.isActive) {
+      throw new ForbiddenException('Ձեր պրոֆիլն ապաակտիվացված է, դիմեք admin-ին')
+    }
     return toTowTruckApi(towTruck)
   }
 
   async updateMine(towTruckId: number, dto: UpdateMyTowTruckDto): Promise<TowTruckApi> {
+    await this.getMine(towTruckId) // reuses the isActive + existence check above
     const updated = await this.towTrucksRepository.updateOwnProfile(towTruckId, dto)
     return toTowTruckApi(updated)
   }

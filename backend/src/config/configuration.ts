@@ -12,6 +12,7 @@ export interface AppConfig {
     webhookSecret: string
   }
   driverJwtSecret: string
+  adminJwtSecret: string
 }
 
 export default (): AppConfig => ({
@@ -32,4 +33,5 @@ export default (): AppConfig => ({
     webhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET ?? '',
   },
   driverJwtSecret: process.env.DRIVER_JWT_SECRET ?? '',
+  adminJwtSecret: process.env.ADMIN_JWT_SECRET ?? '',
 })

@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Post } from '@nestjs/common'
+import { Throttle } from '@nestjs/throttler'
 import { CreateReviewDto } from './dto/create-review.dto'
 import { ReviewApi, ReviewsService } from './reviews.service'
 
@@ -11,6 +12,7 @@ export class ReviewsController {
     return this.reviewsService.listForTowTruck(towTruckId)
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post()
   create(
     @Param('towTruckId', ParseIntPipe) towTruckId: number,

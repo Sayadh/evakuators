@@ -5,6 +5,8 @@ export type {
   AdminReview,
   ApproveRegistrationPayload,
 } from './admin.repository'
+export { adminAuthRepository } from './adminAuth.repository'
+export type { AdminSession } from './adminAuth.repository'
 export { driverAuthRepository } from './driverAuth.repository'
 export type { DriverSession } from './driverAuth.repository'
 export { imageRepository } from './image.repository'

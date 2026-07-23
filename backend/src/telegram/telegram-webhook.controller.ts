@@ -8,6 +8,7 @@ import {
   Post,
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
+import { timingSafeEqual } from 'node:crypto'
 import type { AppConfig } from '../config/configuration'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
 import { TelegramService } from './telegram.service'
@@ -41,7 +42,7 @@ export class TelegramWebhookController {
   ): Promise<{ ok: true }> {
     // Telegram echoes the secret we set via setWebhook on every call —
     // without this check anyone could POST fake updates to this endpoint.
-    if (secretHeader !== this.webhookSecret) {
+    if (!this.secretMatches(secretHeader)) {
       throw new ForbiddenException('Invalid webhook secret')
     }
 
@@ -55,6 +56,14 @@ export class TelegramWebhookController {
     }
 
     return { ok: true }
+  }
+
+  /** Constant-time compare — plain `!==` on a secret leaks timing info */
+  private secretMatches(header: string | undefined): boolean {
+    if (!header) return false
+    const a = Buffer.from(header)
+    const b = Buffer.from(this.webhookSecret)
+    return a.length === b.length && timingSafeEqual(a, b)
   }
 
   private async handleStart(text: string, chatId: number): Promise<void> {

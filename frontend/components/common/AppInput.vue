@@ -2,7 +2,7 @@
 interface Props {
   modelValue: string
   label?: string
-  type?: 'text' | 'tel' | 'email' | 'number'
+  type?: 'text' | 'tel' | 'email' | 'number' | 'password'
   placeholder?: string
   required?: boolean
   error?: string

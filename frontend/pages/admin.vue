@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { FetchError } from 'ofetch'
 import { staticCities } from '~/data/cities'
 import { staticDistricts } from '~/data/districts'
 import { SERVICE_LABELS } from '~/constants/services'
@@ -11,11 +12,15 @@ import {
   type AdminReview,
   type ApproveRegistrationPayload,
 } from '~/repositories'
+import { useAdminAuthStore } from '~/stores/adminAuth'
 import type { ServiceType, VehicleType } from '~/types/enums'
 
 /**
  * Internal moderation panel — not linked from the public site and excluded
- * from the sitemap. There is no auth here yet (see README before going live).
+ * from the sitemap. nginx protects both this page and /api/v1/admin with
+ * HTTP Basic Auth (see README). The page itself is gated by the browser's
+ * native prompt, but cross-origin fetch() calls to api.evakuators.am need
+ * the same credentials attached explicitly — see stores/adminAuth.ts.
  */
 useSeoMetaData({
   title: `Ադմին վահանակ | ${SITE_NAME}`,
@@ -25,6 +30,41 @@ useSeoMetaData({
 })
 
 const apiEnabled = isApiEnabled()
+const adminAuth = useAdminAuthStore()
+
+const loginUsername = ref('')
+const loginPassword = ref('')
+const loginSubmitting = ref(false)
+const loginError = ref('')
+
+function isUnauthorized(error: unknown): boolean {
+  return error instanceof FetchError && error.statusCode === 401
+}
+
+async function submitLogin(): Promise<void> {
+  loginError.value = ''
+  loginSubmitting.value = true
+  adminAuth.login(loginUsername.value, loginPassword.value)
+  try {
+    // Lightweight probe to verify the credentials before showing the panel
+    await adminRepository.listRegistrations('PENDING')
+  } catch (error) {
+    adminAuth.logout()
+    loginError.value = isUnauthorized(error)
+      ? 'Սխալ մուտքանուն կամ գաղտնաբառ։'
+      : 'Կապի սխալ, փորձիր կրկին։'
+    loginSubmitting.value = false
+    return
+  }
+  loginSubmitting.value = false
+  await Promise.all([loadRegistrations(), loadReviews()])
+}
+
+function logout(): void {
+  adminAuth.logout()
+  registrations.value = []
+  reviews.value = []
+}
 
 type StatusFilter = 'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL'
 
@@ -102,7 +142,7 @@ async function loadReviews(): Promise<void> {
 }
 
 onMounted(() => {
-  if (!apiEnabled) return
+  if (!apiEnabled || !adminAuth.isLoggedIn) return
   void loadRegistrations()
   void loadReviews()
 })
@@ -254,7 +294,12 @@ async function rejectReview(review: AdminReview): Promise<void> {
 
 <template>
   <div class="container admin-page">
-    <h1>Ադմին վահանակ</h1>
+    <header class="admin-page__header">
+      <h1>Ադմին վահանակ</h1>
+      <AppButton v-if="adminAuth.isLoggedIn" variant="outline" size="sm" @click="logout">
+        Դուրս գալ
+      </AppButton>
+    </header>
 
     <EmptyState
       v-if="!apiEnabled"
@@ -262,6 +307,17 @@ async function rejectReview(review: AdminReview): Promise<void> {
       description="NUXT_PUBLIC_API_BASE_URL փոփոխականը դատարկ է, ուստի կայքն աշխատում է mock տվյալներով։ Ադմին վահանակն իմաստ ունի միայն իրական backend-ի հետ։"
       icon="info"
     />
+
+    <div v-else-if="!adminAuth.isLoggedIn" class="admin-login">
+      <form class="admin-login__form" @submit.prevent="submitLogin">
+        <AppInput v-model="loginUsername" label="Մուտքանուն" required />
+        <AppInput v-model="loginPassword" type="password" label="Գաղտնաբառ" required />
+        <p v-if="loginError" class="admin-error">{{ loginError }}</p>
+        <AppButton type="submit" variant="success" block :disabled="loginSubmitting">
+          {{ loginSubmitting ? 'Ստուգվում է…' : 'Մուտք' }}
+        </AppButton>
+      </form>
+    </div>
 
     <template v-else>
       <!-- ── Registration requests ── -->
@@ -463,8 +519,34 @@ async function rejectReview(review: AdminReview): Promise<void> {
   padding-top: var(--space-6);
   padding-bottom: var(--space-8);
 
-  h1 {
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
     margin-bottom: var(--space-5);
+
+    h1 {
+      margin: 0;
+    }
+  }
+}
+
+.admin-login {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-7) 0;
+
+  &__form {
+    width: 100%;
+    max-width: 360px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-6);
   }
 }
 

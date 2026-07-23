@@ -1,4 +1,5 @@
 import { apiFetch } from './apiClient'
+import { useAdminAuthStore } from '~/stores/adminAuth'
 
 /** Mirrors backend RegistrationWithImages (RegistrationRequest & images) */
 export interface AdminRegistrationRequest {
@@ -56,11 +57,17 @@ export interface AdminReview {
   towTruck: { slug: string; driverName: string }
 }
 
+/** nginx protects every /admin route with HTTP Basic Auth — attach it here */
+function authHeader(): Record<string, string> {
+  return useAdminAuthStore().authHeader
+}
+
 /** All moderation reads/writes against the backend admin endpoints */
 export const adminRepository = {
   listRegistrations(status?: string): Promise<AdminRegistrationRequest[]> {
     return apiFetch<AdminRegistrationRequest[]>('/admin/registration-requests', {
       query: status ? { status } : undefined,
+      headers: authHeader(),
     })
   },
 
@@ -70,7 +77,7 @@ export const adminRepository = {
   ): Promise<{ towTruckId: number; telegramLinkUrl: string }> {
     return apiFetch<{ towTruckId: number; telegramLinkUrl: string }>(
       `/admin/registration-requests/${id}/approve`,
-      { method: 'POST', body: payload as unknown as Record<string, unknown> },
+      { method: 'POST', body: payload as unknown as Record<string, unknown>, headers: authHeader() },
     )
   },
 
@@ -78,27 +85,32 @@ export const adminRepository = {
   regenerateTelegramLink(towTruckId: number): Promise<{ telegramLinkUrl: string }> {
     return apiFetch<{ telegramLinkUrl: string }>(`/admin/tow-trucks/${towTruckId}/telegram-link`, {
       method: 'POST',
+      headers: authHeader(),
     })
   },
 
   rejectRegistration(id: number): Promise<{ id: number; status: string }> {
     return apiFetch<{ id: number; status: string }>(
       `/admin/registration-requests/${id}/reject`,
-      { method: 'POST' },
+      { method: 'POST', headers: authHeader() },
     )
   },
 
   listPendingReviews(): Promise<AdminReview[]> {
-    return apiFetch<AdminReview[]>('/admin/reviews')
+    return apiFetch<AdminReview[]>('/admin/reviews', { headers: authHeader() })
   },
 
   approveReview(id: number): Promise<{ id: number; isApproved: boolean }> {
     return apiFetch<{ id: number; isApproved: boolean }>(`/admin/reviews/${id}/approve`, {
       method: 'POST',
+      headers: authHeader(),
     })
   },
 
   rejectReview(id: number): Promise<{ id: number }> {
-    return apiFetch<{ id: number }>(`/admin/reviews/${id}/reject`, { method: 'POST' })
+    return apiFetch<{ id: number }>(`/admin/reviews/${id}/reject`, {
+      method: 'POST',
+      headers: authHeader(),
+    })
   },
 }

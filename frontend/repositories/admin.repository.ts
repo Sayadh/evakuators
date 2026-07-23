@@ -57,7 +57,24 @@ export interface AdminReview {
   towTruck: { slug: string; driverName: string }
 }
 
-/** nginx protects every /admin route with HTTP Basic Auth — attach it here */
+/** Mirrors backend AdminTowTruckSummary */
+export interface AdminTowTruck {
+  id: number
+  slug: string
+  driverName: string
+  companyName?: string
+  phone: string
+  isActive: boolean
+  vehicleBrand: string
+  vehicleModel?: string
+  vehicleYear: number
+  locationName: string
+  hasTelegramLinked: boolean
+  createdAt: string
+  images: { id: number; url: string }[]
+}
+
+/** Every /admin/* route requires a valid admin JWT — attach it here */
 function authHeader(): Record<string, string> {
   return useAdminAuthStore().authHeader
 }
@@ -110,6 +127,27 @@ export const adminRepository = {
   rejectReview(id: number): Promise<{ id: number }> {
     return apiFetch<{ id: number }>(`/admin/reviews/${id}/reject`, {
       method: 'POST',
+      headers: authHeader(),
+    })
+  },
+
+  listTowTrucks(): Promise<AdminTowTruck[]> {
+    return apiFetch<AdminTowTruck[]>('/admin/tow-trucks', { headers: authHeader() })
+  },
+
+  /** Deactivate (isActive: false) hides the truck publicly and blocks driver login — reversible */
+  setTowTruckActive(id: number, isActive: boolean): Promise<{ id: number; isActive: boolean }> {
+    return apiFetch<{ id: number; isActive: boolean }>(`/admin/tow-trucks/${id}/active`, {
+      method: 'PATCH',
+      body: { isActive },
+      headers: authHeader(),
+    })
+  },
+
+  /** Permanent — deletes the truck, its images (DB + Supabase Storage), reviews and OTPs */
+  deleteTowTruck(id: number): Promise<{ id: number }> {
+    return apiFetch<{ id: number }>(`/admin/tow-trucks/${id}`, {
+      method: 'DELETE',
       headers: authHeader(),
     })
   },

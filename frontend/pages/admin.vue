@@ -11,6 +11,7 @@ import {
   isApiEnabled,
   type AdminRegistrationRequest,
   type AdminReview,
+  type AdminTowTruck,
   type ApproveRegistrationPayload,
 } from '~/repositories'
 import { useAdminAuthStore } from '~/stores/adminAuth'
@@ -55,13 +56,14 @@ async function submitLogin(): Promise<void> {
     return
   }
   loginSubmitting.value = false
-  await Promise.all([loadRegistrations(), loadReviews()])
+  await Promise.all([loadRegistrations(), loadReviews(), loadTowTrucks()])
 }
 
 function logout(): void {
   adminAuth.logout()
   registrations.value = []
   reviews.value = []
+  towTrucks.value = []
 }
 
 type StatusFilter = 'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL'
@@ -76,10 +78,13 @@ const statusOptions = [
 const statusFilter = ref<StatusFilter>('PENDING')
 const registrations = ref<AdminRegistrationRequest[]>([])
 const reviews = ref<AdminReview[]>([])
+const towTrucks = ref<AdminTowTruck[]>([])
 const loadingRegistrations = ref(false)
 const loadingReviews = ref(false)
+const loadingTowTrucks = ref(false)
 const registrationsError = ref('')
 const reviewsError = ref('')
+const towTrucksError = ref('')
 /** Id of the row whose action button is currently in flight (disables just that button) */
 const actioningId = ref<number | null>(null)
 
@@ -139,10 +144,60 @@ async function loadReviews(): Promise<void> {
   }
 }
 
+async function loadTowTrucks(): Promise<void> {
+  loadingTowTrucks.value = true
+  towTrucksError.value = ''
+  try {
+    towTrucks.value = await adminRepository.listTowTrucks()
+  } catch {
+    towTrucksError.value = 'Էվակուատորները բեռնել չհաջողվեց։'
+  } finally {
+    loadingTowTrucks.value = false
+  }
+}
+
+/** Reversible — hides from public listing and blocks driver login, nothing is deleted */
+async function toggleTowTruckActive(truck: AdminTowTruck): Promise<void> {
+  const nextActive = !truck.isActive
+  const verb = nextActive ? 'ակտիվացնե՞լ' : 'ապաակտիվացնե՞լ'
+  if (!confirm(`${verb} ${truck.driverName}-ի պրոֆիլը։`)) return
+
+  actioningId.value = truck.id
+  try {
+    const updated = await adminRepository.setTowTruckActive(truck.id, nextActive)
+    truck.isActive = updated.isActive
+  } catch {
+    towTrucksError.value = 'Կարգավիճակը փոխել չհաջողվեց։'
+  } finally {
+    actioningId.value = null
+  }
+}
+
+/** Irreversible — deletes the truck, its images (DB + Supabase Storage), reviews and OTPs */
+async function deleteTowTruck(truck: AdminTowTruck): Promise<void> {
+  const confirmed = confirm(
+    `Ջնջե՞լ ${truck.driverName}-ի («${truck.slug}») ամբողջ պրոֆիլը։ Այս գործողությունը ՉԻ ՀԵՏԱՐԿՎՈՒՄ. ` +
+      'նկարները, կարծիքները և մուտքի պատմությունը ընդմիշտ կջնջվեն։ Եթե ուղղակի ուզում ես ժամանակավորապես թաքցնել, ' +
+      'օգտագործիր "Ապաակտիվացնել" կոճակը փոխարենը։',
+  )
+  if (!confirmed) return
+
+  actioningId.value = truck.id
+  try {
+    await adminRepository.deleteTowTruck(truck.id)
+    towTrucks.value = towTrucks.value.filter((item) => item.id !== truck.id)
+  } catch {
+    towTrucksError.value = 'Ջնջել չհաջողվեց։'
+  } finally {
+    actioningId.value = null
+  }
+}
+
 onMounted(() => {
   if (!apiEnabled || !adminAuth.isLoggedIn) return
   void loadRegistrations()
   void loadReviews()
+  void loadTowTrucks()
 })
 
 watch(statusFilter, () => {
@@ -464,6 +519,85 @@ async function rejectReview(review: AdminReview): Promise<void> {
           </article>
         </div>
       </section>
+
+      <!-- ── Tow trucks (active + deactivated) ── -->
+      <section class="admin-section">
+        <div class="admin-section__header">
+          <h2>Էվակուատորներ</h2>
+        </div>
+
+        <p v-if="towTrucksError" class="admin-error">{{ towTrucksError }}</p>
+
+        <LoadingSkeleton v-if="loadingTowTrucks" variant="text" :count="3" />
+
+        <EmptyState v-else-if="towTrucks.length === 0" title="Դեռ ոչ մի էվակուատոր չկա" icon="truck" />
+
+        <div v-else class="admin-cards">
+          <article
+            v-for="truck in towTrucks"
+            :key="truck.id"
+            class="admin-card"
+            :class="{ 'admin-card--inactive': !truck.isActive }"
+          >
+            <header class="admin-card__header">
+              <div>
+                <h3>{{ truck.driverName }}</h3>
+                <p class="admin-card__muted">
+                  {{ truck.vehicleBrand }} {{ truck.vehicleModel }} ({{ truck.vehicleYear }}) ·
+                  {{ truck.locationName }} ·
+                  <NuxtLink :to="`/tow-trucks/${truck.slug}`">/tow-trucks/{{ truck.slug }}</NuxtLink>
+                </p>
+              </div>
+              <AppBadge :variant="truck.isActive ? 'success' : 'neutral'">
+                {{ truck.isActive ? 'Ակտիվ' : 'Ապաակտիվացված' }}
+              </AppBadge>
+            </header>
+
+            <dl class="admin-card__grid">
+              <div>
+                <dt>Հեռախոս</dt>
+                <dd>{{ truck.phone }}</dd>
+              </div>
+              <div>
+                <dt>Telegram</dt>
+                <dd>{{ truck.hasTelegramLinked ? 'Կապակցված ✓' : 'Կապակցված չէ' }}</dd>
+              </div>
+            </dl>
+
+            <div v-if="truck.images.length" class="admin-card__images">
+              <img
+                v-for="image in truck.images"
+                :key="image.id"
+                :src="image.url"
+                loading="lazy"
+                alt=""
+              >
+            </div>
+
+            <footer class="admin-card__footer">
+              <span class="admin-card__muted">{{ formatDate(truck.createdAt) }}</span>
+              <div class="admin-card__actions">
+                <AppButton
+                  variant="outline"
+                  size="sm"
+                  :disabled="actioningId === truck.id"
+                  @click="toggleTowTruckActive(truck)"
+                >
+                  {{ truck.isActive ? 'Ապաակտիվացնել' : 'Ակտիվացնել' }}
+                </AppButton>
+                <AppButton
+                  variant="danger"
+                  size="sm"
+                  :disabled="actioningId === truck.id"
+                  @click="deleteTowTruck(truck)"
+                >
+                  Ջնջել ամբողջությամբ
+                </AppButton>
+              </div>
+            </footer>
+          </article>
+        </div>
+      </section>
     </template>
 
     <AppModal v-model="approveModalOpen" title="Հաստատել հայտը">
@@ -585,6 +719,10 @@ async function rejectReview(review: AdminReview): Promise<void> {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: var(--space-5);
+
+  &--inactive {
+    opacity: 0.65;
+  }
 
   &__header {
     display: flex;

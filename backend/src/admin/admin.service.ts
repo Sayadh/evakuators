@@ -1,11 +1,13 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { Prisma, RegistrationStatus } from '@prisma/client'
 import { randomBytes } from 'node:crypto'
 import { PrismaService } from '../prisma/prisma.service'
 import type { RegistrationWithImages } from '../registration/registration.repository'
 import { ReviewsRepository, ReviewWithTruck } from '../reviews/reviews.repository'
+import { SupabaseStorageService } from '../storage/supabase-storage.service'
 import { TelegramService } from '../telegram/telegram.service'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
+import { AdminTowTruckSummary, toAdminTowTruckSummary } from './admin-tow-truck.mapper'
 import type { ApproveRegistrationDto } from './dto/approve-registration.dto'
 
 const DEFAULT_DESCRIPTION = (locationName: string): string =>
@@ -15,11 +17,14 @@ const TELEGRAM_LINK_TTL_DAYS = 7
 
 @Injectable()
 export class AdminService {
+  private readonly logger = new Logger(AdminService.name)
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly reviewsRepository: ReviewsRepository,
     private readonly towTrucksRepository: TowTrucksRepository,
     private readonly telegram: TelegramService,
+    private readonly storage: SupabaseStorageService,
   ) {}
 
   listRegistrations(status?: RegistrationStatus): Promise<RegistrationWithImages[]> {
@@ -129,6 +134,12 @@ export class AdminService {
     return this.reviewsRepository.listPending()
   }
 
+  /** Every tow truck, active or not — the public list only ever shows isActive: true */
+  async listTowTrucks(): Promise<AdminTowTruckSummary[]> {
+    const trucks = await this.towTrucksRepository.findAllForAdmin()
+    return trucks.map(toAdminTowTruckSummary)
+  }
+
   async approveReview(id: number): Promise<{ id: number; isApproved: boolean }> {
     const review = await this.reviewsRepository.findById(id)
     if (!review) throw new NotFoundException(`Review ${id} not found`)
@@ -146,6 +157,48 @@ export class AdminService {
     if (!review) throw new NotFoundException(`Review ${id} not found`)
 
     await this.reviewsRepository.delete(id)
+    return { id }
+  }
+
+  /**
+   * Deactivate (hide from public listing + block driver login/dashboard —
+   * see MyTowTruckService's isActive check) or reactivate a tow truck.
+   * Non-destructive: nothing is deleted, this is fully reversible.
+   */
+  async setTowTruckActive(id: number, isActive: boolean): Promise<{ id: number; isActive: boolean }> {
+    const towTruck = await this.towTrucksRepository.findById(id)
+    if (!towTruck) throw new NotFoundException(`TowTruck ${id} not found`)
+
+    const updated = await this.towTrucksRepository.setActive(id, isActive)
+    return { id: updated.id, isActive: updated.isActive }
+  }
+
+  /**
+   * Permanently deletes a tow truck and everything that belongs to it:
+   * images (DB row + the actual Supabase Storage files), reviews, and any
+   * pending driver-login OTPs. DB-side relations cascade automatically
+   * (see schema.prisma), Storage does not — we clean that up explicitly here.
+   * Irreversible. Prefer setTowTruckActive(id, false) unless the admin
+   * specifically wants the data gone.
+   */
+  async deleteTowTruck(id: number): Promise<{ id: number }> {
+    const towTruck = await this.towTrucksRepository.findById(id)
+    if (!towTruck) throw new NotFoundException(`TowTruck ${id} not found`)
+
+    if (towTruck.images.length > 0) {
+      try {
+        await this.storage.remove(towTruck.images.map((image) => image.path))
+      } catch (error) {
+        // Don't let a Storage hiccup block a deletion the admin explicitly
+        // requested — worst case a handful of orphan files sit in the bucket,
+        // which is far better than a truck the admin can't get rid of.
+        this.logger.warn(
+          `Failed to remove Storage objects for TowTruck ${id}, continuing with DB delete: ${String(error)}`,
+        )
+      }
+    }
+
+    await this.towTrucksRepository.delete(id)
     return { id }
   }
 }

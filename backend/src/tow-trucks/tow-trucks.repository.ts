@@ -31,6 +31,14 @@ export class TowTrucksRepository {
     })
   }
 
+  /** Admin-only — unlike findMany(), this intentionally includes inactive trucks */
+  findAllForAdmin(): Promise<TowTruckWithImages[]> {
+    return this.prisma.towTruck.findMany({
+      include: { images: true },
+      orderBy: { createdAt: 'desc' },
+    })
+  }
+
   /** Matches either the main or the secondary phone, exactly as stored */
   findByPhone(phone: string): Promise<TowTruck | null> {
     return this.prisma.towTruck.findFirst({
@@ -69,6 +77,21 @@ export class TowTrucksRepository {
       data,
       include: { images: true },
     })
+  }
+
+  setActive(id: number, isActive: boolean): Promise<TowTruck> {
+    return this.prisma.towTruck.update({ where: { id }, data: { isActive } })
+  }
+
+  /**
+   * Hard delete. `TowTruckImage`, `Review` and `DriverOtp` all cascade at the
+   * DB level (see schema.prisma onDelete: Cascade) — this only removes the
+   * TowTruck row and everything FK-linked to it. Supabase Storage objects are
+   * NOT covered by that cascade (they live outside Postgres) — the caller
+   * (AdminService) is responsible for removing those first.
+   */
+  delete(id: number): Promise<TowTruck> {
+    return this.prisma.towTruck.delete({ where: { id } })
   }
 
   private buildWhere(filters: TowTruckFilters): TowTruckWhere {

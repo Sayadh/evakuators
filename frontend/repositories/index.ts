@@ -3,6 +3,7 @@ export { adminRepository } from './admin.repository'
 export type {
   AdminRegistrationRequest,
   AdminReview,
+  AdminTowTruck,
   ApproveRegistrationPayload,
 } from './admin.repository'
 export { adminAuthRepository } from './adminAuth.repository'

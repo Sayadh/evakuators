@@ -165,6 +165,9 @@ All paths are served under the `/api/v1` prefix, e.g. `GET https://api.evakuator
 | `POST` | `/api/v1/admin/reviews/:id/approve` | Publish a review |
 | `POST` | `/api/v1/admin/reviews/:id/reject` | Delete a review |
 | `POST` | `/api/v1/admin/tow-trucks/:id/telegram-link` | (Re)generate a driver's Telegram-login link |
+| `GET` | `/api/v1/admin/tow-trucks` | List every tow truck, active or not |
+| `PATCH` | `/api/v1/admin/tow-trucks/:id/active` | Deactivate/reactivate — reversible, hides from public listing |
+| `DELETE` | `/api/v1/admin/tow-trucks/:id` | Permanently delete a tow truck + images/reviews/OTPs — irreversible |
 | `POST` | `/api/v1/admin-auth/login` | Admin login — returns a JWT |
 | `POST` | `/api/v1/driver-auth/request-code` | Driver login step 1 — sends an OTP via Telegram |
 | `POST` | `/api/v1/driver-auth/verify-code` | Driver login step 2 — returns a JWT |

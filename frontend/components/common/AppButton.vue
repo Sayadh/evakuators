@@ -1,6 +1,6 @@
 <script setup lang="ts">
 interface Props {
-  variant?: 'primary' | 'accent' | 'success' | 'outline' | 'ghost'
+  variant?: 'primary' | 'accent' | 'success' | 'outline' | 'ghost' | 'danger'
   size?: 'sm' | 'md' | 'lg'
   type?: 'button' | 'submit'
   to?: string
@@ -141,6 +141,17 @@ function onClick(event: MouseEvent): void {
 
     &:hover:not(:disabled) {
       background: rgba(20, 48, 79, 0.07);
+    }
+  }
+
+  &--danger {
+    background: transparent;
+    color: var(--color-danger);
+    border-color: var(--color-danger);
+
+    &:hover:not(:disabled) {
+      background: var(--color-danger);
+      color: #fff;
     }
   }
 }

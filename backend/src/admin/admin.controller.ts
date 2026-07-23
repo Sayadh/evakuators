@@ -1,10 +1,23 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Query, UseGuards } from '@nestjs/common'
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common'
 import { RegistrationStatus } from '@prisma/client'
 import { AdminJwtGuard } from '../admin-auth/admin-jwt.guard'
 import type { RegistrationWithImages } from '../registration/registration.repository'
 import type { ReviewWithTruck } from '../reviews/reviews.repository'
+import type { AdminTowTruckSummary } from './admin-tow-truck.mapper'
 import { AdminService } from './admin.service'
 import { ApproveRegistrationDto } from './dto/approve-registration.dto'
+import { SetTowTruckActiveDto } from './dto/set-tow-truck-active.dto'
 
 /** Moderation endpoints — every route requires a valid admin JWT (see AdminAuthModule) */
 @UseGuards(AdminJwtGuard)
@@ -53,5 +66,26 @@ export class AdminController {
   @Post('reviews/:id/reject')
   rejectReview(@Param('id', ParseIntPipe) id: number): Promise<{ id: number }> {
     return this.adminService.rejectReview(id)
+  }
+
+  /** Every tow truck, active or not */
+  @Get('tow-trucks')
+  listTowTrucks(): Promise<AdminTowTruckSummary[]> {
+    return this.adminService.listTowTrucks()
+  }
+
+  /** Deactivate/reactivate — non-destructive, reversible, hides from public listing */
+  @Patch('tow-trucks/:id/active')
+  setActive(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SetTowTruckActiveDto,
+  ): Promise<{ id: number; isActive: boolean }> {
+    return this.adminService.setTowTruckActive(id, dto.isActive)
+  }
+
+  /** Permanently deletes the tow truck + its images/reviews/OTPs. Irreversible. */
+  @Delete('tow-trucks/:id')
+  deleteTowTruck(@Param('id', ParseIntPipe) id: number): Promise<{ id: number }> {
+    return this.adminService.deleteTowTruck(id)
   }
 }

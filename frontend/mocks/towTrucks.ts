@@ -40,6 +40,8 @@ interface TowTruckSeed {
   telegram?: string
   email?: string
   works24Hours?: boolean
+  /** Only meaningful when works24Hours is false/unset — omit to demo the "hidden" case */
+  workingHoursText?: string
   startingPrice?: number
   perKm?: number
   waitingPerHour?: number
@@ -79,7 +81,10 @@ function defineTowTruck(seed: TowTruckSeed): TowTruck {
     telegram: seed.telegram,
     email: seed.email,
     works24Hours,
-    workingHours: works24Hours ? 'Շուրջօրյա (24/7)' : '09:00 – 21:00',
+    // No fake fallback — only 24/7 trucks and ones with an explicit seed
+    // value show a working-hours line, matching real driver-entered data.
+    workingHours: works24Hours ? 'Շուրջօրյա (24/7)' : seed.workingHoursText,
+    workingHoursText: works24Hours ? undefined : seed.workingHoursText,
     startingPrice: seed.startingPrice,
     description:
       seed.description ??
@@ -190,6 +195,7 @@ export const mockTowTrucks: TowTruck[] = [
     slug: 'tigran-hakobyan',
     driverName: 'Տիգրան Հակոբյան',
     phone: '+374 94 00 00 03',
+    workingHoursText: '08:00 – 20:00',
     startingPrice: 13000,
     vehicle: {
       brand: 'ГАЗель',
@@ -376,6 +382,7 @@ export const mockTowTrucks: TowTruck[] = [
     slug: 'karen-ghazaryan',
     driverName: 'Կարեն Ղազարյան',
     phone: '+374 96 00 00 10',
+    workingHoursText: '09:00 – 19:00',
     startingPrice: 9500,
     vehicle: {
       brand: 'Ford',

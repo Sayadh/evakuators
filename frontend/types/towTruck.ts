@@ -59,7 +59,10 @@ export interface TowTruck {
   telegram?: string
   email?: string
   works24Hours: boolean
-  workingHours: string
+  /** Unset when not 24/7 and the driver never specified real hours — hide the line then */
+  workingHours?: string
+  /** Raw driver-entered value, used by the dashboard edit form */
+  workingHoursText?: string
   /** Undefined when the driver didn't provide pricing — cards then show no price */
   startingPrice?: number
   description: string

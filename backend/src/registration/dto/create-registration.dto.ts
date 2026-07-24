@@ -7,6 +7,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -14,6 +15,9 @@ import {
 } from 'class-validator'
 
 const CURRENT_YEAR = new Date().getFullYear()
+
+/** Built from two <input type="time"> values on the frontend, e.g. "09:00 – 20:00" */
+export const WORKING_HOURS_PATTERN = /^\d{2}:\d{2}\s[–-]\s\d{2}:\d{2}$/
 
 export class CreateRegistrationDto {
   // Personal
@@ -91,6 +95,19 @@ export class CreateRegistrationDto {
 
   @IsBoolean()
   manipulator!: boolean
+
+  /**
+   * Fully optional — a driver may leave both 24/7 unselected and this unset.
+   * When present, the frontend builds it from two <input type="time">
+   * fields so the format is guaranteed there, but a direct API call could
+   * still send anything, so the exact pattern is enforced here too.
+   */
+  @IsOptional()
+  @IsString()
+  @Matches(WORKING_HOURS_PATTERN, {
+    message: 'Աշխատանքային ժամերը սխալ ձևաչափով են',
+  })
+  workingHoursText?: string
 
   // Areas — slugs reference frontend static data
   @IsString()

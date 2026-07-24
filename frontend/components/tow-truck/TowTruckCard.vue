@@ -56,7 +56,7 @@ const mainAreas = computed(() =>
           <AppIcon name="weight" :size="15" />
           Մինչև {{ formatCapacity(towTruck.vehicle.capacityTons) }}
         </li>
-        <li>
+        <li v-if="towTruck.workingHours">
           <AppIcon name="clock" :size="15" />
           {{ towTruck.workingHours }}
         </li>

@@ -18,6 +18,7 @@ export interface RegistrationPayload {
   platformDimensions?: string
   winch: boolean
   manipulator: boolean
+  workingHoursText?: string
   mainRegionSlug: string
   citySlugs: string[]
   services: string[]

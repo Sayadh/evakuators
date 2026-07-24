@@ -31,7 +31,10 @@ export interface TowTruckApi {
   telegram?: string
   email?: string
   works24Hours: boolean
-  workingHours: string
+  /** Computed display string — HOURS_24 when works24Hours, else workingHoursText, else unset */
+  workingHours?: string
+  /** Raw driver-entered value (dashboard edit form needs this, not the computed one above) */
+  workingHoursText?: string
   startingPrice?: number
   description: string
   vehicle: {

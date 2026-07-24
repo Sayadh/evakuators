@@ -3,9 +3,10 @@ import { SERVICE_CATEGORIES } from '~/constants/services'
 import { SITE_NAME } from '~/constants/site'
 import { myTowTruckRepository, type UpdateMyTowTruckPayload } from '~/repositories'
 import { useDriverAuthStore } from '~/stores/driverAuth'
-import type { ServiceType } from '~/types/enums'
+import { ServiceType } from '~/types/enums'
 import type { TowTruck } from '~/types/towTruck'
 import { extractErrorMessage } from '~/utils/errors'
+import { formatWorkingHoursRange, splitWorkingHoursRange } from '~/utils/workingHours'
 
 useSeoMetaData({
   title: `Իմ պրոֆիլը | ${SITE_NAME}`,
@@ -31,6 +32,8 @@ const form = reactive({
   email: '',
   description: '',
   services: [] as ServiceType[],
+  workingHoursStart: '',
+  workingHoursEnd: '',
   priceCityCallout: '',
   pricePerKm: '',
   priceWaitingPerHour: '',
@@ -49,6 +52,9 @@ function fillFormFromTruck(data: TowTruck): void {
   form.email = data.email ?? ''
   form.description = data.description
   form.services = [...data.services]
+  const { start, end } = splitWorkingHoursRange(data.workingHoursText)
+  form.workingHoursStart = start
+  form.workingHoursEnd = end
   form.priceCityCallout = data.pricing?.cityCallout?.toString() ?? ''
   form.pricePerKm = data.pricing?.perKm?.toString() ?? ''
   form.priceWaitingPerHour = data.pricing?.waitingPerHour?.toString() ?? ''
@@ -73,16 +79,28 @@ onMounted(() => {
   if (driverAuth.isLoggedIn) void load()
 })
 
+const is247 = computed(() => form.services.includes(ServiceType.Available247))
+
 function toOptionalInt(value: string): number | undefined {
   const trimmed = value.trim()
   return trimmed ? Number(trimmed) : undefined
 }
 
 async function submit(): Promise<void> {
-  saving.value = true
   saveError.value = ''
   saveSuccess.value = false
+
+  // Fully optional — a driver may leave both 24/7 unselected and hours
+  // unset. Only flag it when exactly one of the two times got filled in,
+  // since that combination can't be saved as a valid range either way.
+  if (Boolean(form.workingHoursStart) !== Boolean(form.workingHoursEnd)) {
+    saveError.value = 'Լրացրեք և՛ սկիզբը, և՛ ավարտը, կամ թողեք երկուսն էլ դատարկ'
+    return
+  }
+
+  saving.value = true
   try {
+    const hasFullHours = Boolean(form.workingHoursStart) && Boolean(form.workingHoursEnd)
     const payload: UpdateMyTowTruckPayload = {
       secondaryPhone: form.secondaryPhone.trim() || undefined,
       whatsapp: form.whatsapp.trim() || undefined,
@@ -90,6 +108,10 @@ async function submit(): Promise<void> {
       email: form.email.trim() || undefined,
       description: form.description.trim(),
       services: form.services,
+      workingHoursText:
+        is247.value || !hasFullHours
+          ? undefined
+          : formatWorkingHoursRange(form.workingHoursStart, form.workingHoursEnd),
       priceCityCallout: toOptionalInt(form.priceCityCallout),
       pricePerKm: toOptionalInt(form.pricePerKm),
       priceWaitingPerHour: toOptionalInt(form.priceWaitingPerHour),
@@ -146,6 +168,13 @@ async function logout(): Promise<void> {
         <fieldset class="dashboard-section">
           <legend>Ծառայություններ</legend>
           <ServiceCategoryPicker v-model="form.services" :categories="SERVICE_CATEGORIES" mode="form" />
+          <div v-if="!is247" class="dashboard-working-hours">
+            <p class="dashboard-working-hours__label">Աշխատանքային ժամեր (ոչ պարտադիր)</p>
+            <div class="dashboard-working-hours__grid">
+              <AppInput v-model="form.workingHoursStart" type="time" label="Սկիզբ" />
+              <AppInput v-model="form.workingHoursEnd" type="time" label="Ավարտ" />
+            </div>
+          </div>
         </fieldset>
 
         <fieldset class="dashboard-section">
@@ -229,6 +258,21 @@ async function logout(): Promise<void> {
 
   .dashboard-hint {
     margin-bottom: 0;
+  }
+}
+
+.dashboard-working-hours {
+  &__label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin: 0 0 var(--space-2);
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3);
+    max-width: 360px;
   }
 }
 

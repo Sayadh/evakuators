@@ -25,7 +25,10 @@ export class MyTowTruckService {
     await this.getMine(towTruckId) // reuses the isActive + existence check above
 
     // works24Hours is derived, not directly editable — see service-slugs.ts.
-    // Only touch it when services are actually part of this update.
+    // Only touch it when services are actually part of this update. The
+    // dashboard always sends both together, and UpdateMyTowTruckDto's
+    // @ValidateIf already guarantees workingHoursText is a properly
+    // formatted, non-empty string whenever 24/7 isn't selected.
     const data = {
       ...dto,
       ...(dto.services ? { works24Hours: dto.services.includes(AVAILABLE_24_7_SLUG) } : {}),

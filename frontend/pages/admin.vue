@@ -522,6 +522,10 @@ async function rejectReview(review: AdminReview): Promise<void> {
                 <dt>Ծառայություններ</dt>
                 <dd>{{ request.services.map(serviceLabel).join(', ') }}</dd>
               </div>
+              <div v-if="request.workingHoursText">
+                <dt>Աշխատանքային ժամեր</dt>
+                <dd>{{ request.workingHoursText }}</dd>
+              </div>
             </dl>
 
             <div v-if="request.images.length" class="admin-card__images">

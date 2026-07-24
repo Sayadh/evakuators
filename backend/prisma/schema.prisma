@@ -41,6 +41,11 @@ model TowTruck {
   telegram       String?
   email          String?
   works24Hours   Boolean @default(false)
+  /// Free-form hours the driver typed at registration/edit time (e.g. "09:00 – 20:00").
+  /// Only meaningful when works24Hours is false — ignored by the API mapper
+  /// otherwise. Null means "not specified", in which case the frontend hides
+  /// the working-hours line entirely instead of showing a made-up default.
+  workingHoursText String?
   description    String
 
   // Vehicle
@@ -181,6 +186,10 @@ model RegistrationRequest {
   // No works24Hours column here — it's just one of the `services` slugs the
   // driver picks (see backend/src/tow-trucks/service-slugs.ts). TowTruck
   // below keeps a real boolean column, but only as a derived sort/filter index.
+  /// Same free-form field as TowTruck.workingHoursText — carried over as-is
+  /// by AdminService.approve(). Only relevant when "available-24-7" isn't
+  /// among `services` (see above).
+  workingHoursText String?
 
   mainRegionSlug String
   citySlugs      String[]

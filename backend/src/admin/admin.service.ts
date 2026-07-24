@@ -91,6 +91,7 @@ export class AdminService {
           // Derived from the services the driver picked — see service-slugs.ts.
           // RegistrationRequest never stores this as its own column.
           works24Hours: request.services.includes(AVAILABLE_24_7_SLUG),
+          workingHoursText: request.workingHoursText,
           description: dto.description ?? DEFAULT_DESCRIPTION(dto.locationName),
           vehicleBrand: request.vehicleBrand,
           vehicleModel: request.vehicleModel,

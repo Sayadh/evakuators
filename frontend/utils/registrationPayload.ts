@@ -1,4 +1,6 @@
 import type { RegistrationPayload } from '~/repositories'
+import { ServiceType } from '~/types/enums'
+import { formatWorkingHoursRange } from './workingHours'
 
 /** Raw registration form state (strings come straight from the inputs) */
 export interface RegistrationFormState {
@@ -18,6 +20,9 @@ export interface RegistrationFormState {
   platformDimensions: string
   winch: boolean
   manipulator: boolean
+  /** Only meaningful when the "available-24-7" service isn't selected — raw <input type="time"> values */
+  workingHoursStart: string
+  workingHoursEnd: string
   mainRegionSlug: string
   citySlugs: string[]
   services: string[]
@@ -59,6 +64,15 @@ export function buildRegistrationPayload(
     platformDimensions: optionalString(form.platformDimensions),
     winch: form.winch,
     manipulator: form.manipulator,
+    // Fully optional — only combine into a value when both sides are filled
+    // in and 24/7 wasn't picked; otherwise leave it unset entirely rather
+    // than send a half-formed range.
+    workingHoursText:
+      form.services.includes(ServiceType.Available247) ||
+      !form.workingHoursStart ||
+      !form.workingHoursEnd
+        ? undefined
+        : formatWorkingHoursRange(form.workingHoursStart, form.workingHoursEnd),
     mainRegionSlug: form.mainRegionSlug,
     citySlugs: form.citySlugs,
     services: form.services,

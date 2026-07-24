@@ -1,7 +1,6 @@
 import type { TowTruckApi, TowTruckWithImages, ServiceAreaJson } from './tow-truck.types'
 
 const HOURS_24 = 'Շուրջօրյա (24/7)'
-const HOURS_DAY = '09:00 – 21:00'
 
 function buildPricing(truck: TowTruckWithImages): TowTruckApi['pricing'] {
   const pricing: NonNullable<TowTruckApi['pricing']> = {}
@@ -27,7 +26,11 @@ export function toTowTruckApi(truck: TowTruckWithImages): TowTruckApi {
     telegram: truck.telegram ?? undefined,
     email: truck.email ?? undefined,
     works24Hours: truck.works24Hours,
-    workingHours: truck.works24Hours ? HOURS_24 : HOURS_DAY,
+    // No fake default anymore — if the driver never specified real hours and
+    // isn't 24/7, this stays undefined and the frontend hides the line
+    // instead of showing a made-up "09:00 – 21:00" for everyone.
+    workingHours: truck.works24Hours ? HOURS_24 : (truck.workingHoursText ?? undefined),
+    workingHoursText: truck.workingHoursText ?? undefined,
     startingPrice: truck.priceCityCallout ?? undefined,
     description: truck.description,
     vehicle: {

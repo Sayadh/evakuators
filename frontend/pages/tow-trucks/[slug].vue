@@ -28,9 +28,12 @@ const displayName = truck.companyName ?? truck.driverName
 
 const locationSlug = truck.location.districtSlug ?? truck.location.citySlug
 
+// Only append a real, driver-confirmed hours sentence — never a placeholder.
+const hoursSentence = truck.workingHours ? ` ${truck.workingHours}։` : ''
+
 useSeoMetaData({
   title: `${displayName} — էվակուատոր ${truck.location.name}ում | ${SITE_NAME}`,
-  description: `${displayName}. ${truck.vehicle.brand} ${truck.vehicle.model}, մինչև ${truck.vehicle.capacityTons} տ։ ${truck.workingHours}։ Զանգահարեք հիմա՝ ${truck.phone}։`,
+  description: `${displayName}. ${truck.vehicle.brand} ${truck.vehicle.model}, մինչև ${truck.vehicle.capacityTons} տ։${hoursSentence} Զանգահարեք հիմա՝ ${truck.phone}։`,
   keywords: locationSlug
     ? buildLocationSeo(truck.location.name, locationSlug).keywords
     : undefined,
@@ -65,7 +68,7 @@ onMounted(() => {
           <p v-if="towTruck.companyName" class="profile__driver">
             Վարորդ՝ {{ towTruck.driverName }}
           </p>
-          <p class="profile__hours">
+          <p v-if="towTruck.workingHours" class="profile__hours">
             <AppIcon name="clock" :size="18" />
             <span>{{ towTruck.workingHours }}</span>
           </p>

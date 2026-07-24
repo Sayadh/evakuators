@@ -10,6 +10,8 @@ export interface UpdateMyTowTruckPayload {
   email?: string
   description?: string
   services?: string[]
+  /** Mandatory (validated "HH:MM – HH:MM") unless services includes 24/7 — see backend UpdateMyTowTruckDto */
+  workingHoursText?: string
   priceCityCallout?: number
   pricePerKm?: number
   priceWaitingPerHour?: number

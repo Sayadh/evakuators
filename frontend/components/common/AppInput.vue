@@ -8,7 +8,7 @@ interface Props {
   error?: string
 }
 
-withDefaults(defineProps<Props>(), {
+const props = withDefaults(defineProps<Props>(), {
   label: undefined,
   type: 'text',
   placeholder: '',
@@ -19,9 +19,29 @@ withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{ 'update:modelValue': [value: string]; blur: [] }>()
 
 const id = useId()
+const inputRef = ref<HTMLInputElement | null>(null)
 
 function onInput(event: Event): void {
   emit('update:modelValue', (event.target as HTMLInputElement).value)
+}
+
+/**
+ * Native <input type="time"/"date"> only pops the browser's picker UI when
+ * you click the small calendar/clock glyph — clicking the rest of the field
+ * just places a text cursor in a segment, which looks like nothing happened.
+ * showPicker() makes a click anywhere in the field behave the same as
+ * clicking the icon. Only valid for date/time-like input types (calling it
+ * on type="text" etc. throws), and wrapped defensively since Safari only
+ * added support fairly recently — worst case it just falls back to the
+ * default (icon-only) behavior there.
+ */
+function onClick(): void {
+  if (props.type !== 'time' && props.type !== 'date') return
+  try {
+    inputRef.value?.showPicker?.()
+  } catch {
+    // Unsupported in this browser — default icon-click behavior still works.
+  }
 }
 </script>
 
@@ -32,6 +52,7 @@ function onInput(event: Event): void {
     </label>
     <input
       :id="id"
+      ref="inputRef"
       class="app-input__field"
       :class="{ 'app-input__field--error': error }"
       :type="type"
@@ -41,6 +62,7 @@ function onInput(event: Event): void {
       :aria-invalid="Boolean(error)"
       @input="onInput"
       @blur="emit('blur')"
+      @click="onClick"
     >
     <p v-if="error" class="app-input__error" role="alert">{{ error }}</p>
   </div>

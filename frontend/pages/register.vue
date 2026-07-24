@@ -8,7 +8,8 @@ import {
   VEHICLE_TYPE_DESCRIPTIONS,
   VEHICLE_TYPE_OPTIONS,
 } from '~/constants/vehicles'
-import type { ServiceType, VehicleType } from '~/types/enums'
+import { ServiceType } from '~/types/enums'
+import type { VehicleType } from '~/types/enums'
 import type { SelectOption } from '~/types/common'
 import { trackRegistrationSubmit } from '~/utils/analytics'
 import { extractErrorMessage } from '~/utils/errors'
@@ -55,6 +56,8 @@ function createInitialFormState() {
     platformDimensions: '',
     winch: false,
     manipulator: false,
+    workingHoursStart: '',
+    workingHoursEnd: '',
     mainRegionSlug: '',
     citySlugs: [] as string[],
     services: [] as ServiceType[],
@@ -80,6 +83,10 @@ const regionOptions = computed<SelectOption[]>(() => [
 ])
 
 const isYerevanSelected = computed(() => form.mainRegionSlug === YEREVAN_SLUG)
+
+/** "Ծառայություններ" fieldset lets the driver pick 24/7 — hours only make
+ * sense to ask about when that isn't selected. */
+const is247 = computed(() => form.services.includes(ServiceType.Available247))
 
 const cityOptions = ref<SelectOption[]>([])
 
@@ -113,6 +120,16 @@ function toggleCity(slug: string): void {
 const isAllCitiesSelected = computed(
   () => cityOptions.value.length > 0 && form.citySlugs.length === cityOptions.value.length,
 )
+
+// If they switch to 24/7 after picking custom hours, clear them so a stale
+// value never gets left behind — buildRegistrationPayload ignores them while
+// is247 is true anyway, but empty fields are less confusing to look at.
+watch(is247, (value) => {
+  if (value) {
+    form.workingHoursStart = ''
+    form.workingHoursEnd = ''
+  }
+})
 
 function toggleAllCities(): void {
   form.citySlugs = isAllCitiesSelected.value ? [] : cityOptions.value.map((option) => option.value)
@@ -173,6 +190,29 @@ function onExtraImagesChange(event: Event): void {
   extraImagePreviews.value = extraImageFiles.value.map((file) => URL.createObjectURL(file))
 }
 
+function removeMainImage(): void {
+  mainImageFile.value = null
+  form.mainImageName = ''
+
+  if (mainImagePreview.value) URL.revokeObjectURL(mainImagePreview.value)
+  mainImagePreview.value = null
+
+  // Reset the native input too — otherwise re-picking the exact same file
+  // wouldn't fire a "change" event and the removal would look permanent.
+  if (mainImageInput.value) mainImageInput.value.value = ''
+}
+
+/** Only touches our own reactive state — the upload on submit reads from
+ * extraImageFiles, never back from the native <input>'s FileList, so this
+ * is enough on its own (see submitToApi below). */
+function removeExtraImage(index: number): void {
+  URL.revokeObjectURL(extraImagePreviews.value[index])
+
+  extraImageFiles.value = extraImageFiles.value.filter((_, i) => i !== index)
+  extraImagePreviews.value = extraImagePreviews.value.filter((_, i) => i !== index)
+  form.extraImageNames = form.extraImageNames.filter((_, i) => i !== index)
+}
+
 onBeforeUnmount(() => {
   if (mainImagePreview.value) URL.revokeObjectURL(mainImagePreview.value)
   extraImagePreviews.value.forEach((url) => URL.revokeObjectURL(url))
@@ -201,6 +241,13 @@ function validate(): boolean {
       : ''
   errors.services =
     form.services.length === 0 ? 'Ընտրեք առնվազն մեկ ծառայություն' : ''
+  // Fully optional — driver may leave both 24/7 unselected and hours unset.
+  // Only flag it when exactly one of the two times got filled in, since
+  // that combination can't be saved as a valid range either way.
+  errors.workingHours =
+    Boolean(form.workingHoursStart) !== Boolean(form.workingHoursEnd)
+      ? 'Լրացրեք և՛ սկիզբը, և՛ ավարտը, կամ թողեք երկուսն էլ դատարկ'
+      : ''
   errors.mainImage = form.mainImageName ? '' : 'Ավելացրեք գլխավոր նկարը'
   errors.priceCityCallout = validateField(form.priceCityCallout, [isAmount()]) ?? ''
   errors.pricePerKm = validateField(form.pricePerKm, [isAmount('Մուտքագրեք 1 կմ-ի գինը թվերով (օր.՝ 300)')]) ?? ''
@@ -420,6 +467,17 @@ async function onSubmit(): Promise<void> {
         <legend class="register__legend">Ծառայություններ</legend>
         <p v-if="errors.services" class="register__error" role="alert">{{ errors.services }}</p>
         <ServiceCategoryPicker v-model="form.services" :categories="SERVICE_CATEGORIES" mode="form" />
+
+        <div v-if="!is247" class="register__working-hours">
+          <p class="register__working-hours-label">Աշխատանքային ժամեր (ոչ պարտադիր)</p>
+          <div class="register__working-hours-grid">
+            <AppInput v-model="form.workingHoursStart" type="time" label="Սկիզբ" />
+            <AppInput v-model="form.workingHoursEnd" type="time" label="Ավարտ" />
+          </div>
+          <p v-if="errors.workingHours" class="register__error" role="alert">
+            {{ errors.workingHours }}
+          </p>
+        </div>
       </fieldset>
 
       <fieldset class="register__section">
@@ -482,7 +540,17 @@ async function onSubmit(): Promise<void> {
               @change="onMainImageChange"
             >
             <span v-if="form.mainImageName" class="register__file-name">{{ form.mainImageName }}</span>
-            <img v-if="mainImagePreview" :src="mainImagePreview" alt="" class="register__image-preview" >
+            <div v-if="mainImagePreview" class="register__image-preview-wrap">
+              <img :src="mainImagePreview" alt="" class="register__image-preview" >
+              <button
+                type="button"
+                class="register__image-remove"
+                aria-label="Հեռացնել նկարը"
+                @click="removeMainImage"
+              >
+                <AppIcon name="close" :size="14" />
+              </button>
+            </div>
             <p v-if="errors.mainImage" class="register__error" role="alert">
               {{ errors.mainImage }}
             </p>
@@ -501,13 +569,21 @@ async function onSubmit(): Promise<void> {
               {{ form.extraImageNames.length }}/{{ MAX_EXTRA_IMAGES }} ֆայլ ընտրված է
             </span>
             <div v-if="extraImagePreviews.length" class="register__image-preview-grid">
-              <img
+              <div
                 v-for="(preview, index) in extraImagePreviews"
                 :key="index"
-                :src="preview"
-                alt=""
-                class="register__image-preview"
+                class="register__image-preview-wrap"
               >
+                <img :src="preview" alt="" class="register__image-preview" >
+                <button
+                  type="button"
+                  class="register__image-remove"
+                  aria-label="Հեռացնել նկարը"
+                  @click="removeExtraImage(index)"
+                >
+                  <AppIcon name="close" :size="14" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -591,6 +667,23 @@ async function onSubmit(): Promise<void> {
     }
   }
 
+  &__working-hours {
+    margin-top: var(--space-4);
+    max-width: 360px;
+  }
+
+  &__working-hours-label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin: 0 0 var(--space-2);
+  }
+
+  &__working-hours-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3);
+  }
+
   &__services {
     display: grid;
     grid-template-columns: 1fr;
@@ -669,6 +762,7 @@ async function onSubmit(): Promise<void> {
   }
 
   &__image-preview {
+    display: block;
     width: 96px;
     height: 96px;
     object-fit: cover;
@@ -676,10 +770,37 @@ async function onSubmit(): Promise<void> {
     border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
   }
 
+  &__image-preview-wrap {
+    position: relative;
+    width: 96px;
+  }
+
+  &__image-remove {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: 2px solid var(--color-surface);
+    border-radius: 50%;
+    background: var(--color-danger);
+    color: #fff;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    transition: background var(--transition);
+
+    &:hover {
+      background: #c0392b;
+    }
+  }
+
   &__image-preview-grid {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--space-2);
+    gap: var(--space-3);
   }
 
   &__note {

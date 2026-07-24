@@ -1,4 +1,5 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
+import { AVAILABLE_24_7_SLUG } from '../tow-trucks/service-slugs'
 import { toTowTruckApi } from '../tow-trucks/tow-truck.mapper'
 import type { TowTruckApi } from '../tow-trucks/tow-truck.types'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
@@ -22,7 +23,15 @@ export class MyTowTruckService {
 
   async updateMine(towTruckId: number, dto: UpdateMyTowTruckDto): Promise<TowTruckApi> {
     await this.getMine(towTruckId) // reuses the isActive + existence check above
-    const updated = await this.towTrucksRepository.updateOwnProfile(towTruckId, dto)
+
+    // works24Hours is derived, not directly editable — see service-slugs.ts.
+    // Only touch it when services are actually part of this update.
+    const data = {
+      ...dto,
+      ...(dto.services ? { works24Hours: dto.services.includes(AVAILABLE_24_7_SLUG) } : {}),
+    }
+
+    const updated = await this.towTrucksRepository.updateOwnProfile(towTruckId, data)
     return toTowTruckApi(updated)
   }
 }

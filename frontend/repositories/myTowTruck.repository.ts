@@ -8,7 +8,6 @@ export interface UpdateMyTowTruckPayload {
   whatsapp?: string
   telegram?: string
   email?: string
-  works24Hours?: boolean
   description?: string
   services?: string[]
   priceCityCallout?: number

@@ -7,3 +7,13 @@ export function formatCapacity(tons: number): string {
 export function formatDistance(km: number): string {
   return `${km.toFixed(1)} կմ`
 }
+
+/** ISO datetime → "24 հուլիսի, 14:30" */
+export function formatDepartureAt(iso: string): string {
+  return new Date(iso).toLocaleString('hy-AM', {
+    day: 'numeric',
+    month: 'long',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}

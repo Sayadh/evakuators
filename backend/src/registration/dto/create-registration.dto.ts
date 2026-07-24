@@ -77,10 +77,9 @@ export class CreateRegistrationDto {
   @MaxLength(40)
   vehicleType!: string
 
-  @IsOptional()
   @IsString()
   @MaxLength(20)
-  capacityRange?: string
+  capacityRange!: string
 
   @IsOptional()
   @IsString()
@@ -92,9 +91,6 @@ export class CreateRegistrationDto {
 
   @IsBoolean()
   manipulator!: boolean
-
-  @IsBoolean()
-  works24Hours!: boolean
 
   // Areas — slugs reference frontend static data
   @IsString()

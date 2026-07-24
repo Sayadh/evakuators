@@ -1,7 +1,6 @@
 import {
   ArrayMinSize,
   IsArray,
-  IsBoolean,
   IsEmail,
   IsInt,
   IsOptional,
@@ -36,10 +35,6 @@ export class UpdateMyTowTruckDto {
   @IsOptional()
   @IsEmail()
   email?: string
-
-  @IsOptional()
-  @IsBoolean()
-  works24Hours?: boolean
 
   @IsOptional()
   @IsString()

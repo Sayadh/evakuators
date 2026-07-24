@@ -26,8 +26,8 @@ const district = (name: string, slug: string): ServiceArea => ({
 
 const BASE_SERVICES: ServiceType[] = [
   ServiceType.CarTransport,
-  ServiceType.AccidentTow,
-  ServiceType.NonRunningTow,
+  ServiceType.AccidentTransport,
+  ServiceType.NonStartingTransport,
 ]
 
 interface TowTruckSeed {
@@ -134,10 +134,10 @@ export const mockTowTrucks: TowTruck[] = [
     },
     extraServices: [
       ServiceType.SuvTransport,
-      ServiceType.Intercity,
-      ServiceType.IntercityAllArmenia,
+      ServiceType.IntercityTransport,
+      ServiceType.LongDistanceTransport,
       ServiceType.OffRoadRecovery,
-      ServiceType.SnowMudRecovery,
+      ServiceType.SnowRecovery,
     ],
     serviceAreas: [
       gegharkunikCities.vardenis,
@@ -172,7 +172,7 @@ export const mockTowTrucks: TowTruck[] = [
     extraServices: [
       ServiceType.SuvTransport,
       ServiceType.MotorcycleTransport,
-      ServiceType.Intercity,
+      ServiceType.IntercityTransport,
     ],
     serviceAreas: [
       gegharkunikCities.sevan,
@@ -220,7 +220,7 @@ export const mockTowTrucks: TowTruck[] = [
       ServiceType.SuvTransport,
       ServiceType.MinibusTransport,
       ServiceType.OffRoadRecovery,
-      ServiceType.SnowMudRecovery,
+      ServiceType.SnowRecovery,
     ],
     serviceAreas: [
       gegharkunikCities.martuni,
@@ -242,7 +242,7 @@ export const mockTowTrucks: TowTruck[] = [
       type: VehicleType.Flatbed,
       capacityTons: 3,
     },
-    extraServices: [ServiceType.SnowMudRecovery],
+    extraServices: [ServiceType.SnowRecovery],
     serviceAreas: [gegharkunikCities.chambarak, gegharkunikCities.sevan, city('Իջևան', 'ijevan')],
     location: { regionSlug: 'gegharkunik', citySlug: 'chambarak', name: 'Ճամբարակ' },
   }),
@@ -277,9 +277,9 @@ export const mockTowTrucks: TowTruck[] = [
     extraServices: [
       ServiceType.SuvTransport,
       ServiceType.MotorcycleTransport,
-      ServiceType.Intercity,
-      ServiceType.IntercityAllArmenia,
-      ServiceType.UndergroundParking,
+      ServiceType.IntercityTransport,
+      ServiceType.LongDistanceTransport,
+      ServiceType.UndergroundParkingRecovery,
     ],
     serviceAreas: [
       district('Արաբկիր', 'arabkir'),
@@ -307,7 +307,7 @@ export const mockTowTrucks: TowTruck[] = [
       platformLengthM: 5.5,
       platformWidthM: 2.2,
     },
-    extraServices: [ServiceType.SuvTransport, ServiceType.MinibusTransport, ServiceType.Intercity],
+    extraServices: [ServiceType.SuvTransport, ServiceType.MinibusTransport, ServiceType.IntercityTransport],
     serviceAreas: [
       district('Կենտրոն', 'kentron'),
       district('Էրեբունի', 'erebuni'),
@@ -329,7 +329,7 @@ export const mockTowTrucks: TowTruck[] = [
       type: VehicleType.SlidingPlatform,
       capacityTons: 2,
     },
-    extraServices: [ServiceType.MotorcycleTransport, ServiceType.UndergroundParking],
+    extraServices: [ServiceType.MotorcycleTransport, ServiceType.UndergroundParkingRecovery],
     serviceAreas: [
       district('Շենգավիթ', 'shengavit'),
       district('Մալաթիա-Սեբաստիա', 'malatia-sebastia'),
@@ -358,7 +358,7 @@ export const mockTowTrucks: TowTruck[] = [
       ServiceType.SuvTransport,
       ServiceType.MinibusTransport,
       ServiceType.TruckTransport,
-      ServiceType.SpecialEquipment,
+      ServiceType.ConstructionEquipmentTransport,
       ServiceType.OffRoadRecovery,
     ],
     serviceAreas: [
@@ -406,7 +406,7 @@ export const mockTowTrucks: TowTruck[] = [
       platformLengthM: 5.3,
       platformWidthM: 2.1,
     },
-    extraServices: [ServiceType.SuvTransport, ServiceType.Intercity],
+    extraServices: [ServiceType.SuvTransport, ServiceType.IntercityTransport],
     serviceAreas: [
       district('Էրեբունի', 'erebuni'),
       district('Նուբարաշեն', 'nubarashen'),
@@ -437,9 +437,9 @@ export const mockTowTrucks: TowTruck[] = [
     extraServices: [
       ServiceType.SuvTransport,
       ServiceType.MinibusTransport,
-      ServiceType.Intercity,
+      ServiceType.IntercityTransport,
       ServiceType.IntercityCrossBorder,
-      ServiceType.SnowMudRecovery,
+      ServiceType.SnowRecovery,
     ],
     serviceAreas: [
       city('Գյումրի', 'gyumri'),
@@ -484,7 +484,7 @@ export const mockTowTrucks: TowTruck[] = [
       platformLengthM: 5.2,
       platformWidthM: 2.1,
     },
-    extraServices: [ServiceType.SuvTransport, ServiceType.Intercity, ServiceType.SnowMudRecovery],
+    extraServices: [ServiceType.SuvTransport, ServiceType.IntercityTransport, ServiceType.SnowRecovery],
     serviceAreas: [
       city('Վանաձոր', 'vanadzor'),
       city('Սպիտակ', 'spitak'),
@@ -513,7 +513,7 @@ export const mockTowTrucks: TowTruck[] = [
     extraServices: [
       ServiceType.TruckTransport,
       ServiceType.MinibusTransport,
-      ServiceType.SpecialEquipment,
+      ServiceType.ConstructionEquipmentTransport,
       ServiceType.OffRoadRecovery,
     ],
     serviceAreas: [city('Վանաձոր', 'vanadzor'), city('Ալավերդի', 'alaverdi')],
@@ -539,9 +539,9 @@ export const mockTowTrucks: TowTruck[] = [
     },
     extraServices: [
       ServiceType.SuvTransport,
-      ServiceType.Intercity,
+      ServiceType.IntercityTransport,
       ServiceType.OffRoadRecovery,
-      ServiceType.SnowMudRecovery,
+      ServiceType.SnowRecovery,
     ],
     serviceAreas: [
       city('Դիլիջան', 'dilijan'),
@@ -563,7 +563,7 @@ export const mockTowTrucks: TowTruck[] = [
       type: VehicleType.SlidingPlatform,
       capacityTons: 1.5,
     },
-    extraServices: [ServiceType.MotorcycleTransport, ServiceType.UndergroundParking],
+    extraServices: [ServiceType.MotorcycleTransport, ServiceType.UndergroundParkingRecovery],
     serviceAreas: [city('Իջևան', 'ijevan'), city('Բերդ', 'berd'), city('Դիլիջան', 'dilijan')],
     location: { regionSlug: 'tavush', citySlug: 'ijevan', name: 'Իջևան' },
   }),
@@ -592,11 +592,11 @@ export const mockTowTrucks: TowTruck[] = [
     extraServices: [
       ServiceType.SuvTransport,
       ServiceType.TruckTransport,
-      ServiceType.Intercity,
-      ServiceType.IntercityAllArmenia,
+      ServiceType.IntercityTransport,
+      ServiceType.LongDistanceTransport,
       ServiceType.IntercityCrossBorder,
       ServiceType.OffRoadRecovery,
-      ServiceType.SnowMudRecovery,
+      ServiceType.SnowRecovery,
     ],
     serviceAreas: [
       city('Կապան', 'kapan'),
@@ -619,7 +619,7 @@ export const mockTowTrucks: TowTruck[] = [
       type: VehicleType.Flatbed,
       capacityTons: 4,
     },
-    extraServices: [ServiceType.SuvTransport, ServiceType.Intercity],
+    extraServices: [ServiceType.SuvTransport, ServiceType.IntercityTransport],
     serviceAreas: [city('Գորիս', 'goris'), city('Սիսիան', 'sisian'), city('Կապան', 'kapan')],
     location: { regionSlug: 'syunik', citySlug: 'goris', name: 'Գորիս' },
   }),
@@ -665,7 +665,7 @@ export const mockTowTrucks: TowTruck[] = [
       type: VehicleType.SlidingPlatform,
       capacityTons: 1.5,
     },
-    extraServices: [ServiceType.SnowMudRecovery],
+    extraServices: [ServiceType.SnowRecovery],
     serviceAreas: [
       city('Հրազդան', 'hrazdan'),
       city('Ծաղկաձոր', 'tsaghkadzor'),
@@ -691,7 +691,7 @@ export const mockTowTrucks: TowTruck[] = [
       platformLengthM: 5.8,
       platformWidthM: 2.3,
     },
-    extraServices: [ServiceType.SuvTransport, ServiceType.Intercity],
+    extraServices: [ServiceType.SuvTransport, ServiceType.IntercityTransport],
     serviceAreas: [
       city('Արտաշատ', 'artashat'),
       city('Արարատ', 'ararat'),
@@ -716,7 +716,7 @@ export const mockTowTrucks: TowTruck[] = [
       type: VehicleType.Flatbed,
       capacityTons: 3,
     },
-    extraServices: [ServiceType.SuvTransport, ServiceType.SnowMudRecovery],
+    extraServices: [ServiceType.SuvTransport, ServiceType.SnowRecovery],
     serviceAreas: [
       city('Աշտարակ', 'ashtarak'),
       city('Ապարան', 'aparan'),
@@ -770,7 +770,7 @@ export const mockTowTrucks: TowTruck[] = [
       type: VehicleType.Flatbed,
       capacityTons: 2.5,
     },
-    extraServices: [ServiceType.Intercity, ServiceType.SnowMudRecovery],
+    extraServices: [ServiceType.IntercityTransport, ServiceType.SnowRecovery],
     serviceAreas: [
       city('Եղեգնաձոր', 'yeghegnadzor'),
       city('Վայք', 'vayk'),

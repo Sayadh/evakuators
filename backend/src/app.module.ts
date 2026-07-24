@@ -1,12 +1,14 @@
 import { Module } from '@nestjs/common'
 import { ConfigModule } from '@nestjs/config'
 import { APP_GUARD } from '@nestjs/core'
+import { ScheduleModule } from '@nestjs/schedule'
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler'
 import configuration from './config/configuration'
 import { validateEnv } from './config/env.validation'
 import { AdminAuthModule } from './admin-auth/admin-auth.module'
 import { AdminModule } from './admin/admin.module'
 import { DriverAuthModule } from './driver-auth/driver-auth.module'
+import { FreeRoutesModule } from './free-routes/free-routes.module'
 import { HealthModule } from './health/health.module'
 import { ImagesModule } from './images/images.module'
 import { MyTowTruckModule } from './my-tow-truck/my-tow-truck.module'
@@ -28,6 +30,8 @@ import { TowTrucksModule } from './tow-trucks/tow-trucks.module'
     // (image upload, registration/review submission, driver-auth) apply a
     // stricter @Throttle() override — see their controllers.
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 60 }]),
+    // Powers @Cron() in FreeRoutesService (auto-expiry cleanup)
+    ScheduleModule.forRoot(),
     PrismaModule,
     HealthModule,
     StorageModule,
@@ -40,6 +44,7 @@ import { TowTrucksModule } from './tow-trucks/tow-trucks.module'
     TelegramModule,
     DriverAuthModule,
     MyTowTruckModule,
+    FreeRoutesModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

@@ -2,7 +2,7 @@
 interface Props {
   modelValue: string
   label?: string
-  type?: 'text' | 'tel' | 'email' | 'number' | 'password'
+  type?: 'text' | 'tel' | 'email' | 'number' | 'password' | 'date' | 'time'
   placeholder?: string
   required?: boolean
   error?: string
@@ -79,6 +79,17 @@ function onInput(event: Event): void {
 
     &--error {
       border-color: var(--color-danger);
+    }
+
+    // Remove native number spinner arrows everywhere this component is used.
+    &[type='number'] {
+      -moz-appearance: textfield;
+
+      &::-webkit-inner-spin-button,
+      &::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
     }
   }
 

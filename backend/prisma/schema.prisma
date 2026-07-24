@@ -22,6 +22,14 @@ enum UserRole {
   ADMIN
 }
 
+enum FreeRouteStatus {
+  /// Shown on the public listing, still open for a customer to grab
+  ACTIVE
+  /// Past its departure time — kept briefly for the driver's own history,
+  /// then hard-deleted by the cleanup cron (see free-routes.service.ts)
+  FINISHED
+}
+
 model TowTruck {
   id             Int     @id @default(autoincrement())
   slug           String  @unique
@@ -71,8 +79,9 @@ model TowTruck {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  images  TowTruckImage[]
-  reviews Review[]
+  images     TowTruckImage[]
+  reviews    Review[]
+  freeRoutes FreeRoute[]
 
   // Driver self-service login (Telegram OTP) — see DriverOtp
   /// Telegram numeric chat id, captured once the driver taps the bot deep-link.
@@ -158,13 +167,15 @@ model RegistrationRequest {
   vehicleModel       String?
   vehicleYear        Int
   vehicleType        String
-  /// CAPACITY_RANGE_OPTIONS value from frontend constants (e.g. "2-3.5")
-  capacityRange      String?
+  /// CAPACITY_RANGE_OPTIONS value from frontend constants (e.g. "2-3.5") — required
+  capacityRange      String
   /// Free-form, validated on the frontend (e.g. "5.5 մ × 2.2 մ")
   platformDimensions String?
   winch              Boolean @default(false)
   manipulator        Boolean @default(false)
-  works24Hours       Boolean @default(false)
+  // No works24Hours column here — it's just one of the `services` slugs the
+  // driver picks (see backend/src/tow-trucks/service-slugs.ts). TowTruck
+  // below keeps a real boolean column, but only as a derived sort/filter index.
 
   mainRegionSlug String
   citySlugs      String[]
@@ -182,6 +193,36 @@ model RegistrationRequest {
   images TowTruckImage[]
 
   @@index([status])
+}
+
+/// "Ազատ երթուղիներ" — a driver heading somewhere empty posts a route so
+/// customers going the same way can find them. Geography here is just slugs
+/// (frontend static data), same convention as TowTruck/RegistrationRequest.
+model FreeRoute {
+  id         Int      @id @default(autoincrement())
+  towTruckId Int
+  towTruck   TowTruck @relation(fields: [towTruckId], references: [id], onDelete: Cascade)
+
+  startRegionSlug String
+  startCitySlug   String
+  endRegionSlug   String
+  endCitySlug     String
+
+  /// Departure date + time combined. This IS the auto-expiry deadline —
+  /// once it passes the cleanup cron flips ACTIVE -> FINISHED, then hard
+  /// deletes FINISHED rows after a short grace period (see FreeRoutesService).
+  departureAt DateTime
+
+  /// Optional free-text note from the driver, shown on the public card
+  /// (e.g. "կարող եմ սպասել կես ժամ")
+  description String?
+
+  status    FreeRouteStatus @default(ACTIVE)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@index([towTruckId])
+  @@index([status, departureAt])
 }
 
 /// Future-ready admin/user accounts (auth is not implemented yet)

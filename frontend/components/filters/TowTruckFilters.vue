@@ -1,9 +1,14 @@
 <script setup lang="ts">
 import { useTowTruckFiltersStore } from '~/stores/towTruckFilters'
-import { FILTERABLE_SERVICES, SERVICE_LABELS } from '~/constants/services'
+import { SERVICE_CATEGORIES } from '~/constants/services'
 import { CAPACITY_OPTIONS } from '~/constants/vehicles'
+import type { ServiceType } from '~/types/enums'
 
 const store = useTowTruckFiltersStore()
+
+function onServicesUpdate(services: ServiceType[]): void {
+  store.services = services
+}
 </script>
 
 <template>
@@ -19,12 +24,11 @@ const store = useTowTruckFiltersStore()
 
     <fieldset class="filters__group">
       <legend class="filters__legend">Ծառայություններ</legend>
-      <AppCheckbox
-        v-for="service in FILTERABLE_SERVICES"
-        :key="service"
-        :model-value="store.services.includes(service)"
-        :label="SERVICE_LABELS[service]"
-        @update:model-value="store.toggleService(service)"
+      <ServiceCategoryPicker
+        :model-value="store.services"
+        :categories="SERVICE_CATEGORIES"
+        mode="filter"
+        @update:model-value="onServicesUpdate"
       />
     </fieldset>
 

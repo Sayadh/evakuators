@@ -2,13 +2,13 @@
 import { imageRepository, isApiEnabled, registrationRepository } from '~/repositories'
 import { citiesService, districtsService } from '~/services'
 import { SITE_NAME } from '~/constants/site'
-import { SERVICE_LABELS } from '~/constants/services'
+import { SERVICE_CATEGORIES } from '~/constants/services'
 import {
   CAPACITY_RANGE_OPTIONS,
   VEHICLE_TYPE_DESCRIPTIONS,
   VEHICLE_TYPE_OPTIONS,
 } from '~/constants/vehicles'
-import { ServiceType, type VehicleType } from '~/types/enums'
+import type { ServiceType, VehicleType } from '~/types/enums'
 import type { SelectOption } from '~/types/common'
 import { trackRegistrationSubmit } from '~/utils/analytics'
 import {
@@ -48,7 +48,6 @@ const form = reactive({
   platformDimensions: '',
   winch: false,
   manipulator: false,
-  works24Hours: false,
   mainRegionSlug: '',
   citySlugs: [] as string[],
   services: [] as ServiceType[],
@@ -119,14 +118,6 @@ const vehicleTypeHints = VEHICLE_TYPE_OPTIONS.map((option) => ({
   description: VEHICLE_TYPE_DESCRIPTIONS[option.value],
 }))
 
-const allServices = Object.values(ServiceType)
-
-function toggleService(service: ServiceType): void {
-  form.services = form.services.includes(service)
-    ? form.services.filter((item) => item !== service)
-    : [...form.services, service]
-}
-
 const MAX_EXTRA_IMAGES = 5
 
 const mainImageFile = shallowRef<File | null>(null)
@@ -154,6 +145,8 @@ function validate(): boolean {
   errors.brand = validateField(form.brand, [required()]) ?? ''
   errors.year = validateField(form.year, [required(), isYear()]) ?? ''
   errors.vehicleType = validateField(form.vehicleType, [required('Ընտրեք մեքենայի տեսակը')]) ?? ''
+  errors.capacity =
+    validateField(form.capacity, [required('Ընտրեք առավելագույն բեռնատարողությունը')]) ?? ''
   errors.platformDimensions =
     validateField(form.platformDimensions, [isPlatformDimensions()]) ?? ''
   errors.mainRegionSlug = validateField(form.mainRegionSlug, [required('Ընտրեք մարզը')]) ?? ''
@@ -298,7 +291,8 @@ async function onSubmit(): Promise<void> {
           <AppSelect
             v-model="form.capacity"
             :options="CAPACITY_RANGE_OPTIONS"
-            label="Առավելագույն բեռնատարողություն"
+            label="Առավելագույն բեռնատարողություն *"
+            :error="errors.capacity"
           />
           <AppInput
             v-model="form.platformDimensions"
@@ -310,7 +304,6 @@ async function onSubmit(): Promise<void> {
         <div class="register__checks">
           <AppCheckbox v-model="form.winch" label="Ունի ճախարակ (winch, лебедка)" />
           <AppCheckbox v-model="form.manipulator" label="Ունի մանիպուլյատոր" />
-          <AppCheckbox v-model="form.works24Hours" label="Աշխատում է 24/7" />
         </div>
       </fieldset>
 
@@ -354,15 +347,7 @@ async function onSubmit(): Promise<void> {
       <fieldset class="register__section">
         <legend class="register__legend">Ծառայություններ</legend>
         <p v-if="errors.services" class="register__error" role="alert">{{ errors.services }}</p>
-        <div class="register__services">
-          <AppCheckbox
-            v-for="service in allServices"
-            :key="service"
-            :model-value="form.services.includes(service)"
-            :label="SERVICE_LABELS[service]"
-            @update:model-value="toggleService(service)"
-          />
-        </div>
+        <ServiceCategoryPicker v-model="form.services" :categories="SERVICE_CATEGORIES" mode="form" />
       </fieldset>
 
       <fieldset class="register__section">

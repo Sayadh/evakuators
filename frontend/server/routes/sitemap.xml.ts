@@ -10,6 +10,8 @@ const SITE_URL = 'https://evakuators.am'
 interface SitemapEntry {
   path: string
   priority: string
+  /** How often the page's content realistically changes — helps crawl budget */
+  changefreq: 'daily' | 'weekly' | 'monthly'
 }
 
 /**
@@ -37,39 +39,43 @@ function buildEntries(towTruckSlugs: string[]): SitemapEntry[] {
   const regionSlugById = new Map(staticRegions.map((region) => [region.id, region.slug]))
 
   return [
-    { path: '/', priority: '1.0' },
-    { path: '/yerevan', priority: '0.9' },
-    { path: '/regions', priority: '0.8' },
-    { path: '/register', priority: '0.6' },
-    { path: '/about', priority: '0.4' },
-    { path: '/contact', priority: '0.4' },
+    { path: '/', priority: '1.0', changefreq: 'daily' },
+    { path: '/yerevan', priority: '0.9', changefreq: 'daily' },
+    { path: '/regions', priority: '0.8', changefreq: 'weekly' },
+    { path: '/register', priority: '0.6', changefreq: 'monthly' },
+    { path: '/about', priority: '0.4', changefreq: 'monthly' },
+    { path: '/contact', priority: '0.4', changefreq: 'monthly' },
     ...staticRegions.map((region) => ({
       path: `/regions/${region.slug}`,
       priority: '0.8',
+      changefreq: 'weekly' as const,
     })),
     ...staticCities.flatMap((city) => {
       const regionSlug = regionSlugById.get(city.regionId)
       return regionSlug
-        ? [{ path: `/regions/${regionSlug}/${city.slug}`, priority: '0.9' }]
+        ? [{ path: `/regions/${regionSlug}/${city.slug}`, priority: '0.9', changefreq: 'daily' as const }]
         : []
     }),
     ...staticDistricts.map((district) => ({
       path: `/yerevan/${district.slug}`,
       priority: '0.9',
+      changefreq: 'daily' as const,
     })),
     ...towTruckSlugs.map((slug) => ({
       path: `/tow-trucks/${slug}`,
       priority: '0.7',
+      changefreq: 'weekly' as const,
     })),
   ]
 }
 
 export default defineEventHandler(async (event) => {
   const towTruckSlugs = await getTowTruckSlugs(event)
+  const today = new Date().toISOString().slice(0, 10)
   const urls = buildEntries(towTruckSlugs)
     .map(
       (entry) =>
-        `  <url><loc>${SITE_URL}${entry.path}</loc><priority>${entry.priority}</priority></url>`,
+        `  <url><loc>${SITE_URL}${entry.path}</loc><lastmod>${today}</lastmod><changefreq>${entry.changefreq}</changefreq><priority>${entry.priority}</priority></url>`,
     )
     .join('\n')
 

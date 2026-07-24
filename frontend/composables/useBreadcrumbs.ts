@@ -16,6 +16,8 @@ const YEREVAN: BreadcrumbItem = { label: 'Երևան', to: getYerevanRoute() }
 export function useBreadcrumbs() {
   const forRegions = (): BreadcrumbItem[] => [HOME, { label: 'Մարզեր' }]
 
+  const forFreeRoutes = (): BreadcrumbItem[] => [HOME, { label: 'Ազատ երթուղիներ' }]
+
   const forRegion = (region: Pick<Region, 'name'>): BreadcrumbItem[] => [
     HOME,
     { label: 'Մարզեր', to: getRegionsRoute() },
@@ -54,5 +56,5 @@ export function useBreadcrumbs() {
     return trail
   }
 
-  return { forRegions, forRegion, forCity, forYerevan, forDistrict, forTowTruck }
+  return { forRegions, forFreeRoutes, forRegion, forCity, forYerevan, forDistrict, forTowTruck }
 }

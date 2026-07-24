@@ -7,6 +7,7 @@ export const NAV_LINKS: NavLink[] = [
   { label: 'Գլխավոր', to: '/' },
   { label: 'Մարզեր', to: '/regions' },
   { label: 'Երևան', to: '/yerevan' },
+  { label: 'Ազատ երթուղիներ', to: '/free-routes' },
   { label: 'Ինչպես է աշխատում', to: '/#how-it-works' },
 ]
 

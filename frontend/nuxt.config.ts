@@ -23,7 +23,10 @@ export default defineNuxtConfig({
   },
 
   image: {
-    domains: ['picsum.photos'],
+    // picsum.photos is only used by local mock data. The real domain is your
+    // Supabase project's storage host (from backend/.env SUPABASE_URL) — without
+    // it listed here, @nuxt/image's IPX provider won't optimize production photos.
+    domains: ['picsum.photos', 'xmdgvutudwciacyfnzat.supabase.co'],
   },
 
   runtimeConfig: {

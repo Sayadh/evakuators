@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { SERVICE_LABELS } from '~/constants/services'
+import { SERVICE_CATEGORIES } from '~/constants/services'
 import { SITE_NAME } from '~/constants/site'
 import { myTowTruckRepository, type UpdateMyTowTruckPayload } from '~/repositories'
 import { useDriverAuthStore } from '~/stores/driverAuth'
-import { ServiceType } from '~/types/enums'
+import type { ServiceType } from '~/types/enums'
 import type { TowTruck } from '~/types/towTruck'
 
 useSeoMetaData({
@@ -28,7 +28,6 @@ const form = reactive({
   whatsapp: '',
   telegram: '',
   email: '',
-  works24Hours: false,
   description: '',
   services: [] as ServiceType[],
   priceCityCallout: '',
@@ -42,20 +41,11 @@ const saving = ref(false)
 const saveError = ref('')
 const saveSuccess = ref(false)
 
-const allServices = Object.values(ServiceType)
-
-function toggleService(service: ServiceType): void {
-  form.services = form.services.includes(service)
-    ? form.services.filter((item) => item !== service)
-    : [...form.services, service]
-}
-
 function fillFormFromTruck(data: TowTruck): void {
   form.secondaryPhone = data.secondaryPhone ?? ''
   form.whatsapp = data.whatsapp ?? ''
   form.telegram = data.telegram ?? ''
   form.email = data.email ?? ''
-  form.works24Hours = data.works24Hours
   form.description = data.description
   form.services = [...data.services]
   form.priceCityCallout = data.pricing?.cityCallout?.toString() ?? ''
@@ -97,7 +87,6 @@ async function submit(): Promise<void> {
       whatsapp: form.whatsapp.trim() || undefined,
       telegram: form.telegram.trim() || undefined,
       email: form.email.trim() || undefined,
-      works24Hours: form.works24Hours,
       description: form.description.trim(),
       services: form.services,
       priceCityCallout: toOptionalInt(form.priceCityCallout),
@@ -146,7 +135,6 @@ async function logout(): Promise<void> {
           <AppInput v-model="form.whatsapp" type="tel" label="WhatsApp" />
           <AppInput v-model="form.telegram" label="Telegram username" />
           <AppInput v-model="form.email" type="email" label="Email" />
-          <AppCheckbox v-model="form.works24Hours" label="Աշխատում եմ շուրջօրյա (24/7)" />
         </fieldset>
 
         <fieldset class="dashboard-section">
@@ -156,15 +144,7 @@ async function logout(): Promise<void> {
 
         <fieldset class="dashboard-section">
           <legend>Ծառայություններ</legend>
-          <div class="dashboard-services">
-            <AppCheckbox
-              v-for="service in allServices"
-              :key="service"
-              :model-value="form.services.includes(service)"
-              :label="SERVICE_LABELS[service]"
-              @update:model-value="toggleService(service)"
-            />
-          </div>
+          <ServiceCategoryPicker v-model="form.services" :categories="SERVICE_CATEGORIES" mode="form" />
         </fieldset>
 
         <fieldset class="dashboard-section">
@@ -187,6 +167,15 @@ async function logout(): Promise<void> {
           {{ saving ? 'Պահպանվում է…' : 'Պահպանել' }}
         </AppButton>
       </form>
+
+      <section class="dashboard-section dashboard-section--routes">
+        <h2>Ազատ երթուղիներ</h2>
+        <p class="dashboard-hint">
+          Մեկնում եք ինչ-որ ուղղությամբ դատարկ։ Հրապարակեք երթուղին, և հաճախորդները, ովքեր շարժվում
+          են նույն ուղղությամբ, կկարողանան կապվել ձեզ հետ։
+        </p>
+        <FreeRoutesManager :vehicle-type="truck.vehicle.type" />
+      </section>
     </template>
   </div>
 </template>
@@ -230,10 +219,16 @@ async function logout(): Promise<void> {
   }
 }
 
-.dashboard-services {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: var(--space-1);
+.dashboard-section--routes {
+  margin-top: var(--space-6);
+
+  h2 {
+    margin: 0;
+  }
+
+  .dashboard-hint {
+    margin-bottom: 0;
+  }
 }
 
 .dashboard-error {

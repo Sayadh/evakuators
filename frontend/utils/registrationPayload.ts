@@ -18,7 +18,6 @@ export interface RegistrationFormState {
   platformDimensions: string
   winch: boolean
   manipulator: boolean
-  works24Hours: boolean
   mainRegionSlug: string
   citySlugs: string[]
   services: string[]
@@ -56,11 +55,10 @@ export function buildRegistrationPayload(
     vehicleModel: optionalString(form.model),
     vehicleYear: Number(form.year),
     vehicleType: form.vehicleType,
-    capacityRange: optionalString(form.capacity),
+    capacityRange: form.capacity.trim(),
     platformDimensions: optionalString(form.platformDimensions),
     winch: form.winch,
     manipulator: form.manipulator,
-    works24Hours: form.works24Hours,
     mainRegionSlug: form.mainRegionSlug,
     citySlugs: form.citySlugs,
     services: form.services,

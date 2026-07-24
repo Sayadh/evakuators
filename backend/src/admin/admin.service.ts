@@ -6,6 +6,7 @@ import type { RegistrationWithImages } from '../registration/registration.reposi
 import { ReviewsRepository, ReviewWithTruck } from '../reviews/reviews.repository'
 import { SupabaseStorageService } from '../storage/supabase-storage.service'
 import { TelegramService } from '../telegram/telegram.service'
+import { AVAILABLE_24_7_SLUG } from '../tow-trucks/service-slugs'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
 import { AdminTowTruckSummary, toAdminTowTruckSummary } from './admin-tow-truck.mapper'
 import type { ApproveRegistrationDto } from './dto/approve-registration.dto'
@@ -66,7 +67,9 @@ export class AdminService {
           whatsapp: request.whatsapp ?? request.phone,
           telegram: request.telegram,
           email: request.email,
-          works24Hours: request.works24Hours,
+          // Derived from the services the driver picked — see service-slugs.ts.
+          // RegistrationRequest never stores this as its own column.
+          works24Hours: request.services.includes(AVAILABLE_24_7_SLUG),
           description: dto.description ?? DEFAULT_DESCRIPTION(dto.locationName),
           vehicleBrand: request.vehicleBrand,
           vehicleModel: request.vehicleModel,

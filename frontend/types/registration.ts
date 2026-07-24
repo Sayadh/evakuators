@@ -22,7 +22,6 @@ export interface RegistrationVehicleData {
   platformDimensions: string
   winch: boolean
   manipulator: boolean
-  works24Hours: boolean
 }
 
 export interface RegistrationAreasData {

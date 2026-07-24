@@ -14,11 +14,10 @@ export interface RegistrationPayload {
   vehicleModel?: string
   vehicleYear: number
   vehicleType: string
-  capacityRange?: string
+  capacityRange: string
   platformDimensions?: string
   winch: boolean
   manipulator: boolean
-  works24Hours: boolean
   mainRegionSlug: string
   citySlugs: string[]
   services: string[]

@@ -18,6 +18,7 @@ import type { AdminTowTruckSummary } from './admin-tow-truck.mapper'
 import { AdminService } from './admin.service'
 import { ApproveRegistrationDto } from './dto/approve-registration.dto'
 import { SetTowTruckActiveDto } from './dto/set-tow-truck-active.dto'
+import { SetTowTruckFeaturedDto } from './dto/set-tow-truck-featured.dto'
 
 /** Moderation endpoints — every route requires a valid admin JWT (see AdminAuthModule) */
 @UseGuards(AdminJwtGuard)
@@ -81,6 +82,15 @@ export class AdminController {
     @Body() dto: SetTowTruckActiveDto,
   ): Promise<{ id: number; isActive: boolean }> {
     return this.adminService.setTowTruckActive(id, dto.isActive)
+  }
+
+  /** Toggle the homepage "best tow trucks" pick — purely editorial */
+  @Patch('tow-trucks/:id/featured')
+  setFeatured(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SetTowTruckFeaturedDto,
+  ): Promise<{ id: number; isFeatured: boolean }> {
+    return this.adminService.setTowTruckFeatured(id, dto.isFeatured)
   }
 
   /** Permanently deletes the tow truck + its images/reviews/OTPs. Irreversible. */

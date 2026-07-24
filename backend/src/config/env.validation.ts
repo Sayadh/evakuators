@@ -16,6 +16,17 @@ const envSchema = z.object({
 
   // Admin panel login (see User model, role ADMIN)
   ADMIN_JWT_SECRET: z.string().min(16, 'ADMIN_JWT_SECRET must be at least 16 characters'),
+
+  // Admin 2FA + registration notifications — a SEPARATE dedicated bot from
+  // the driver one. Optional on purpose: unset means admin login stays
+  // single-factor (see AdminTelegramService.isConfigured), so a fresh deploy
+  // never fails to boot just because this hasn't been set up yet.
+  ADMIN_TELEGRAM_BOT_TOKEN: z.string().optional().default(''),
+  ADMIN_TELEGRAM_BOT_USERNAME: z.string().optional().default(''),
+  ADMIN_TELEGRAM_WEBHOOK_SECRET: z.string().optional().default(''),
+  // Comma-separated numeric chat ids — locks the admin bot to specific
+  // Telegram accounts only. Empty = unrestricted (any valid link token works).
+  ADMIN_TELEGRAM_ALLOWED_CHAT_IDS: z.string().optional().default(''),
 })
 
 export type Env = z.infer<typeof envSchema>

@@ -66,6 +66,8 @@ export interface AdminTowTruck {
   companyName?: string
   phone: string
   isActive: boolean
+  /** Admin-curated "best tow trucks" homepage pick */
+  isFeatured: boolean
   vehicleBrand: string
   vehicleModel?: string
   vehicleYear: number
@@ -141,6 +143,15 @@ export const adminRepository = {
     return apiFetch<{ id: number; isActive: boolean }>(`/admin/tow-trucks/${id}/active`, {
       method: 'PATCH',
       body: { isActive },
+      headers: authHeader(),
+    })
+  },
+
+  /** Toggle whether this truck shows in the homepage "best tow trucks" section */
+  setTowTruckFeatured(id: number, isFeatured: boolean): Promise<{ id: number; isFeatured: boolean }> {
+    return apiFetch<{ id: number; isFeatured: boolean }>(`/admin/tow-trucks/${id}/featured`, {
+      method: 'PATCH',
+      body: { isFeatured },
       headers: authHeader(),
     })
   },

@@ -203,6 +203,23 @@ export class AdminService {
   }
 
   /**
+   * Marks/unmarks a tow truck as one of the homepage "best tow trucks" picks.
+   * Purely editorial — has no effect on public search/filter results, and an
+   * inactive truck stays hidden from the homepage regardless of this flag
+   * (see TowTrucksRepository.findFeatured).
+   */
+  async setTowTruckFeatured(
+    id: number,
+    isFeatured: boolean,
+  ): Promise<{ id: number; isFeatured: boolean }> {
+    const towTruck = await this.towTrucksRepository.findById(id)
+    if (!towTruck) throw new NotFoundException(`Էվակուատոր #${id}-ը չի գտնվել`)
+
+    const updated = await this.towTrucksRepository.setFeatured(id, isFeatured)
+    return { id: updated.id, isFeatured: updated.isFeatured }
+  }
+
+  /**
    * Permanently deletes a tow truck and everything that belongs to it:
    * images (DB row + the actual Supabase Storage files), reviews, and any
    * pending driver-login OTPs. DB-side relations cascade automatically

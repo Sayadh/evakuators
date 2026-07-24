@@ -27,6 +27,55 @@ letting an attacker enumerate valid admin emails by timing alone.
 independent of nginx — so the guard is the real security boundary even if
 nginx config changes or the app is accessed via an unexpected path.
 
+### Admin 2FA — a second, dedicated Telegram bot
+
+`POST /admin-auth/login` no longer always returns a token. Once an admin has
+linked Telegram (see below), password success returns `{ requiresCode: true }`
+instead, and the frontend must call `POST /admin-auth/verify-code` with the
+6-digit code sent to that admin's Telegram before a JWT is issued
+(`AdminAuthService.verifyCode`, mirrors the driver OTP logic almost exactly:
+`AdminOtp` model, 5-minute TTL, 5 max attempts, `timingSafeEqual` compare).
+
+This uses a **separate bot** from the driver-facing one
+(`ADMIN_TELEGRAM_BOT_TOKEN` / `_BOT_USERNAME` / `_WEBHOOK_SECRET`, all
+independent from the `TELEGRAM_*` driver bot vars) — see
+`AdminTelegramService`, `AdminTelegramWebhookController`
+(`POST /admin-telegram/webhook`). Fully optional: if unconfigured,
+`AdminTelegramService.isConfigured` is `false`, `sendMessage()` is a no-op,
+and login stays single-factor exactly like before this feature existed.
+
+Linking an admin's Telegram (equivalent of the driver's approval-time
+link-generation, but manual since there's no admin-of-the-admin UI):
+
+```bash
+npm run admin:telegram-link -- admin@evakuators.am
+```
+
+prints a one-time `t.me/<bot>?start=<token>` link (7-day expiry, same
+token/expiry/unique-constraint-safe-linking pattern as
+`TowTrucksRepository.linkTelegramChat` — see
+`AdminUserRepository.linkTelegramChat`). The admin taps it, the webhook links
+`User.telegramChatId`, and from that login onward `requiresCode` is always
+`true` for that account. A freshly `admin:create`-d account that hasn't
+linked yet is deliberately never locked out — 2FA only turns on once linked.
+
+`ADMIN_TELEGRAM_ALLOWED_CHAT_IDS` (comma-separated numeric chat ids) locks the
+bot down further: `AdminTelegramWebhookController` checks it before anything
+else, even before parsing `/start` or touching the DB — a disallowed chat
+gets no reaction whatsoever (no reply, just a server-side log line), so it
+can't even confirm the bot exists or does anything. This means a leaked or
+guessed link token from `admin:telegram-link` is still useless to anyone
+whose chat id isn't on the list. Empty (default) = unrestricted, so this is
+opt-in hardening on top of the token, not a replacement for it.
+
+The same bot also fires a best-effort notification
+(`AdminNotificationService.notifyNewRegistration`, called from
+`RegistrationService.submit`) to every linked admin whenever a new
+registration request comes in — name, phone, vehicle, and a button back to
+`/admin`. No geography in the message (backend has none — see CLAUDE.md);
+open the panel for full details. A Telegram failure here is logged and
+swallowed, it never fails the registration submission itself.
+
 ## Driver auth — Telegram OTP
 
 This is the more involved one. Two separate steps happen at very different

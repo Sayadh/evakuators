@@ -12,6 +12,12 @@ export class TowTrucksController {
     return this.towTrucksService.list(query)
   }
 
+  // Must come before ':slug' — otherwise Nest would match "featured" as a slug.
+  @Get('featured')
+  getFeatured(): Promise<TowTruckApi[]> {
+    return this.towTrucksService.getFeatured()
+  }
+
   @Get(':slug')
   getBySlug(@Param('slug') slug: string): Promise<TowTruckApi> {
     return this.towTrucksService.getBySlug(slug)

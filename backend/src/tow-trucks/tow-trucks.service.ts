@@ -27,4 +27,10 @@ export class TowTrucksService {
     }
     return toTowTruckApi(truck)
   }
+
+  /** Admin-curated picks — empty array when the admin hasn't marked any */
+  async getFeatured(): Promise<TowTruckApi[]> {
+    const trucks = await this.repository.findFeatured()
+    return trucks.map(toTowTruckApi)
+  }
 }

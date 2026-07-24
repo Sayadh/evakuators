@@ -40,6 +40,19 @@ export class TowTrucksRepository {
   }
 
   /**
+   * Admin-curated "best tow trucks" for the homepage. Active trucks only —
+   * an admin marking a truck featured doesn't override a deactivation.
+   * Empty when nothing is marked; the frontend hides the whole section then.
+   */
+  findFeatured(): Promise<TowTruckWithImages[]> {
+    return this.prisma.towTruck.findMany({
+      where: { isActive: true, isFeatured: true },
+      include: { images: true },
+      orderBy: { createdAt: 'desc' },
+    })
+  }
+
+  /**
    * Matches ONLY the main `phone` column (never `secondaryPhone`) on active
    * trucks. The main phone is the sole driver-login key (see
    * DriverAuthService) and is enforced unique across active trucks at
@@ -105,6 +118,10 @@ export class TowTrucksRepository {
 
   setActive(id: number, isActive: boolean): Promise<TowTruck> {
     return this.prisma.towTruck.update({ where: { id }, data: { isActive } })
+  }
+
+  setFeatured(id: number, isFeatured: boolean): Promise<TowTruck> {
+    return this.prisma.towTruck.update({ where: { id }, data: { isFeatured } })
   }
 
   /**

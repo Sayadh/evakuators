@@ -91,6 +91,24 @@ Remember: this webhook URL is **global for the whole bot** — see
 matters when debugging Telegram-related reports (they might be an artifact
 of testing against the wrong environment, not a real bug).
 
+### Admin bot (2FA + new-registration alerts) — optional, separate bot
+
+If `ADMIN_TELEGRAM_BOT_TOKEN` etc. are set (see `docs/auth-and-security.md`),
+this is a **different bot** than the driver one above, with its own webhook:
+
+```bash
+curl "https://api.telegram.org/bot<ADMIN_TELEGRAM_BOT_TOKEN>/setWebhook?url=https://api.evakuators.am/api/v1/admin-telegram/webhook&secret_token=<ADMIN_TELEGRAM_WEBHOOK_SECRET>"
+```
+
+Then, per admin account that should get 2FA + notifications:
+
+```bash
+cd backend && npm run admin:telegram-link -- admin@evakuators.am
+```
+
+and tap the printed link. Skippable entirely — leave the `ADMIN_TELEGRAM_*`
+vars blank and admin login stays single-factor (password only).
+
 ## Environment variables reference (backend)
 
 All validated at boot by `backend/src/config/env.validation.ts` (zod) except
@@ -111,7 +129,11 @@ wrong link in Telegram messages.
 | `TELEGRAM_BOT_USERNAME` | yes | Without the `@` |
 | `TELEGRAM_WEBHOOK_SECRET` | yes | Random string, checked with `timingSafeEqual` against Telegram's header |
 | `DRIVER_JWT_SECRET` | yes, min 16 chars | Also used as the OTP hashing pepper |
-| `ADMIN_JWT_SECRET` | yes, min 16 chars | Deliberately separate from `DRIVER_JWT_SECRET` |
+| `ADMIN_JWT_SECRET` | yes, min 16 chars | Deliberately separate from `DRIVER_JWT_SECRET`; also the admin OTP hashing pepper |
+| `ADMIN_TELEGRAM_BOT_TOKEN` | no, default `''` | Separate bot from `TELEGRAM_BOT_TOKEN` — admin 2FA + registration alerts. Blank = feature off, login stays single-factor |
+| `ADMIN_TELEGRAM_BOT_USERNAME` | no, default `''` | Without the `@` |
+| `ADMIN_TELEGRAM_WEBHOOK_SECRET` | no, default `''` | Same `timingSafeEqual` pattern as `TELEGRAM_WEBHOOK_SECRET` |
+| `ADMIN_TELEGRAM_ALLOWED_CHAT_IDS` | no, default `''` | Comma-separated chat ids; anyone else is silently ignored by the bot. Blank = unrestricted |
 
 ## Environment variables reference (frontend)
 

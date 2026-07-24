@@ -13,6 +13,8 @@ export interface AdminTowTruckSummary {
   companyName?: string
   phone: string
   isActive: boolean
+  /** Admin-curated "best tow trucks" homepage pick — see AdminService.setTowTruckFeatured */
+  isFeatured: boolean
   vehicleBrand: string
   vehicleModel?: string
   vehicleYear: number
@@ -30,6 +32,7 @@ export function toAdminTowTruckSummary(truck: TowTruckWithImages): AdminTowTruck
     companyName: truck.companyName ?? undefined,
     phone: truck.phone,
     isActive: truck.isActive,
+    isFeatured: truck.isFeatured,
     vehicleBrand: truck.vehicleBrand,
     vehicleModel: truck.vehicleModel ?? undefined,
     vehicleYear: truck.vehicleYear,

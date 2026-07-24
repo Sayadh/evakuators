@@ -104,7 +104,15 @@ export const towTrucksService = {
     )
   },
 
+  /**
+   * Admin-curated "best tow trucks" pick (see /admin panel). Real backend:
+   * only trucks explicitly marked `isFeatured`, empty when the admin hasn't
+   * marked any — the homepage section then hides itself entirely. Mock mode
+   * has no such flag to read, so it falls back to a small illustrative
+   * sample for local/design preview only.
+   */
   async getFeatured(limit = 6): Promise<TowTruck[]> {
+    if (isApiEnabled()) return towTruckRepository.getFeatured()
     const trucks = await towTrucksService.getAll()
     return [...trucks].sort(by24Hours).slice(0, limit)
   },

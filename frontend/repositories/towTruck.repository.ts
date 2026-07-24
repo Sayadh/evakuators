@@ -26,6 +26,11 @@ export const towTruckRepository = {
     return apiFetch<TowTruck[]>('/tow-trucks', { query: { yerevan: true } })
   },
 
+  /** Admin-curated "best tow trucks" — empty array when the admin hasn't marked any */
+  getFeatured(): Promise<TowTruck[]> {
+    return apiFetch<TowTruck[]>('/tow-trucks/featured')
+  },
+
   async getBySlug(slug: string): Promise<TowTruck | null> {
     try {
       return await apiFetch<TowTruck>(`/tow-trucks/${slug}`)

@@ -34,8 +34,17 @@ useSeoMetaData({
 const apiEnabled = isApiEnabled()
 const adminAuth = useAdminAuthStore()
 
+/**
+ * Two-step login: password first, then (if this admin has linked Telegram —
+ * see backend `npm run admin:telegram-link`) a 6-digit code sent there.
+ * `requiresCode: false` means Telegram isn't linked yet, so login()
+ * already returns a usable token — see backend AdminAuthService.
+ */
+type LoginStep = 'credentials' | 'code'
+const loginStep = ref<LoginStep>('credentials')
 const loginEmail = ref('')
 const loginPassword = ref('')
+const loginCode = ref('')
 const loginSubmitting = ref(false)
 const loginError = ref('')
 
@@ -43,25 +52,57 @@ function isUnauthorized(error: unknown): boolean {
   return error instanceof FetchError && error.statusCode === 401
 }
 
-async function submitLogin(): Promise<void> {
+async function afterLogin(token: string): Promise<void> {
+  adminAuth.login(token)
+  await Promise.all([loadRegistrations(), loadReviews(), loadTowTrucks()])
+}
+
+async function submitCredentials(): Promise<void> {
   loginError.value = ''
   loginSubmitting.value = true
   try {
-    const session = await adminAuthRepository.login(loginEmail.value.trim(), loginPassword.value)
-    adminAuth.login(session.token)
+    const result = await adminAuthRepository.login(loginEmail.value.trim(), loginPassword.value)
+    if (result.requiresCode) {
+      loginStep.value = 'code'
+    } else {
+      await afterLogin(result.token)
+    }
   } catch (error) {
     loginError.value = isUnauthorized(error)
       ? 'Սխալ email կամ գաղտնաբառ։'
-      : 'Կապի սխալ, փորձիր կրկին։'
+      : extractErrorMessage(error, 'Կապի սխալ, փորձիր կրկին։')
+  } finally {
     loginSubmitting.value = false
-    return
   }
-  loginSubmitting.value = false
-  await Promise.all([loadRegistrations(), loadReviews(), loadTowTrucks()])
+}
+
+async function submitCode(): Promise<void> {
+  loginError.value = ''
+  loginSubmitting.value = true
+  try {
+    const session = await adminAuthRepository.verifyCode(loginEmail.value.trim(), loginCode.value.trim())
+    await afterLogin(session.token)
+  } catch (error) {
+    loginError.value = isUnauthorized(error)
+      ? 'Սխալ կոդ։'
+      : extractErrorMessage(error, 'Կապի սխալ, փորձիր կրկին։')
+  } finally {
+    loginSubmitting.value = false
+  }
+}
+
+function backToCredentials(): void {
+  loginStep.value = 'credentials'
+  loginCode.value = ''
+  loginError.value = ''
 }
 
 function logout(): void {
   adminAuth.logout()
+  loginStep.value = 'credentials'
+  loginEmail.value = ''
+  loginPassword.value = ''
+  loginCode.value = ''
   registrations.value = []
   reviews.value = []
   towTrucks.value = []
@@ -167,6 +208,21 @@ async function toggleTowTruckActive(truck: AdminTowTruck): Promise<void> {
   try {
     const updated = await adminRepository.setTowTruckActive(truck.id, nextActive)
     truck.isActive = updated.isActive
+  } catch (error) {
+    towTrucksError.value = extractErrorMessage(error, 'Կարգավիճակը փոխել չհաջողվեց։')
+  } finally {
+    actioningId.value = null
+  }
+}
+
+/** Purely editorial — shows/hides this truck in the homepage "best tow trucks" section */
+async function toggleTowTruckFeatured(truck: AdminTowTruck): Promise<void> {
+  const nextFeatured = !truck.isFeatured
+
+  actioningId.value = truck.id
+  try {
+    const updated = await adminRepository.setTowTruckFeatured(truck.id, nextFeatured)
+    truck.isFeatured = updated.isFeatured
   } catch (error) {
     towTrucksError.value = extractErrorMessage(error, 'Կարգավիճակը փոխել չհաջողվեց։')
   } finally {
@@ -387,13 +443,23 @@ async function rejectReview(review: AdminReview): Promise<void> {
     />
 
     <div v-else-if="!adminAuth.isLoggedIn" class="admin-login">
-      <form class="admin-login__form" @submit.prevent="submitLogin">
+      <form v-if="loginStep === 'credentials'" class="admin-login__form" @submit.prevent="submitCredentials">
         <AppInput v-model="loginEmail" type="email" label="Email" required />
         <AppInput v-model="loginPassword" type="password" label="Գաղտնաբառ" required />
         <p v-if="loginError" class="admin-error">{{ loginError }}</p>
         <AppButton type="submit" variant="success" block :disabled="loginSubmitting">
           {{ loginSubmitting ? 'Ստուգվում է…' : 'Մուտք' }}
         </AppButton>
+      </form>
+
+      <form v-else class="admin-login__form" @submit.prevent="submitCode">
+        <p class="admin-login__hint">Մուտքի կոդն ուղարկվեց Ձեր Telegram-ին։</p>
+        <AppInput v-model="loginCode" type="text" label="6-նիշանոց կոդ" placeholder="123456" required />
+        <p v-if="loginError" class="admin-error">{{ loginError }}</p>
+        <AppButton type="submit" variant="success" block :disabled="loginSubmitting">
+          {{ loginSubmitting ? 'Ստուգվում է…' : 'Հաստատել' }}
+        </AppButton>
+        <AppButton variant="ghost" block type="button" @click="backToCredentials">Հետ</AppButton>
       </form>
     </div>
 
@@ -573,9 +639,12 @@ async function rejectReview(review: AdminReview): Promise<void> {
                   <NuxtLink :to="`/tow-trucks/${truck.slug}`">/tow-trucks/{{ truck.slug }}</NuxtLink>
                 </p>
               </div>
-              <AppBadge :variant="truck.isActive ? 'success' : 'neutral'">
-                {{ truck.isActive ? 'Ակտիվ' : 'Ապաակտիվացված' }}
-              </AppBadge>
+              <div class="admin-card__badges">
+                <AppBadge :variant="truck.isActive ? 'success' : 'neutral'">
+                  {{ truck.isActive ? 'Ակտիվ' : 'Ապաակտիվացված' }}
+                </AppBadge>
+                <AppBadge v-if="truck.isFeatured" variant="accent">Լավագույններից</AppBadge>
+              </div>
             </header>
 
             <dl class="admin-card__grid">
@@ -609,6 +678,14 @@ async function rejectReview(review: AdminReview): Promise<void> {
                   @click="toggleTowTruckActive(truck)"
                 >
                   {{ truck.isActive ? 'Ապաակտիվացնել' : 'Ակտիվացնել' }}
+                </AppButton>
+                <AppButton
+                  variant="outline"
+                  size="sm"
+                  :disabled="actioningId === truck.id"
+                  @click="toggleTowTruckFeatured(truck)"
+                >
+                  {{ truck.isFeatured ? 'Հանել լավագույններից' : 'Ավելացնել լավագույններին' }}
                 </AppButton>
                 <AppButton
                   variant="outline"
@@ -706,6 +783,12 @@ async function rejectReview(review: AdminReview): Promise<void> {
     border-radius: var(--radius-lg);
     padding: var(--space-6);
   }
+
+  &__hint {
+    color: var(--color-text-secondary);
+    font-size: 0.9rem;
+    margin: 0;
+  }
 }
 
 .admin-section {
@@ -766,6 +849,13 @@ async function rejectReview(review: AdminReview): Promise<void> {
     color: var(--color-text-secondary);
     font-size: 0.9rem;
     margin: 0;
+  }
+
+  &__badges {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-shrink: 0;
   }
 
   &__text {

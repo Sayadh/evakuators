@@ -30,11 +30,13 @@ const id = useId()
 <style scoped lang="scss">
 .app-checkbox {
   display: flex;
-  align-items: center;
+  // flex-start (not center) so the box lines up with the first line of text
+  // when a long label wraps to 2-3 lines, instead of floating in the middle.
+  align-items: flex-start;
   gap: var(--space-2);
   cursor: pointer;
   user-select: none;
-  padding: var(--space-1) 0;
+  padding: var(--space-2) 0;
 
   &__input {
     position: absolute;
@@ -55,6 +57,8 @@ const id = useId()
     width: 22px;
     height: 22px;
     flex-shrink: 0;
+    // Optically centers the box against the label's first line of text
+    margin-top: 1px;
     border: 2px solid var(--color-border);
     border-radius: 6px;
     background: var(--color-surface);
@@ -71,6 +75,7 @@ const id = useId()
 
   &__label {
     font-size: 0.95rem;
+    line-height: 1.35;
   }
 }
 </style>

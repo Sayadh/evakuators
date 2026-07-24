@@ -34,16 +34,56 @@ function extractErrorMessage(err: unknown, fallback: string): string {
   return fallback
 }
 
+// Mirrors the backend's 45s per-phone cooldown (see DriverAuthService) so the
+// resend button visibly counts down instead of just erroring on click.
+const RESEND_COOLDOWN_SECONDS = 45
+const resendCooldown = ref(0)
+let resendTimer: ReturnType<typeof setInterval> | undefined
+
+function startResendCooldown(): void {
+  resendCooldown.value = RESEND_COOLDOWN_SECONDS
+  clearInterval(resendTimer)
+  resendTimer = setInterval(() => {
+    resendCooldown.value -= 1
+    if (resendCooldown.value <= 0) clearInterval(resendTimer)
+  }, 1000)
+}
+
+onUnmounted(() => clearInterval(resendTimer))
+
 async function submitPhone(): Promise<void> {
   error.value = ''
   submitting.value = true
   try {
     await driverAuthRepository.requestCode(phone.value.trim())
     step.value = 'code'
+    startResendCooldown()
   } catch (err) {
     error.value = extractErrorMessage(err, 'Կոդ ուղարկել չհաջողվեց, ստուգիր հեռախոսահամարը')
   } finally {
     submitting.value = false
+  }
+}
+
+const resending = ref(false)
+const resendSuccess = ref(false)
+
+/** Requesting a new code also invalidates any earlier one still shown in Telegram (see backend) */
+async function resendCode(): Promise<void> {
+  if (resendCooldown.value > 0) return
+
+  error.value = ''
+  resendSuccess.value = false
+  resending.value = true
+  try {
+    await driverAuthRepository.requestCode(phone.value.trim())
+    code.value = ''
+    resendSuccess.value = true
+    startResendCooldown()
+  } catch (err) {
+    error.value = extractErrorMessage(err, 'Կոդ ուղարկել չհաջողվեց, փորձիր կրկին')
+  } finally {
+    resending.value = false
   }
 }
 
@@ -65,6 +105,9 @@ function backToPhone(): void {
   step.value = 'phone'
   code.value = ''
   error.value = ''
+  resendSuccess.value = false
+  clearInterval(resendTimer)
+  resendCooldown.value = 0
 }
 </script>
 
@@ -110,8 +153,24 @@ function backToPhone(): void {
             required
           />
           <p v-if="error" class="login-error">{{ error }}</p>
+          <p v-else-if="resendSuccess" class="login-success">Նոր կոդն ուղարկվեց Ձեր Telegram-ին։</p>
           <AppButton type="submit" variant="success" block :disabled="submitting">
             {{ submitting ? 'Ստուգվում է…' : 'Մուտք' }}
+          </AppButton>
+          <AppButton
+            variant="outline"
+            block
+            type="button"
+            :disabled="resending || resendCooldown > 0"
+            @click="resendCode"
+          >
+            {{
+              resending
+                ? 'Ուղարկվում է…'
+                : resendCooldown > 0
+                  ? `Ուղարկել կրկին (${resendCooldown}վ)`
+                  : 'Ուղարկել կոդը կրկին'
+            }}
           </AppButton>
           <AppButton variant="ghost" block type="button" @click="backToPhone">
             Փոխել հեռախոսահամարը
@@ -156,6 +215,12 @@ function backToPhone(): void {
 
 .login-error {
   color: var(--color-danger);
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.login-success {
+  color: var(--color-success);
   margin: 0;
   font-size: 0.9rem;
 }

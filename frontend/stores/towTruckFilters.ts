@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { CapacityOption, ServiceType, SortOption } from '~/types/enums'
+import type { ServiceType, SortOption } from '~/types/enums'
 import type { TowTruckFilterState } from '~/types/filters'
 import { countActiveFilters, createDefaultFilterState } from '~/utils/towTruckFilters'
 
@@ -22,7 +22,7 @@ export const useTowTruckFiltersStore = defineStore('towTruckFilters', {
         ? this.services.filter((item) => item !== service)
         : [...this.services, service]
     },
-    setCapacity(capacity: CapacityOption | null) {
+    setCapacity(capacity: string | null) {
       this.capacity = this.capacity === capacity ? null : capacity
     },
     setSort(sort: SortOption) {

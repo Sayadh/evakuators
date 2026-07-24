@@ -4,7 +4,7 @@ import { staticCities } from '~/data/cities'
 import { staticDistricts } from '~/data/districts'
 import { SERVICE_LABELS } from '~/constants/services'
 import { SITE_NAME } from '~/constants/site'
-import { VEHICLE_TYPE_LABELS } from '~/constants/vehicles'
+import { representativeCapacityTons, VEHICLE_TYPE_LABELS } from '~/constants/vehicles'
 import {
   adminAuthRepository,
   adminRepository,
@@ -173,6 +173,38 @@ async function toggleTowTruckActive(truck: AdminTowTruck): Promise<void> {
   }
 }
 
+/**
+ * Also doubles as "change Telegram account": generateTelegramLink() always
+ * overwrites telegramLinkToken, and once the driver taps the fresh link,
+ * linkTelegramChat() unconditionally overwrites telegramChatId too — so the
+ * old Telegram account is silently replaced (it stops receiving OTP codes)
+ * the moment the new one is linked. No separate "unlink" step needed.
+ */
+async function resendTelegramLink(truck: AdminTowTruck): Promise<void> {
+  if (
+    truck.hasTelegramLinked &&
+    !confirm(
+      `Փոխե՞լ ${truck.driverName}-ի Telegram-ը։ Նոր link ուղարկելուց և driver-ի կողմից ` +
+        'սեղմելուց հետո հին Telegram-ը կդադարի աշխատել, մուտքի կոդերն այլևս այնտեղ չեն գա։',
+    )
+  ) {
+    return
+  }
+
+  actioningId.value = truck.id
+  try {
+    const result = await adminRepository.regenerateTelegramLink(truck.id)
+    telegramLinkUrl.value = result.telegramLinkUrl
+    telegramLinkCopied.value = false
+    telegramLinkModalTitle.value = truck.hasTelegramLinked ? 'Նոր Telegram link' : 'Telegram link'
+    telegramLinkModalOpen.value = true
+  } catch {
+    towTrucksError.value = 'Link-ը վերականգնել չհաջողվեց։'
+  } finally {
+    actioningId.value = null
+  }
+}
+
 /** Irreversible — deletes the truck, its images (DB + Supabase Storage), reviews and OTPs */
 async function deleteTowTruck(truck: AdminTowTruck): Promise<void> {
   const confirmed = confirm(
@@ -224,43 +256,28 @@ const approveModalOpen = ref(false)
 const approveTarget = ref<AdminRegistrationRequest | null>(null)
 const approveForm = reactive({
   slug: '',
-  capacityTons: '',
   locationName: '',
-  baseLocationSlug: '',
   description: '',
 })
 const approveError = ref('')
 const approveSubmitting = ref(false)
 const telegramLinkModalOpen = ref(false)
+const telegramLinkModalTitle = ref('')
 const telegramLinkUrl = ref('')
 const telegramLinkCopied = ref(false)
-
-const baseLocationOptions = computed(() =>
-  (approveTarget.value?.citySlugs ?? []).map((slug) => ({
-    value: slug,
-    label: cityOrDistrictLabel(slug),
-  })),
-)
 
 function openApprove(request: AdminRegistrationRequest): void {
   approveTarget.value = request
   approveForm.slug = ''
-  approveForm.capacityTons = ''
-  approveForm.baseLocationSlug = request.citySlugs[0] ?? ''
-  approveForm.locationName = approveForm.baseLocationSlug
-    ? cityOrDistrictLabel(approveForm.baseLocationSlug)
-    : ''
+  // Pre-filled as a starting suggestion from the driver's first service area —
+  // admin overwrites by hand when the truck's actual base differs (e.g. driver
+  // covers all of Yerevan but is usually parked in a specific district, or a
+  // village that isn't in our predefined city/district list at all).
+  approveForm.locationName = request.citySlugs[0] ? cityOrDistrictLabel(request.citySlugs[0]) : ''
   approveForm.description = ''
   approveError.value = ''
   approveModalOpen.value = true
 }
-
-watch(
-  () => approveForm.baseLocationSlug,
-  (slug) => {
-    if (slug) approveForm.locationName = cityOrDistrictLabel(slug)
-  },
-)
 
 async function submitApprove(): Promise<void> {
   if (!approveTarget.value) return
@@ -269,25 +286,32 @@ async function submitApprove(): Promise<void> {
     approveError.value = 'Slug-ը պետք է լինի լատինատառ, kebab-case (օր.՝ ashot-tow-service)'
     return
   }
-  const capacityTons = Number(approveForm.capacityTons)
-  if (!capacityTons || capacityTons < 0.5) {
-    approveError.value = 'Բեռնատարողությունը պետք է լինի 0.5 տոննայից ավելի'
-    return
-  }
   if (!approveForm.locationName.trim()) {
     approveError.value = 'Վայրի անվանումը պարտադիր է'
     return
   }
 
   const isYerevan = approveTarget.value.mainRegionSlug === 'yerevan'
+  // The driver already gave us everything else at registration — capacity as
+  // a range (see representativeCapacityTons) and the full service-area list
+  // (citySlugs). The admin only adds what registration *can't* provide: a
+  // unique slug and the truck's actual base location as free text.
+  const primarySlug = approveTarget.value.citySlugs[0]
   const payload: ApproveRegistrationPayload = {
     slug: approveForm.slug,
-    capacityTons,
+    capacityTons: representativeCapacityTons(approveTarget.value.capacityRange),
     locationName: approveForm.locationName.trim(),
     description: approveForm.description.trim() || undefined,
-    ...(isYerevan
-      ? { districtSlug: approveForm.baseLocationSlug || undefined }
-      : { citySlug: approveForm.baseLocationSlug || undefined }),
+    ...(isYerevan ? { districtSlug: primarySlug } : { citySlug: primarySlug }),
+    // Resolve each slug to its real Armenian name here — the backend has no
+    // geography data of its own (see schema.prisma), so if we sent raw
+    // slugs it would just store them as-is and the public profile would
+    // show "ashtarak" instead of "Աշտարակ".
+    serviceAreas: approveTarget.value.citySlugs.map((slug) => ({
+      slug,
+      name: cityOrDistrictLabel(slug),
+      type: isYerevan ? 'district' : 'city',
+    })),
   }
 
   approveSubmitting.value = true
@@ -299,6 +323,7 @@ async function submitApprove(): Promise<void> {
 
     telegramLinkUrl.value = result.telegramLinkUrl
     telegramLinkCopied.value = false
+    telegramLinkModalTitle.value = 'Պրոֆիլը ստեղծված է'
     telegramLinkModalOpen.value = true
   } catch (error) {
     approveError.value =
@@ -586,6 +611,14 @@ async function rejectReview(review: AdminReview): Promise<void> {
                   {{ truck.isActive ? 'Ապաակտիվացնել' : 'Ակտիվացնել' }}
                 </AppButton>
                 <AppButton
+                  variant="outline"
+                  size="sm"
+                  :disabled="actioningId === truck.id"
+                  @click="resendTelegramLink(truck)"
+                >
+                  {{ truck.hasTelegramLinked ? 'Փոխել Telegram-ը' : 'Ուղարկել Telegram link' }}
+                </AppButton>
+                <AppButton
                   variant="danger"
                   size="sm"
                   :disabled="actioningId === truck.id"
@@ -609,18 +642,11 @@ async function rejectReview(review: AdminReview): Promise<void> {
           required
         />
         <AppInput
-          v-model="approveForm.capacityTons"
-          type="number"
-          label="Բեռնատարողություն (տոննա)"
-          placeholder="3.5"
+          v-model="approveForm.locationName"
+          label="Որտե՞ղ է սովորաբար կանգնում (ցուցադրվում է պրոֆիլում և քարտերի վրա)"
+          placeholder="Օր.՝ Նոր Նորք, կամ ցանկում չեղած գյուղի անուն"
           required
         />
-        <AppSelect
-          v-model="approveForm.baseLocationSlug"
-          :options="baseLocationOptions"
-          :label="approveTarget?.mainRegionSlug === 'yerevan' ? 'Թաղամաս' : 'Քաղաք'"
-        />
-        <AppInput v-model="approveForm.locationName" label="Վայրի անվանում (ցուցադրվող)" required />
         <AppInput v-model="approveForm.description" label="Նկարագրություն (ոչ պարտադիր)" />
 
         <p v-if="approveError" class="admin-error">{{ approveError }}</p>
@@ -631,7 +657,7 @@ async function rejectReview(review: AdminReview): Promise<void> {
       </form>
     </AppModal>
 
-    <AppModal v-model="telegramLinkModalOpen" title="Պրոֆիլը ստեղծված է">
+    <AppModal v-model="telegramLinkModalOpen" :title="telegramLinkModalTitle">
       <p>
         Ուղարկիր այս link-ը վարորդին (Telegram/WhatsApp-ով) — մեկ սեղմումով նրա Telegram-ը
         կապակցվում է, հետո login-ի կոդերը կստանա այնտեղ։ Link-ը վավեր է 7 օր։

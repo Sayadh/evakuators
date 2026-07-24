@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useTowTruckFiltersStore } from '~/stores/towTruckFilters'
 import { SERVICE_CATEGORIES } from '~/constants/services'
-import { CAPACITY_OPTIONS } from '~/constants/vehicles'
+import { CAPACITY_RANGE_OPTIONS } from '~/constants/vehicles'
 import type { ServiceType } from '~/types/enums'
 
 const store = useTowTruckFiltersStore()
@@ -44,7 +44,7 @@ function onServicesUpdate(services: ServiceType[]): void {
     <fieldset class="filters__group">
       <legend class="filters__legend">Բեռնատարողություն</legend>
       <AppCheckbox
-        v-for="option in CAPACITY_OPTIONS"
+        v-for="option in CAPACITY_RANGE_OPTIONS"
         :key="option.value"
         :model-value="store.capacity === option.value"
         :label="option.label"

@@ -62,12 +62,6 @@ export enum VehicleType {
   HeavyDuty = 'heavy-duty',
 }
 
-export enum CapacityOption {
-  UpTo2 = 2,
-  UpTo5 = 5,
-  UpTo10 = 10,
-}
-
 export enum SortOption {
   Recommended = 'recommended',
   Price = 'price',

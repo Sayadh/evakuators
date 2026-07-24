@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useTowTruckFiltersStore } from '~/stores/towTruckFilters'
 import { SERVICE_LABELS } from '~/constants/services'
-import { CAPACITY_OPTIONS } from '~/constants/vehicles'
+import { CAPACITY_RANGE_OPTIONS } from '~/constants/vehicles'
 
 const store = useTowTruckFiltersStore()
 
@@ -24,7 +24,7 @@ const chips = computed<ActiveChip[]>(() => {
     })
 
   if (store.capacity !== null) {
-    const option = CAPACITY_OPTIONS.find((item) => item.value === store.capacity)
+    const option = CAPACITY_RANGE_OPTIONS.find((item) => item.value === store.capacity)
     if (option)
       result.push({
         key: 'capacity',

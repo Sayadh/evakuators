@@ -1,5 +1,6 @@
 import type { LocationQuery } from 'vue-router'
-import { CapacityOption, ServiceType, SortOption } from '~/types/enums'
+import { CAPACITY_RANGE_OPTIONS } from '~/constants/vehicles'
+import { ServiceType, SortOption } from '~/types/enums'
 import type { TowTruckFilterState } from '~/types/filters'
 import { createDefaultFilterState } from './towTruckFilters'
 
@@ -11,7 +12,7 @@ export function buildFilterQueryParams(
     '24h': filters.works24Hours ? '1' : undefined,
     manipulator: filters.manipulator ? '1' : undefined,
     services: filters.services.length > 0 ? filters.services.join(',') : undefined,
-    capacity: filters.capacity !== null ? String(filters.capacity) : undefined,
+    capacity: filters.capacity ?? undefined,
     sort: filters.sort !== SortOption.Recommended ? filters.sort : undefined,
   }
 }
@@ -36,8 +37,8 @@ export function parseFilterQueryParams(query: LocationQuery): TowTruckFilterStat
       .filter((service): service is ServiceType => validServices.has(service))
   }
 
-  const capacity = Number(parseQueryValue(query.capacity)) as CapacityOption
-  if ([CapacityOption.UpTo2, CapacityOption.UpTo5, CapacityOption.UpTo10].includes(capacity)) {
+  const capacity = parseQueryValue(query.capacity)
+  if (capacity && CAPACITY_RANGE_OPTIONS.some((option) => option.value === capacity)) {
     state.capacity = capacity
   }
 

@@ -70,6 +70,7 @@ export class TelegramWebhookController {
     const token = text.replace('/start', '').trim()
 
     if (!token) {
+      this.logger.warn(`/start with no token from chat ${chatId} (raw text: "${text}")`)
       await this.telegram.sendMessage(
         chatId,
         'Այս bot-ը օգտագործվում է Evakuators.am-ի վրա գրանցված վարորդների համար։ Անձնական link-ի կարիք ունեք admin-ից։',
@@ -79,6 +80,10 @@ export class TelegramWebhookController {
 
     const towTruck = await this.towTrucksRepository.findByTelegramLinkToken(token)
     if (!towTruck) {
+      // Logged in full (not just a prefix) on purpose — this is the only way
+      // to tell, after the fact, whether the token was stale (already
+      // overwritten by a newer regenerate) vs genuinely never issued.
+      this.logger.warn(`/start token not found or expired: "${token}" (chat ${chatId})`)
       await this.telegram.sendMessage(
         chatId,
         'Այս link-ը սխալ է կամ ժամկետանց։ Դիմեք Evakuators.am admin-ին նոր link ստանալու համար։',
@@ -91,6 +96,7 @@ export class TelegramWebhookController {
     await this.telegram.sendMessage(
       chatId,
       `Բարև, ${towTruck.driverName}։ Ձեր Telegram-ը հաջողությամբ կապակցվեց Evakuators.am-ի հետ։ Այսուհետ մուտքի կոդերը կստանաք այստեղ։`,
+      { text: 'Մուտք գործել', url: this.telegram.loginUrl },
     )
     this.logger.log(`Linked Telegram chat ${chatId} to TowTruck #${towTruck.id}`)
   }

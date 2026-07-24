@@ -41,6 +41,8 @@ export interface ApproveRegistrationPayload {
   citySlug?: string
   districtSlug?: string
   description?: string
+  /** Resolved Armenian names — the backend has no geography data of its own */
+  serviceAreas: { slug: string; name: string; type: 'city' | 'district' }[]
 }
 
 /** Mirrors backend ReviewWithTruck */

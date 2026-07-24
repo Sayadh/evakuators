@@ -1,4 +1,36 @@
-import { IsNumber, IsOptional, IsString, Matches, MaxLength, Min } from 'class-validator'
+import { Type } from 'class-transformer'
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  Min,
+  ValidateNested,
+} from 'class-validator'
+
+/**
+ * The backend has no geography data of its own — regions/cities/districts
+ * are static frontend constants (see schema.prisma). So the admin frontend
+ * resolves each citySlug to its real Armenian name (it already does this
+ * for display, via cityOrDistrictLabel()) and sends the resolved list here,
+ * instead of the backend fabricating `name: slug`.
+ */
+class ServiceAreaDto {
+  @IsString()
+  @MaxLength(40)
+  slug!: string
+
+  @IsString()
+  @MaxLength(80)
+  name!: string
+
+  @IsIn(['city', 'district'])
+  type!: 'city' | 'district'
+}
 
 /**
  * Data the moderator provides on approval — things the request itself
@@ -32,4 +64,10 @@ export class ApproveRegistrationDto {
   @IsString()
   @MaxLength(2000)
   description?: string
+
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => ServiceAreaDto)
+  serviceAreas!: ServiceAreaDto[]
 }

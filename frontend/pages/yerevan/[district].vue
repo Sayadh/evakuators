@@ -188,7 +188,7 @@ useJsonLd([
     gap: var(--space-5);
 
     @media (min-width: 1024px) {
-      grid-template-columns: 260px 1fr;
+      grid-template-columns: 300px 1fr;
       align-items: start;
     }
   }

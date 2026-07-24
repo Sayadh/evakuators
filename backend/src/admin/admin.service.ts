@@ -50,10 +50,12 @@ export class AdminService {
       throw new BadRequestException(`Registration request ${id} is already ${request.status}`)
     }
 
-    const serviceAreas = request.citySlugs.map((slug) => ({
-      slug,
-      name: slug,
-      type: request.mainRegionSlug === 'yerevan' ? 'district' : 'city',
+    // Resolved to real Armenian names by the admin frontend (no geography
+    // data lives in the backend) — see ServiceAreaDto in approve-registration.dto.ts
+    const serviceAreas = dto.serviceAreas.map((area) => ({
+      slug: area.slug,
+      name: area.name,
+      type: area.type,
     })) satisfies Prisma.InputJsonValue
 
     const towTruck = await this.prisma.$transaction(async (tx) => {
@@ -118,6 +120,11 @@ export class AdminService {
     const token = randomBytes(24).toString('hex')
     const expiresAt = new Date(Date.now() + TELEGRAM_LINK_TTL_DAYS * 24 * 60 * 60 * 1000)
     await this.towTrucksRepository.setTelegramLinkToken(towTruckId, token, expiresAt)
+    // Logged so a "link is invalid or expired" report can be cross-checked
+    // against what was actually issued (see TelegramWebhookController).
+    this.logger.log(
+      `Generated Telegram link token for TowTruck #${towTruckId}: "${token}" (expires ${expiresAt.toISOString()})`,
+    )
     return this.telegram.buildLinkUrl(token)
   }
 

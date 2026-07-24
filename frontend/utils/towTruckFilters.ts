@@ -1,3 +1,4 @@
+import { matchesCapacityRange } from '~/constants/vehicles'
 import { SortOption } from '~/types/enums'
 import type { TowTruck } from '~/types/towTruck'
 import type { TowTruckFilterState } from '~/types/filters'
@@ -15,7 +16,8 @@ export function createDefaultFilterState(): TowTruckFilterState {
 export function matchesFilters(truck: TowTruck, filters: TowTruckFilterState): boolean {
   if (filters.works24Hours && !truck.works24Hours) return false
   if (filters.manipulator && !truck.vehicle.manipulator) return false
-  if (filters.capacity !== null && truck.vehicle.capacityTons > filters.capacity) return false
+  if (filters.capacity !== null && !matchesCapacityRange(truck.vehicle.capacityTons, filters.capacity))
+    return false
   if (filters.services.length > 0) {
     const hasAll = filters.services.every((service) => truck.services.includes(service))
     if (!hasAll) return false

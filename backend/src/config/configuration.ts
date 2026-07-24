@@ -1,6 +1,7 @@
 export interface AppConfig {
   port: number
   corsOrigins: string[]
+  frontendUrl: string
   supabase: {
     url: string
     serviceRoleKey: string
@@ -22,6 +23,8 @@ export default (): AppConfig => ({
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean),
+  // Used to build the "Login" button link sent in Telegram messages.
+  frontendUrl: (process.env.FRONTEND_URL ?? 'https://evakuators.am').replace(/\/$/, ''),
   supabase: {
     url: process.env.SUPABASE_URL ?? '',
     serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',

@@ -55,6 +55,12 @@ export class DriverAuthService {
 
     this.lastRequestAt.set(phone, Date.now())
 
+    // Only the code we're about to send should ever be valid — otherwise a
+    // driver who scrolls back to an older Telegram message (or double-taps
+    // "send code") could enter a still-technically-unexpired older code and
+    // land in a confusing "wrong code" / mismatched state.
+    await this.otpRepository.invalidateActive(towTruck.id)
+
     const code = randomInt(100_000, 1_000_000).toString()
     const expiresAt = new Date(Date.now() + CODE_TTL_MINUTES * 60_000)
     await this.otpRepository.create(towTruck.id, this.hashCode(code), expiresAt)
@@ -62,6 +68,7 @@ export class DriverAuthService {
     await this.telegram.sendMessage(
       towTruck.telegramChatId,
       `Ձեր մուտքի կոդն է՝ ${code}\n\nԿոդը վավեր է ${CODE_TTL_MINUTES} րոպե։ Եթե դուք չեք խնդրել այս կոդը, անտեսեք այս հաղորդագրությունը։`,
+      { text: 'Մուտք գործել', url: this.telegram.loginUrl },
     )
   }
 

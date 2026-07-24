@@ -43,7 +43,7 @@ export class DriverAuthService {
       throw new BadRequestException('Խնդրում ենք սպասել մի քանի վայրկյան նոր կոդ խնդրելուց առաջ')
     }
 
-    const towTruck = await this.towTrucksRepository.findByPhone(phone)
+    const towTruck = await this.towTrucksRepository.findActiveByMainPhone(phone)
     if (!towTruck) {
       throw new NotFoundException('Այս հեռախոսահամարով պրոֆիլ չի գտնվել')
     }
@@ -73,7 +73,7 @@ export class DriverAuthService {
   }
 
   async verifyCode(phone: string, code: string): Promise<DriverSession> {
-    const towTruck = await this.towTrucksRepository.findByPhone(phone)
+    const towTruck = await this.towTrucksRepository.findActiveByMainPhone(phone)
     if (!towTruck) {
       throw new NotFoundException('Այս հեռախոսահամարով պրոֆիլ չի գտնվել')
     }

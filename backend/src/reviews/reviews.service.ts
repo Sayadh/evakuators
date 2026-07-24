@@ -25,7 +25,7 @@ export class ReviewsService {
   async create(towTruckId: number, dto: CreateReviewDto): Promise<ReviewApi> {
     const exists = await this.repository.towTruckExists(towTruckId)
     if (exists === 0) {
-      throw new NotFoundException(`Tow truck ${towTruckId} not found`)
+      throw new NotFoundException('Էվակուատորը չի գտնվել')
     }
 
     const review = await this.repository.create({

@@ -14,6 +14,12 @@ import type { ApproveRegistrationDto } from './dto/approve-registration.dto'
 const DEFAULT_DESCRIPTION = (locationName: string): string =>
   `Էվակուատորի ծառայություններ ${locationName}ում և հարակից բնակավայրերում։`
 
+const REGISTRATION_STATUS_LABELS: Record<RegistrationStatus, string> = {
+  [RegistrationStatus.PENDING]: 'սպասման մեջ',
+  [RegistrationStatus.APPROVED]: 'հաստատված',
+  [RegistrationStatus.REJECTED]: 'մերժված',
+}
+
 const TELEGRAM_LINK_TTL_DAYS = 7
 
 @Injectable()
@@ -45,9 +51,22 @@ export class AdminService {
       where: { id },
       include: { images: true },
     })
-    if (!request) throw new NotFoundException(`Registration request ${id} not found`)
+    if (!request) throw new NotFoundException(`Հայտ #${id}-ը չի գտնվել`)
     if (request.status !== RegistrationStatus.PENDING) {
-      throw new BadRequestException(`Registration request ${id} is already ${request.status}`)
+      throw new BadRequestException(
+        `Այս հայտն արդեն ${REGISTRATION_STATUS_LABELS[request.status]} է, կրկին հաստատել/մերժել հնարավոր չէ`,
+      )
+    }
+
+    // The main phone is the driver-login key (DriverAuthService looks a
+    // truck up by it) — two active trucks sharing one would make the second
+    // one unreachable at login (findFirst always resolves to the same row).
+    // A secondary phone is allowed to repeat, only the main one is guarded.
+    const phoneConflict = await this.towTrucksRepository.findActiveByMainPhone(request.phone)
+    if (phoneConflict) {
+      throw new BadRequestException(
+        `Այս հեռախոսահամարով (${request.phone}) արդեն կա ակտիվ էվակուատոր՝ «${phoneConflict.slug}»։ Հիմնական հեռախոսահամարը պետք է եզակի լինի։`,
+      )
     }
 
     // Resolved to real Armenian names by the admin frontend (no geography
@@ -130,7 +149,7 @@ export class AdminService {
 
   async reject(id: number): Promise<{ id: number; status: RegistrationStatus }> {
     const request = await this.prisma.registrationRequest.findUnique({ where: { id } })
-    if (!request) throw new NotFoundException(`Registration request ${id} not found`)
+    if (!request) throw new NotFoundException(`Հայտ #${id}-ը չի գտնվել`)
 
     const updated = await this.prisma.registrationRequest.update({
       where: { id },
@@ -152,9 +171,9 @@ export class AdminService {
 
   async approveReview(id: number): Promise<{ id: number; isApproved: boolean }> {
     const review = await this.reviewsRepository.findById(id)
-    if (!review) throw new NotFoundException(`Review ${id} not found`)
+    if (!review) throw new NotFoundException(`Կարծիք #${id}-ը չի գտնվել`)
     if (review.isApproved) {
-      throw new BadRequestException(`Review ${id} is already approved`)
+      throw new BadRequestException(`Կարծիք #${id}-ն արդեն հաստատված է`)
     }
 
     const updated = await this.reviewsRepository.approve(id)
@@ -164,7 +183,7 @@ export class AdminService {
   /** Rejecting a review deletes it — there is no public "rejected" state to show */
   async rejectReview(id: number): Promise<{ id: number }> {
     const review = await this.reviewsRepository.findById(id)
-    if (!review) throw new NotFoundException(`Review ${id} not found`)
+    if (!review) throw new NotFoundException(`Կարծիք #${id}-ը չի գտնվել`)
 
     await this.reviewsRepository.delete(id)
     return { id }
@@ -177,7 +196,7 @@ export class AdminService {
    */
   async setTowTruckActive(id: number, isActive: boolean): Promise<{ id: number; isActive: boolean }> {
     const towTruck = await this.towTrucksRepository.findById(id)
-    if (!towTruck) throw new NotFoundException(`TowTruck ${id} not found`)
+    if (!towTruck) throw new NotFoundException(`Էվակուատոր #${id}-ը չի գտնվել`)
 
     const updated = await this.towTrucksRepository.setActive(id, isActive)
     return { id: updated.id, isActive: updated.isActive }
@@ -193,7 +212,7 @@ export class AdminService {
    */
   async deleteTowTruck(id: number): Promise<{ id: number }> {
     const towTruck = await this.towTrucksRepository.findById(id)
-    if (!towTruck) throw new NotFoundException(`TowTruck ${id} not found`)
+    if (!towTruck) throw new NotFoundException(`Էվակուատոր #${id}-ը չի գտնվել`)
 
     if (towTruck.images.length > 0) {
       try {

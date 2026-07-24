@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { FetchError } from 'ofetch'
 import { SITE_NAME } from '~/constants/site'
 import { driverAuthRepository, isApiEnabled } from '~/repositories'
 import { useDriverAuthStore } from '~/stores/driverAuth'
+import { extractErrorMessage } from '~/utils/errors'
 import { armenianPhoneInputValue } from '~/utils/formatPhone'
 
 useSeoMetaData({
@@ -34,15 +34,6 @@ const phoneModel = computed<string>({
 const code = ref('')
 const submitting = ref(false)
 const error = ref('')
-
-function extractErrorMessage(err: unknown, fallback: string): string {
-  if (err instanceof FetchError) {
-    const data = err.data as { message?: string | string[] } | undefined
-    if (typeof data?.message === 'string') return data.message
-    if (Array.isArray(data?.message)) return data.message.join(', ')
-  }
-  return fallback
-}
 
 // Mirrors the backend's 45s per-phone cooldown (see DriverAuthService) so the
 // resend button visibly counts down instead of just erroring on click.

@@ -26,7 +26,7 @@ export class ImagesController {
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_UPLOAD_BYTES } }))
   upload(@UploadedFile() file?: Express.Multer.File): Promise<UploadedImageDto> {
     if (!file) {
-      throw new BadRequestException('File is required (multipart field "file")')
+      throw new BadRequestException('Նկարի ֆայլը բացակայում է')
     }
     return this.imagesService.upload(file)
   }

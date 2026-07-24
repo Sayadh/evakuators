@@ -5,6 +5,7 @@ import { myTowTruckRepository, type UpdateMyTowTruckPayload } from '~/repositori
 import { useDriverAuthStore } from '~/stores/driverAuth'
 import type { ServiceType } from '~/types/enums'
 import type { TowTruck } from '~/types/towTruck'
+import { extractErrorMessage } from '~/utils/errors'
 
 useSeoMetaData({
   title: `Իմ պրոֆիլը | ${SITE_NAME}`,
@@ -61,8 +62,8 @@ async function load(): Promise<void> {
   try {
     truck.value = await myTowTruckRepository.getMine()
     fillFormFromTruck(truck.value)
-  } catch {
-    loadError.value = 'Պրոֆիլը բեռնել չհաջողվեց։ Կրկին մուտք գործեք։'
+  } catch (error) {
+    loadError.value = extractErrorMessage(error, 'Պրոֆիլը բեռնել չհաջողվեց։ Կրկին մուտք գործեք։')
   } finally {
     loading.value = false
   }
@@ -98,8 +99,8 @@ async function submit(): Promise<void> {
     truck.value = await myTowTruckRepository.updateMine(payload)
     fillFormFromTruck(truck.value)
     saveSuccess.value = true
-  } catch {
-    saveError.value = 'Պահպանել չհաջողվեց, ստուգիր դաշտերը։'
+  } catch (error) {
+    saveError.value = extractErrorMessage(error, 'Պահպանել չհաջողվեց, ստուգիր դաշտերը։')
   } finally {
     saving.value = false
   }

@@ -16,6 +16,7 @@ import {
 } from '~/repositories'
 import { useAdminAuthStore } from '~/stores/adminAuth'
 import type { ServiceType, VehicleType } from '~/types/enums'
+import { extractErrorMessage } from '~/utils/errors'
 
 /**
  * Internal moderation panel — not linked from the public site and excluded
@@ -166,8 +167,8 @@ async function toggleTowTruckActive(truck: AdminTowTruck): Promise<void> {
   try {
     const updated = await adminRepository.setTowTruckActive(truck.id, nextActive)
     truck.isActive = updated.isActive
-  } catch {
-    towTrucksError.value = 'Կարգավիճակը փոխել չհաջողվեց։'
+  } catch (error) {
+    towTrucksError.value = extractErrorMessage(error, 'Կարգավիճակը փոխել չհաջողվեց։')
   } finally {
     actioningId.value = null
   }
@@ -198,8 +199,8 @@ async function resendTelegramLink(truck: AdminTowTruck): Promise<void> {
     telegramLinkCopied.value = false
     telegramLinkModalTitle.value = truck.hasTelegramLinked ? 'Նոր Telegram link' : 'Telegram link'
     telegramLinkModalOpen.value = true
-  } catch {
-    towTrucksError.value = 'Link-ը վերականգնել չհաջողվեց։'
+  } catch (error) {
+    towTrucksError.value = extractErrorMessage(error, 'Link-ը վերականգնել չհաջողվեց։')
   } finally {
     actioningId.value = null
   }
@@ -218,8 +219,8 @@ async function deleteTowTruck(truck: AdminTowTruck): Promise<void> {
   try {
     await adminRepository.deleteTowTruck(truck.id)
     towTrucks.value = towTrucks.value.filter((item) => item.id !== truck.id)
-  } catch {
-    towTrucksError.value = 'Ջնջել չհաջողվեց։'
+  } catch (error) {
+    towTrucksError.value = extractErrorMessage(error, 'Ջնջել չհաջողվեց։')
   } finally {
     actioningId.value = null
   }
@@ -244,8 +245,8 @@ async function rejectRegistration(request: AdminRegistrationRequest): Promise<vo
   try {
     await adminRepository.rejectRegistration(request.id)
     await loadRegistrations()
-  } catch {
-    registrationsError.value = 'Մերժել չհաջողվեց։'
+  } catch (error) {
+    registrationsError.value = extractErrorMessage(error, 'Մերժել չհաջողվեց։')
   } finally {
     actioningId.value = null
   }
@@ -326,8 +327,7 @@ async function submitApprove(): Promise<void> {
     telegramLinkModalTitle.value = 'Պրոֆիլը ստեղծված է'
     telegramLinkModalOpen.value = true
   } catch (error) {
-    approveError.value =
-      error instanceof Error ? error.message : 'Հաստատել չհաջողվեց, ստուգիր դաշտերը։'
+    approveError.value = extractErrorMessage(error, 'Հաստատել չհաջողվեց, ստուգիր դաշտերը։')
   } finally {
     approveSubmitting.value = false
   }
@@ -348,8 +348,8 @@ async function approveReview(review: AdminReview): Promise<void> {
   try {
     await adminRepository.approveReview(review.id)
     reviews.value = reviews.value.filter((item) => item.id !== review.id)
-  } catch {
-    reviewsError.value = 'Հաստատել չհաջողվեց։'
+  } catch (error) {
+    reviewsError.value = extractErrorMessage(error, 'Հաստատել չհաջողվեց։')
   } finally {
     actioningId.value = null
   }
@@ -362,8 +362,8 @@ async function rejectReview(review: AdminReview): Promise<void> {
   try {
     await adminRepository.rejectReview(review.id)
     reviews.value = reviews.value.filter((item) => item.id !== review.id)
-  } catch {
-    reviewsError.value = 'Ջնջել չհաջողվեց։'
+  } catch (error) {
+    reviewsError.value = extractErrorMessage(error, 'Ջնջել չհաջողվեց։')
   } finally {
     actioningId.value = null
   }

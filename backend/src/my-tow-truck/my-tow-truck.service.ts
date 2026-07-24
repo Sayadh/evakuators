@@ -11,7 +11,7 @@ export class MyTowTruckService {
 
   async getMine(towTruckId: number): Promise<TowTruckApi> {
     const towTruck = await this.towTrucksRepository.findById(towTruckId)
-    if (!towTruck) throw new NotFoundException('Profile not found')
+    if (!towTruck) throw new NotFoundException('Ձեր պրոֆիլը չի գտնվել')
     // The JWT itself never expires early — if admin deactivates a driver
     // (ban / removed from platform) their still-valid 30-day token must
     // stop working immediately, not just disappear from the public listing.

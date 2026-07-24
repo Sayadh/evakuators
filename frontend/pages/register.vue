@@ -11,6 +11,7 @@ import {
 import type { ServiceType, VehicleType } from '~/types/enums'
 import type { SelectOption } from '~/types/common'
 import { trackRegistrationSubmit } from '~/utils/analytics'
+import { extractErrorMessage } from '~/utils/errors'
 import { armenianPhoneInputValue } from '~/utils/formatPhone'
 import {
   isAmount,
@@ -275,8 +276,11 @@ async function onSubmit(): Promise<void> {
     trackRegistrationSubmit()
     isSuccessOpen.value = true
     resetForm()
-  } catch {
-    submitError.value = 'Չհաջողվեց ուղարկել հայտը։ Ստուգեք կապը և փորձեք կրկին։'
+  } catch (error) {
+    submitError.value = extractErrorMessage(
+      error,
+      'Չհաջողվեց ուղարկել հայտը։ Ստուգեք կապը և փորձեք կրկին։',
+    )
   } finally {
     isSubmitting.value = false
   }

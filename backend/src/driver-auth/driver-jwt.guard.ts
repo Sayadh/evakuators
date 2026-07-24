@@ -25,7 +25,7 @@ export class DriverJwtGuard implements CanActivate {
     const header = request.headers.authorization
 
     if (!header?.startsWith('Bearer ')) {
-      throw new UnauthorizedException('Missing bearer token')
+      throw new UnauthorizedException('Մուտք գործեք համակարգ շարունակելու համար')
     }
 
     try {
@@ -35,7 +35,7 @@ export class DriverJwtGuard implements CanActivate {
       request.towTruckId = payload.sub
       return true
     } catch {
-      throw new UnauthorizedException('Invalid or expired token')
+      throw new UnauthorizedException('Ձեր մուտքի ժամկետը սպառվել է, խնդրում ենք նորից մուտք գործել')
     }
   }
 }

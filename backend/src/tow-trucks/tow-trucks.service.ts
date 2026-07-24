@@ -23,7 +23,7 @@ export class TowTrucksService {
   async getBySlug(slug: string): Promise<TowTruckApi> {
     const truck = await this.repository.findBySlug(slug)
     if (!truck) {
-      throw new NotFoundException(`Tow truck "${slug}" not found`)
+      throw new NotFoundException('Էվակուատորը չի գտնվել')
     }
     return toTowTruckApi(truck)
   }

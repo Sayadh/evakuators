@@ -32,7 +32,7 @@ export class AdminJwtGuard implements CanActivate {
     const header = request.headers.authorization
 
     if (!header?.startsWith('Bearer ')) {
-      throw new UnauthorizedException('Missing bearer token')
+      throw new UnauthorizedException('Մուտք գործեք admin հաշվով շարունակելու համար')
     }
 
     try {
@@ -44,7 +44,7 @@ export class AdminJwtGuard implements CanActivate {
       request.adminUserId = payload.sub
       return true
     } catch {
-      throw new UnauthorizedException('Invalid or expired token')
+      throw new UnauthorizedException('Ձեր admin նստաշրջանի ժամկետը սպառվել է, մուտք գործեք կրկին')
     }
   }
 }

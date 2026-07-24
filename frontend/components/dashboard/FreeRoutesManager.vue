@@ -3,6 +3,7 @@ import { VEHICLE_TYPE_LABELS } from '~/constants/vehicles'
 import { myFreeRoutesRepository } from '~/repositories'
 import type { VehicleType } from '~/types/enums'
 import type { MyFreeRoute } from '~/types/freeRoute'
+import { extractErrorMessage } from '~/utils/errors'
 import { formatDepartureAt } from '~/utils/formatters'
 import { formatRouteLocation } from '~/utils/freeRouteLocation'
 import { required, validateField } from '~/utils/validators'
@@ -42,8 +43,8 @@ async function loadRoutes(): Promise<void> {
   loadError.value = ''
   try {
     routes.value = await myFreeRoutesRepository.getMine()
-  } catch {
-    loadError.value = 'Երթուղիները բեռնել չհաջողվեց։'
+  } catch (error) {
+    loadError.value = extractErrorMessage(error, 'Երթուղիները բեռնել չհաջողվեց։')
   } finally {
     loading.value = false
   }
@@ -131,8 +132,11 @@ async function submit(): Promise<void> {
 
     resetForm()
     await loadRoutes()
-  } catch {
-    saveError.value = 'Չհաջողվեց պահպանել երթուղին։ Ստուգեք դաշտերը և փորձեք կրկին։'
+  } catch (error) {
+    saveError.value = extractErrorMessage(
+      error,
+      'Չհաջողվեց պահպանել երթուղին։ Ստուգեք դաշտերը և փորձեք կրկին։',
+    )
   } finally {
     saving.value = false
   }
@@ -148,8 +152,8 @@ async function removeRoute(route: MyFreeRoute): Promise<void> {
     await myFreeRoutesRepository.remove(route.id)
     routes.value = routes.value.filter((item) => item.id !== route.id)
     if (editingId.value === route.id) resetForm()
-  } catch {
-    loadError.value = 'Ջնջել չհաջողվեց, փորձեք կրկին։'
+  } catch (error) {
+    loadError.value = extractErrorMessage(error, 'Ջնջել չհաջողվեց, փորձեք կրկին։')
   } finally {
     deletingId.value = null
   }

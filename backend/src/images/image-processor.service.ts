@@ -21,11 +21,11 @@ const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'im
 export class ImageProcessorService {
   async process(file: Express.Multer.File): Promise<ProcessedImage> {
     if (!ALLOWED_MIME_TYPES.has(file.mimetype)) {
-      throw new BadRequestException('Only JPEG, PNG, WebP or HEIC images are allowed')
+      throw new BadRequestException('Թույլատրվում են միայն JPEG, PNG, WebP կամ HEIC ձևաչափի նկարներ')
     }
 
     if (file.size > MAX_UPLOAD_BYTES) {
-      throw new BadRequestException('Image is too large (max 10 MB)')
+      throw new BadRequestException('Նկարը շատ մեծ է (առավելագույնը՝ 10 ՄԲ)')
     }
 
     let output: Buffer
@@ -41,7 +41,7 @@ export class ImageProcessorService {
         .webp({ quality: WEBP_QUALITY })
         .toBuffer()
     } catch {
-      throw new BadRequestException('File is not a valid image')
+      throw new BadRequestException('Ֆայլը վավեր նկար չէ')
     }
 
     const metadata = await sharp(output).metadata()

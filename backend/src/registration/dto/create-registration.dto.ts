@@ -18,12 +18,12 @@ const CURRENT_YEAR = new Date().getFullYear()
 export class CreateRegistrationDto {
   // Personal
   @IsString()
-  @MinLength(2)
+  @MinLength(2, { message: 'Անունը պետք է լինի առնվազն 2 նիշ' })
   @MaxLength(60)
   firstName!: string
 
   @IsString()
-  @MinLength(2)
+  @MinLength(2, { message: 'Ազգանունը պետք է լինի առնվազն 2 նիշ' })
   @MaxLength(60)
   lastName!: string
 
@@ -33,8 +33,8 @@ export class CreateRegistrationDto {
   companyName?: string
 
   @IsString()
-  @MinLength(8)
-  @MaxLength(20)
+  @MinLength(8, { message: 'Մուտքագրեք վավեր հեռախոսահամար' })
+  @MaxLength(20, { message: 'Մուտքագրեք վավեր հեռախոսահամար' })
   phone!: string
 
   @IsOptional()
@@ -53,12 +53,12 @@ export class CreateRegistrationDto {
   telegram?: string
 
   @IsOptional()
-  @IsEmail()
+  @IsEmail({}, { message: 'Մուտքագրեք վավեր email հասցե' })
   email?: string
 
   // Vehicle
   @IsString()
-  @MinLength(2)
+  @MinLength(2, { message: 'Մուտքագրեք մեքենայի մակնիշը' })
   @MaxLength(60)
   vehicleBrand!: string
 
@@ -67,9 +67,9 @@ export class CreateRegistrationDto {
   @MaxLength(60)
   vehicleModel?: string
 
-  @IsInt()
-  @Min(1980)
-  @Max(CURRENT_YEAR)
+  @IsInt({ message: 'Մուտքագրեք մեքենայի արտադրության տարեթիվը' })
+  @Min(1980, { message: 'Տարեթիվը պետք է լինի 1980-ից ավելի' })
+  @Max(CURRENT_YEAR, { message: `Տարեթիվը չի կարող ավելի ուշ լինել քան ${CURRENT_YEAR}` })
   vehicleYear!: number
 
   /** VehicleType slug from frontend constants */
@@ -98,13 +98,13 @@ export class CreateRegistrationDto {
   mainRegionSlug!: string
 
   @IsArray()
-  @ArrayMinSize(1)
+  @ArrayMinSize(1, { message: 'Ընտրեք առնվազն մեկ քաղաք/շրջան' })
   @IsString({ each: true })
   citySlugs!: string[]
 
   // Services — ServiceType slugs
   @IsArray()
-  @ArrayMinSize(1)
+  @ArrayMinSize(1, { message: 'Ընտրեք առնվազն մեկ ծառայություն' })
   @IsString({ each: true })
   services!: string[]
 

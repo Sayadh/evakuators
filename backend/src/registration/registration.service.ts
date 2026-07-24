@@ -14,7 +14,9 @@ export class RegistrationService {
   async submit(dto: CreateRegistrationDto): Promise<RegistrationCreatedDto> {
     const available = await this.repository.countUnattachedImages(dto.imageIds)
     if (available !== dto.imageIds.length) {
-      throw new BadRequestException('Some image ids are invalid or already used')
+      throw new BadRequestException(
+        'Նկարներից մեկը կամ մի քանիսը վավեր չեն կամ արդեն օգտագործված են։ Խնդրում ենք նորից վերբեռնել նկարները և կրկին ուղարկել հայտը։',
+      )
     }
 
     const { imageIds, ...data } = dto

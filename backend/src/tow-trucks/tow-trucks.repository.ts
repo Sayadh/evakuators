@@ -39,11 +39,17 @@ export class TowTrucksRepository {
     })
   }
 
-  /** Matches either the main or the secondary phone, exactly as stored */
-  findByPhone(phone: string): Promise<TowTruck | null> {
-    return this.prisma.towTruck.findFirst({
-      where: { OR: [{ phone }, { secondaryPhone: phone }], isActive: true },
-    })
+  /**
+   * Matches ONLY the main `phone` column (never `secondaryPhone`) on active
+   * trucks. The main phone is the sole driver-login key (see
+   * DriverAuthService) and is enforced unique across active trucks at
+   * approval time — `secondaryPhone` is explicitly allowed to repeat, so it
+   * must never be used to resolve which profile a login or lookup belongs
+   * to. Used both by driver login (request/verify code) and by the
+   * duplicate-main-phone check when approving a registration.
+   */
+  findActiveByMainPhone(phone: string): Promise<TowTruck | null> {
+    return this.prisma.towTruck.findFirst({ where: { phone, isActive: true } })
   }
 
   findByTelegramLinkToken(token: string): Promise<TowTruck | null> {

@@ -5,11 +5,12 @@ export const required =
   (value) =>
     value.trim().length > 0 || message
 
+/** Exact shape only — +374 followed by 8 digits, no spaces/dashes (e.g. +37493632003) */
 export const isPhone =
-  (message = 'Մուտքագրեք վավեր հեռախոսահամար (օր.՝ +374 91 00 00 01)'): ValidationRule =>
+  (message = 'Մուտքագրեք հեռախոսահամարը այս ձևաչափով՝ +37491000001'): ValidationRule =>
   (value) => {
     if (!value.trim()) return true
-    return /^\+?[\d\s()-]{8,17}$/.test(value.trim()) || message
+    return /^\+374\d{8}$/.test(value.trim()) || message
   }
 
 export const isEmail =

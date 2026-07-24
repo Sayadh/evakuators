@@ -63,11 +63,29 @@ export class TowTrucksRepository {
     })
   }
 
-  /** Consumes the link token and stores the chat id — one-time, then the token is gone */
+  /**
+   * Consumes the link token and stores the chat id — one-time, then the
+   * token is gone. telegramChatId is @unique, so if this Telegram account is
+   * still attached to a *different* TowTruck (a stale/test profile, or the
+   * driver relinking after being re-approved under a new profile), free it
+   * there first. Without this, the plain update() throws a unique-constraint
+   * PrismaClientKnownRequestError, which bubbles up as an uncaught 500 from
+   * the webhook endpoint — Telegram sees the failed response and marks the
+   * update as undelivered, and because we never got past the DB write, the
+   * driver never receives ANY reply, not even an error message. That 500 is
+   * exactly what showed up in `getWebhookInfo`'s `last_error_message` and in
+   * the PM2 logs when this was first reported.
+   */
   linkTelegramChat(id: number, chatId: bigint): Promise<TowTruck> {
-    return this.prisma.towTruck.update({
-      where: { id },
-      data: { telegramChatId: chatId, telegramLinkToken: null, telegramLinkTokenExpiresAt: null },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.towTruck.updateMany({
+        where: { telegramChatId: chatId, id: { not: id } },
+        data: { telegramChatId: null },
+      })
+      return tx.towTruck.update({
+        where: { id },
+        data: { telegramChatId: chatId, telegramLinkToken: null, telegramLinkTokenExpiresAt: null },
+      })
     })
   }
 

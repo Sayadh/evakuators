@@ -52,7 +52,26 @@ export class TelegramWebhookController {
     if (!text || chatId === undefined) return { ok: true }
 
     if (text.startsWith('/start')) {
-      await this.handleStart(text, chatId)
+      try {
+        await this.handleStart(text, chatId)
+      } catch (error) {
+        // A bug here must never surface as a failed HTTP response — Telegram
+        // records that as a failed delivery (visible in getWebhookInfo's
+        // last_error_message) and the driver receives NO reply whatsoever,
+        // not even an error message. This exact scenario happened once
+        // already (telegramChatId unique-constraint violation in
+        // linkTelegramChat, see tow-trucks.repository.ts). Always ack
+        // Telegram with 200 and tell the driver *something* broke, while
+        // logging the real error for `pm2 logs`.
+        const err = error as Error
+        this.logger.error(`handleStart failed for chat ${chatId}: ${err.message}`, err.stack)
+        await this.telegram
+          .sendMessage(
+            chatId,
+            'Ինչ-որ խնդիր առաջացավ։ Խնդրում ենք փորձել կրկին, կամ դիմել Evakuators.am admin-ին։',
+          )
+          .catch(() => undefined) // even the fallback message might fail to send — don't let that throw either
+      }
     }
 
     return { ok: true }

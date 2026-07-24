@@ -11,6 +11,7 @@ import {
 import type { ServiceType, VehicleType } from '~/types/enums'
 import type { SelectOption } from '~/types/common'
 import { trackRegistrationSubmit } from '~/utils/analytics'
+import { armenianPhoneInputValue } from '~/utils/formatPhone'
 import {
   isAmount,
   isEmail,
@@ -31,34 +32,42 @@ useSeoMetaData({
 
 const { data: regions } = useRegions()
 
-const form = reactive({
-  firstName: '',
-  lastName: '',
-  companyName: '',
-  phone: '',
-  secondaryPhone: '',
-  whatsapp: '',
-  telegram: '',
-  email: '',
-  brand: '',
-  model: '',
-  year: '',
-  vehicleType: '' as VehicleType | '',
-  capacity: '' as string,
-  platformDimensions: '',
-  winch: false,
-  manipulator: false,
-  mainRegionSlug: '',
-  citySlugs: [] as string[],
-  services: [] as ServiceType[],
-  priceCityCallout: '',
-  pricePerKm: '',
-  priceWaitingPerHour: '',
-  priceNightSurchargePercent: '',
-  priceExtraLoading: '',
-  mainImageName: '',
-  extraImageNames: [] as string[],
-})
+/** Factory (not a shared literal) so resetForm() below can get a fresh,
+ * independent copy of the defaults after a successful submission. */
+function createInitialFormState() {
+  return {
+    firstName: '',
+    lastName: '',
+    companyName: '',
+    // Pre-filled and locked to the +374 prefix (see armenianPhoneModel below) —
+    // the driver only ever types the 8 local digits.
+    phone: '+374',
+    secondaryPhone: '',
+    whatsapp: '',
+    telegram: '',
+    email: '',
+    brand: '',
+    model: '',
+    year: '',
+    vehicleType: '' as VehicleType | '',
+    capacity: '' as string,
+    platformDimensions: '',
+    winch: false,
+    manipulator: false,
+    mainRegionSlug: '',
+    citySlugs: [] as string[],
+    services: [] as ServiceType[],
+    priceCityCallout: '',
+    pricePerKm: '',
+    priceWaitingPerHour: '',
+    priceNightSurchargePercent: '',
+    priceExtraLoading: '',
+    mainImageName: '',
+    extraImageNames: [] as string[],
+  }
+}
+
+const form = reactive(createInitialFormState())
 
 const errors = reactive<Record<string, string>>({})
 
@@ -118,22 +127,55 @@ const vehicleTypeHints = VEHICLE_TYPE_OPTIONS.map((option) => ({
   description: VEHICLE_TYPE_DESCRIPTIONS[option.value],
 }))
 
+/** v-model wrapper that keeps a phone field locked to +374 + up to 8 digits */
+function armenianPhoneModel(key: 'phone' | 'secondaryPhone' | 'whatsapp') {
+  return computed<string>({
+    get: () => form[key],
+    set: (value) => {
+      form[key] = armenianPhoneInputValue(value)
+    },
+  })
+}
+
+const phoneModel = armenianPhoneModel('phone')
+const secondaryPhoneModel = armenianPhoneModel('secondaryPhone')
+const whatsappModel = armenianPhoneModel('whatsapp')
+
 const MAX_EXTRA_IMAGES = 5
+
+const mainImageInput = ref<HTMLInputElement | null>(null)
+const extraImagesInput = ref<HTMLInputElement | null>(null)
 
 const mainImageFile = shallowRef<File | null>(null)
 const extraImageFiles = shallowRef<File[]>([])
+
+// Local object URLs so the driver sees a thumbnail of what they picked
+// before it's ever uploaded — revoked on replace/unmount to avoid leaking.
+const mainImagePreview = ref<string | null>(null)
+const extraImagePreviews = ref<string[]>([])
 
 function onMainImageChange(event: Event): void {
   const input = event.target as HTMLInputElement
   mainImageFile.value = input.files?.[0] ?? null
   form.mainImageName = mainImageFile.value?.name ?? ''
+
+  if (mainImagePreview.value) URL.revokeObjectURL(mainImagePreview.value)
+  mainImagePreview.value = mainImageFile.value ? URL.createObjectURL(mainImageFile.value) : null
 }
 
 function onExtraImagesChange(event: Event): void {
   const input = event.target as HTMLInputElement
   extraImageFiles.value = Array.from(input.files ?? []).slice(0, MAX_EXTRA_IMAGES)
   form.extraImageNames = extraImageFiles.value.map((file) => file.name)
+
+  extraImagePreviews.value.forEach((url) => URL.revokeObjectURL(url))
+  extraImagePreviews.value = extraImageFiles.value.map((file) => URL.createObjectURL(file))
 }
+
+onBeforeUnmount(() => {
+  if (mainImagePreview.value) URL.revokeObjectURL(mainImagePreview.value)
+  extraImagePreviews.value.forEach((url) => URL.revokeObjectURL(url))
+})
 
 function validate(): boolean {
   errors.firstName = validateField(form.firstName, [required()]) ?? ''
@@ -173,6 +215,30 @@ const isSuccessOpen = ref(false)
 const isSubmitting = ref(false)
 const submitError = ref('')
 
+/** Wipes the whole form back to a blank state after a successful submission
+ * — fields, validation errors, selected files/previews, and the native file
+ * inputs themselves (clearing those needs a direct DOM reset, resetting the
+ * reactive state alone doesn't change what the browser shows in the input). */
+function resetForm(): void {
+  Object.assign(form, createInitialFormState())
+  Object.keys(errors).forEach((key) => {
+    errors[key] = ''
+  })
+
+  mainImageFile.value = null
+  extraImageFiles.value = []
+
+  if (mainImagePreview.value) URL.revokeObjectURL(mainImagePreview.value)
+  mainImagePreview.value = null
+  extraImagePreviews.value.forEach((url) => URL.revokeObjectURL(url))
+  extraImagePreviews.value = []
+
+  if (mainImageInput.value) mainImageInput.value.value = ''
+  if (extraImagesInput.value) extraImagesInput.value.value = ''
+
+  if (import.meta.client) window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
 /** Uploads the images through the backend, then submits the request */
 async function submitToApi(): Promise<void> {
   const files = [mainImageFile.value, ...extraImageFiles.value].filter(
@@ -199,6 +265,7 @@ async function onSubmit(): Promise<void> {
     // No backend configured — demo mode simply confirms the submission
     trackRegistrationSubmit()
     isSuccessOpen.value = true
+    resetForm()
     return
   }
 
@@ -207,6 +274,7 @@ async function onSubmit(): Promise<void> {
     await submitToApi()
     trackRegistrationSubmit()
     isSuccessOpen.value = true
+    resetForm()
   } catch {
     submitError.value = 'Չհաջողվեց ուղարկել հայտը։ Ստուգեք կապը և փորձեք կրկին։'
   } finally {
@@ -231,25 +299,25 @@ async function onSubmit(): Promise<void> {
           <AppInput v-model="form.lastName" label="Ազգանուն" required :error="errors.lastName" />
           <AppInput v-model="form.companyName" label="Կազմակերպության անուն (եթե կա)" />
           <AppInput
-            v-model="form.phone"
+            v-model="phoneModel"
             label="Հիմնական հեռախոսահամար"
             type="tel"
-            placeholder="+374 91 00 00 01"
+            placeholder="+37491000001"
             required
             :error="errors.phone"
           />
           <AppInput
-            v-model="form.secondaryPhone"
+            v-model="secondaryPhoneModel"
             label="Երկրորդ հեռախոսահամար (ոչ պարտադիր)"
             type="tel"
-            placeholder="+374 99 00 00 01"
+            placeholder="+37499000001"
             :error="errors.secondaryPhone"
           />
           <AppInput
-            v-model="form.whatsapp"
+            v-model="whatsappModel"
             label="WhatsApp"
             type="tel"
-            placeholder="+374 91 00 00 01"
+            placeholder="+37491000001"
             :error="errors.whatsapp"
           />
           <AppInput v-model="form.telegram" label="Telegram (username)" placeholder="@username" />
@@ -402,18 +470,41 @@ async function onSubmit(): Promise<void> {
             <label for="main-image">
               Գլխավոր նկար<span class="register__required" aria-hidden="true"> *</span>
             </label>
-            <input id="main-image" type="file" accept="image/*" @change="onMainImageChange" >
+            <input
+              id="main-image"
+              ref="mainImageInput"
+              type="file"
+              accept="image/*"
+              @change="onMainImageChange"
+            >
             <span v-if="form.mainImageName" class="register__file-name">{{ form.mainImageName }}</span>
+            <img v-if="mainImagePreview" :src="mainImagePreview" alt="" class="register__image-preview" >
             <p v-if="errors.mainImage" class="register__error" role="alert">
               {{ errors.mainImage }}
             </p>
           </div>
           <div class="register__file">
             <label for="extra-images">Լրացուցիչ նկարներ (մինչև {{ MAX_EXTRA_IMAGES }})</label>
-            <input id="extra-images" type="file" accept="image/*" multiple @change="onExtraImagesChange" >
+            <input
+              id="extra-images"
+              ref="extraImagesInput"
+              type="file"
+              accept="image/*"
+              multiple
+              @change="onExtraImagesChange"
+            >
             <span v-if="form.extraImageNames.length" class="register__file-name">
               {{ form.extraImageNames.length }}/{{ MAX_EXTRA_IMAGES }} ֆայլ ընտրված է
             </span>
+            <div v-if="extraImagePreviews.length" class="register__image-preview-grid">
+              <img
+                v-for="(preview, index) in extraImagePreviews"
+                :key="index"
+                :src="preview"
+                alt=""
+                class="register__image-preview"
+              >
+            </div>
           </div>
         </div>
       </fieldset>
@@ -571,6 +662,20 @@ async function onSubmit(): Promise<void> {
   &__file-name {
     font-size: 0.82rem;
     color: var(--color-text-muted);
+  }
+
+  &__image-preview {
+    width: 96px;
+    height: 96px;
+    object-fit: cover;
+    border-radius: var(--radius-md, 10px);
+    border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  }
+
+  &__image-preview-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
   }
 
   &__note {

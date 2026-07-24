@@ -3,6 +3,7 @@ import { FetchError } from 'ofetch'
 import { SITE_NAME } from '~/constants/site'
 import { driverAuthRepository, isApiEnabled } from '~/repositories'
 import { useDriverAuthStore } from '~/stores/driverAuth'
+import { armenianPhoneInputValue } from '~/utils/formatPhone'
 
 useSeoMetaData({
   title: `Վարորդի մուտք | ${SITE_NAME}`,
@@ -20,7 +21,16 @@ if (import.meta.client && driverAuth.isLoggedIn) {
 
 type Step = 'phone' | 'code'
 const step = ref<Step>('phone')
-const phone = ref('')
+// Pre-filled and locked to +374 — must match the same exact +374XXXXXXXX
+// shape stored at registration, since the backend looks the driver up by an
+// exact phone string match.
+const phone = ref('+374')
+const phoneModel = computed<string>({
+  get: () => phone.value,
+  set: (value) => {
+    phone.value = armenianPhoneInputValue(value)
+  },
+})
 const code = ref('')
 const submitting = ref(false)
 const error = ref('')
@@ -131,10 +141,10 @@ function backToPhone(): void {
 
         <form v-if="step === 'phone'" class="login-form" @submit.prevent="submitPhone">
           <AppInput
-            v-model="phone"
+            v-model="phoneModel"
             type="tel"
             label="Հեռախոսահամար"
-            placeholder="+374 XX XXX XXX"
+            placeholder="+37491000001"
             required
           />
           <p v-if="error" class="login-error">{{ error }}</p>

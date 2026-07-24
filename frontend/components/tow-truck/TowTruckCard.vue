@@ -61,8 +61,12 @@ const mainAreas = computed(() =>
           {{ towTruck.workingHours }}
         </li>
         <li>
+          <AppIcon name="map" :size="15" />
+          Հիմնական գտնվելու վայրը՝ {{ towTruck.location.name }}
+        </li>
+        <li v-if="mainAreas">
           <AppIcon name="map-pin" :size="15" />
-          {{ mainAreas }}
+          Սպասարկում է՝ {{ mainAreas }}
         </li>
       </ul>
 

@@ -56,5 +56,6 @@ export function toTowTruckApi(truck: TowTruckWithImages): TowTruckApi {
       .slice()
       .sort((a, b) => a.position - b.position)
       .map((image) => image.url),
+    updatedAt: truck.updatedAt.toISOString(),
   }
 }

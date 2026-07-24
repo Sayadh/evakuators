@@ -1,4 +1,5 @@
 import type { BreadcrumbItem, FaqItem } from '~/types/common'
+import type { Review } from '~/types/review'
 import type { TowTruck } from '~/types/towTruck'
 import { SERVICE_LABELS } from '~/constants/services'
 import { SITE_NAME, SITE_URL } from '~/constants/site'
@@ -46,8 +47,14 @@ export function buildTowTruckListSchema(trucks: TowTruck[], listName: string): J
   }
 }
 
-export function buildTowTruckBusinessSchema(truck: TowTruck): JsonLd {
-  return {
+/**
+ * `reviews` is optional and empty by default — only pass real approved
+ * reviews in. An AggregateRating with 0 reviews is invalid per schema.org
+ * and Google explicitly warns against self-reported ratings with no backing
+ * review count, so this key is omitted entirely when there's nothing to show.
+ */
+export function buildTowTruckBusinessSchema(truck: TowTruck, reviews: Review[] = []): JsonLd {
+  const schema: JsonLd = {
     '@context': 'https://schema.org',
     '@type': 'AutomotiveBusiness',
     '@id': `${SITE_URL}${getTowTruckRoute(truck.slug)}`,
@@ -64,6 +71,17 @@ export function buildTowTruckBusinessSchema(truck: TowTruck): JsonLd {
       itemOffered: { '@type': 'Service', name: SERVICE_LABELS[service] },
     })),
   }
+
+  if (reviews.length > 0) {
+    const average = reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length
+    schema.aggregateRating = {
+      '@type': 'AggregateRating',
+      ratingValue: average.toFixed(1),
+      reviewCount: reviews.length,
+    }
+  }
+
+  return schema
 }
 
 export function buildWebsiteSchema(): JsonLd {

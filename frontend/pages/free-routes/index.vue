@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { SITE_NAME } from '~/constants/site'
 import { freeRoutesService } from '~/services'
+import { buildFreeRoutesFaq } from '~/utils/faqContent'
 
 useSeoMetaData({
   title: `Ազատ երթուղիներ | Դատարկ ուղղությամբ շարժվող էվակուատորներ | ${SITE_NAME}`,
@@ -10,6 +11,7 @@ useSeoMetaData({
 })
 
 const { forFreeRoutes } = useBreadcrumbs()
+const faqItems = buildFreeRoutesFaq()
 
 const { data: routes, pending } = useAsyncData('free-routes', () => freeRoutesService.getActive(), {
   default: () => [],
@@ -37,6 +39,8 @@ const { data: routes, pending } = useAsyncData('free-routes', () => freeRoutesSe
     <p v-else class="free-routes-page__empty">
       Այս պահին ակտիվ ազատ երթուղիներ չկան։ Ստուգեք մի փոքր ուշ։
     </p>
+
+    <FaqSection :items="faqItems" class="free-routes-page__section" />
   </div>
 </template>
 
@@ -67,6 +71,10 @@ const { data: routes, pending } = useAsyncData('free-routes', () => freeRoutesSe
   &__empty {
     color: var(--color-text-secondary);
     padding: var(--space-6) 0;
+  }
+
+  &__section {
+    margin-top: var(--space-6);
   }
 }
 </style>

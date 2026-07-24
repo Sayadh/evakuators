@@ -12,22 +12,35 @@ interface SitemapEntry {
   priority: string
   /** How often the page's content realistically changes — helps crawl budget */
   changefreq: 'daily' | 'weekly' | 'monthly'
+  /**
+   * ISO date, only when we actually know it changed (a real timestamp).
+   * Omitted otherwise — <lastmod> is optional in the sitemap spec, and a
+   * fake "today" on every single URL (including static pages that never
+   * change) teaches crawlers to distrust the signal entirely.
+   */
+  lastmod?: string
+}
+
+interface TowTruckSitemapEntry {
+  slug: string
+  /** ISO datetime */
+  updatedAt: string
 }
 
 /**
  * Same data-source switch as `towTrucksService`: with a configured API base,
- * read real slugs from the backend; otherwise fall back to mock data.
- * Never hardcode mocks here — this route runs in production too.
+ * read real slugs (+ real updatedAt) from the backend; otherwise fall back
+ * to mock data. Never hardcode mocks here — this route runs in production too.
  */
-async function getTowTruckSlugs(event: H3Event): Promise<string[]> {
+async function getTowTrucksForSitemap(event: H3Event): Promise<TowTruckSitemapEntry[]> {
   const apiBase = useRuntimeConfig(event).public.apiBaseUrl
   if (!apiBase) {
-    return mockTowTrucks.map((truck) => truck.slug)
+    return mockTowTrucks.map((truck) => ({ slug: truck.slug, updatedAt: truck.updatedAt }))
   }
 
   try {
     const trucks = await $fetch<TowTruck[]>('/tow-trucks', { baseURL: apiBase })
-    return trucks.map((truck) => truck.slug)
+    return trucks.map((truck) => ({ slug: truck.slug, updatedAt: truck.updatedAt }))
   } catch {
     // Backend unreachable — better to serve a sitemap without truck pages
     // than to fail the whole route or leak stale mock URLs.
@@ -35,7 +48,7 @@ async function getTowTruckSlugs(event: H3Event): Promise<string[]> {
   }
 }
 
-function buildEntries(towTruckSlugs: string[]): SitemapEntry[] {
+function buildEntries(towTrucks: TowTruckSitemapEntry[]): SitemapEntry[] {
   const regionSlugById = new Map(staticRegions.map((region) => [region.id, region.slug]))
 
   return [
@@ -61,22 +74,24 @@ function buildEntries(towTruckSlugs: string[]): SitemapEntry[] {
       priority: '0.9',
       changefreq: 'daily' as const,
     })),
-    ...towTruckSlugs.map((slug) => ({
-      path: `/tow-trucks/${slug}`,
+    // The only entries with a real, honest lastmod — TowTruck.updatedAt
+    // changes whenever the driver or admin actually edits that profile.
+    ...towTrucks.map((truck) => ({
+      path: `/tow-trucks/${truck.slug}`,
       priority: '0.7',
       changefreq: 'weekly' as const,
+      lastmod: truck.updatedAt.slice(0, 10),
     })),
   ]
 }
 
 export default defineEventHandler(async (event) => {
-  const towTruckSlugs = await getTowTruckSlugs(event)
-  const today = new Date().toISOString().slice(0, 10)
-  const urls = buildEntries(towTruckSlugs)
-    .map(
-      (entry) =>
-        `  <url><loc>${SITE_URL}${entry.path}</loc><lastmod>${today}</lastmod><changefreq>${entry.changefreq}</changefreq><priority>${entry.priority}</priority></url>`,
-    )
+  const towTrucks = await getTowTrucksForSitemap(event)
+  const urls = buildEntries(towTrucks)
+    .map((entry) => {
+      const lastmod = entry.lastmod ? `<lastmod>${entry.lastmod}</lastmod>` : ''
+      return `  <url><loc>${SITE_URL}${entry.path}</loc>${lastmod}<changefreq>${entry.changefreq}</changefreq><priority>${entry.priority}</priority></url>`
+    })
     .join('\n')
 
   setHeader(event, 'content-type', 'application/xml')

@@ -19,6 +19,7 @@ if (!towTruck.value) {
 const truck = towTruck.value
 
 const { data: region } = await useRegion(truck.location.regionSlug ?? '')
+const { data: reviews, pending: reviewsPending } = await useTowTruckReviews(truck.id)
 
 const { forTowTruck } = useBreadcrumbs()
 const breadcrumbs = forTowTruck(truck, region.value?.name)
@@ -37,7 +38,7 @@ useSeoMetaData({
   image: truck.images[0],
 })
 
-useJsonLd([buildTowTruckBusinessSchema(truck)])
+useJsonLd([buildTowTruckBusinessSchema(truck, reviews.value)])
 
 onMounted(() => {
   useRecentlyViewedStore().add(truck.slug)
@@ -75,6 +76,8 @@ onMounted(() => {
         <TowTruckServices :services="towTruck.services" class="profile__card" />
         <TowTruckServiceAreas :areas="towTruck.serviceAreas" class="profile__card" />
         <TowTruckPricing :pricing="towTruck.pricing" class="profile__card" />
+        <TowTruckReviews :reviews="reviews" :pending="reviewsPending" class="profile__card" />
+        <ReviewForm :tow-truck-id="towTruck.id" class="profile__card" />
       </div>
 
       <aside class="profile__aside">

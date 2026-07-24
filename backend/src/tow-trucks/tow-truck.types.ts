@@ -63,6 +63,8 @@ export interface TowTruckApi {
     extraLoading?: number
   }
   images: string[]
+  /** ISO datetime — used by the frontend's sitemap route for an honest <lastmod> */
+  updatedAt: string
 }
 
 export type TowTruckWhere = Prisma.TowTruckWhereInput

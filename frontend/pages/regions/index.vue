@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { SITE_NAME } from '~/constants/site'
+import { buildAllRegionsFaq } from '~/utils/faqContent'
 import { getYerevanRoute } from '~/utils/routeHelpers'
 
 const { data: regions, pending } = useRegions()
@@ -11,6 +12,8 @@ useSeoMetaData({
     'Ընտրեք ձեր մարզը և գտեք մոտակա էվակուատորը։ Ծառայություններ Հայաստանի բոլոր 10 մարզերում և Երևանում։',
   path: '/regions',
 })
+
+const faqItems = buildAllRegionsFaq()
 </script>
 
 <template>
@@ -36,6 +39,8 @@ useSeoMetaData({
     <div v-else class="card-grid regions-page__grid">
       <RegionCard v-for="region in regions" :key="region.id" :region="region" />
     </div>
+
+    <FaqSection :items="faqItems" class="regions-page__section" />
   </div>
 </template>
 
@@ -76,6 +81,11 @@ useSeoMetaData({
   }
 
   &__grid {
+    margin-bottom: var(--space-6);
+  }
+
+  &__section {
+    margin-top: var(--space-6);
     margin-bottom: var(--space-6);
   }
 }

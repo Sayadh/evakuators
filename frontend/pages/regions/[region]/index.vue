@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { buildRegionFaq } from '~/utils/faqContent'
 import { getRegionRoute } from '~/utils/routeHelpers'
-import { buildRegionSeo } from '~/utils/seoContent'
+import { buildRegionSeo, buildTranslitParagraph } from '~/utils/seoContent'
 
 const route = useRoute()
 const regionSlug = route.params.region as string
@@ -17,6 +18,9 @@ const { data: nearbyRegions } = useNearbyRegions(regionSlug)
 
 const { forRegion } = useBreadcrumbs()
 const breadcrumbs = forRegion(region.value)
+
+const faqItems = buildRegionFaq(region.value.name)
+const seoParagraphs = [buildTranslitParagraph(region.value.name, regionSlug)]
 
 useSeoMetaData({
   ...buildRegionSeo(region.value.name, regionSlug),
@@ -68,6 +72,14 @@ useSeoMetaData({
         </li>
       </ul>
     </section>
+
+    <FaqSection :items="faqItems" class="region-page__section" />
+
+    <SeoTextSection
+      :title="`Էվակուատորի ծառայություններ ${region.name}ի մարզում`"
+      :paragraphs="seoParagraphs"
+      class="region-page__section"
+    />
   </div>
 </template>
 

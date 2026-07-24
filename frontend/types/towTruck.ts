@@ -70,4 +70,6 @@ export interface TowTruck {
   /** Undefined when the driver didn't fill the pricing section */
   pricing?: TowTruckPricing
   images: string[]
+  /** ISO datetime — used for an honest sitemap <lastmod> */
+  updatedAt: string
 }

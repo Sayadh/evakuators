@@ -21,6 +21,8 @@ export type IconName =
   | 'mail'
   | 'user'
   | 'weight'
+  | 'star'
+  | 'star-filled'
 
 interface IconDefinition {
   paths: string[]
@@ -84,6 +86,13 @@ const ICONS: Record<IconName, IconDefinition> = {
   },
   weight: {
     paths: ['M6 7h12l3 14H3L6 7z', 'M9 7a3 3 0 1 1 6 0'],
+  },
+  star: {
+    paths: ['M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.77 5.82 21 7 14.14 2 9.27l6.91-1.01L12 2z'],
+  },
+  'star-filled': {
+    paths: ['M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.77 5.82 21 7 14.14 2 9.27l6.91-1.01L12 2z'],
+    filled: true,
   },
 }
 

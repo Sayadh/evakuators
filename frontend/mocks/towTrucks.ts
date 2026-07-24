@@ -95,6 +95,8 @@ function defineTowTruck(seed: TowTruckSeed): TowTruck {
     location: seed.location,
     pricing: buildPricing(seed),
     images: [1, 2, 3].map((n) => `https://picsum.photos/seed/evak-${seed.id}-${n}/800/600`),
+    // Mock data has no real edit history — "now" is as honest as anything else here.
+    updatedAt: new Date().toISOString(),
   }
 }
 

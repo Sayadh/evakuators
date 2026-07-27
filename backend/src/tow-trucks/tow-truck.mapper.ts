@@ -64,6 +64,10 @@ export function toTowTruckApi(truck: TowTruckWithImages): TowTruckApi {
       .slice()
       .sort((a, b) => a.position - b.position)
       .map((image) => image.url),
+    imageDetails: truck.images
+      .slice()
+      .sort((a, b) => a.position - b.position)
+      .map((image) => ({ id: image.id, url: image.url })),
     updatedAt: truck.updatedAt.toISOString(),
   }
 }

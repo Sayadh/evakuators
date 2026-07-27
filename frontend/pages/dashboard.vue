@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { SERVICE_CATEGORIES } from '~/constants/services'
 import { SITE_NAME } from '~/constants/site'
-import { myTowTruckRepository, type UpdateMyTowTruckPayload } from '~/repositories'
+import { imageRepository, myTowTruckRepository, type UpdateMyTowTruckPayload } from '~/repositories'
 import { useDriverAuthStore } from '~/stores/driverAuth'
 import { ServiceType } from '~/types/enums'
 import type { TowTruck } from '~/types/towTruck'
@@ -45,6 +45,35 @@ const saving = ref(false)
 const saveError = ref('')
 const saveSuccess = ref(false)
 
+const existingImages = ref<{ id: number; url: string }[]>([])
+const newImageFiles = shallowRef<File[]>([])
+const newImagePreviews = ref<string[]>([])
+
+function removeExistingImage(index: number): void {
+  existingImages.value.splice(index, 1)
+}
+
+function onNewImagesChange(event: Event): void {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  newImageFiles.value.push(...files)
+
+  const previews = files.map((file) => URL.createObjectURL(file))
+  newImagePreviews.value.push(...previews)
+
+  if (input) input.value = ''
+}
+
+function removeNewImage(index: number): void {
+  URL.revokeObjectURL(newImagePreviews.value[index])
+  newImageFiles.value.splice(index, 1)
+  newImagePreviews.value.splice(index, 1)
+}
+
+onBeforeUnmount(() => {
+  newImagePreviews.value.forEach((url) => URL.revokeObjectURL(url))
+})
+
 function fillFormFromTruck(data: TowTruck): void {
   form.secondaryPhone = data.secondaryPhone ?? ''
   form.whatsapp = data.whatsapp ?? ''
@@ -60,6 +89,7 @@ function fillFormFromTruck(data: TowTruck): void {
   form.priceWaitingPerHour = data.pricing?.waitingPerHour?.toString() ?? ''
   form.priceNightSurchargePercent = data.pricing?.nightSurchargePercent?.toString() ?? ''
   form.priceExtraLoading = data.pricing?.extraLoading?.toString() ?? ''
+  existingImages.value = data.imageDetails ? [...data.imageDetails] : []
 }
 
 async function load(): Promise<void> {
@@ -118,9 +148,26 @@ async function submit(): Promise<void> {
       priceNightSurchargePercent: toOptionalInt(form.priceNightSurchargePercent),
       priceExtraLoading: toOptionalInt(form.priceExtraLoading),
     }
+
+    if (newImageFiles.value.length > 0) {
+      const uploaded = []
+      for (const file of newImageFiles.value) {
+        uploaded.push(await imageRepository.upload(file))
+      }
+      payload.imageIds = [
+        ...existingImages.value.map((i) => i.id),
+        ...uploaded.map((i) => i.id),
+      ]
+    } else {
+      payload.imageIds = existingImages.value.map((i) => i.id)
+    }
+
     truck.value = await myTowTruckRepository.updateMine(payload)
     fillFormFromTruck(truck.value)
     saveSuccess.value = true
+    newImageFiles.value = []
+    newImagePreviews.value.forEach((url) => URL.revokeObjectURL(url))
+    newImagePreviews.value = []
   } catch (error) {
     saveError.value = extractErrorMessage(error, 'Պահպանել չհաջողվեց, ստուգիր դաշտերը։')
   } finally {
@@ -195,6 +242,57 @@ async function logout(): Promise<void> {
           />
           <AppInput v-model="form.priceExtraLoading" type="number" label="Լրացուցիչ բարձում (֏)" />
         </fieldset>
+
+        <fieldset class="dashboard-section">
+          <legend>Նկարներ</legend>
+          <div class="dashboard-images">
+            <!-- Existing images -->
+            <div
+              v-for="(image, index) in existingImages"
+              :key="'existing-' + image.id"
+              class="dashboard-image-wrap"
+            >
+              <img :src="image.url" alt="" class="dashboard-image" >
+              <button
+                type="button"
+                class="dashboard-image-remove"
+                aria-label="Հեռացնել նկարը"
+                @click="removeExistingImage(index)"
+              >
+                <AppIcon name="close" :size="14" />
+              </button>
+            </div>
+            
+            <!-- New images previews -->
+            <div
+              v-for="(preview, index) in newImagePreviews"
+              :key="'new-' + index"
+              class="dashboard-image-wrap"
+            >
+              <img :src="preview" alt="" class="dashboard-image" >
+              <button
+                type="button"
+                class="dashboard-image-remove"
+                aria-label="Հեռացնել նկարը"
+                @click="removeNewImage(index)"
+              >
+                <AppIcon name="close" :size="14" />
+              </button>
+            </div>
+          </div>
+          
+          <div class="dashboard-file-input">
+            <label for="new-images">Ավելացնել նկարներ</label>
+            <input
+              id="new-images"
+              type="file"
+              accept="image/*"
+              multiple
+              @change="onNewImagesChange"
+            >
+          </div>
+        </fieldset>
+
 
         <p v-if="saveError" class="dashboard-error">{{ saveError }}</p>
         <p v-if="saveSuccess" class="dashboard-success">Հաջողությամբ պահպանվեց ✓</p>
@@ -299,5 +397,59 @@ async function logout(): Promise<void> {
 
 .dashboard-success {
   color: var(--color-success);
+}
+
+.dashboard-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.dashboard-image-wrap {
+  position: relative;
+  width: 96px;
+}
+
+.dashboard-image {
+  display: block;
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: var(--radius-md, 10px);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+}
+
+.dashboard-image-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--color-surface);
+  border-radius: 50%;
+  background: var(--color-danger);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: background var(--transition);
+
+  &:hover {
+    background: #c0392b;
+  }
+}
+
+.dashboard-file-input {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  
+  label {
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
 }
 </style>

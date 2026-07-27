@@ -87,4 +87,9 @@ export class UpdateMyTowTruckDto {
   @IsInt()
   @Min(0)
   priceExtraLoading?: number
+
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  imageIds?: number[]
 }

@@ -70,9 +70,9 @@ export interface TowTruck {
   services: ServiceType[]
   serviceAreas: ServiceArea[]
   location: TowTruckLocation
-  /** Undefined when the driver didn't fill the pricing section */
   pricing?: TowTruckPricing
   images: string[]
+  imageDetails?: { id: number; url: string }[]
   /** ISO datetime — used for an honest sitemap <lastmod> */
   updatedAt: string
 }

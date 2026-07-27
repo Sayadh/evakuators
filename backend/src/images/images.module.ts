@@ -9,6 +9,6 @@ import { ImagesService } from './images.service'
   imports: [StorageModule],
   controllers: [ImagesController],
   providers: [ImagesService, ImageProcessorService, ImagesRepository],
-  exports: [ImagesService],
+  exports: [ImagesService, ImagesRepository],
 })
 export class ImagesModule {}

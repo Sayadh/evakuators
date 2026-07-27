@@ -1,4 +1,6 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common'
+import { ImagesRepository } from '../images/images.repository'
+import { SupabaseStorageService } from '../storage/supabase-storage.service'
 import { AVAILABLE_24_7_SLUG } from '../tow-trucks/service-slugs'
 import { toTowTruckApi } from '../tow-trucks/tow-truck.mapper'
 import type { TowTruckApi } from '../tow-trucks/tow-truck.types'
@@ -7,7 +9,13 @@ import type { UpdateMyTowTruckDto } from './dto/update-my-tow-truck.dto'
 
 @Injectable()
 export class MyTowTruckService {
-  constructor(private readonly towTrucksRepository: TowTrucksRepository) {}
+  private readonly logger = new Logger(MyTowTruckService.name)
+
+  constructor(
+    private readonly towTrucksRepository: TowTrucksRepository,
+    private readonly imagesRepository: ImagesRepository,
+    private readonly storage: SupabaseStorageService,
+  ) {}
 
   async getMine(towTruckId: number): Promise<TowTruckApi> {
     const towTruck = await this.towTrucksRepository.findById(towTruckId)
@@ -24,14 +32,42 @@ export class MyTowTruckService {
   async updateMine(towTruckId: number, dto: UpdateMyTowTruckDto): Promise<TowTruckApi> {
     await this.getMine(towTruckId) // reuses the isActive + existence check above
 
+    const { imageIds, ...updateData } = dto
+
+    // Handle images if provided
+    if (imageIds !== undefined) {
+      const currentImages = await this.imagesRepository.findByTowTruckId(towTruckId)
+      const currentImageIds = currentImages.map((i) => i.id)
+
+      const removedImages = currentImages.filter((i) => !imageIds.includes(i.id))
+      const newImageIds = imageIds.filter((id) => !currentImageIds.includes(id))
+
+      if (newImageIds.length > 0) {
+        const available = await this.imagesRepository.findUnattachedByIds(newImageIds)
+        if (available.length !== newImageIds.length) {
+          throw new BadRequestException('Նկարներից մեկը կամ մի քանիսը վավեր չեն կամ արդեն օգտագործված են։')
+        }
+        await this.imagesRepository.attachToTowTruck(newImageIds, towTruckId)
+      }
+
+      if (removedImages.length > 0) {
+        await this.imagesRepository.deleteByIds(removedImages.map((i) => i.id))
+        try {
+          await this.storage.remove(removedImages.map((image) => image.path))
+        } catch (error) {
+          this.logger.warn(`Failed to remove Storage objects for TowTruck ${towTruckId}: ${String(error)}`)
+        }
+      }
+    }
+
     // works24Hours is derived, not directly editable — see service-slugs.ts.
     // Only touch it when services are actually part of this update. The
     // dashboard always sends both together, and UpdateMyTowTruckDto's
     // @ValidateIf already guarantees workingHoursText is a properly
     // formatted, non-empty string whenever 24/7 isn't selected.
     const data = {
-      ...dto,
-      ...(dto.services ? { works24Hours: dto.services.includes(AVAILABLE_24_7_SLUG) } : {}),
+      ...updateData,
+      ...(updateData.services ? { works24Hours: updateData.services.includes(AVAILABLE_24_7_SLUG) } : {}),
     }
 
     const updated = await this.towTrucksRepository.updateOwnProfile(towTruckId, data)

@@ -66,6 +66,7 @@ export interface TowTruckApi {
     extraLoading?: number
   }
   images: string[]
+  imageDetails?: { id: number; url: string }[]
   /** ISO datetime — used by the frontend's sitemap route for an honest <lastmod> */
   updatedAt: string
 }

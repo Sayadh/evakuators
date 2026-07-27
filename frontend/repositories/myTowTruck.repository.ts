@@ -17,6 +17,7 @@ export interface UpdateMyTowTruckPayload {
   priceWaitingPerHour?: number
   priceNightSurchargePercent?: number
   priceExtraLoading?: number
+  imageIds?: number[]
 }
 
 /** Driver self-service — always operates on the caller's own profile (JWT-scoped) */

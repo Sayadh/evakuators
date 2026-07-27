@@ -53,4 +53,23 @@ export class ImagesRepository {
     const result = await this.prisma.towTruckImage.deleteMany({ where: { id: { in: ids } } })
     return result.count
   }
+
+  findByTowTruckId(towTruckId: number): Promise<TowTruckImage[]> {
+    return this.prisma.towTruckImage.findMany({ where: { towTruckId } })
+  }
+
+  findUnattachedByIds(ids: number[]): Promise<TowTruckImage[]> {
+    if (ids.length === 0) return Promise.resolve([])
+    return this.prisma.towTruckImage.findMany({
+      where: { id: { in: ids }, towTruckId: null, registrationRequestId: null },
+    })
+  }
+
+  async attachToTowTruck(ids: number[], towTruckId: number): Promise<void> {
+    if (ids.length === 0) return
+    await this.prisma.towTruckImage.updateMany({
+      where: { id: { in: ids } },
+      data: { towTruckId },
+    })
+  }
 }

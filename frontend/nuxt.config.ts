@@ -5,7 +5,7 @@ export default defineNuxtConfig({
   // Production also honors PORT/HOST env vars directly (nitro node-server preset).
   devServer: { port: 3002 },
 
-  modules: ['@pinia/nuxt', '@vueuse/nuxt', '@nuxt/image', '@nuxt/eslint'],
+  modules: ['@pinia/nuxt', '@vueuse/nuxt', '@nuxt/image', '@nuxt/eslint', 'nuxt-gtag'],
 
   css: ['~/assets/styles/main.scss'],
 
@@ -56,6 +56,11 @@ export default defineNuxtConfig({
        */
       apiBaseUrl: '',
     },
+  },
+
+  gtag: {
+    id: 'G-HEN3RVMTRG',
+    enabled: true,
   },
 
   typescript: {

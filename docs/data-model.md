@@ -125,7 +125,7 @@ ever deleted — from the database *or* from Supabase Storage:
 - **Never attached.** `POST /images` inserts the row before the registration form
   is submitted, so an abandoned upload leaves both FKs null forever. That endpoint
   is public by necessity (it runs before a driver has any credentials) and accepts
-  10MB files, which made it the only path in the system where an anonymous
+  30MB files, which made it the only path in the system where an anonymous
   request permanently costs money. Removed after 24h — long enough that a driver
   can take their time between picking photos and submitting.
 - **Attached to a REJECTED request.** `AdminService.reject()` intentionally keeps

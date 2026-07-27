@@ -16,7 +16,7 @@ Throttle column shows overrides from the global default (60 req/60s per IP,
 | `GET` | `/tow-trucks/:slug` | — | 404 if not found or `isActive: false` |
 | `GET` | `/tow-trucks/:towTruckId/reviews` | — | Approved reviews only |
 | `POST` | `/tow-trucks/:towTruckId/reviews` | 5/60s | Creates with `isApproved: false` — needs admin approval to appear |
-| `POST` | `/images` | 10/60s | Multipart, field name `file`, 10MB max (`MAX_UPLOAD_BYTES`, kept in sync by hand with the same-named constant in `image-processor.service.ts`) → returns `{ id, url, width, height }`, unattached until a registration references its id |
+| `POST` | `/images` | 10/60s | Multipart, field name `file`, 30MB max (`MAX_UPLOAD_BYTES`, kept in sync by hand with the same-named constant in `image-processor.service.ts`) → returns `{ id, url, width, height }`, unattached until a registration references its id |
 | `POST` | `/registrations` | 5/60s | Driver registration submission — `imageIds` must reference images uploaded via `/images` and not already attached elsewhere |
 | `GET` | `/free-routes` | — | `ACTIVE` only |
 | `POST` | `/admin-auth/login` | 5/60s | `{ email, password }` → `{ token }`, or `{ requiresCode: true }` if the admin has linked Telegram 2FA (see below) |

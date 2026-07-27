@@ -12,7 +12,7 @@ import { ImagesService, UploadedImageDto } from './images.service'
 // Keep in sync with MAX_UPLOAD_BYTES in image-processor.service.ts.
 // Rejecting oversized files at the multer layer avoids buffering them into
 // memory before the size check in ImageProcessorService ever runs.
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+const MAX_UPLOAD_BYTES = 30 * 1024 * 1024
 
 @Controller('images')
 export class ImagesController {

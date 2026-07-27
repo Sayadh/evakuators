@@ -17,7 +17,7 @@ export class ImagesRepository {
    * 1. **Never attached.** `POST /images` creates a row before the registration
    *    form is submitted, so an abandoned (or malicious) upload leaves a row and
    *    a Supabase object with both foreign keys null, forever. The public upload
-   *    endpoint accepts 10MB files, so this is the one place in the system where
+   *    endpoint accepts 30MB files, so this is the one place in the system where
    *    an anonymous request permanently costs money.
    * 2. **Attached to a rejected registration.** `AdminService.reject()`
    *    deliberately keeps the RegistrationRequest row as an audit trail, but the

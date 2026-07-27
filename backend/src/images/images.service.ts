@@ -57,7 +57,7 @@ export class ImagesService {
    *
    * This closes the only unbounded-cost path in the system: `POST /images` is
    * public (it has to be — it runs before a driver has any credentials), accepts
-   * 10MB files, and previously nothing ever removed an upload that wasn't
+   * 30MB files, and previously nothing ever removed an upload that wasn't
    * followed by a submitted and approved registration.
    *
    * Storage is deleted BEFORE the database rows, deliberately. The `path` column

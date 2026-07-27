@@ -8,7 +8,8 @@ export interface ProcessedImage {
   sizeBytes: number
 }
 
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+// Keep in sync with MAX_UPLOAD_BYTES in images.controller.ts.
+const MAX_UPLOAD_BYTES = 30 * 1024 * 1024
 const MAX_DIMENSION = 1600
 const WEBP_QUALITY = 82
 const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic'])

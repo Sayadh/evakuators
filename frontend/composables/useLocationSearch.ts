@@ -1,24 +1,24 @@
-import { citiesService, districtsService } from '~/services'
 import { useLocationStore } from '~/stores/location'
 import type { SelectOption } from '~/types/common'
 import { trackLocationSearch } from '~/utils/analytics'
+import { buildCityOptions, buildRegionOptions, YEREVAN_REGION_SLUG } from '~/utils/geography'
 import { getCityRoute, getDistrictRoute, getRegionRoute, getYerevanRoute } from '~/utils/routeHelpers'
 
-const YEREVAN_SLUG = 'yerevan'
-
-/** Region + city cascade used by the hero search form */
+/**
+ * Region + city cascade used by the hero search form.
+ *
+ * Dropdown options are labels only, so everything here comes from static
+ * geography and the cascade is synchronous — no request, no loading state to
+ * race. It used to call `useRegions()` plus `citiesService`/`districtsService`,
+ * each of which fetches the entire tow truck list to compute counts the
+ * `<select>` never shows; on the homepage that alone was one of the duplicate
+ * `GET /tow-trucks` calls.
+ */
 export function useLocationSearch() {
   const locationStore = useLocationStore()
   const router = useRouter()
 
-  const { data: regions } = useRegions()
-  const cityOptions = ref<SelectOption[]>([])
-  const isLoadingCities = ref(false)
-
-  const regionOptions = computed<SelectOption[]>(() => [
-    { value: YEREVAN_SLUG, label: 'Երևան' },
-    ...regions.value.map((region) => ({ value: region.slug, label: region.name })),
-  ])
+  const regionOptions = computed<SelectOption[]>(() => buildRegionOptions())
 
   const selectedRegion = computed({
     get: () => locationStore.selectedRegionSlug,
@@ -30,30 +30,18 @@ export function useLocationSearch() {
     set: (value: string) => locationStore.setCity(value),
   })
 
-  watch(
-    selectedRegion,
-    async (regionSlug) => {
-      cityOptions.value = []
-      if (!regionSlug) return
+  /**
+   * Purely computed now — the previous async watcher existed only because the
+   * lookups used to hit the network.
+   */
+  const cityOptions = computed<SelectOption[]>(() => buildCityOptions(selectedRegion.value))
 
-      isLoadingCities.value = true
-      try {
-        if (regionSlug === YEREVAN_SLUG) {
-          const districts = await districtsService.getDistricts()
-          cityOptions.value = districts.map((district) => ({
-            value: district.slug,
-            label: district.name,
-          }))
-        } else {
-          const cities = await citiesService.getCitiesByRegionSlug(regionSlug)
-          cityOptions.value = cities.map((city) => ({ value: city.slug, label: city.name }))
-        }
-      } finally {
-        isLoadingCities.value = false
-      }
-    },
-    { immediate: true },
-  )
+  /**
+   * Kept for API compatibility with `LocationSearch.vue`, which shows a
+   * "loading…" state on the city select. Options are resolved synchronously now,
+   * so there is never a pending moment.
+   */
+  const isLoadingCities = computed(() => false)
 
   const canSearch = computed(() => selectedRegion.value !== '')
 
@@ -61,7 +49,7 @@ export function useLocationSearch() {
     const regionSlug = selectedRegion.value
     const citySlug = selectedCity.value
 
-    if (regionSlug === YEREVAN_SLUG) {
+    if (regionSlug === YEREVAN_REGION_SLUG) {
       return citySlug ? getDistrictRoute(citySlug) : getYerevanRoute()
     }
     return citySlug ? getCityRoute(regionSlug, citySlug) : getRegionRoute(regionSlug)

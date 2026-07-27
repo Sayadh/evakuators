@@ -3,9 +3,20 @@ import { FOOTER_PAGES } from '~/constants/navigation'
 import { CONTACT_PHONE, CONTACT_TELEGRAM, SITE_DESCRIPTION } from '~/constants/site'
 import { getDistrictRoute, getRegionRoute } from '~/utils/routeHelpers'
 import { getPhoneHref, getTelegramUrl } from '~/utils/formatPhone'
+import { getStaticDistricts, getStaticRegions } from '~/utils/geography'
 
-const { data: regions } = useRegions()
-const { data: districts } = useDistricts()
+/**
+ * The footer renders only names and links, so it reads static geography directly
+ * — no network at all.
+ *
+ * It used to call `useRegions()` / `useDistricts()`, which fetch every tow truck
+ * in the country to compute counts the footer never displays. Since the footer is
+ * in the default layout, that meant *every page on the site* — including
+ * `/about` and `/contact` — downloaded the whole fleet twice per render. This one
+ * change is why those pages now make zero API requests.
+ */
+const regions = getStaticRegions()
+const districts = getStaticDistricts()
 
 const currentYear = new Date().getFullYear()
 </script>
@@ -16,8 +27,7 @@ const currentYear = new Date().getFullYear()
       <div class="footer__grid">
         <div class="footer__about">
           <NuxtLink to="/" class="footer__logo">
-            <AppIcon name="truck" :size="24" />
-            <span>Evakuators.am</span>
+            <img src="/evakuators-logo.svg" alt="Evakuators.am" class="footer__logo-img">
           </NuxtLink>
           <p class="footer__description">{{ SITE_DESCRIPTION }}</p>
           <p class="footer__contacts">
@@ -94,15 +104,13 @@ const currentYear = new Date().getFullYear()
   &__logo {
     display: inline-flex;
     align-items: center;
-    gap: var(--space-2);
-    font-size: 1.15rem;
-    font-weight: 800;
-    color: #fff;
     margin-bottom: var(--space-3);
+  }
 
-    svg {
-      color: var(--color-accent);
-    }
+  &__logo-img {
+    height: 32px;
+    width: auto;
+    display: block;
   }
 
   &__description {

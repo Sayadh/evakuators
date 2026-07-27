@@ -78,3 +78,51 @@ export enum LocationType {
   City = 'city',
   District = 'district',
 }
+
+/**
+ * Provider-analytics event taxonomy.
+ *
+ * MANUAL SYNC POINT: these values must match `enum AnalyticsEventType` in
+ * `backend/prisma/schema.prisma` character-for-character — they travel over the
+ * wire in both directions (sent when tracking, used as response object keys).
+ * Nothing enforces this at compile time, same as the `available-24-7` slug
+ * (see CLAUDE.md § "Manual sync points"). Unlike the service slugs these are
+ * SCREAMING_SNAKE_CASE, because they are a real Postgres enum rather than a
+ * kebab-case URL-ish slug.
+ */
+export enum AnalyticsEventType {
+  PageView = 'PAGE_VIEW',
+  PhoneClick = 'PHONE_CLICK',
+  WhatsAppClick = 'WHATSAPP_CLICK',
+  TelegramClick = 'TELEGRAM_CLICK',
+  EmailClick = 'EMAIL_CLICK',
+}
+
+/** Selectable chart/overview windows — mirrors backend AnalyticsPeriod */
+export enum AnalyticsPeriod {
+  Last7Days = 'LAST_7_DAYS',
+  Last30Days = 'LAST_30_DAYS',
+  Last90Days = 'LAST_90_DAYS',
+}
+
+/** Which slice of reviews the dashboard asks for — mirrors backend AnalyticsReviewStatus */
+export enum AnalyticsReviewStatus {
+  Confirmed = 'CONFIRMED',
+  Pending = 'PENDING',
+  All = 'ALL',
+}
+
+/**
+ * Every card the analytics dashboard can render. Kept as its own enum (rather
+ * than reusing AnalyticsEventType) because two cards — unique visitors, and the
+ * 24h-independent review/rating blocks — are not event types at all, and the
+ * card list is a presentation concern that may diverge from the event taxonomy.
+ */
+export enum AnalyticsCard {
+  PageViews = 'PAGE_VIEWS',
+  UniqueVisitors = 'UNIQUE_VISITORS',
+  PhoneClicks = 'PHONE_CLICKS',
+  WhatsAppClicks = 'WHATSAPP_CLICKS',
+  TelegramClicks = 'TELEGRAM_CLICKS',
+  EmailClicks = 'EMAIL_CLICKS',
+}

@@ -31,6 +31,23 @@ export class TowTrucksRepository {
     })
   }
 
+  /**
+   * Lean existence + visibility probe: two columns, straight off the primary
+   * key, no images join. Used on the analytics write path (which runs on every
+   * page view and every contact-button press), so pulling the full row plus its
+   * images the way findById() does would be a wide read on the hottest query in
+   * the system for the sake of one boolean.
+   *
+   * Returns null for an id that doesn't exist, so callers can distinguish
+   * "no such truck" (404) from "exists but deactivated" (403 / ignore).
+   */
+  findStatusById(id: number): Promise<{ id: number; isActive: boolean } | null> {
+    return this.prisma.towTruck.findUnique({
+      where: { id },
+      select: { id: true, isActive: true },
+    })
+  }
+
   /** Admin-only — unlike findMany(), this intentionally includes inactive trucks */
   findAllForAdmin(): Promise<TowTruckWithImages[]> {
     return this.prisma.towTruck.findMany({

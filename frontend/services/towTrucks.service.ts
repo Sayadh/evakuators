@@ -59,6 +59,21 @@ export function servesYerevan(truck: TowTruck): boolean {
   )
 }
 
+/**
+ * Yerevan trucks, those actually based in a district first.
+ *
+ * Pure: derived from an already-fetched list rather than from
+ * `GET /tow-trucks?yerevan=true`. Both the homepage and `/yerevan` already load
+ * the full list to compute per-district counts, so the extra filtered request
+ * was fetching a strict subset of data the page had in memory. The backend
+ * filter applies exactly this predicate, so the result is identical.
+ */
+export function selectYerevanTowTrucks(trucks: TowTruck[]): TowTruck[] {
+  return trucks
+    .filter(servesYerevan)
+    .sort((a, b) => Number(isBasedInYerevan(b)) - Number(isBasedInYerevan(a)))
+}
+
 const by24Hours = (a: TowTruck, b: TowTruck): number =>
   Number(b.works24Hours) - Number(a.works24Hours)
 
@@ -86,13 +101,6 @@ export const towTrucksService = {
   getByDistrictSlug(districtSlug: string): Promise<TowTruck[]> {
     if (isApiEnabled()) return towTruckRepository.getByDistrict(districtSlug)
     return mockRequest(() => mockTowTrucks.filter((truck) => servesDistrict(truck, districtSlug)))
-  },
-
-  async getYerevanTowTrucks(): Promise<TowTruck[]> {
-    const trucks = isApiEnabled()
-      ? await towTruckRepository.getYerevan()
-      : await mockRequest(() => mockTowTrucks.filter(servesYerevan))
-    return [...trucks].sort((a, b) => Number(isBasedInYerevan(b)) - Number(isBasedInYerevan(a)))
   },
 
   async getByRegionSlug(regionSlug: string): Promise<TowTruck[]> {

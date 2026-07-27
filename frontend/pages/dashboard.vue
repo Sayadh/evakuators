@@ -151,6 +151,12 @@ async function logout(): Promise<void> {
         {{ truck.vehicle.model }} · <NuxtLink :to="`/tow-trucks/${truck.slug}`">Տեսնել պրոֆիլը կայքում</NuxtLink>
       </p>
 
+      <!-- Analytics first: it's what a driver opens the dashboard to check, and
+           it needs no interaction. The edit form stays below it. -->
+      <section class="dashboard-section dashboard-section--analytics">
+        <AnalyticsDashboard scope="driver" />
+      </section>
+
       <form class="dashboard-form" @submit.prevent="submit">
         <fieldset class="dashboard-section">
           <legend>Կոնտակտներ</legend>
@@ -214,7 +220,10 @@ async function logout(): Promise<void> {
 .dashboard-page {
   padding-top: var(--space-6);
   padding-bottom: var(--space-8);
-  max-width: 640px;
+  /* The edit form reads best in a narrow column, but charts and the six
+     overview cards need room — so the page is wide and the form is capped
+     instead (see .dashboard-form / .dashboard-section--routes below). */
+  max-width: 960px;
 }
 
 .dashboard-header {
@@ -233,6 +242,13 @@ async function logout(): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
+  max-width: 640px;
+}
+
+.dashboard-section--analytics {
+  border: 0;
+  padding: 0;
+  margin-bottom: var(--space-6);
 }
 
 .dashboard-section {
@@ -251,6 +267,7 @@ async function logout(): Promise<void> {
 
 .dashboard-section--routes {
   margin-top: var(--space-6);
+  max-width: 640px;
 
   h2 {
     margin: 0;

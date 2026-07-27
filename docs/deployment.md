@@ -134,6 +134,7 @@ wrong link in Telegram messages.
 | `ADMIN_TELEGRAM_BOT_USERNAME` | no, default `''` | Without the `@` |
 | `ADMIN_TELEGRAM_WEBHOOK_SECRET` | no, default `''` | Same `timingSafeEqual` pattern as `TELEGRAM_WEBHOOK_SECRET` |
 | `ADMIN_TELEGRAM_ALLOWED_CHAT_IDS` | no, default `''` | Comma-separated chat ids; anyone else is silently ignored by the bot. Blank = unrestricted |
+| `ANALYTICS_VISITOR_PEPPER` | no, falls back to `DRIVER_JWT_SECRET` | Pepper for hashing analytics visitor ids (see `docs/analytics.md`). Optional so analytics needs no new setup on an existing deploy. **Changing it makes every returning visitor count as new** from that point on; historical aggregates are unaffected |
 
 ## Environment variables reference (frontend)
 

@@ -55,6 +55,27 @@ Notable fields beyond the obvious:
   through one of those two paths.
 - `telegramChatId` / `telegramLinkToken` / `telegramLinkTokenExpiresAt` —
   driver login state. See `docs/auth-and-security.md`.
+- `isFeatured: Boolean` — admin-only toggle (`PATCH
+  /admin/tow-trucks/:id/featured`), unrelated to `works24Hours` or approval
+  status. Drives `GET /tow-trucks/featured` (public) and the homepage
+  "featured trucks" section; nothing sets it automatically, an admin has to
+  flip it in `/admin`. Defaults `false`, no cap on how many can be featured
+  at once.
+- `workingHoursText: String?` — free-text working hours (e.g. `"09:00 – 21:00"`),
+  entirely optional. `null`/unset means "not specified" and the frontend
+  hides the hours line completely rather than showing a placeholder or a
+  fake default — a real bug that shipped once (a hardcoded `HOURS_DAY`
+  fallback was displayed for every truck regardless of truth) before this
+  field existed. When set, it's validated against `WORKING_HOURS_PATTERN`
+  (`^\d{2}:\d{2}\s[–-]\s\d{2}:\d{2}$`, exported from
+  `create-registration.dto.ts`) — both the registration form and the driver
+  dashboard collect it as two separate `<input type="time">` fields and join
+  them into this exact format client-side
+  (`frontend/utils/workingHours.ts`'s `formatWorkingHoursRange`/
+  `splitWorkingHoursRange`). If `works24Hours` is true, this field is ignored
+  for display purposes (the UI shows "Շուրջօրյա (24/7)" instead) but isn't
+  cleared server-side. Neither this field nor the 24/7 toggle is required —
+  a driver can leave both unset.
 - `isActive: Boolean` — soft hide/ban. `false` hides the truck from every
   public query (`TowTrucksRepository.findMany`/`findBySlug` filter on it) and
   makes the driver's still-valid JWT stop working (`MyTowTruckService.getMine`
@@ -75,6 +96,10 @@ nothing deletes `RegistrationRequest` rows.
 `capacityRange` here is a **band slug** (driver only picks a range at
 registration), not the same shape as `TowTruck.capacityTons` (an exact
 float) — see `docs/taxonomies.md`.
+
+`workingHoursText` is collected here in the same optional/validated format
+described under `TowTruck` above, and copied over as-is by
+`AdminService.approve()` — the admin doesn't re-enter it.
 
 ## `TowTruckImage`
 
@@ -104,6 +129,37 @@ One row per requested login code, never reused. `codeHash` is
 `consumedAt` is set both on successful verification and when a newer OTP is
 requested (`DriverOtpRepository.invalidateActive()`), so a driver can never
 have two "active" codes at once. See `docs/auth-and-security.md`.
+
+## `AnalyticsDailyStat` / `AnalyticsVisitorDay`
+
+Per-tow-truck visitor statistics — see `docs/analytics.md` for the full
+feature. Two tables with deliberately different lifecycles:
+
+- **`AnalyticsDailyStat`** — pre-aggregated counters, one row per
+  (tow truck, Armenia calendar day, `AnalyticsEventType`). The only table the
+  dashboards read. `eventCount` is **already deduplicated**: it means "how
+  many distinct visitors did this on this day", never "how many times was the
+  button pressed". Kept forever.
+- **`AnalyticsVisitorDay`** — the dedup ledger, one row per
+  (tow truck, day, event type, hashed visitor). Its unique constraint is what
+  enforces the once-per-visitor-per-calendar-day rule **in the database**
+  rather than in application code, which is what makes it race-proof. Purged
+  by a daily cron after `ANALYTICS_VISITOR_DAY_RETENTION_DAYS` (180) — this is
+  the only analytics table that grows with traffic.
+
+`visitorKey` is `sha256(rawVisitorId + pepper)`; the raw browser id is never
+stored. `statDate` is a plain Postgres `DATE`, always resolved in
+`Asia/Yerevan` by `AnalyticsClock` — never taken from the client, or the
+once-per-day rule could be bypassed by sending a different date each time.
+
+Both cascade from `TowTruck`, so `AdminService.deleteTowTruck()` needs no
+extra cleanup step.
+
+Index rationale (each index does double duty — see `docs/analytics.md`):
+`AnalyticsDailyStat`'s unique key is both the UPSERT conflict target and the
+dashboard read index; `AnalyticsVisitorDay`'s unique key deliberately puts
+`visitorKey` last so the same index answers `COUNT(DISTINCT visitorKey)` as an
+index-only scan.
 
 ## `User`
 

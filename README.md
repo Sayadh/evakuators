@@ -148,6 +148,8 @@ pm2 restart ecosystem.config.js
 ## API overview
 
 All paths are served under the `/api/v1` prefix, e.g. `GET https://api.evakuators.am/api/v1/health`.
+`docs/api-reference.md` is the complete, authoritative list (with rate limits) —
+the table below is a summary.
 
 | Method | Path | Description |
 | --- | --- | --- |
@@ -174,6 +176,9 @@ All paths are served under the `/api/v1` prefix, e.g. `GET https://api.evakuator
 | `GET` | `/api/v1/my/tow-truck` | Driver-only — read own profile (Bearer JWT) |
 | `PATCH` | `/api/v1/my/tow-truck` | Driver-only — edit own profile (Bearer JWT) |
 | `POST` | `/api/v1/telegram/webhook` | Telegram bot webhook (internal, secret-token protected) |
+| `POST` | `/api/v1/analytics/events` | Record a visitor interaction (page view / contact click) — public, deduplicated to once per visitor per calendar day |
+| `GET` | `/api/v1/my/analytics` | Driver-only — own statistics (`/charts`, `/reviews`, `/ratings` too) |
+| `GET` | `/api/v1/admin/tow-trucks/:id/analytics` | Admin — same reports for any tow truck (`/charts`, `/reviews`, `/ratings`) |
 
 ## Admin panel
 
@@ -193,6 +198,23 @@ instead of Telegram OTP. `AdminJwtGuard` checks the token on the backend itself
    Re-run the same command any time to change the password (it upserts by email).
 3. Log in at `https://evakuators.am/admin` with that email/password. The token is
    kept in the browser (localStorage) and expires after 24h.
+
+## Provider analytics
+
+Every driver sees their own statistics in `/dashboard` (page views, unique
+visitors, phone/WhatsApp/Telegram/Email clicks, a 7/30/90-day chart, and their
+reviews/ratings including ones still awaiting moderation), and an admin sees the
+same numbers for any tow truck from `/admin`.
+
+The same visitor cannot inflate a counter more than once per **calendar day in
+Armenia time** — enforced by a database unique constraint, not application code.
+Visitors are identified by an anonymous UUID stored in a first-party cookie plus
+localStorage, hashed before it is stored; there is no login, no IP storage and no
+fingerprinting.
+
+No new environment variable is required (`ANALYTICS_VISITOR_PEPPER` is optional).
+See `docs/analytics.md` for the schema, index rationale, query plans and security
+model.
 
 ## Frontend details
 

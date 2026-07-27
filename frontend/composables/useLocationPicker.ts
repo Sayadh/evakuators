@@ -1,51 +1,42 @@
-import { citiesService, districtsService } from '~/services'
 import type { SelectOption } from '~/types/common'
-import type { RegionWithStats } from '~/types/location'
-import { YEREVAN_REGION_SLUG } from '~/utils/freeRouteLocation'
+import { buildCityOptions, buildRegionOptions } from '~/utils/geography'
 
 /**
  * A single region + city/district picker, following the same Yerevan-aware
- * cascading pattern as register.vue's "Տարածքներ" section — but for a single
- * location instead of a multi-select. Used twice per free route (start/end).
+ * cascading pattern as register.vue's "Տարածքներ" section — but for one location
+ * instead of a multi-select. Used twice per free route (start/end).
+ *
+ * Fully synchronous: options come from static geography (`utils/geography.ts`).
+ * It used to take the region list as an argument and load city options through
+ * `citiesService`/`districtsService`, each of which fetched every tow truck in the
+ * country to compute counts a `<select>` never displays — and there are two
+ * pickers per free-route form.
  */
-export function useLocationPicker(regions: Ref<RegionWithStats[]>) {
+export function useLocationPicker() {
   const regionSlug = ref('')
   const citySlug = ref('')
-  const cityOptions = ref<SelectOption[]>([])
 
   /** Set right before a programmatic setValue() so the watcher below doesn't clobber it */
   let suppressNextReset = false
 
-  const regionOptions = computed<SelectOption[]>(() => [
-    { value: YEREVAN_REGION_SLUG, label: 'Երևան' },
-    ...regions.value.map((region) => ({ value: region.slug, label: region.name })),
-  ])
-
-  async function loadCityOptions(slug: string): Promise<SelectOption[]> {
-    if (!slug) return []
-
-    if (slug === YEREVAN_REGION_SLUG) {
-      const districts = await districtsService.getDistricts()
-      return districts.map((district) => ({ value: district.slug, label: district.name }))
-    }
-
-    const cities = await citiesService.getCitiesByRegionSlug(slug)
-    return cities.map((city) => ({ value: city.slug, label: city.name }))
-  }
+  const regionOptions = computed<SelectOption[]>(() => buildRegionOptions())
+  const cityOptions = computed<SelectOption[]>(() => buildCityOptions(regionSlug.value))
 
   // User picking a new region always clears the city — normal interactive flow
-  watch(regionSlug, async (slug) => {
+  watch(regionSlug, () => {
     if (suppressNextReset) {
       suppressNextReset = false
       return
     }
     citySlug.value = ''
-    cityOptions.value = await loadCityOptions(slug)
   })
 
-  /** Pre-fills both fields at once (edit mode) without the watcher wiping citySlug */
+  /**
+   * Pre-fills both fields at once (edit mode) without the watcher wiping
+   * citySlug. Still async so callers can `await` it and know the watcher has
+   * settled before reading the values back.
+   */
   async function setValue(nextRegionSlug: string, nextCitySlug: string): Promise<void> {
-    cityOptions.value = await loadCityOptions(nextRegionSlug)
     suppressNextReset = true
     regionSlug.value = nextRegionSlug
     citySlug.value = nextCitySlug
@@ -57,7 +48,6 @@ export function useLocationPicker(regions: Ref<RegionWithStats[]>) {
   function reset(): void {
     regionSlug.value = ''
     citySlug.value = ''
-    cityOptions.value = []
   }
 
   return { regionSlug, citySlug, regionOptions, cityOptions, setValue, reset }

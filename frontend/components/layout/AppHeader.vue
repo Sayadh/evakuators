@@ -16,8 +16,7 @@ watch(
   <header class="header">
     <div class="container header__inner">
       <NuxtLink to="/" class="header__logo" aria-label="Evakuators.am — գլխավոր էջ">
-        <AppIcon name="truck" :size="26" class="header__logo-icon" />
-        <span>Evakuators<span class="header__logo-dot">.am</span></span>
+        <img src="/evakuators-logo-light-bg.svg" alt="Evakuators.am" class="header__logo-img">
       </NuxtLink>
 
       <nav class="header__nav" aria-label="Հիմնական նավիգացիա">
@@ -65,18 +64,12 @@ watch(
   &__logo {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    font-size: 1.2rem;
-    font-weight: 800;
-    color: var(--color-primary);
   }
 
-  &__logo-icon {
-    color: var(--color-accent);
-  }
-
-  &__logo-dot {
-    color: var(--color-accent-dark);
+  &__logo-img {
+    height: 34px;
+    width: auto;
+    display: block;
   }
 
   &__nav {

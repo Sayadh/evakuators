@@ -15,9 +15,10 @@ interface Props {
 
 defineProps<Props>()
 
-const { data: regions } = useRegions()
-const start = useLocationPicker(regions)
-const end = useLocationPicker(regions)
+// Two independent pickers (start / end). Both read static geography, so no
+// region list has to be fetched and passed in.
+const start = useLocationPicker()
+const end = useLocationPicker()
 
 const departureDate = ref('')
 const departureTime = ref('')

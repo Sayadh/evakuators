@@ -12,12 +12,12 @@ and what auth (if any) gates it.
 | `/regions/[region]/[city]` | `pages/regions/[region]/[city].vue` | Tow trucks serving one city | Mock or API | Public |
 | `/yerevan` | `pages/yerevan/index.vue` | The 12 Yerevan districts (Yerevan is a pseudo-region — its "cities" are districts) | Static geography + truck counts | Public |
 | `/yerevan/[district]` | `pages/yerevan/[district].vue` | Tow trucks serving one district | Mock or API | Public |
-| `/tow-trucks/[slug]` | `pages/tow-trucks/[slug].vue` | Single tow truck profile — gallery, pricing, service areas, reviews, similar trucks, JSON-LD business schema | Mock or API; 404s (fatal `createError`) if slug not found | Public |
+| `/tow-trucks/[slug]` | `pages/tow-trucks/[slug].vue` | Single tow truck profile — gallery (click-to-open lightbox with swipe/arrow-key navigation between photos, see `TowTruckGallery.vue`), pricing, service areas, reviews (list + submission form), similar trucks, JSON-LD business schema. Also the only page that records analytics: a `PAGE_VIEW` in `onMounted` and contact clicks via `usePhoneActions` (see `docs/analytics.md`) | Mock or API; 404s (fatal `createError`) if slug not found | Public |
 | `/free-routes` | `pages/free-routes/index.vue` | Public "Ազատ երթուղիներ" listing | Mock or API; only `ACTIVE` routes | Public |
 | `/register` | `pages/register.vue` | Driver registration form (multi-section: identity, vehicle, capacity range, services by category, pricing, image upload) | Submits to `registrationRepository` (needs a real backend to actually persist — meaningless in pure mock mode beyond UI preview) | Public |
 | `/login` | `pages/login.vue` | Driver login — phone number → Telegram OTP → JWT. Redirects to `/dashboard` if already logged in (client-side check) | Real API only (mock mode has no OTP flow) | Public (self-redirects once authenticated) |
-| `/dashboard` | `pages/dashboard.vue` | Driver's own-profile editor (contact info, description, services, pricing) + embeds `FreeRoutesManager` for the driver's own routes | Real API only | Driver JWT — redirects to `/login` if not authenticated (client-side check, `import.meta.client` guarded) |
-| `/admin` | `pages/admin.vue` | Internal moderation panel — registration requests (approve/reject), pending reviews (approve/reject), tow truck list (activate/deactivate/delete, Telegram link management) | Real API only | Admin JWT; `noindex`, not linked from public nav, excluded from sitemap |
+| `/dashboard` | `pages/dashboard.vue` | Driver's own analytics (`AnalyticsDashboard scope="driver"` — views, unique visitors, contact clicks, chart, reviews/ratings incl. unmoderated) + own-profile editor (contact info, description, services, pricing) + embeds `FreeRoutesManager` for the driver's own routes | Real API only | Driver JWT — redirects to `/login` if not authenticated (client-side check, `import.meta.client` guarded) |
+| `/admin` | `pages/admin.vue` | Internal moderation panel — registration requests (approve/reject), pending reviews (approve/reject), tow truck list (activate/deactivate/delete, Telegram link management, expandable per-truck analytics via the same `AnalyticsDashboard` component with `scope="admin"`) | Real API only | Admin JWT; `noindex`, not linked from public nav, excluded from sitemap |
 | `/about` | `pages/about.vue` | Static "about us" content | Static | Public |
 | `/contact` | `pages/contact.vue` | Static contact info | Static | Public |
 
@@ -49,9 +49,16 @@ guarded.
 ## SEO
 
 Every public page calls `useSeoMetaData()` (title/description/canonical/OG
-image) — `frontend/composables/useSeoMetaData.ts`. Structured data
-(JSON-LD) is added via `useJsonLd()` on the homepage (`WebSite` schema) and
-tow truck profile pages (`LocalBusiness`-style schema via
-`buildTowTruckBusinessSchema()`). `frontend/server/routes/sitemap.xml.ts`
-generates the sitemap dynamically — `/admin`, `/dashboard`, `/login` are
-excluded (`noindex: true` set on those pages' `useSeoMetaData` calls).
+image) — `frontend/composables/useSeoMetaData.ts`. `og-image.png` and
+`favicon.svg`/`favicon.png` (`frontend/public/`) are built from the same
+truck artwork as the header/footer logo (`evakuators-logo.svg`) — regenerate
+all of them together if the mark ever changes, not just the header. Structured
+data (JSON-LD) is added via `useJsonLd()` on the homepage (`WebSite` schema)
+and tow truck profile pages (`LocalBusiness`-style schema via
+`buildTowTruckBusinessSchema()`). `frontend/utils/faqContent.ts` builds FAQ
+Q&As (rendered via `FaqSection.vue`, with matching `FAQPage` JSON-LD) for the
+homepage, `/regions`, and `/free-routes` — `buildHomeFaq()` /
+`buildAllRegionsFaq()` / `buildFreeRoutesFaq()`. `frontend/server/routes/
+sitemap.xml.ts` generates the sitemap dynamically — `/admin`, `/dashboard`,
+`/login` are excluded (`noindex: true` set on those pages' `useSeoMetaData`
+calls).

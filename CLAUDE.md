@@ -45,8 +45,8 @@ anything.
   returns raw slugs (e.g. `"ashtarak"`, `"flatbed"`) and trusts the frontend
   to resolve them to human-readable Armenian labels.
 - **Dynamic, business data** — tow trucks, images, reviews, registration
-  requests, free routes, admin users — lives in PostgreSQL, accessed only
-  through Prisma inside the backend.
+  requests, free routes, admin users, analytics counters — lives in PostgreSQL,
+  accessed only through Prisma inside the backend.
 
 Consequence you will hit constantly: any time the backend needs to store a
 *name* alongside a slug (e.g. `TowTruck.serviceAreas`, `TowTruck.locationName`),
@@ -70,16 +70,25 @@ assume one is unused:
   float — see `docs/taxonomies.md`.
 - Region/city/district slugs used anywhere in `backend/prisma/schema.prisma`
   comments/fields must exist in `frontend/data/{regions,cities,districts}.ts`.
+- `frontend/types/enums.ts` `AnalyticsEventType` values ↔ `enum
+  AnalyticsEventType` in `backend/prisma/schema.prisma`. These travel over the
+  wire in both directions (sent when tracking an event, used as response object
+  keys), so a mismatch means a silently uncounted metric on one side and an
+  `undefined` card value on the other — see `docs/analytics.md`. The frontend's
+  `AnalyticsPeriod` / `AnalyticsReviewStatus` enums mirror the backend TS enums
+  in `backend/src/analytics/analytics.enums.ts` the same way.
 
 ## Quick map: "I need to..."
 
 | Task | Start here |
 | --- | --- |
 | Understand request/response flow, mock vs real API | `docs/architecture.md` |
+| Show a region/city/district name, or a truck count | `docs/architecture.md` § "Geography: name vs count" |
 | Understand a Prisma model or add a migration | `docs/data-model.md` |
 | Touch admin login, driver login, Telegram OTP/link | `docs/auth-and-security.md` |
 | Touch services/vehicle-types/capacity pickers or filters | `docs/taxonomies.md` |
 | Touch "Ազատ երթուղիներ" (Free Routes) | `docs/free-routes.md` |
+| Touch per-driver statistics / visitor tracking | `docs/analytics.md` |
 | Find what a specific page/route does | `docs/pages-and-routes.md` |
 | Run the app on a local machine | `docs/local-development.md` |
 | Deploy to the VPS | `docs/deployment.md` |
@@ -125,3 +134,11 @@ or a Prisma model) even if you only edited one side.
   `npx prisma generate` must be re-run before `npm run build`, or the build
   will reference a stale Prisma Client and fail with confusing "property does
   not exist" TypeScript errors.
+- **The logo is `frontend/public/evakuators-logo.svg`** (gold truck mark +
+  white/gold wordmark, for dark surfaces), with a light-surface companion at
+  `evakuators-logo-light-bg.svg` (navy truck + navy wordmark, gold accent
+  kept). Both are the single source of truth — the header (`AppHeader.vue`),
+  footer (`AppFooter.vue`), `favicon.svg`/`favicon.png`, and `og-image.png`
+  (all in `frontend/public/`) are all derived from the same truck
+  illustration. If the mark ever changes, regenerate all four together, not
+  just the header.

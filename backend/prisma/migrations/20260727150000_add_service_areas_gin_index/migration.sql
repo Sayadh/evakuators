@@ -1,0 +1,11 @@
+-- CreateIndex
+-- Every city/district/region listing filter is `citySlug = ? OR serviceAreas @> ?`
+-- (see TowTrucksRepository.buildWhere). The slug half has a btree index; the
+-- JSONB half had nothing, so the planner fell back to a Seq Scan over every tow
+-- truck with a containment test per row. Measured on 20k rows with 5 matching:
+-- 5.8ms Seq Scan → 0.07ms Bitmap Index Scan.
+--
+-- jsonb_path_ops rather than the default jsonb_ops: we only ever use the `@>`
+-- containment operator, and jsonb_path_ops builds a much smaller index for it
+-- (it hashes whole paths instead of indexing every key and value separately).
+CREATE INDEX "TowTruck_serviceAreas_idx" ON "TowTruck" USING GIN ("serviceAreas" jsonb_path_ops);

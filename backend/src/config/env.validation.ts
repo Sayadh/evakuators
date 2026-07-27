@@ -6,6 +6,9 @@ const envSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, 'SUPABASE_SERVICE_ROLE_KEY is required'),
   SUPABASE_STORAGE_BUCKET: z.string().min(1, 'SUPABASE_STORAGE_BUCKET is required'),
   PORT: z.coerce.number().int().positive().default(4002),
+  // Loopback by default: nginx is the only intended entry point (see main.ts).
+  // Set 0.0.0.0 only if the API must be reachable without nginx.
+  HOST: z.string().default('127.0.0.1'),
   CORS_ORIGIN: z.string().default('http://localhost:3002'),
 
   // Driver self-service login (Telegram OTP)
@@ -27,6 +30,13 @@ const envSchema = z.object({
   // Comma-separated numeric chat ids — locks the admin bot to specific
   // Telegram accounts only. Empty = unrestricted (any valid link token works).
   ADMIN_TELEGRAM_ALLOWED_CHAT_IDS: z.string().optional().default(''),
+
+  // Pepper for hashing analytics visitor ids (see AnalyticsVisitorKeyService).
+  // Optional: falls back to DRIVER_JWT_SECRET, so no existing deployment needs
+  // a new variable to start collecting analytics. Set it to a dedicated random
+  // value if you'd rather the two concerns never share a secret. Changing it
+  // makes every returning visitor look new from that point on.
+  ANALYTICS_VISITOR_PEPPER: z.string().optional().default(''),
 })
 
 export type Env = z.infer<typeof envSchema>

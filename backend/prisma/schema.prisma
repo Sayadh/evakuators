@@ -30,6 +30,21 @@ enum FreeRouteStatus {
   FINISHED
 }
 
+/// Every interaction a visitor can have with a tow truck profile that a driver
+/// is allowed to see in their own dashboard. Deliberately a closed enum rather
+/// than a free-text event name: the dashboard has one card per value, and a
+/// typo'd event name must fail at the DB boundary, not silently create a
+/// sixth invisible metric. See docs/analytics.md.
+enum AnalyticsEventType {
+  /// Visitor opened /tow-trucks/:slug
+  PAGE_VIEW
+  /// Visitor pressed the "Զանգահարել" button (tel: link)
+  PHONE_CLICK
+  WHATSAPP_CLICK
+  TELEGRAM_CLICK
+  EMAIL_CLICK
+}
+
 model TowTruck {
   id             Int     @id @default(autoincrement())
   slug           String  @unique
@@ -92,6 +107,11 @@ model TowTruck {
   reviews    Review[]
   freeRoutes FreeRoute[]
 
+  // Provider analytics — see docs/analytics.md. Both cascade on delete, so
+  // AdminService.deleteTowTruck() needs no extra cleanup step.
+  analyticsDailyStats  AnalyticsDailyStat[]
+  analyticsVisitorDays AnalyticsVisitorDay[]
+
   // Driver self-service login (Telegram OTP) — see DriverOtp
   /// Telegram numeric chat id, captured once the driver taps the bot deep-link.
   /// Null until linked; the driver cannot log in before that.
@@ -106,6 +126,14 @@ model TowTruck {
   @@index([regionSlug])
   @@index([isActive])
   @@index([isFeatured])
+  /// GIN index on the serviceAreas JSONB, for the `array_contains` half of every
+  /// city/district/region listing filter (see TowTrucksRepository.buildWhere).
+  /// Without it those queries are a Seq Scan over every tow truck with a JSONB
+  /// containment test per row — measured on 20k rows with 5 matches: 5.8ms
+  /// Seq Scan vs 0.07ms Bitmap Index Scan. `jsonb_path_ops` (not the default
+  /// `jsonb_ops`) because we only ever use the `@>` containment operator, and
+  /// it produces a substantially smaller, faster index for exactly that.
+  @@index([serviceAreas(ops: JsonbPathOps)], type: Gin)
 }
 
 /// Short-lived login codes sent to the driver's linked Telegram chat.
@@ -237,6 +265,72 @@ model FreeRoute {
 
   @@index([towTruckId])
   @@index([status, departureAt])
+}
+
+/// Pre-aggregated, deduplicated counters — ONE row per
+/// (tow truck, Armenia calendar day, event type). This is the only table the
+/// dashboard and the charts ever read from, which is what keeps them O(days
+/// in the selected period) instead of O(events ever recorded).
+///
+/// `eventCount` is already deduplicated: AnalyticsVisitorDay below guarantees
+/// a given visitor can bump a given counter at most once per calendar day, so
+/// `eventCount` literally means "how many distinct visitors did this on this
+/// day" — never "how many times was the button pressed".
+model AnalyticsDailyStat {
+  id         Int      @id @default(autoincrement())
+  towTruckId Int
+  towTruck   TowTruck @relation(fields: [towTruckId], references: [id], onDelete: Cascade)
+
+  /// Date-only (no time, no timezone) — the Armenia (Asia/Yerevan) calendar
+  /// day the event happened on, resolved by AnalyticsClock before writing.
+  /// Storing a plain DATE rather than a timestamp is what makes "today" mean
+  /// the same thing to the dedup key, the aggregate row and the chart axis.
+  statDate  DateTime           @db.Date
+  eventType AnalyticsEventType
+
+  eventCount Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  /// Doubles as the UPSERT conflict target (see AnalyticsRepository.recordEvent)
+  /// AND as the read index: the leading (towTruckId, statDate) prefix serves
+  /// every dashboard/chart query, so no separate read index is needed.
+  @@unique([towTruckId, statDate, eventType])
+}
+
+/// The deduplication ledger: one row proves "this visitor already triggered
+/// this event type for this tow truck on this calendar day". Its unique
+/// constraint is what enforces the once-per-day rule at the DATABASE level —
+/// not in application code — so two concurrent requests from the same visitor
+/// can never both increment the counter (see docs/analytics.md § race
+/// conditions).
+///
+/// Retention: rows older than ANALYTICS_VISITOR_DAY_RETENTION_DAYS are purged
+/// by a daily cron. AnalyticsDailyStat keeps full history forever; only this
+/// (much larger) table is time-bounded.
+model AnalyticsVisitorDay {
+  id         Int      @id @default(autoincrement())
+  towTruckId Int
+  towTruck   TowTruck @relation(fields: [towTruckId], references: [id], onDelete: Cascade)
+
+  statDate  DateTime           @db.Date
+  eventType AnalyticsEventType
+
+  /// sha256(rawVisitorId + pepper), hex. The raw cookie value is NEVER stored —
+  /// a dump of this table can't be replayed against a visitor's browser, and
+  /// can't be joined against any other system's identifiers.
+  visitorKey String @db.VarChar(64)
+
+  createdAt DateTime @default(now())
+
+  /// The dedup key. Column order is deliberate: with visitorKey LAST, the same
+  /// index also answers "COUNT(DISTINCT visitorKey) WHERE towTruckId = ? AND
+  /// statDate BETWEEN ? AND ? AND eventType = ?" as an index-only scan — i.e.
+  /// the unique-visitors metric needs no second index and never touches the heap.
+  @@unique([towTruckId, statDate, eventType, visitorKey])
+  /// Only for the retention purge, which filters on statDate across ALL tow
+  /// trucks and therefore cannot use the towTruckId-leading index above.
+  @@index([statDate])
 }
 
 /// Admin accounts — created only via `npm run admin:create`, no self-registration.

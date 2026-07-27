@@ -8,6 +8,12 @@ export type {
 } from './admin.repository'
 export { adminAuthRepository } from './adminAuth.repository'
 export type { AdminSession } from './adminAuth.repository'
+export {
+  adminAnalyticsRepository,
+  analyticsRepository,
+  myAnalyticsRepository,
+} from './analytics.repository'
+export type { AnalyticsReportsApi, AnalyticsReviewsParams } from './analytics.repository'
 export { driverAuthRepository } from './driverAuth.repository'
 export type { DriverSession } from './driverAuth.repository'
 export { freeRoutesRepository } from './freeRoutes.repository'

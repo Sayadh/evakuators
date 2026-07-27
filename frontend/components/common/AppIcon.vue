@@ -11,6 +11,8 @@ export type IconName =
   | 'close'
   | 'chevron-down'
   | 'chevron-right'
+  | 'chevron-left'
+  | 'zoom-in'
   | 'filter'
   | 'search'
   | 'arrow-right'
@@ -61,6 +63,15 @@ const ICONS: Record<IconName, IconDefinition> = {
   close: { paths: ['M18 6 6 18', 'm6 6 12 12'] },
   'chevron-down': { paths: ['m6 9 6 6 6-6'] },
   'chevron-right': { paths: ['m9 18 6-6-6-6'] },
+  'chevron-left': { paths: ['m15 18-6-6 6-6'] },
+  'zoom-in': {
+    paths: [
+      'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z',
+      'm21 21-4.35-4.35',
+      'M11 8v6',
+      'M8 11h6',
+    ],
+  },
   filter: {
     paths: ['M4 21v-7', 'M4 10V3', 'M12 21v-9', 'M12 8V3', 'M20 21v-5', 'M20 12V3', 'M1 14h6', 'M9 8h6', 'M17 16h6'],
   },

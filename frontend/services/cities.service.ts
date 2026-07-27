@@ -1,8 +1,17 @@
-import { servesCity, towTrucksService } from './towTrucks.service'
-import { staticCities } from '~/data/cities'
+import { servesCity } from './towTrucks.service'
 import { staticRegions } from '~/data/regions'
 import type { City, CityWithStats } from '~/types/location'
 import type { TowTruck } from '~/types/towTruck'
+import { findStaticCity, getRegionCities } from '~/utils/geography'
+
+/**
+ * City statistics — pure and synchronous, same contract as `regionsService`.
+ *
+ * Cities themselves are STATIC frontend data; only the counts are dynamic, and
+ * they are computed from the tow truck list the caller passes in (fetched once
+ * by `useAllTowTrucks()`). For city *names* and *routes*, use
+ * `~/utils/geography.ts` — no truck data required.
+ */
 
 function withStats(city: City, trucks: TowTruck[]): CityWithStats | null {
   const region = staticRegions.find((item) => item.id === city.regionId)
@@ -18,54 +27,34 @@ function withStats(city: City, trucks: TowTruck[]): CityWithStats | null {
   }
 }
 
-/**
- * Cities are STATIC frontend data; only the tow truck stats are dynamic
- * and come from the tow trucks service (mock or API — same code path).
- */
+/** Drops cities whose region is missing — a data error, not a renderable row */
+function mapWithStats(cities: City[], trucks: TowTruck[]): CityWithStats[] {
+  return cities
+    .map((city) => withStats(city, trucks))
+    .filter((city): city is CityWithStats => city !== null)
+}
+
 export const citiesService = {
-  async getAllCities(): Promise<CityWithStats[]> {
-    const trucks = await towTrucksService.getAll()
-    return staticCities
-      .map((city) => withStats(city, trucks))
-      .filter((city): city is CityWithStats => city !== null)
+  byRegionWithStats(regionSlug: string, trucks: TowTruck[]): CityWithStats[] {
+    return mapWithStats(getRegionCities(regionSlug), trucks)
   },
 
-  async getCitiesByRegionSlug(regionSlug: string): Promise<CityWithStats[]> {
-    const region = staticRegions.find((item) => item.slug === regionSlug)
-    if (!region) return []
-
-    const trucks = await towTrucksService.getAll()
-    return staticCities
-      .filter((city) => city.regionId === region.id)
-      .map((city) => withStats(city, trucks))
-      .filter((city): city is CityWithStats => city !== null)
+  findWithStats(regionSlug: string, citySlug: string, trucks: TowTruck[]): CityWithStats | null {
+    const city = findStaticCity(regionSlug, citySlug)
+    return city ? withStats(city, trucks) : null
   },
 
-  async getCityBySlug(regionSlug: string, citySlug: string): Promise<CityWithStats | null> {
-    const region = staticRegions.find((item) => item.slug === regionSlug)
-    if (!region) return null
-
-    const city = staticCities.find((item) => item.regionId === region.id && item.slug === citySlug)
-    if (!city) return null
-
-    const trucks = await towTrucksService.getAll()
-    return withStats(city, trucks)
-  },
-
-  /** Other cities of the same region — used for "nearby cities" links */
-  async getNearbyCities(
+  /** Other cities of the same region, busiest first — used for "nearby cities" links */
+  nearbyWithStats(
     regionSlug: string,
     citySlug: string,
+    trucks: TowTruck[],
     limit = 4,
-  ): Promise<CityWithStats[]> {
-    const region = staticRegions.find((item) => item.slug === regionSlug)
-    if (!region) return []
-
-    const trucks = await towTrucksService.getAll()
-    return staticCities
-      .filter((city) => city.regionId === region.id && city.slug !== citySlug)
-      .map((city) => withStats(city, trucks))
-      .filter((city): city is CityWithStats => city !== null)
+  ): CityWithStats[] {
+    return mapWithStats(
+      getRegionCities(regionSlug).filter((city) => city.slug !== citySlug),
+      trucks,
+    )
       .sort((a, b) => b.towTruckCount - a.towTruckCount)
       .slice(0, limit)
   },

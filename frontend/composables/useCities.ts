@@ -1,23 +1,25 @@
 import { citiesService } from '~/services'
 
+/**
+ * City lists/details **with tow truck counts**, derived from the single shared
+ * `useAllTowTrucks()` fetch.
+ *
+ * City names/routes only (dropdown options, service-area chips) → use
+ * `~/utils/geography.ts` instead and skip the network.
+ */
+
 export function useCitiesByRegion(regionSlug: string) {
-  return useAsyncData(
-    `cities-${regionSlug}`,
-    () => citiesService.getCitiesByRegionSlug(regionSlug),
-    { default: () => [] },
-  )
+  return useDerivedFromTowTrucks((trucks) => citiesService.byRegionWithStats(regionSlug, trucks))
 }
 
 export function useCity(regionSlug: string, citySlug: string) {
-  return useAsyncData(`city-${regionSlug}-${citySlug}`, () =>
-    citiesService.getCityBySlug(regionSlug, citySlug),
+  return useDerivedFromTowTrucks((trucks) =>
+    citiesService.findWithStats(regionSlug, citySlug, trucks),
   )
 }
 
 export function useNearbyCities(regionSlug: string, citySlug: string) {
-  return useAsyncData(
-    `nearby-cities-${regionSlug}-${citySlug}`,
-    () => citiesService.getNearbyCities(regionSlug, citySlug),
-    { default: () => [] },
+  return useDerivedFromTowTrucks((trucks) =>
+    citiesService.nearbyWithStats(regionSlug, citySlug, trucks),
   )
 }

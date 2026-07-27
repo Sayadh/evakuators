@@ -1,3 +1,4 @@
+export * from './analytics'
 export * from './navigation'
 export * from './popularLocations'
 export * from './services'

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { imageRepository, isApiEnabled, registrationRepository } from '~/repositories'
-import { citiesService, districtsService } from '~/services'
 import { SITE_NAME } from '~/constants/site'
 import { SERVICE_CATEGORIES } from '~/constants/services'
 import {
@@ -14,6 +13,7 @@ import type { SelectOption } from '~/types/common'
 import { trackRegistrationSubmit } from '~/utils/analytics'
 import { extractErrorMessage } from '~/utils/errors'
 import { armenianPhoneInputValue } from '~/utils/formatPhone'
+import { buildCityOptions, buildRegionOptions, YEREVAN_REGION_SLUG } from '~/utils/geography'
 import {
   isAmount,
   isEmail,
@@ -31,8 +31,6 @@ useSeoMetaData({
     'Գրանցեք ձեր էվակուատորը Evakuators.am հարթակում և ստացեք պատվերներ ձեր տարածքից։ Գրանցումն անվճար է։',
   path: '/register',
 })
-
-const { data: regions } = useRegions()
 
 /** Factory (not a shared literal) so resetForm() below can get a fresh,
  * independent copy of the defaults after a successful submission. */
@@ -75,39 +73,26 @@ const form = reactive(createInitialFormState())
 
 const errors = reactive<Record<string, string>>({})
 
-const YEREVAN_SLUG = 'yerevan'
+const regionOptions = computed<SelectOption[]>(() => buildRegionOptions())
 
-const regionOptions = computed<SelectOption[]>(() => [
-  { value: YEREVAN_SLUG, label: 'Երևան' },
-  ...regions.value.map((region) => ({ value: region.slug, label: region.name })),
-])
-
-const isYerevanSelected = computed(() => form.mainRegionSlug === YEREVAN_SLUG)
+const isYerevanSelected = computed(() => form.mainRegionSlug === YEREVAN_REGION_SLUG)
 
 /** "Ծառայություններ" fieldset lets the driver pick 24/7 — hours only make
  * sense to ask about when that isn't selected. */
 const is247 = computed(() => form.services.includes(ServiceType.Available247))
 
-const cityOptions = ref<SelectOption[]>([])
+/**
+ * Service-area checkboxes — labels only, so this is derived from static geography
+ * with no request. Yerevan is a pseudo-region whose "cities" are its districts
+ * (see CLAUDE.md).
+ */
+const cityOptions = computed<SelectOption[]>(() => buildCityOptions(form.mainRegionSlug))
 
+// Changing the marz invalidates whatever cities were ticked under the old one.
 watch(
   () => form.mainRegionSlug,
-  async (regionSlug) => {
+  () => {
     form.citySlugs = []
-    cityOptions.value = []
-    if (!regionSlug) return
-
-    if (regionSlug === YEREVAN_SLUG) {
-      const districts = await districtsService.getDistricts()
-      cityOptions.value = districts.map((district) => ({
-        value: district.slug,
-        label: district.name,
-      }))
-      return
-    }
-
-    const cities = await citiesService.getCitiesByRegionSlug(regionSlug)
-    cityOptions.value = cities.map((city) => ({ value: city.slug, label: city.name }))
   },
 )
 

@@ -7,6 +7,7 @@ import configuration from './config/configuration'
 import { validateEnv } from './config/env.validation'
 import { AdminAuthModule } from './admin-auth/admin-auth.module'
 import { AdminModule } from './admin/admin.module'
+import { AnalyticsModule } from './analytics/analytics.module'
 import { DriverAuthModule } from './driver-auth/driver-auth.module'
 import { FreeRoutesModule } from './free-routes/free-routes.module'
 import { HealthModule } from './health/health.module'
@@ -30,7 +31,8 @@ import { TowTrucksModule } from './tow-trucks/tow-trucks.module'
     // (image upload, registration/review submission, driver-auth) apply a
     // stricter @Throttle() override — see their controllers.
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 60 }]),
-    // Powers @Cron() in FreeRoutesService (auto-expiry cleanup)
+    // Powers @Cron() in FreeRoutesService (auto-expiry cleanup) and in
+    // AnalyticsTrackingService (visitor-day retention purge)
     ScheduleModule.forRoot(),
     PrismaModule,
     HealthModule,
@@ -45,6 +47,7 @@ import { TowTrucksModule } from './tow-trucks/tow-trucks.module'
     DriverAuthModule,
     MyTowTruckModule,
     FreeRoutesModule,
+    AnalyticsModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

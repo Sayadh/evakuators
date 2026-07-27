@@ -43,7 +43,12 @@ export function toTowTruckApi(truck: TowTruckWithImages): TowTruckApi {
       platformWidthM: truck.platformWidthM ?? undefined,
       winch: truck.winch,
       manipulator: truck.manipulator,
-      plateNumber: truck.plateNumber ?? undefined,
+      // Withheld server-side when the driver opted out, not just hidden by the
+      // UI. TowTruckInfo.vue checks `showPlateNumber` before rendering it, but
+      // the value was still in the JSON response and in the SSR payload — so a
+      // driver who explicitly chose not to publish their plate had it published
+      // anyway, one "view source" away.
+      plateNumber: truck.showPlateNumber ? (truck.plateNumber ?? undefined) : undefined,
       showPlateNumber: truck.showPlateNumber,
     },
     services: truck.services,

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { citiesService } from '~/services'
 import { LocationType } from '~/types/enums'
 import type { ServiceArea } from '~/types/towTruck'
+import { findCityLocation } from '~/utils/geography'
 import { getCityRoute, getDistrictRoute } from '~/utils/routeHelpers'
 
 interface Props {
@@ -10,16 +10,17 @@ interface Props {
 
 const props = defineProps<Props>()
 
-/** slug → regionSlug map so city chips can link to their pages */
-const { data: allCities } = useAsyncData('all-cities', () => citiesService.getAllCities(), {
-  default: () => [],
-})
-
+/**
+ * A city's URL is /regions/<region>/<city>, so a chip needs the city's marz —
+ * resolved from static data. This previously fetched every tow truck (via
+ * `citiesService.getAllCities()`) just to read a slug → regionSlug mapping that
+ * never depended on truck data at all.
+ */
 function getAreaRoute(area: ServiceArea): string | null {
   if (area.type === LocationType.District) return getDistrictRoute(area.slug)
   if (area.type === LocationType.City) {
-    const match = allCities.value.find((cityItem) => cityItem.slug === area.slug)
-    return match ? getCityRoute(match.regionSlug, match.slug) : null
+    const city = findCityLocation(area.slug)
+    return city ? getCityRoute(city.regionSlug, city.slug) : null
   }
   return null
 }

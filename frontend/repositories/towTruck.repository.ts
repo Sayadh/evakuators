@@ -22,9 +22,11 @@ export const towTruckRepository = {
     })
   },
 
-  getYerevan(): Promise<TowTruck[]> {
-    return apiFetch<TowTruck[]>('/tow-trucks', { query: { yerevan: true } })
-  },
+  // NOTE: the backend also serves `GET /tow-trucks?yerevan=true` (see
+  // docs/api-reference.md), but the frontend no longer calls it — every page that
+  // wanted it already had the full list loaded for per-district counts, so it is
+  // derived in memory by `selectYerevanTowTrucks()` instead of costing a second
+  // request. The endpoint stays for other API consumers.
 
   /** Admin-curated "best tow trucks" — empty array when the admin hasn't marked any */
   getFeatured(): Promise<TowTruck[]> {

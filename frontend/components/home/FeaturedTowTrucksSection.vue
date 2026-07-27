@@ -15,7 +15,7 @@ const { data: featured, pending } = useFeaturedTowTrucks(6)
   >
     <div class="container">
       <h2 id="featured-title" class="section-title">Լավագույն էվակուատորները</h2>
-      <TowTruckList :tow-trucks="featured" :pending="pending" :skeleton-count="3" layout="stack" />
+      <TowTruckList :tow-trucks="featured" :pending="pending" :skeleton-count="3" />
     </div>
   </section>
 </template>

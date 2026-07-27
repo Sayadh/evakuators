@@ -28,17 +28,68 @@ backend). See `docs/deployment.md`.
 
 ```
 pages/*.vue          route components — call composables, render, and that's it
-composables/*.ts      useAsyncData wrappers around services (useRegions, useTowTrucksInYerevan, ...)
+composables/*.ts      useAsyncData wrappers + derivations (useRegions, useTowTrucksInYerevan, ...)
 services/*.ts          business logic + the mock/API switch (isApiEnabled())
 repositories/*.ts      the ONLY files that call apiFetch()/$fetch — thin HTTP wrappers
 mocks/*.ts              in-memory fixture data, used when no backend is configured
+utils/*.ts               pure helpers, no network, no Nuxt context needed
 ```
+
+Note that not every service method fetches: the location services
+(`regions`/`cities`/`districts`) are pure synchronous stat builders that take an
+already-fetched tow truck list — see "Geography: name vs count" below.
 
 A component should never import a repository directly, and a service should
 never import `$fetch` directly — everything HTTP-shaped funnels through
 `repositories/apiClient.ts`'s `apiFetch()`. This is what makes the mock/API
 switch (below) work transparently: swap `NUXT_PUBLIC_API_BASE_URL` and every
 service starts hitting real endpoints with zero component changes.
+
+## Geography: name vs count — the rule that keeps request counts sane
+
+Two ways to get at regions/cities/districts, and picking the wrong one is
+expensive:
+
+- **Need a name or a route?** `frontend/utils/geography.ts` — synchronous, pure,
+  reads `frontend/data/*` only. Zero network. Includes the shared
+  `buildRegionOptions()` / `buildCityOptions()` cascade (Yerevan's "cities" are
+  its districts) and `cityOrDistrictLabel()`.
+- **Need a `towTruckCount`?** `useRegions()` / `useCitiesByRegion()` /
+  `useDistricts()` / `useTowTrucksInYerevan()` — all derived from **one** shared
+  `useAllTowTrucks()` fetch (`composables/useAllTowTrucks.ts`), with the
+  location services (`services/{regions,cities,districts}.service.ts`) reduced
+  to pure synchronous stat builders over the list they're handed.
+
+This is not premature optimisation; it fixed a measured problem. Previously each
+location service called `towTrucksService.getAll()` itself, and callers that only
+wanted labels went through them anyway:
+
+| Page | `GET /tow-trucks` before | after |
+| --- | --- | --- |
+| `/` | 5 (+1 `?yerevan=true`, +1 `/featured`) | 1 (+1 `/featured`) |
+| `/about`, `/contact`, `/register` | 2 | **0** |
+| `/regions`, `/yerevan` | 2–3 | 1 |
+
+Two independent causes, both worth knowing about:
+
+1. **`AppFooter` fetched the whole fleet to render plain links.** It lives in the
+   default layout, so *every page on the site* downloaded every tow truck —
+   twice — for names it got from static data anyway.
+2. **`useAsyncData`'s default is `dedupe: 'cancel'`.** When a second component
+   calls the same key, Nuxt **aborts the in-flight request and starts a new
+   one**. `useRegions()` is called from three components on the homepage and
+   `useDistricts()` from two → 3 + 2 = 5 requests for two distinct keys.
+   `useAllTowTrucks()` sets `dedupe: 'defer'` (later callers await the request
+   already in flight) plus `getCachedData` (client-side navigation reuses the
+   payload). **Any new shared-key `useAsyncData` in this codebase should set
+   both.**
+
+Page-level lists (`useTowTrucksByCity/District/Region`) deliberately keep their
+own filtered backend requests — one city's trucks genuinely is different data,
+and letting Postgres filter beats shipping the whole fleet. Yerevan is the
+exception: `useTowTrucksInYerevan()` derives from the shared list, because both
+callers already load it for per-district counts. `GET /tow-trucks?yerevan=true`
+is still served, just no longer called by this frontend.
 
 Global components are registered with `pathPrefix: false` in
 `nuxt.config.ts`, so e.g. `frontend/components/location/RegionCard.vue` is
@@ -67,9 +118,12 @@ getAll(): Promise<TowTruck[]> {
 ```
 
 - `NUXT_PUBLIC_API_BASE_URL` **empty** → the entire site runs on
-  `frontend/mocks/towTrucks.ts` (~a few dozen fixture tow trucks) and the
-  static `frontend/data/*` geography. No backend needed at all — this is how
-  the frontend can be developed and deployed as a pure static-feeling site.
+  `frontend/mocks/towTrucks.ts` (~130 fixture tow trucks: a couple dozen
+  hand-authored ones plus a generated "filler fleet" — `generateFillerFleet()`
+  — that pads out per-region counts to look realistic in screenshots/demos)
+  and the static `frontend/data/*` geography. No backend needed at all — this
+  is how the frontend can be developed and deployed as a pure static-feeling
+  site.
 - `NUXT_PUBLIC_API_BASE_URL` **set** (e.g. `http://localhost:4002/api/v1` or
   `https://api.evakuators.am/api/v1`) → every service call goes through
   `repositories/*.ts` → real HTTP → NestJS.
@@ -96,8 +150,15 @@ dto/*.dto.ts           class-validator input shapes, referenced by @Body()/@Quer
 ```
 
 Modules are feature-scoped (`tow-trucks`, `admin`, `admin-auth`, `driver-auth`,
-`my-tow-truck`, `registration`, `reviews`, `images`, `free-routes`, `telegram`,
-`health`, `storage`, `prisma`), each wired in `backend/src/app.module.ts`.
+`my-tow-truck`, `registration`, `reviews`, `images`, `free-routes`, `analytics`,
+`telegram`, `health`, `storage`, `prisma`), each wired in
+`backend/src/app.module.ts`. `analytics` is the one module with three
+controllers, because it serves three different authorisation models (anonymous
+writes, driver-scoped reads, admin-scoped reads) over one service layer — see
+`docs/analytics.md`.
+`admin-auth` is the biggest one in practice — it owns admin login **and**
+optional Telegram 2FA **and** the separate admin-bot webhook controller (see
+`docs/auth-and-security.md`), there's no standalone `admin-telegram` module.
 
 Global pipes/guards set up in `main.ts` / `app.module.ts`:
 - `ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true, transformOptions: { enableImplicitConversion: true } })`
@@ -112,7 +173,8 @@ Global pipes/guards set up in `main.ts` / `app.module.ts`:
   stricter `@Throttle()` on the controller method — check the controller
   before assuming the global limit applies.
 - `ScheduleModule.forRoot()` powers `@Cron()` in `FreeRoutesService` (see
-  `docs/free-routes.md`).
+  `docs/free-routes.md`) and in `AnalyticsTrackingService` (visitor-day
+  retention purge, see `docs/analytics.md`).
 
 ## Image pipeline
 

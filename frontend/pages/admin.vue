@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import { FetchError } from 'ofetch'
-import { staticCities } from '~/data/cities'
-import { staticDistricts } from '~/data/districts'
 import { SERVICE_LABELS } from '~/constants/services'
 import { SITE_NAME } from '~/constants/site'
 import { representativeCapacityTons, VEHICLE_TYPE_LABELS } from '~/constants/vehicles'
@@ -17,6 +15,7 @@ import {
 import { useAdminAuthStore } from '~/stores/adminAuth'
 import type { ServiceType, VehicleType } from '~/types/enums'
 import { extractErrorMessage } from '~/utils/errors'
+import { cityOrDistrictLabel } from '~/utils/geography'
 
 /**
  * Internal moderation panel — not linked from the public site and excluded
@@ -129,14 +128,6 @@ const reviewsError = ref('')
 const towTrucksError = ref('')
 /** Id of the row whose action button is currently in flight (disables just that button) */
 const actioningId = ref<number | null>(null)
-
-function cityOrDistrictLabel(slug: string): string {
-  return (
-    staticCities.find((city) => city.slug === slug)?.name ??
-    staticDistricts.find((district) => district.slug === slug)?.name ??
-    slug
-  )
-}
 
 function serviceLabel(slug: string): string {
   return SERVICE_LABELS[slug as ServiceType] ?? slug
@@ -260,6 +251,21 @@ async function resendTelegramLink(truck: AdminTowTruck): Promise<void> {
   } finally {
     actioningId.value = null
   }
+}
+
+/**
+ * Which tow truck's analytics panel is expanded (at most one at a time).
+ *
+ * Lazily mounted rather than rendered for every row: each panel issues four API
+ * requests, so eagerly loading them would mean 4×N requests every time an admin
+ * opens this page. Collapsing unmounts the panel, so re-expanding refetches —
+ * which is the behaviour an admin wants anyway (fresh numbers, not a cached view
+ * from ten minutes ago).
+ */
+const analyticsTruckId = ref<number | null>(null)
+
+function toggleAnalytics(truck: AdminTowTruck): void {
+  analyticsTruckId.value = analyticsTruckId.value === truck.id ? null : truck.id
 }
 
 /** Irreversible — deletes the truck, its images (DB + Supabase Storage), reviews and OTPs */
@@ -676,6 +682,13 @@ async function rejectReview(review: AdminReview): Promise<void> {
               <span class="admin-card__muted">{{ formatDate(truck.createdAt) }}</span>
               <div class="admin-card__actions">
                 <AppButton
+                  :variant="analyticsTruckId === truck.id ? 'primary' : 'outline'"
+                  size="sm"
+                  @click="toggleAnalytics(truck)"
+                >
+                  {{ analyticsTruckId === truck.id ? 'Փակել վիճակագրությունը' : 'Վիճակագրություն' }}
+                </AppButton>
+                <AppButton
                   variant="outline"
                   size="sm"
                   :disabled="actioningId === truck.id"
@@ -709,6 +722,13 @@ async function rejectReview(review: AdminReview): Promise<void> {
                 </AppButton>
               </div>
             </footer>
+
+            <!-- Exactly the component the driver sees in their own /dashboard,
+                 pointed at this truck's admin endpoints — so admin and driver can
+                 never be looking at differently-computed numbers. -->
+            <div v-if="analyticsTruckId === truck.id" class="admin-card__analytics">
+              <AnalyticsDashboard scope="admin" :tow-truck-id="truck.id" />
+            </div>
           </article>
         </div>
       </section>
@@ -909,6 +929,14 @@ async function rejectReview(review: AdminReview): Promise<void> {
     gap: var(--space-3);
     flex-wrap: wrap;
     padding-top: var(--space-3);
+    border-top: 1px solid var(--color-border);
+  }
+
+  /* Expanded analytics panel — sits on the page background so it reads as a
+     drawer belonging to this card rather than more card content. */
+  &__analytics {
+    margin-top: var(--space-4);
+    padding-top: var(--space-4);
     border-top: 1px solid var(--color-border);
   }
 

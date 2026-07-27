@@ -1,5 +1,13 @@
-import { towTrucksService } from '~/services'
+import { selectYerevanTowTrucks, towTrucksService } from '~/services'
 import type { TowTruck } from '~/types/towTruck'
+
+/**
+ * Page-level tow truck lists. These keep their own filtered backend requests —
+ * one city's trucks really is different data from another's, and letting the
+ * backend filter beats shipping the whole fleet to render one city page.
+ *
+ * The exception is Yerevan (below), which is derived rather than fetched.
+ */
 
 export function useTowTrucksByCity(citySlug: string) {
   return useAsyncData(`tow-trucks-city-${citySlug}`, () => towTrucksService.getByCitySlug(citySlug), {
@@ -25,10 +33,13 @@ export function useFeaturedTowTrucks(limit = 6) {
   })
 }
 
+/**
+ * Derived from the shared full list, not a `?yerevan=true` request: both callers
+ * (`RegionsSection` on the homepage, `/yerevan`) already load that list for the
+ * per-district counts, so this is free. See `selectYerevanTowTrucks()`.
+ */
 export function useTowTrucksInYerevan() {
-  return useAsyncData('tow-trucks-yerevan', () => towTrucksService.getYerevanTowTrucks(), {
-    default: () => [],
-  })
+  return useDerivedFromTowTrucks(selectYerevanTowTrucks)
 }
 
 export function useTowTrucksByRegion(regionSlug: string) {

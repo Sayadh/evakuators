@@ -43,9 +43,18 @@ useSeoMetaData({
 
 useJsonLd([buildTowTruckBusinessSchema(truck, reviews.value)])
 
+const { trackPageView } = useAnalyticsTracking()
+
 onMounted(() => {
   useRecentlyViewedStore().add(truck.slug)
+  // External product analytics (GA/Matomo abstraction)…
   trackTowTruckView(truck.slug)
+  // …and this driver's own dashboard counter. onMounted, not setup: a PAGE_VIEW
+  // is a real browser opening the page, so it must not fire during SSR or on a
+  // prerender/crawl. Deduplicated server-side to once per visitor per Armenia
+  // calendar day, so a reload or an in-page navigation back here won't inflate
+  // the number (see docs/analytics.md).
+  trackPageView(truck.id)
 })
 </script>
 

@@ -18,19 +18,20 @@ npm run format   # Prettier
 
 ```
 /assets/styles   SCSS design tokens (CSS variables, 4px spacing system)
-/components      layout · common · location · tow-truck · filters · home · seo
+/components      layout · common · location · tow-truck · filters · home · seo · analytics · dashboard · free-routes
 /composables     useRegions, useTowTrucks, useTowTruckFilters, useSeoMetaData …
 /constants       labels, nav, sort options, site config
 /data            ՍՏԱՏԻԿ տվյալներ՝ regions, cities, districts (մշտական, API-ից ՉԻ գալու)
 /layouts         default layout (header + main + footer)
 /mocks           API-ով փոխարինվող demo տվյալներ՝ towTrucks
-/pages           /, /regions, /regions/[region]/[city], /yerevan/[district], /tow-trucks/[slug], /register …
+/pages           /, /regions, /regions/[region]/[city], /yerevan/[district], /tow-trucks/[slug],
+                 /register, /login, /dashboard, /admin, /free-routes, /about, /contact …
 /plugins         localStorage-backed stores init
 /repositories    API layer (apiClient + towTruck/registration/image repositories)
 /services        service layer (regions, cities, districts, towTrucks)
 /stores          Pinia: towTruckFilters, recentlyViewed, location
 /types           interfaces + enums
-/utils           formatters, validators, route helpers, schema.org builders, analytics
+/utils           geography (ստատիկ որոնումներ), formatters, validators, route helpers, schema.org, analytics
 ```
 
 ## Տվյալների ճարտարապետություն

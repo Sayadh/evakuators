@@ -1,7 +1,13 @@
-import { servesDistrict, towTrucksService } from './towTrucks.service'
-import { staticDistricts } from '~/data/districts'
+import { servesDistrict } from './towTrucks.service'
 import type { District, DistrictWithStats } from '~/types/location'
 import type { TowTruck } from '~/types/towTruck'
+import { findStaticDistrict, getStaticDistricts } from '~/utils/geography'
+
+/**
+ * Yerevan district statistics — pure and synchronous, same contract as
+ * `regionsService`: the caller supplies the already-fetched tow truck list.
+ * District *names* come from `~/utils/geography.ts` and need no truck data.
+ */
 
 function withStats(district: District, trucks: TowTruck[]): DistrictWithStats {
   const serving = trucks.filter((truck) => servesDistrict(truck, district.slug))
@@ -13,23 +19,19 @@ function withStats(district: District, trucks: TowTruck[]): DistrictWithStats {
 }
 
 export const districtsService = {
-  async getDistricts(): Promise<DistrictWithStats[]> {
-    const trucks = await towTrucksService.getAll()
-    return staticDistricts.map((district) => withStats(district, trucks))
+  allWithStats(trucks: TowTruck[]): DistrictWithStats[] {
+    return getStaticDistricts().map((district) => withStats(district, trucks))
   },
 
-  async getDistrictBySlug(slug: string): Promise<DistrictWithStats | null> {
-    const district = staticDistricts.find((item) => item.slug === slug)
-    if (!district) return null
-
-    const trucks = await towTrucksService.getAll()
-    return withStats(district, trucks)
+  findWithStats(districtSlug: string, trucks: TowTruck[]): DistrictWithStats | null {
+    const district = findStaticDistrict(districtSlug)
+    return district ? withStats(district, trucks) : null
   },
 
-  async getNearbyDistricts(slug: string, limit = 4): Promise<DistrictWithStats[]> {
-    const trucks = await towTrucksService.getAll()
-    return staticDistricts
-      .filter((district) => district.slug !== slug)
+  /** Busiest other districts — used for "nearby districts" links */
+  nearbyWithStats(districtSlug: string, trucks: TowTruck[], limit = 4): DistrictWithStats[] {
+    return getStaticDistricts()
+      .filter((district) => district.slug !== districtSlug)
       .map((district) => withStats(district, trucks))
       .sort((a, b) => b.towTruckCount - a.towTruckCount)
       .slice(0, limit)

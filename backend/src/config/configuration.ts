@@ -1,5 +1,10 @@
 export interface AppConfig {
   port: number
+  /**
+   * Interface to bind. Defaults to loopback so nginx is the only way in — see
+   * the comment on `app.listen()` in main.ts for why that matters.
+   */
+  host: string
   corsOrigins: string[]
   frontendUrl: string
   supabase: {
@@ -34,11 +39,27 @@ export interface AppConfig {
   }
   driverJwtSecret: string
   adminJwtSecret: string
+  /**
+   * Pepper for hashing visitor ids in the analytics module
+   * (see AnalyticsVisitorKeyService). Optional in the environment: when unset
+   * it falls back to `driverJwtSecret`, which is already required and
+   * length-validated. Same pattern as DriverAuthService using that secret to
+   * hash OTP codes — so analytics works on an existing deployment with no new
+   * env var, while still allowing a dedicated one.
+   *
+   * Rotating it is a deliberate, destructive act: every stored visitorKey
+   * becomes unmatchable, so every returning visitor is counted as new from that
+   * moment on (historical aggregates are unaffected — they hold no keys).
+   */
+  analyticsVisitorPepper: string
 }
+
+const driverJwtSecret = (): string => process.env.DRIVER_JWT_SECRET ?? ''
 
 export default (): AppConfig => ({
   // 4002 is reserved for this backend — 3002 is the Evakuators frontend, never swap them
   port: Number(process.env.PORT ?? 4002),
+  host: process.env.HOST ?? '127.0.0.1',
   corsOrigins: (process.env.CORS_ORIGIN ?? 'http://localhost:3002')
     .split(',')
     .map((origin) => origin.trim())
@@ -64,6 +85,7 @@ export default (): AppConfig => ({
       .map((id) => id.trim())
       .filter(Boolean),
   },
-  driverJwtSecret: process.env.DRIVER_JWT_SECRET ?? '',
+  driverJwtSecret: driverJwtSecret(),
   adminJwtSecret: process.env.ADMIN_JWT_SECRET ?? '',
+  analyticsVisitorPepper: process.env.ANALYTICS_VISITOR_PEPPER || driverJwtSecret(),
 })

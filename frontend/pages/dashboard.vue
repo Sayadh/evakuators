@@ -55,7 +55,20 @@ function removeExistingImage(index: number): void {
 
 function onNewImagesChange(event: Event): void {
   const input = event.target as HTMLInputElement
-  const files = Array.from(input.files ?? [])
+  let files = Array.from(input.files ?? [])
+  
+  const currentTotal = existingImages.value.length + newImageFiles.value.length
+  const allowed = 6 - currentTotal
+  
+  if (allowed <= 0) {
+    if (input) input.value = ''
+    return
+  }
+  
+  if (files.length > allowed) {
+    files = files.slice(0, allowed)
+  }
+
   newImageFiles.value.push(...files)
 
   const previews = files.map((file) => URL.createObjectURL(file))
@@ -281,8 +294,8 @@ async function logout(): Promise<void> {
             </div>
           </div>
           
-          <div class="dashboard-file-input">
-            <label for="new-images">Ավելացնել նկարներ</label>
+          <div class="dashboard-file-input" v-if="existingImages.length + newImageFiles.length < 6">
+            <label for="new-images">Ավելացնել նկարներ (մինչև 6 նկար)</label>
             <input
               id="new-images"
               type="file"
@@ -290,6 +303,9 @@ async function logout(): Promise<void> {
               multiple
               @change="onNewImagesChange"
             >
+          </div>
+          <div v-else class="dashboard-file-input">
+            <label>Նկարների առավելագույն քանակը (6) լրացված է։</label>
           </div>
         </fieldset>
 

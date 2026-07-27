@@ -1,4 +1,5 @@
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsEmail,
@@ -90,6 +91,7 @@ export class UpdateMyTowTruckDto {
 
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(6, { message: 'Նկարների առավելագույն քանակը 6 է' })
   @IsInt({ each: true })
   imageIds?: number[]
 }

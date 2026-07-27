@@ -160,17 +160,37 @@ generated correctly. This is not a token bug — see
 Global default (`ThrottlerModule.forRoot`, `app.module.ts`): 60 requests /
 60 seconds per IP. Endpoints prone to abuse override with a stricter
 `@Throttle()` decorator directly on the controller method — check the
-specific controller (`images`, `registration`, `reviews`, `driver-auth`)
-rather than assuming the global limit is what applies; grep for `@Throttle`
-to see current overrides.
+specific controller (`images`, `registration`, `reviews`, `driver-auth`,
+`analytics`) rather than assuming the global limit is what applies; grep for
+`@Throttle` to see current overrides.
+
+**"Per IP" depends entirely on `app.set('trust proxy', 1)` in `main.ts` — do not
+remove it.** `ThrottlerGuard` keys its buckets on `req.ip`, and behind nginx
+Express reports `127.0.0.1` for everyone unless it is told to trust
+`X-Forwarded-For`. Before that line existed, every limit in the app was one
+global cap shared by the whole internet: five failed logins from one client
+returned 429 to the next login attempt from a different IP, which made a
+one-line denial of service against login/registration/upload/tracking possible.
+Verified both directions — a forged `X-Forwarded-For` does not move the bucket
+(nginx appends the real address to the right of the chain, and `1` means "trust
+one hop"), and two genuinely different clients get separate buckets. See
+`docs/deployment.md` § "Why the API binds loopback".
+
+Also note `HOST` now defaults to `127.0.0.1`: with the API previously listening
+on `*:4002`, a client could skip nginx entirely and hit the app with no
+`X-Forwarded-For` at all.
 
 ## Things that are NOT implemented (don't assume otherwise)
 
 - No refresh tokens for either auth system — both are long-lived JWTs
   (24h admin, 30d driver) with no rotation/refresh endpoint. Logout is purely
   client-side (`localStorage.removeItem`).
-- No rate limiting keyed on anything other than raw IP (no per-account
-  limiting beyond the driver-auth phone cooldown described above).
+- No rate limiting keyed on anything other than client IP (no per-account
+  limiting beyond the driver-auth phone cooldown described above). The IP is
+  resolved from `X-Forwarded-For` — see the Throttling section.
+- Throttle counters live in memory, so they reset on every deploy/restart and
+  would not be shared if the app were ever run as more than one PM2 instance
+  (that needs a Redis storage adapter).
 - No verification that the Telegram account tapping a link matches the
   `telegram` username entered at registration — see the linking section
   above, this is by design, not an oversight.

@@ -13,6 +13,15 @@ string with no foreign key**, referencing a constant defined in the frontend
 The backend does not validate that a slug corresponds to something real
 beyond basic string constraints (length, kebab-case pattern where relevant).
 
+`TowTruck.serviceAreas` (JSONB) carries a `GIN (jsonb_path_ops)` index, because
+every city/district/region listing filter is
+`citySlug = ? OR serviceAreas @> ?` (see `TowTrucksRepository.buildWhere`) and the
+JSONB half had no index at all — the planner fell back to a Seq Scan with a
+containment test per row. Measured on 20k rows with 5 matches: 5.8ms Seq Scan →
+0.07ms Bitmap Index Scan. `jsonb_path_ops` rather than the default `jsonb_ops`
+because `@>` containment is the only operator used, and it builds a much smaller
+index for exactly that.
+
 This is deliberate — see `CLAUDE.md` § "Core architectural decision" — but it
 means:
 - The backend can happily store `citySlug: "nonexistent-place"` — nothing
@@ -109,6 +118,28 @@ non-null at once in practice) — reflects the upload-before-attach flow in
 `onDelete: SetNull` from `RegistrationRequest` (rejecting a request doesn't
 need to delete its images immediately).
 
+**Orphan cleanup (`ImagesService.purgeOrphanedImages`, daily 03:00).** Two kinds
+of row belong to nothing a user can reach, and until this job existed neither was
+ever deleted — from the database *or* from Supabase Storage:
+
+- **Never attached.** `POST /images` inserts the row before the registration form
+  is submitted, so an abandoned upload leaves both FKs null forever. That endpoint
+  is public by necessity (it runs before a driver has any credentials) and accepts
+  10MB files, which made it the only path in the system where an anonymous
+  request permanently costs money. Removed after 24h — long enough that a driver
+  can take their time between picking photos and submitting.
+- **Attached to a REJECTED request.** `AdminService.reject()` intentionally keeps
+  the `RegistrationRequest` row as an audit trail, but the photos have no further
+  use. Removed 7 days after the rejection, in case an admin wants a second look.
+
+The job deletes the Storage objects **before** the rows, and bails out keeping the
+rows if Storage fails: `path` is the only record of which bucket object belongs to
+which row, so dropping the row first would strand the file permanently — exactly
+the problem the job exists to fix.
+
+Nothing else deletes images: `TowTruck` deletion cascades the rows, and
+`AdminService.deleteTowTruck()` removes the Storage objects itself first.
+
 ## `Review`
 
 Customer-submitted, always created with `isApproved: false`
@@ -129,6 +160,12 @@ One row per requested login code, never reused. `codeHash` is
 `consumedAt` is set both on successful verification and when a newer OTP is
 requested (`DriverOtpRepository.invalidateActive()`), so a driver can never
 have two "active" codes at once. See `docs/auth-and-security.md`.
+
+Rows older than 24h are deleted daily by `DriverAuthService.purgeSpentLoginCodes`,
+which cleans `AdminOtp` in the same job (identical mechanism, identical retention
+rule — one cron that can't get out of sync beats two that can). Nothing was
+deleting them before, so the tables grew by one row per login attempt forever. A
+spent code has no audit value: the hash is one-way.
 
 ## `AnalyticsDailyStat` / `AnalyticsVisitorDay`
 

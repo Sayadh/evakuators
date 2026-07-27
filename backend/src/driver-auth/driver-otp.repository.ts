@@ -38,4 +38,20 @@ export class DriverOtpRepository {
   consume(id: number): Promise<DriverOtp> {
     return this.prisma.driverOtp.update({ where: { id }, data: { consumedAt: new Date() } })
   }
+
+  /**
+   * Deletes codes that can no longer be used for anything. A row becomes dead
+   * the moment it expires or is consumed — it is never read again, not even for
+   * an audit trail (the hash is one-way and tells you nothing).
+   *
+   * Nothing was deleting these, so the table grew by one row per login attempt
+   * forever. Small rows, but unbounded growth with no upside; the same applies
+   * to AdminOtp.
+   */
+  async deleteExpiredBefore(cutoff: Date): Promise<number> {
+    const result = await this.prisma.driverOtp.deleteMany({
+      where: { createdAt: { lt: cutoff } },
+    })
+    return result.count
+  }
 }

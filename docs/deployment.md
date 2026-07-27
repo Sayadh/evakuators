@@ -77,6 +77,98 @@ Both `AdminJwtGuard` and `DriverJwtGuard` enforce auth in the NestJS app
 itself, not via nginx — auth still works correctly even if nginx config
 changes or is bypassed in some edge case.
 
+## Why the API binds loopback, and why `trust proxy` matters
+
+Two settings in `backend/src/main.ts` that only make sense together, and both
+were wrong before:
+
+**`app.set('trust proxy', 1)`.** nginx forwards the real client address in
+`X-Forwarded-For` (`$proxy_add_x_forwarded_for`), but Express ignores that header
+unless told to trust it. Without it, `req.ip` is `127.0.0.1` — nginx's own
+address — for every request in the world, and `ThrottlerGuard` keys its buckets
+on `req.ip`. So **every `@Throttle` in the app was a single global cap shared by
+the entire internet**: five failed logins from one person returned 429 to the
+next login from anyone else. Any script could lock all real users out of login,
+review submission, image upload and analytics tracking, and every IP in the logs
+was useless.
+
+`1`, not `true`: Express then takes the entry exactly one hop from the right of
+the XFF chain — the one nginx appended itself. Verified that a client forging
+`X-Forwarded-For: 1.2.3.4` gets the same bucket as before (the forged value is
+pushed left and ignored), while a genuinely different client gets its own.
+**If a CDN (Cloudflare etc.) is ever put in front of nginx, this must become
+`2`** — otherwise all of that CDN's users collapse into one bucket again.
+
+**`HOST=127.0.0.1` (the new default).** The API used to listen on `*:4002`, so on
+the VPS it answered on `http://<server-ip>:4002/api/v1` — bypassing nginx, and
+therefore TLS, and therefore also the `X-Forwarded-For` header the throttler now
+depends on. Binding loopback closes that path; the frontend already did this via
+PM2's `HOST`.
+
+## Database backups
+
+**There is no automatic backup unless you set one up — nothing in this repo does
+it for you.** Postgres lives on the same single VPS as the app, so a disk failure
+or a bad `DELETE` loses every registration, review and analytics counter with no
+way back.
+
+Minimum viable setup — nightly `pg_dump`, 14 days of history:
+
+```bash
+mkdir -p /var/backups/evakuators
+crontab -e
+```
+
+```cron
+# 03:30 daily — dump, gzip, keep 14 days
+30 3 * * * pg_dump "$DATABASE_URL" | gzip > /var/backups/evakuators/db-$(date +\%F).sql.gz && find /var/backups/evakuators -name 'db-*.sql.gz' -mtime +14 -delete
+```
+
+Two things this is still missing, in priority order:
+
+1. **Off-server copies.** A backup on the same disk as the database does not
+   survive the failure it exists for. Sync the directory somewhere else (`rclone`
+   to any S3-compatible bucket, or `scp` to another machine) — Supabase already
+   gives you an object store, and it is not the same disk.
+2. **A restore you have actually run.** An untested backup is a guess. Restore a
+   dump into a scratch database once and note how long it takes:
+   ```bash
+   createdb evakuators_restore_test
+   gunzip -c /var/backups/evakuators/db-YYYY-MM-DD.sql.gz | psql evakuators_restore_test
+   ```
+
+Supabase Storage (the tow truck photos) is a separate system with its own
+retention — a Postgres dump does not include the images, only the rows pointing
+at them.
+
+## Log rotation
+
+PM2 writes stdout/stderr to `~/.pm2/logs/*.log` and never truncates them, so a
+long-running server slowly fills its disk with the request log:
+
+```bash
+pm2 install pm2-logrotate
+pm2 set pm2-logrotate:max_size 10M
+pm2 set pm2-logrotate:retain 7
+pm2 set pm2-logrotate:compress true
+```
+
+## Scheduled jobs
+
+Four crons run inside the backend process (`ScheduleModule.forRoot()`), all
+logging only when they actually changed something:
+
+| Job | Schedule | What it does |
+| --- | --- | --- |
+| `FreeRoutesService.cleanupExpiredRoutes` | every 10 min | `ACTIVE` → `FINISHED` at departure, hard-delete after a 24h grace period (`docs/free-routes.md`) |
+| `ImagesService.purgeOrphanedImages` | daily 03:00 | Deletes never-attached uploads (>24h) and rejected applications' photos (>7d) from **Supabase Storage and** the DB |
+| `AnalyticsTrackingService.purgeExpiredVisitorDays` | daily 04:00 | Trims the visitor-dedup ledger past its retention window (`docs/analytics.md`) |
+| `DriverAuthService.purgeSpentLoginCodes` | daily 04:00 | Deletes driver + admin OTP rows older than 24h |
+
+These run in-process, so they only fire while the backend is up, and `instances:
+1` in `ecosystem.config.js` is load-bearing: running two PM2 instances would run
+every job twice.
+
 ## Telegram webhook registration
 
 One-time (or whenever the API domain changes), **not** part of the routine
@@ -123,6 +215,7 @@ wrong link in Telegram messages.
 | `SUPABASE_SERVICE_ROLE_KEY` | yes | |
 | `SUPABASE_STORAGE_BUCKET` | yes | Must be a **public** bucket |
 | `PORT` | no, default `4002` | Never `3002` |
+| `HOST` | no, default `127.0.0.1` | Interface to bind. Loopback by default so nginx is the only way in — see "Why the API binds loopback" below. Set `0.0.0.0` only if something must reach the API without nginx |
 | `CORS_ORIGIN` | no, default `http://localhost:3002` | Comma-separated; a prod-only value silently blocks local dev — see `docs/local-development.md` |
 | `FRONTEND_URL` | no, default `https://evakuators.am` | Used to build the "Login" button link in Telegram messages; not zod-validated |
 | `TELEGRAM_BOT_TOKEN` | yes | |

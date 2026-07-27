@@ -1,12 +1,15 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { JwtService } from '@nestjs/jwt'
+import { Cron, CronExpression } from '@nestjs/schedule'
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto'
+import { AdminOtpRepository } from '../admin-auth/admin-otp.repository'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
 import { TelegramService } from '../telegram/telegram.service'
 import { DriverOtpRepository } from './driver-otp.repository'
@@ -14,6 +17,13 @@ import { DriverOtpRepository } from './driver-otp.repository'
 const CODE_TTL_MINUTES = 5
 const MAX_ATTEMPTS = 5
 const REQUEST_COOLDOWN_MS = 45_000
+
+/**
+ * How long a login code row is kept before deletion. Far beyond the 5-minute
+ * TTL — the point is only to stop the table growing forever, not to expire codes
+ * (that's `expiresAt`).
+ */
+const OTP_RETENTION_MS = 24 * 60 * 60 * 1000
 
 export interface DriverSession {
   token: string
@@ -23,6 +33,7 @@ export interface DriverSession {
 
 @Injectable()
 export class DriverAuthService {
+  private readonly logger = new Logger(DriverAuthService.name)
   private readonly pepper: string
   /** phone -> last request time, resets on restart — fine for a single-instance app */
   private readonly lastRequestAt = new Map<string, number>()
@@ -30,11 +41,37 @@ export class DriverAuthService {
   constructor(
     private readonly towTrucksRepository: TowTrucksRepository,
     private readonly otpRepository: DriverOtpRepository,
+    private readonly adminOtpRepository: AdminOtpRepository,
     private readonly telegram: TelegramService,
     private readonly jwt: JwtService,
     config: ConfigService,
   ) {
     this.pepper = config.getOrThrow<string>('driverJwtSecret')
+  }
+
+  /**
+   * Deletes spent login codes for both drivers and admins.
+   *
+   * One cron for both tables rather than one per auth module: they are the same
+   * mechanism with the same retention rule, and a single scheduled job that
+   * cannot get out of sync beats two that can. It lives here (rather than in a
+   * "maintenance" grab-bag module) because driver OTPs are by far the higher
+   * volume of the two.
+   *
+   * A row is dead the moment it expires or is consumed — the hash is one-way, so
+   * keeping it has no audit value either.
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_4AM)
+  async purgeSpentLoginCodes(): Promise<void> {
+    const cutoff = new Date(Date.now() - OTP_RETENTION_MS)
+    const [drivers, admins] = await Promise.all([
+      this.otpRepository.deleteExpiredBefore(cutoff),
+      this.adminOtpRepository.deleteExpiredBefore(cutoff),
+    ])
+
+    if (drivers > 0 || admins > 0) {
+      this.logger.log(`Login-code purge: removed ${drivers} driver and ${admins} admin codes`)
+    }
   }
 
   async requestCode(phone: string): Promise<void> {

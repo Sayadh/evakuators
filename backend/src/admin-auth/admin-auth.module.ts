@@ -22,6 +22,8 @@ import { AdminUserRepository } from './admin-user.repository'
   ],
   // AdminNotificationService is exported so other modules (RegistrationModule)
   // can notify admins without duplicating Telegram/User-lookup logic.
-  exports: [AdminJwtGuard, JwtModule, AdminNotificationService],
+  // AdminOtpRepository is exported so DriverAuthService's single login-code
+  // purge cron can clean both OTP tables (see purgeSpentLoginCodes).
+  exports: [AdminJwtGuard, JwtModule, AdminNotificationService, AdminOtpRepository],
 })
 export class AdminAuthModule {}

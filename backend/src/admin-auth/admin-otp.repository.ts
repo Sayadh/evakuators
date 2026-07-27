@@ -34,4 +34,12 @@ export class AdminOtpRepository {
   consume(id: number): Promise<AdminOtp> {
     return this.prisma.adminOtp.update({ where: { id }, data: { consumedAt: new Date() } })
   }
+
+  /** Same unbounded-growth cleanup as DriverOtpRepository.deleteExpiredBefore() */
+  async deleteExpiredBefore(cutoff: Date): Promise<number> {
+    const result = await this.prisma.adminOtp.deleteMany({
+      where: { createdAt: { lt: cutoff } },
+    })
+    return result.count
+  }
 }

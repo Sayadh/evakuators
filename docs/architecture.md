@@ -172,9 +172,13 @@ Global pipes/guards set up in `main.ts` / `app.module.ts`:
   (image upload, registration/review submission, driver-auth) override with a
   stricter `@Throttle()` on the controller method — check the controller
   before assuming the global limit applies.
-- `ScheduleModule.forRoot()` powers `@Cron()` in `FreeRoutesService` (see
-  `docs/free-routes.md`) and in `AnalyticsTrackingService` (visitor-day
-  retention purge, see `docs/analytics.md`).
+- `ScheduleModule.forRoot()` powers four `@Cron()` jobs — free-route expiry,
+  orphaned-image purge, analytics retention and login-code cleanup. They are
+  listed with their schedules in `docs/deployment.md` § "Scheduled jobs".
+  `instances: 1` in `ecosystem.config.js` is load-bearing for all of them.
+- `app.set('trust proxy', 1)` in `main.ts` is what makes every `@Throttle`
+  per-client rather than one global bucket — see `docs/auth-and-security.md`
+  § Throttling before touching it.
 
 ## Image pipeline
 

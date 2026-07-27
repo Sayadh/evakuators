@@ -211,53 +211,64 @@ async function logout(): Promise<void> {
         {{ truck.vehicle.model }} · <NuxtLink :to="`/tow-trucks/${truck.slug}`">Տեսնել պրոֆիլը կայքում</NuxtLink>
       </p>
 
-      <!-- Analytics first: it's what a driver opens the dashboard to check, and
-           it needs no interaction. The edit form stays below it. -->
-      <section class="dashboard-section dashboard-section--analytics">
-        <AnalyticsDashboard scope="driver" />
-      </section>
+      <!-- Analytics first: it's what a driver opens the dashboard to check -->
+      <details class="dashboard-section">
+        <summary class="dashboard-summary">Վիճակագրություն</summary>
+        <div class="dashboard-details-content">
+          <AnalyticsDashboard scope="driver" />
+        </div>
+      </details>
 
       <form class="dashboard-form" @submit.prevent="submit">
-        <fieldset class="dashboard-section">
-          <legend>Կոնտակտներ</legend>
-          <AppInput v-model="form.secondaryPhone" type="tel" label="Լրացուցիչ հեռախոս" />
-          <AppInput v-model="form.whatsapp" type="tel" label="WhatsApp" />
-          <AppInput v-model="form.telegram" label="Telegram username" />
-          <AppInput v-model="form.email" type="email" label="Email" />
-        </fieldset>
+        <details class="dashboard-section">
+          <summary class="dashboard-summary">Կոնտակտներ</summary>
+          <div class="dashboard-details-content">
+            <AppInput v-model="form.secondaryPhone" type="tel" label="Լրացուցիչ հեռախոս" />
+            <AppInput v-model="form.whatsapp" type="tel" label="WhatsApp" />
+            <AppInput v-model="form.telegram" label="Telegram username" />
+            <AppInput v-model="form.email" type="email" label="Email" />
+          </div>
+        </details>
 
-        <fieldset class="dashboard-section">
-          <legend>Նկարագրություն</legend>
-          <AppInput v-model="form.description" label="Նկարագրություն" />
-        </fieldset>
+        <details class="dashboard-section">
+          <summary class="dashboard-summary">Նկարագրություն</summary>
+          <div class="dashboard-details-content">
+            <AppInput v-model="form.description" label="Նկարագրություն" />
+          </div>
+        </details>
 
-        <fieldset class="dashboard-section">
-          <legend>Ծառայություններ</legend>
-          <ServiceCategoryPicker v-model="form.services" :categories="SERVICE_CATEGORIES" mode="form" />
-          <div v-if="!is247" class="dashboard-working-hours">
-            <p class="dashboard-working-hours__label">Աշխատանքային ժամեր (ոչ պարտադիր)</p>
-            <div class="dashboard-working-hours__grid">
-              <AppInput v-model="form.workingHoursStart" type="time" label="Սկիզբ" />
-              <AppInput v-model="form.workingHoursEnd" type="time" label="Ավարտ" />
+        <details class="dashboard-section">
+          <summary class="dashboard-summary">Ծառայություններ</summary>
+          <div class="dashboard-details-content">
+            <ServiceCategoryPicker v-model="form.services" :categories="SERVICE_CATEGORIES" mode="form" />
+            <div v-if="!is247" class="dashboard-working-hours">
+              <p class="dashboard-working-hours__label">Աշխատանքային ժամեր (ոչ պարտադիր)</p>
+              <div class="dashboard-working-hours__grid">
+                <AppInput v-model="form.workingHoursStart" type="time" label="Սկիզբ" />
+                <AppInput v-model="form.workingHoursEnd" type="time" label="Ավարտ" />
+              </div>
             </div>
           </div>
-        </fieldset>
+        </details>
 
-        <fieldset class="dashboard-section">
-          <legend>Գներ (ոչ պարտադիր)</legend>
-          <AppInput v-model="form.priceCityCallout" type="number" label="Քաղաքի ներսում (֏)" />
-          <AppInput v-model="form.pricePerKm" type="number" label="1 կմ-ի գին (֏)" />
-          <AppInput v-model="form.priceWaitingPerHour" type="number" label="Սպասում, ժամում (֏)" />
-          <AppInput
-            v-model="form.priceNightSurchargePercent"
-            type="number"
-            label="Գիշերային հավելավճար (%)"
-          />
-          <AppInput v-model="form.priceExtraLoading" type="number" label="Լրացուցիչ բարձում (֏)" />
-        </fieldset>
+        <details class="dashboard-section">
+          <summary class="dashboard-summary">Գներ (ոչ պարտադիր)</summary>
+          <div class="dashboard-details-content">
+            <AppInput v-model="form.priceCityCallout" type="number" label="Քաղաքի ներսում (֏)" />
+            <AppInput v-model="form.pricePerKm" type="number" label="1 կմ-ի գին (֏)" />
+            <AppInput v-model="form.priceWaitingPerHour" type="number" label="Սպասում, ժամում (֏)" />
+            <AppInput
+              v-model="form.priceNightSurchargePercent"
+              type="number"
+              label="Գիշերային հավելավճար (%)"
+            />
+            <AppInput v-model="form.priceExtraLoading" type="number" label="Լրացուցիչ բարձում (֏)" />
+          </div>
+        </details>
 
-        <fieldset class="dashboard-section">
-          <legend>Նկարներ</legend>
+        <details class="dashboard-section">
+          <summary class="dashboard-summary">Նկարներ</summary>
+          <div class="dashboard-details-content">
           <div class="dashboard-images">
             <!-- Existing images -->
             <div
@@ -294,20 +305,21 @@ async function logout(): Promise<void> {
             </div>
           </div>
           
-          <div class="dashboard-file-input" v-if="existingImages.length + newImageFiles.length < 6">
-            <label for="new-images">Ավելացնել նկարներ (մինչև 6 նկար)</label>
-            <input
-              id="new-images"
-              type="file"
-              accept="image/*"
-              multiple
-              @change="onNewImagesChange"
-            >
+            <div class="dashboard-file-input" v-if="existingImages.length + newImageFiles.length < 6">
+              <label for="new-images">Ավելացնել նկարներ (մինչև 6 նկար)</label>
+              <input
+                id="new-images"
+                type="file"
+                accept="image/*"
+                multiple
+                @change="onNewImagesChange"
+              >
+            </div>
+            <div v-else class="dashboard-file-input">
+              <label>Նկարների առավելագույն քանակը (6) լրացված է։</label>
+            </div>
           </div>
-          <div v-else class="dashboard-file-input">
-            <label>Նկարների առավելագույն քանակը (6) լրացված է։</label>
-          </div>
-        </fieldset>
+        </details>
 
 
         <p v-if="saveError" class="dashboard-error">{{ saveError }}</p>
@@ -318,14 +330,16 @@ async function logout(): Promise<void> {
         </AppButton>
       </form>
 
-      <section class="dashboard-section dashboard-section--routes">
-        <h2>Ազատ երթուղիներ</h2>
-        <p class="dashboard-hint">
-          Մեկնում եք ինչ-որ ուղղությամբ դատարկ։ Հրապարակեք երթուղին, և հաճախորդները, ովքեր շարժվում
-          են նույն ուղղությամբ, կկարողանան կապվել ձեզ հետ։
-        </p>
-        <FreeRoutesManager :vehicle-type="truck.vehicle.type" />
-      </section>
+      <details class="dashboard-section dashboard-section--routes">
+        <summary class="dashboard-summary">Ազատ երթուղիներ</summary>
+        <div class="dashboard-details-content">
+          <p class="dashboard-hint">
+            Մեկնում եք ինչ-որ ուղղությամբ դատարկ։ Հրապարակեք երթուղին, և հաճախորդները, ովքեր շարժվում
+            են նույն ուղղությամբ, կկարողանան կապվել ձեզ հետ։
+          </p>
+          <FreeRoutesManager :vehicle-type="truck.vehicle.type" />
+        </div>
+      </details>
     </template>
   </div>
 </template>
@@ -355,37 +369,69 @@ async function logout(): Promise<void> {
 .dashboard-form {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: var(--space-4);
   max-width: 640px;
-}
-
-.dashboard-section--analytics {
-  border: 0;
-  padding: 0;
-  margin-bottom: var(--space-6);
+  margin-top: var(--space-4);
 }
 
 .dashboard-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  padding: var(--space-4);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--transition);
 
-  legend {
-    font-weight: 600;
-    padding: 0 var(--space-2);
+  &:hover {
+    box-shadow: var(--shadow-md);
+  }
+
+  &[open] .dashboard-summary {
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: var(--space-4);
   }
 }
 
-.dashboard-section--routes {
-  margin-top: var(--space-6);
-  max-width: 640px;
+.dashboard-summary {
+  font-weight: 600;
+  font-size: 1.1rem;
+  padding: var(--space-4);
+  cursor: pointer;
+  user-select: none;
+  list-style: none; /* Hide default arrow */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 
-  h2 {
-    margin: 0;
+  &::-webkit-details-marker {
+    display: none;
   }
+
+  &::after {
+    content: '';
+    display: inline-block;
+    width: 24px;
+    height: 24px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23333' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center;
+    transition: transform 0.3s ease;
+  }
+}
+
+details[open] .dashboard-summary::after {
+  transform: rotate(180deg);
+}
+
+.dashboard-details-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+.dashboard-section--routes {
+  margin-top: var(--space-4);
+  max-width: 640px;
 
   .dashboard-hint {
     margin-bottom: 0;

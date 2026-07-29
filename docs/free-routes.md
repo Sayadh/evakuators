@@ -42,9 +42,18 @@ registered in `app.module.ts`). Manual deletion by the driver
 grace period entirely** — it's an immediate hard delete, there's no reason to
 keep a row around after the owner explicitly asked to remove it.
 
-Editing a route (`PATCH /my/free-routes/:id`) force-reactivates
-`status: 'ACTIVE'` even if the cron had already marked it `FINISHED` — the
-product framing is "editing is re-posting."
+Editing a route (`PATCH /my/free-routes/:id`) reactivates `status: 'ACTIVE'`
+even if the cron had already marked it `FINISHED` — the product framing is
+"editing is re-posting" — **but only when the resulting `departureAt` is still
+in the future.** If it isn't, the edit is rejected with a message asking for a
+new date/time.
+
+That condition is not a nicety. Reactivating unconditionally (which is what
+this did originally) republished the route with a departure time that had
+already passed, so it appeared publicly as "leaving at «yesterday»" until the
+next cron tick — and if the departure was further back than the grace period,
+that same tick flipped it to `FINISHED` and step 2 immediately hard-deleted it.
+A driver fixing a typo in the description watched their route vanish.
 
 ## Endpoints
 
@@ -53,8 +62,16 @@ product framing is "editing is re-posting."
 | `GET` | `/api/v1/free-routes` | none | Public listing, `ACTIVE` only |
 | `GET` | `/api/v1/my/free-routes` | driver JWT | Own routes, any status |
 | `POST` | `/api/v1/my/free-routes` | driver JWT | Requires `isActive` truck (`assertActiveDriver`) |
-| `PATCH` | `/api/v1/my/free-routes/:id` | driver JWT | Ownership checked (`getOwnedOrThrow`), reactivates status |
-| `DELETE` | `/api/v1/my/free-routes/:id` | driver JWT | Immediate hard delete, no grace period |
+| `PATCH` | `/api/v1/my/free-routes/:id` | driver JWT | `assertActiveDriver` + ownership (`getOwnedOrThrow`); reactivates status, rejected if the effective `departureAt` is in the past |
+| `DELETE` | `/api/v1/my/free-routes/:id` | driver JWT | `assertActiveDriver` + ownership; immediate hard delete, no grace period |
+
+All three write endpoints run `assertActiveDriver`, not just `POST`. A
+deactivated profile is frozen everywhere else (`MyTowTruckService` re-checks
+`isActive` on every call), and this module used to be the one exception —
+a deactivated driver could still write to their rows behind a still-valid
+30-day JWT. Nothing they wrote reached the public list (`findActive()` joins on
+`towTruck.isActive`), but a rule enforced in three places and skipped in a
+fourth is a rule that drifts.
 
 `departureAt` is validated server-side
 (`FreeRoutesService.parseDepartureAt`) to be a real ISO date **strictly in

@@ -115,6 +115,19 @@ nothing deletes `RegistrationRequest` rows.
 registration), not the same shape as `TowTruck.capacityTons` (an exact
 float) — see `docs/taxonomies.md`.
 
+`regionSlugs: String[]` — up to 2 marzes (e.g. Yerevan + Kotayk), enforced by
+`CreateRegistrationDto`'s `@ArrayMaxSize(2)`. Was a single `mainRegionSlug`
+column; `citySlugs` can now hold a **mix** of real cities and Yerevan
+districts (one region's "cities" if Yerevan is one of the two picks), so
+nothing downstream may assume "all of `citySlugs` is the same type" — see the
+`slugType()` helper in `AdminService.approve()`'s frontend caller
+(`admin.vue`) for the per-slug resolution this requires. `TowTruck.regionSlug`
+itself stays a single column: the admin resolves it at approval time from
+whichever region the chosen `citySlug`/`districtSlug` actually belongs to
+(`ApproveRegistrationDto.regionSlug`, resolved via `findCityLocation()` on the
+frontend, since the backend has no geography data of its own), the same
+pattern already used for `citySlug`/`districtSlug`/`serviceAreas` names.
+
 `workingHoursText` is collected here in the same optional/validated format
 described under `TowTruck` above, and copied over as-is by
 `AdminService.approve()` — the admin doesn't re-enter it.
@@ -126,6 +139,22 @@ non-null at once in practice) — reflects the upload-before-attach flow in
 `docs/architecture.md`'s image pipeline. `onDelete: Cascade` from `TowTruck`,
 `onDelete: SetNull` from `RegistrationRequest` (rejecting a request doesn't
 need to delete its images immediately).
+
+**`position` is the driver's own order, and index 0 is the main photo.** It is
+written from the array index in exactly two places —
+`RegistrationRepository.create()` (from the ordered `imageIds` the form
+submits, main file first) and `ImagesRepository.applyGallery()` (the dashboard's
+full replacement list). Approval deliberately does *not* touch it: it only
+re-points `towTruckId`, so the photo the driver chose stays the main photo when
+their profile goes live.
+
+Every query that returns images must order by `IMAGE_ORDER`
+(`backend/src/images/image-order.ts`), never by `position` alone. Rows created
+before `position` was actually written all carry the column default of `0`, so
+`position`-only ordering leaves them in whatever order Postgres feels like
+returning — which really did differ between two runs of the same query, making
+"the main photo" and the listing thumbnail unstable. The `id` tiebreak resolves
+that legacy data to upload order, which is the order the driver submitted.
 
 **Orphan cleanup (`ImagesService.purgeOrphanedImages`, daily 03:00).** Two kinds
 of row belong to nothing a user can reach, and until this job existed neither was
@@ -146,8 +175,20 @@ rows if Storage fails: `path` is the only record of which bucket object belongs 
 which row, so dropping the row first would strand the file permanently — exactly
 the problem the job exists to fix.
 
-Nothing else deletes images: `TowTruck` deletion cascades the rows, and
-`AdminService.deleteTowTruck()` removes the Storage objects itself first.
+**This job is the single owner of Storage deletion for photos a driver removes.**
+When a driver drops a photo from their gallery, `MyTowTruckService` only
+*detaches* the row (`ImagesRepository.detachFromTowTruck` clears both FKs), which
+makes it match the "never attached" branch above and get cleaned up on the next
+nightly run. It used to delete the row and then call Storage itself — the wrong
+order, so a transient Supabase failure discarded `path` while the file was still
+in the bucket and leaked it with nothing left to find it by. The trade-off is
+that a removed photo sits in the bucket for up to ~24h; it is unreferenced by
+then, and it is the same window abandoned uploads already have.
+
+The one remaining exception is `AdminService.deleteTowTruck()`, which removes the
+Storage objects itself (correct order, tolerating failure) because the admin
+explicitly asked for the data to be gone now rather than tomorrow. `TowTruck`
+deletion cascades the rows.
 
 ## `Review`
 

@@ -47,8 +47,8 @@ interface TowTruckSeed {
   waitingPerHour?: number
   nightSurchargePercent?: number
   extraLoading?: number
-  vehicle: Omit<TowTruckVehicle, 'winch' | 'manipulator' | 'showPlateNumber'> &
-    Partial<Pick<TowTruckVehicle, 'winch' | 'manipulator' | 'showPlateNumber'>>
+  vehicle: Omit<TowTruckVehicle, 'winch' | 'manipulator' | 'wheelSkates' | 'showPlateNumber'> &
+    Partial<Pick<TowTruckVehicle, 'winch' | 'manipulator' | 'wheelSkates' | 'showPlateNumber'>>
   extraServices?: ServiceType[]
   serviceAreas: ServiceArea[]
   location: TowTruckLocation
@@ -92,6 +92,7 @@ function defineTowTruck(seed: TowTruckSeed): TowTruck {
     vehicle: {
       winch: true,
       manipulator: seed.vehicle.type === VehicleType.Manipulator,
+      wheelSkates: true,
       showPlateNumber: false,
       ...seed.vehicle,
     },

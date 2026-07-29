@@ -50,7 +50,26 @@ export class FreeRoutesService {
   }
 
   async update(towTruckId: number, id: number, dto: UpdateFreeRouteDto): Promise<MyFreeRouteApi> {
+    await this.assertActiveDriver(towTruckId)
     const existing = await this.getOwnedOrThrow(towTruckId, id)
+
+    // Editing a route is the driver re-posting it, so it goes back to ACTIVE —
+    // but only if it would actually still be in the future. Reactivating
+    // unconditionally (which is what this used to do) republished a finished
+    // route with a departure time that had already passed: it showed publicly
+    // as "leaving at <yesterday>" until the next cron tick, and if the
+    // departure was more than the grace period ago the very next tick marked
+    // it FINISHED and then hard-deleted it — so a driver who fixed a typo in
+    // the description watched their route disappear.
+    const departureAt = dto.departureAt
+      ? this.parseDepartureAt(dto.departureAt)
+      : existing.departureAt
+
+    if (departureAt.getTime() <= Date.now()) {
+      throw new BadRequestException(
+        'Այս երթուղու մեկնման ժամն արդեն անցել է։ Խմբագրելու համար նշեք նոր ամսաթիվ և ժամ։',
+      )
+    }
 
     const route = await this.freeRoutesRepository.update(existing.id, {
       startRegionSlug: dto.startRegionSlug,
@@ -58,15 +77,14 @@ export class FreeRoutesService {
       endRegionSlug: dto.endRegionSlug,
       endCitySlug: dto.endCitySlug,
       description: dto.description,
-      ...(dto.departureAt ? { departureAt: this.parseDepartureAt(dto.departureAt) } : {}),
-      // Editing a route is the driver re-posting it — reactivate it even if
-      // the cron had already marked it FINISHED in the meantime.
+      departureAt,
       status: 'ACTIVE',
     })
     return toMyFreeRouteApi(route)
   }
 
   async remove(towTruckId: number, id: number): Promise<{ id: number }> {
+    await this.assertActiveDriver(towTruckId)
     const existing = await this.getOwnedOrThrow(towTruckId, id)
     // Manual delete is always immediate and permanent — unlike the cron's
     // ACTIVE -> FINISHED -> (grace period) -> deleted path, there's no point
@@ -75,6 +93,15 @@ export class FreeRoutesService {
     return { id: existing.id }
   }
 
+  /**
+   * Applied to create, update AND remove — everything a driver can do to a
+   * route. Only create() used to check, which left a deactivated driver
+   * writing to rows behind a still-valid 30-day JWT. Nothing they wrote could
+   * reach the public list (findActive() joins on `towTruck.isActive`), but the
+   * rule that a deactivated profile is frozen is the same rule
+   * MyTowTruckService enforces on every single call, and this module quietly
+   * disagreeing with it is how the two drift apart.
+   */
   private async assertActiveDriver(towTruckId: number): Promise<void> {
     const towTruck = await this.towTrucksRepository.findById(towTruckId)
     if (!towTruck || !towTruck.isActive) {

@@ -17,7 +17,14 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: 3002,
         HOST: '127.0.0.1',
+        // What the BROWSER calls — must stay the public hostname.
         NUXT_PUBLIC_API_BASE_URL: 'https://api.evakuators.am/api/v1',
+        // What SSR calls. Straight to the backend on loopback: skips a
+        // pointless nginx + TLS hop per render, and — the actual reason this
+        // exists — keeps server-rendered pages out of the public per-IP rate
+        // limit, which every visitor would otherwise share through this one
+        // process. See backend/src/common/ssr-aware-throttler.guard.ts.
+        NUXT_INTERNAL_API_BASE_URL: 'http://127.0.0.1:4002/api/v1',
       },
       instances: 1,
       autorestart: true,

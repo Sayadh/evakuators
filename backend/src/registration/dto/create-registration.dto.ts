@@ -96,6 +96,10 @@ export class CreateRegistrationDto {
   @IsBoolean()
   manipulator!: boolean
 
+  /** Wheel skates — for loading a vehicle with locked/non-rotating wheels */
+  @IsBoolean()
+  wheelSkates!: boolean
+
   /**
    * Fully optional — a driver may leave both 24/7 unselected and this unset.
    * When present, the frontend builds it from two <input type="time">
@@ -110,9 +114,13 @@ export class CreateRegistrationDto {
   workingHoursText?: string
 
   // Areas — slugs reference frontend static data
-  @IsString()
-  @MaxLength(40)
-  mainRegionSlug!: string
+  /** Up to 2 marzes — a driver covering e.g. Yerevan + Kotayk picks both */
+  @IsArray()
+  @ArrayMinSize(1, { message: 'Ընտրեք առնվազն մեկ մարզ' })
+  @ArrayMaxSize(2, { message: 'Կարող եք ընտրել առավելագույնը 2 մարզ' })
+  @IsString({ each: true })
+  @MaxLength(40, { each: true })
+  regionSlugs!: string[]
 
   @IsArray()
   @ArrayMinSize(1, { message: 'Ընտրեք առնվազն մեկ քաղաք/շրջան' })

@@ -111,9 +111,16 @@ part of the tag name.
 
 ```ts
 export function isApiEnabled(): boolean {
-  return getApiBase().length > 0   // NUXT_PUBLIC_API_BASE_URL
+  return useRuntimeConfig().public.apiBaseUrl.length > 0   // NUXT_PUBLIC_API_BASE_URL
 }
 ```
+
+Note it reads the **public** URL specifically, not `getApiBase()`. Those are
+not the same value: `getApiBase()` returns `NUXT_INTERNAL_API_BASE_URL` during
+SSR when that is set (a loopback address straight to the backend — see
+`docs/auth-and-security.md` § "SSR is exempt"), and the public URL in the
+browser. The mock/live decision has to come out identical on both sides or SSR
+renders one dataset and hydration replaces it with the other.
 
 Every service (`frontend/services/*.service.ts`) branches on this at the top
 of nearly every method:

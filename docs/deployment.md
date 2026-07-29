@@ -250,5 +250,6 @@ Set via PM2's `env` block in production, or a local `.env` for dev:
 
 | Variable | Notes |
 | --- | --- |
-| `NUXT_PUBLIC_API_BASE_URL` | Full backend URL including `/api/v1`. Empty = mock mode (see `docs/architecture.md`) |
+| `NUXT_PUBLIC_API_BASE_URL` | Full backend URL including `/api/v1`, as the **browser** calls it. Empty = mock mode (see `docs/architecture.md`) |
+| `NUXT_INTERNAL_API_BASE_URL` | Same API as the **server** calls it during SSR — `http://127.0.0.1:4002/api/v1` in production. Empty = fall back to the public URL (fine locally, where both are localhost). Not optional in production: without it every server-rendered page shares one rate-limit bucket, see `docs/auth-and-security.md` § "SSR is exempt" |
 | `PORT` | Reserved `3002` |

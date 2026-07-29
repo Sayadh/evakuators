@@ -60,6 +60,21 @@ export class ApproveRegistrationDto {
   @MaxLength(40)
   districtSlug?: string
 
+  /**
+   * The truck's "best-effort" browsing region (see TowTruck.regionSlug in
+   * schema.prisma) — null/omitted for Yerevan, since Yerevan trucks are
+   * placed via `districtSlug` instead. Now that a request can carry up to 2
+   * regionSlugs, the backend can no longer infer this on its own (it has no
+   * geography data — see CLAUDE.md), so the admin frontend resolves it from
+   * whichever region the chosen citySlug/districtSlug actually belongs to,
+   * the same way it already resolves citySlug/districtSlug and serviceAreas
+   * names below.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  regionSlug?: string
+
   @IsOptional()
   @IsString()
   @MaxLength(2000)

@@ -4,6 +4,7 @@ import { driverAuthRepository, isApiEnabled } from '~/repositories'
 import { useDriverAuthStore } from '~/stores/driverAuth'
 import { extractErrorMessage } from '~/utils/errors'
 import { armenianPhoneInputValue } from '~/utils/formatPhone'
+import { isPhone, validateField } from '~/utils/validators'
 
 useSeoMetaData({
   title: `Վարորդի մուտք | ${SITE_NAME}`,
@@ -54,6 +55,13 @@ onUnmounted(() => clearInterval(resendTimer))
 
 async function submitPhone(): Promise<void> {
   error.value = ''
+
+  const phoneError = validateField(phone.value, [isPhone()])
+  if (phoneError) {
+    error.value = phoneError
+    return
+  }
+
   submitting.value = true
   try {
     await driverAuthRepository.requestCode(phone.value.trim())
@@ -137,6 +145,7 @@ function backToPhone(): void {
             label="Հեռախոսահամար"
             placeholder="+37491000001"
             required
+            :maxlength="12"
           />
           <p v-if="error" class="login-error">{{ error }}</p>
           <AppButton type="submit" variant="success" block :disabled="submitting">

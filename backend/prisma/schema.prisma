@@ -74,6 +74,11 @@ model TowTruck {
   platformWidthM  Float?
   winch           Boolean @default(true)
   manipulator     Boolean @default(false)
+  /// Equipment for loading a vehicle whose wheels are locked/won't roll
+  /// (e.g. a car with a seized brake or a stolen wheel) safely onto the
+  /// platform. Same equipment-boolean shape as winch/manipulator — set once
+  /// at registration, not editable from the driver's own dashboard.
+  wheelSkates     Boolean @default(false)
   plateNumber     String?
   showPlateNumber Boolean @default(false)
 
@@ -211,6 +216,8 @@ model RegistrationRequest {
   platformDimensions String?
   winch              Boolean @default(false)
   manipulator        Boolean @default(false)
+  /// See TowTruck.wheelSkates — carried over as-is by AdminService.approve()
+  wheelSkates        Boolean @default(false)
   // No works24Hours column here — it's just one of the `services` slugs the
   // driver picks (see backend/src/tow-trucks/service-slugs.ts). TowTruck
   // below keeps a real boolean column, but only as a derived sort/filter index.
@@ -219,9 +226,14 @@ model RegistrationRequest {
   /// among `services` (see above).
   workingHoursText String?
 
-  mainRegionSlug String
-  citySlugs      String[]
-  services       String[]
+  /// Up to 2 marzes (see CreateRegistrationDto's ArrayMaxSize(2)) — a driver
+  /// who covers e.g. Yerevan + Kotayk picks both here, and `citySlugs` then
+  /// spans both regions' cities/districts. Was a single `mainRegionSlug`
+  /// String; kept as an array even though today's UI caps it at 2, so a future
+  /// cap increase is a frontend-only change, not another migration.
+  regionSlugs String[]
+  citySlugs   String[]
+  services    String[]
 
   priceCityCallout           Int?
   pricePerKm                 Int?

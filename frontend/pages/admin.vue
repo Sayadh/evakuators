@@ -15,7 +15,15 @@ import {
 import { useAdminAuthStore } from '~/stores/adminAuth'
 import type { ServiceType, VehicleType } from '~/types/enums'
 import { extractErrorMessage } from '~/utils/errors'
-import { cityOrDistrictLabel } from '~/utils/geography'
+import { armenianPhoneInputValue } from '~/utils/formatPhone'
+import {
+  cityOrDistrictLabel,
+  findCityLocation,
+  findStaticDistrict,
+  findStaticRegion,
+  YEREVAN_REGION_SLUG,
+} from '~/utils/geography'
+import { isPhone, required, validateField } from '~/utils/validators'
 
 /**
  * Internal moderation panel — not linked from the public site and excluded
@@ -140,12 +148,71 @@ const hasMoreRegistrations = ref(false)
 const hasMoreReviews = ref(false)
 const hasMoreTowTrucks = ref(false)
 
+/**
+ * Full-size image viewer shared by both the registration-request cards and
+ * the tow-truck cards — an admin approving a request needs to actually see
+ * what was uploaded, not just a 84×84 thumbnail. One global overlay rather
+ * than one per card since only one can ever be open at a time.
+ */
+const lightboxImages = ref<string[]>([])
+const lightboxIndex = ref(0)
+const lightboxOpen = ref(false)
+
+const lightboxImage = computed(() => lightboxImages.value[lightboxIndex.value] ?? '')
+const lightboxHasMultiple = computed(() => lightboxImages.value.length > 1)
+
+function openLightbox(images: string[], index: number): void {
+  lightboxImages.value = images
+  lightboxIndex.value = index
+  lightboxOpen.value = true
+}
+
+function closeLightbox(): void {
+  lightboxOpen.value = false
+}
+
+function lightboxNext(): void {
+  lightboxIndex.value = (lightboxIndex.value + 1) % lightboxImages.value.length
+}
+
+function lightboxPrev(): void {
+  lightboxIndex.value = (lightboxIndex.value - 1 + lightboxImages.value.length) % lightboxImages.value.length
+}
+
+function onLightboxKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape') closeLightbox()
+  else if (event.key === 'ArrowRight' && lightboxHasMultiple.value) lightboxNext()
+  else if (event.key === 'ArrowLeft' && lightboxHasMultiple.value) lightboxPrev()
+}
+
+// A Teleport'd overlay never holds document focus, so a `@keydown` bound on
+// the div itself would never fire — listen on `document` instead (see the
+// same pattern in AppDrawer.vue) and only while the lightbox is actually open.
+watch(lightboxOpen, (open) => {
+  if (!import.meta.client) return
+  document.body.style.overflow = open ? 'hidden' : ''
+  if (open) document.addEventListener('keydown', onLightboxKeydown)
+  else document.removeEventListener('keydown', onLightboxKeydown)
+})
+
+onBeforeUnmount(() => {
+  if (!import.meta.client) return
+  document.body.style.overflow = ''
+  document.removeEventListener('keydown', onLightboxKeydown)
+})
+
 function serviceLabel(slug: string): string {
   return SERVICE_LABELS[slug as ServiceType] ?? slug
 }
 
 function vehicleTypeLabel(slug: string): string {
   return VEHICLE_TYPE_LABELS[slug as VehicleType] ?? slug
+}
+
+/** Yerevan isn't in staticRegions (it's a pseudo-region — see CLAUDE.md), so it needs its own case */
+function regionLabel(slug: string): string {
+  if (slug === YEREVAN_REGION_SLUG) return 'Երևան'
+  return findStaticRegion(slug)?.name ?? slug
 }
 
 function formatDate(iso: string): string {
@@ -279,6 +346,68 @@ async function resendTelegramLink(truck: AdminTowTruck): Promise<void> {
   }
 }
 
+/** Id of the truck whose main phone is currently being edited inline (at most one row at a time) */
+const editingPhoneId = ref<number | null>(null)
+const phoneEditValue = ref('')
+const phoneEditError = ref('')
+const savingPhone = ref(false)
+
+/** v-model wrapper that keeps the inline edit field locked to +374 + up to 8 digits */
+const phoneEditModel = computed<string>({
+  get: () => phoneEditValue.value,
+  set: (value) => {
+    phoneEditValue.value = armenianPhoneInputValue(value)
+  },
+})
+
+function startEditPhone(truck: AdminTowTruck): void {
+  editingPhoneId.value = truck.id
+  phoneEditValue.value = truck.phone
+  phoneEditError.value = ''
+}
+
+function cancelEditPhone(): void {
+  editingPhoneId.value = null
+  phoneEditValue.value = ''
+  phoneEditError.value = ''
+}
+
+/**
+ * The main phone doubles as the driver-login key (see DriverAuthService), so
+ * changing it here immediately changes which number that driver must use to
+ * log in — the confirm() dialog makes that explicit. Backend re-checks
+ * uniqueness against other active trucks (see AdminService.setTowTruckPhone).
+ */
+async function savePhone(truck: AdminTowTruck): Promise<void> {
+  phoneEditError.value = validateField(phoneEditValue.value, [required(), isPhone()]) ?? ''
+  if (phoneEditError.value) return
+
+  if (phoneEditValue.value === truck.phone) {
+    cancelEditPhone()
+    return
+  }
+
+  if (
+    !confirm(
+      `Փոխե՞լ ${truck.driverName}-ի հիմնական հեռախոսահամարը (${truck.phone} → ${phoneEditValue.value})։ ` +
+        'Սա driver-ի մուտքի հեռախոսահամարն է. հին համարով այլևս մուտք գործել հնարավոր չի լինի։',
+    )
+  ) {
+    return
+  }
+
+  savingPhone.value = true
+  try {
+    const updated = await adminRepository.setTowTruckPhone(truck.id, phoneEditValue.value)
+    truck.phone = updated.phone
+    cancelEditPhone()
+  } catch (error) {
+    phoneEditError.value = extractErrorMessage(error, 'Հեռախոսահամարը փոխել չհաջողվեց։')
+  } finally {
+    savingPhone.value = false
+  }
+}
+
 /**
  * Which tow truck's analytics panel is expanded (at most one at a time).
  *
@@ -380,18 +509,32 @@ async function submitApprove(): Promise<void> {
     return
   }
 
-  const isYerevan = approveTarget.value.mainRegionSlug === 'yerevan'
+  // A request can now carry up to 2 regionSlugs (e.g. Yerevan + Kotayk), so
+  // citySlugs can be a MIX of real cities and Yerevan districts — a single
+  // "isYerevan" flag for the whole request would mislabel half of them.
+  // Each slug's own type has to be resolved individually instead.
+  const slugType = (slug: string): 'city' | 'district' =>
+    findStaticDistrict(slug) ? 'district' : 'city'
+
   // The driver already gave us everything else at registration — capacity as
   // a range (see representativeCapacityTons) and the full service-area list
   // (citySlugs). The admin only adds what registration *can't* provide: a
   // unique slug and the truck's actual base location as free text.
   const primarySlug = approveTarget.value.citySlugs[0]
+  const primaryType = primarySlug ? slugType(primarySlug) : 'city'
+  // TowTruck.regionSlug (the "best-effort" browsing fallback — see
+  // docs/data-model.md) is resolved from the PRIMARY slug's actual region,
+  // not just "the" region the driver picked first — the backend has no
+  // geography data to do this itself (see CLAUDE.md).
+  const primaryRegionSlug =
+    primaryType === 'district' ? undefined : findCityLocation(primarySlug)?.regionSlug
   const payload: ApproveRegistrationPayload = {
     slug: approveForm.slug,
     capacityTons: representativeCapacityTons(approveTarget.value.capacityRange),
     locationName: approveForm.locationName.trim(),
     description: approveForm.description.trim() || undefined,
-    ...(isYerevan ? { districtSlug: primarySlug } : { citySlug: primarySlug }),
+    ...(primaryType === 'district' ? { districtSlug: primarySlug } : { citySlug: primarySlug }),
+    regionSlug: primaryRegionSlug,
     // Resolve each slug to its real Armenian name here — the backend has no
     // geography data of its own (see schema.prisma), so if we sent raw
     // slugs it would just store them as-is and the public profile would
@@ -399,7 +542,7 @@ async function submitApprove(): Promise<void> {
     serviceAreas: approveTarget.value.citySlugs.map((slug) => ({
       slug,
       name: cityOrDistrictLabel(slug),
-      type: isYerevan ? 'district' : 'city',
+      type: slugType(slug),
     })),
   }
 
@@ -544,9 +687,9 @@ async function rejectReview(review: AdminReview): Promise<void> {
                 <dd>{{ vehicleTypeLabel(request.vehicleType) }}</dd>
               </div>
               <div>
-                <dt>Հիմնական տարածք</dt>
+                <dt>Մարզեր</dt>
                 <dd>
-                  {{ request.mainRegionSlug === 'yerevan' ? 'Երևան' : request.mainRegionSlug }} —
+                  {{ request.regionSlugs.map(regionLabel).join(', ') }} —
                   {{ request.citySlugs.map(cityOrDistrictLabel).join(', ') }}
                 </dd>
               </div>
@@ -561,13 +704,16 @@ async function rejectReview(review: AdminReview): Promise<void> {
             </dl>
 
             <div v-if="request.images.length" class="admin-card__images">
-              <img
-                v-for="image in request.images"
+              <button
+                v-for="(image, index) in request.images"
                 :key="image.id"
-                :src="image.url"
-                loading="lazy"
-                alt=""
+                type="button"
+                class="admin-card__image-btn"
+                aria-label="Մեծացնել նկարը"
+                @click="openLightbox(request.images.map((i) => i.url), index)"
               >
+                <img :src="image.url" loading="lazy" alt="">
+              </button>
             </div>
 
             <footer class="admin-card__footer">
@@ -698,7 +844,39 @@ async function rejectReview(review: AdminReview): Promise<void> {
             <dl class="admin-card__grid">
               <div>
                 <dt>Հեռախոս</dt>
-                <dd>{{ truck.phone }}</dd>
+                <dd v-if="editingPhoneId !== truck.id" class="admin-card__phone-view">
+                  {{ truck.phone }}
+                  <button type="button" class="admin-card__link-btn" @click="startEditPhone(truck)">
+                    Խմբագրել
+                  </button>
+                </dd>
+                <dd v-else class="admin-card__phone-edit">
+                  <AppInput
+                    v-model="phoneEditModel"
+                    type="tel"
+                    placeholder="+37491000001"
+                    :maxlength="12"
+                    :error="phoneEditError"
+                  />
+                  <div class="admin-card__phone-edit-actions">
+                    <AppButton
+                      variant="primary"
+                      size="sm"
+                      :disabled="savingPhone"
+                      @click="savePhone(truck)"
+                    >
+                      Պահպանել
+                    </AppButton>
+                    <AppButton
+                      variant="outline"
+                      size="sm"
+                      :disabled="savingPhone"
+                      @click="cancelEditPhone"
+                    >
+                      Չեղարկել
+                    </AppButton>
+                  </div>
+                </dd>
               </div>
               <div>
                 <dt>Telegram</dt>
@@ -707,13 +885,16 @@ async function rejectReview(review: AdminReview): Promise<void> {
             </dl>
 
             <div v-if="truck.images.length" class="admin-card__images">
-              <img
-                v-for="image in truck.images"
+              <button
+                v-for="(image, index) in truck.images"
                 :key="image.id"
-                :src="image.url"
-                loading="lazy"
-                alt=""
+                type="button"
+                class="admin-card__image-btn"
+                aria-label="Մեծացնել նկարը"
+                @click="openLightbox(truck.images.map((i) => i.url), index)"
               >
+                <img :src="image.url" loading="lazy" alt="">
+              </button>
             </div>
 
             <footer class="admin-card__footer">
@@ -814,6 +995,47 @@ async function rejectReview(review: AdminReview): Promise<void> {
         {{ telegramLinkCopied ? 'Պատճենված է ✓' : 'Պատճենել link-ը' }}
       </AppButton>
     </AppModal>
+
+    <Teleport to="body">
+      <div
+        v-if="lightboxOpen"
+        class="admin-lightbox"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Նկարի մեծացված տեսք"
+        @click.self="closeLightbox"
+      >
+        <button type="button" class="admin-lightbox__close" aria-label="Փակել" @click="closeLightbox">
+          <AppIcon name="close" :size="26" />
+        </button>
+
+        <button
+          v-if="lightboxHasMultiple"
+          type="button"
+          class="admin-lightbox__nav admin-lightbox__nav--prev"
+          aria-label="Նախորդ նկարը"
+          @click.stop="lightboxPrev"
+        >
+          <AppIcon name="chevron-left" :size="28" />
+        </button>
+
+        <img :src="lightboxImage" alt="" class="admin-lightbox__img" @click.stop>
+
+        <button
+          v-if="lightboxHasMultiple"
+          type="button"
+          class="admin-lightbox__nav admin-lightbox__nav--next"
+          aria-label="Հաջորդ նկարը"
+          @click.stop="lightboxNext"
+        >
+          <AppIcon name="chevron-right" :size="28" />
+        </button>
+
+        <p v-if="lightboxHasMultiple" class="admin-lightbox__count">
+          {{ lightboxIndex + 1 }} / {{ lightboxImages.length }}
+        </p>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -958,17 +1180,61 @@ async function rejectReview(review: AdminReview): Promise<void> {
     grid-column: 1 / -1;
   }
 
+  &__phone-view {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
+
+  &__link-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--color-primary);
+    cursor: pointer;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  &__phone-edit {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    max-width: 220px;
+  }
+
+  &__phone-edit-actions {
+    display: flex;
+    gap: var(--space-2);
+  }
+
   &__images {
     display: flex;
     gap: var(--space-2);
     flex-wrap: wrap;
     margin-bottom: var(--space-4);
+  }
+
+  &__image-btn {
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: zoom-in;
+    background: none;
+    line-height: 0;
 
     img {
       width: 84px;
       height: 84px;
       object-fit: cover;
       border-radius: var(--radius-md);
+      display: block;
     }
   }
 
@@ -993,6 +1259,16 @@ async function rejectReview(review: AdminReview): Promise<void> {
   &__actions {
     display: flex;
     gap: var(--space-2);
+    max-width: 100%;
+    overflow-x: auto;
+    padding-bottom: var(--space-1);
+    -webkit-overflow-scrolling: touch;
+
+    // Buttons keep their natural width and scroll as a strip instead of
+    // wrapping/squishing or being clipped by the page's overflow-x: hidden.
+    > * {
+      flex-shrink: 0;
+    }
   }
 }
 
@@ -1010,5 +1286,90 @@ async function rejectReview(review: AdminReview): Promise<void> {
   margin: var(--space-4) 0;
   word-break: break-all;
   font-size: 0.9rem;
+}
+
+/* Shared full-size viewer for the request/tow-truck thumbnail grids above —
+   see TowTruckGallery.vue's lightbox for the same pattern on the public site. */
+.admin-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 18, 30, 0.92);
+
+  &__img {
+    max-width: min(92vw, 1100px);
+    max-height: 86vh;
+    object-fit: contain;
+    border-radius: var(--radius-sm);
+  }
+
+  &__close {
+    position: absolute;
+    top: var(--space-4);
+    right: var(--space-4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+    cursor: pointer;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.22);
+    }
+  }
+
+  &__nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+    cursor: pointer;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.22);
+    }
+
+    &--prev {
+      left: var(--space-3);
+    }
+
+    &--next {
+      right: var(--space-3);
+    }
+
+    @media (min-width: 640px) {
+      width: 52px;
+      height: 52px;
+    }
+  }
+
+  &__count {
+    position: absolute;
+    bottom: var(--space-4);
+    left: 50%;
+    transform: translateX(-50%);
+    margin: 0;
+    padding: 4px 12px;
+    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+    font-size: 0.85rem;
+  }
 }
 </style>

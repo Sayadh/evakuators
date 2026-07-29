@@ -22,11 +22,13 @@ export interface RegistrationVehicleData {
   platformDimensions: string
   winch: boolean
   manipulator: boolean
+  wheelSkates: boolean
 }
 
 export interface RegistrationAreasData {
-  mainRegionSlug: string
-  /** Selected cities of the main region ("whole region" = all city slugs) */
+  /** Up to 2 marzes */
+  regionSlugs: string[]
+  /** Selected cities/districts across the chosen regions ("whole region" = all its city slugs) */
   citySlugs: string[]
 }
 

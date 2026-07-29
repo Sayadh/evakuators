@@ -11,6 +11,13 @@ const isLightboxOpen = ref(false)
 
 const activeImage = computed(() => props.images[activeIndex.value] ?? props.images[0])
 const hasMultiple = computed(() => props.images.length > 1)
+/**
+ * Registration requires at least one photo and the dashboard can't remove the
+ * last one, so this should never be true — but rendering <img src=undefined>
+ * (a broken-image icon, and a clickable lightbox onto nothing) is a far worse
+ * failure mode than a neutral placeholder if a legacy row ever has none.
+ */
+const hasImages = computed(() => props.images.length > 0)
 
 function openLightbox(index: number): void {
   activeIndex.value = index
@@ -61,7 +68,12 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="gallery">
+    <div v-if="!hasImages" class="gallery__main-wrap gallery__empty" aria-hidden="true">
+      <AppIcon name="truck" :size="56" />
+    </div>
+
     <button
+      v-else
       type="button"
       class="gallery__main-wrap"
       :aria-label="`Բացել ${alt} նկարը մեծ պատուհանում`"
@@ -171,6 +183,14 @@ onBeforeUnmount(() => {
     height: 100%;
     object-fit: cover;
     display: block;
+  }
+
+  &__empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: default;
+    color: var(--color-text-muted);
   }
 
   &__zoom-hint {

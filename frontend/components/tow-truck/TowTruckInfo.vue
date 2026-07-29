@@ -39,6 +39,11 @@ const rows = computed<InfoRow[]>(() => {
   result.push(
     { label: 'Ճախարակ (winch, лебедка)', value: vehicle.winch ? 'Այո' : 'Ոչ' },
     { label: 'Մանիպուլյատոր', value: vehicle.manipulator ? 'Այո' : 'Ոչ' },
+    {
+      label: 'Անիվային ռոլիկներ',
+      value: vehicle.wheelSkates ? 'Այո' : 'Ոչ',
+      hint: 'Անիվային ռոլիկներն օգտագործվում են արգելափակված կամ չպտտվող անիվներով մեքենան անվտանգ հարթակ բարձրացնելու և տեղափոխելու համար։',
+    },
   )
 
   if (vehicle.showPlateNumber && vehicle.plateNumber) {

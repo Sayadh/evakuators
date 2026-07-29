@@ -89,8 +89,17 @@ export class UpdateMyTowTruckDto {
   @Min(0)
   priceExtraLoading?: number
 
+  /**
+   * Omit the field entirely to leave the photos untouched. Sending it means
+   * "this is now the full list", so an empty array would wipe every photo —
+   * and a listing with no photo renders a broken image on the card, the
+   * profile gallery and the og:image. Registration already requires at least
+   * one (see CreateRegistrationDto.imageIds); a profile must not be able to
+   * drop below that afterwards.
+   */
   @IsOptional()
   @IsArray()
+  @ArrayMinSize(1, { message: 'Պրոֆիլը պետք է ունենա առնվազն 1 նկար' })
   @ArrayMaxSize(6, { message: 'Նկարների առավելագույն քանակը 6 է' })
   @IsInt({ each: true })
   imageIds?: number[]

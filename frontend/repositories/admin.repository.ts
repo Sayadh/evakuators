@@ -21,8 +21,10 @@ export interface AdminRegistrationRequest {
   platformDimensions?: string
   winch: boolean
   manipulator: boolean
+  wheelSkates: boolean
   workingHoursText?: string
-  mainRegionSlug: string
+  /** Up to 2 marzes the driver picked at registration */
+  regionSlugs: string[]
   citySlugs: string[]
   services: string[]
   priceCityCallout?: number
@@ -41,6 +43,13 @@ export interface ApproveRegistrationPayload {
   locationName: string
   citySlug?: string
   districtSlug?: string
+  /**
+   * The truck's "best-effort" browsing region (TowTruck.regionSlug) —
+   * resolved here (not on the backend, which has no geography data) from
+   * whichever region citySlug/districtSlug actually belongs to. Omitted for
+   * Yerevan, same as before.
+   */
+  regionSlug?: string
   description?: string
   /** Resolved Armenian names — the backend has no geography data of its own */
   serviceAreas: { slug: string; name: string; type: 'city' | 'district' }[]
@@ -173,6 +182,18 @@ export const adminRepository = {
     return apiFetch<{ id: number; isFeatured: boolean }>(`/admin/tow-trucks/${id}/featured`, {
       method: 'PATCH',
       body: { isFeatured },
+      headers: authHeader(),
+    })
+  },
+
+  /**
+   * Corrects the main login phone (the driver's own dashboard can't edit this
+   * field). Backend rejects it if another active truck already uses it.
+   */
+  setTowTruckPhone(id: number, phone: string): Promise<{ id: number; phone: string }> {
+    return apiFetch<{ id: number; phone: string }>(`/admin/tow-trucks/${id}/phone`, {
+      method: 'PATCH',
+      body: { phone },
       headers: authHeader(),
     })
   },

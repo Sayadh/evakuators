@@ -43,10 +43,15 @@ interface TowTruckSitemapEntry {
  * to mock data. Never hardcode mocks here — this route runs in production too.
  */
 async function getTowTrucksForSitemap(event: H3Event): Promise<TowTruckSitemapEntry[]> {
-  const apiBase = useRuntimeConfig(event).public.apiBaseUrl
-  if (!apiBase) {
+  const config = useRuntimeConfig(event)
+  if (!config.public.apiBaseUrl) {
     return mockTowTrucks.map((truck) => ({ slug: truck.slug, updatedAt: truck.updatedAt }))
   }
+  // Server-side call — prefer the loopback URL for the same reason SSR page
+  // fetches do (see getApiBase() in repositories/apiClient.ts). This one walks
+  // up to 50 pages per crawler hit, so it is the single heaviest consumer of
+  // the shared public rate-limit bucket if it goes out through nginx.
+  const apiBase = config.internalApiBaseUrl || config.public.apiBaseUrl
 
   // The listing endpoint is capped (see backend tow-trucks.constants.ts), and a
   // sitemap that silently stops at the cap is worse than no sitemap: Google

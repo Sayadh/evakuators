@@ -59,6 +59,7 @@ export function toTowTruckApi(truck: TowTruckWithImages): TowTruckApi {
       platformWidthM: truck.platformWidthM ?? undefined,
       winch: truck.winch,
       manipulator: truck.manipulator,
+      wheelSkates: truck.wheelSkates,
       // Withheld server-side when the driver opted out, not just hidden by the
       // UI. TowTruckInfo.vue checks `showPlateNumber` before rendering it, but
       // the value was still in the JSON response and in the SSR payload — so a

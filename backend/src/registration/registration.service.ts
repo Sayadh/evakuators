@@ -21,13 +21,14 @@ export class RegistrationService {
     // Catch the duplicate-main-phone conflict right when the driver submits,
     // not only later when admin tries to approve (AdminService.approve has
     // the same check — see its comment for why only the main phone matters,
-    // secondary is allowed to repeat). Telling them immediately means they
-    // can just fix the phone and resubmit, instead of waiting days for a
-    // rejection.
-    const phoneConflict = await this.towTrucksRepository.findActiveByMainPhone(dto.phone)
+    // secondary is allowed to repeat, and why this checks EVERY truck
+    // regardless of active/deactivated status). Telling them immediately
+    // means they can just fix the phone and resubmit, instead of waiting
+    // days for a rejection.
+    const phoneConflict = await this.towTrucksRepository.findByMainPhoneAnyStatus(dto.phone)
     if (phoneConflict) {
       throw new BadRequestException(
-        'Այս հեռախոսահամարով արդեն կա ակտիվ էվակուատոր Evakuators.am-ում։ Խնդրում ենք նշել այլ ' +
+        'Այս հեռախոսահամարով արդեն կա էվակուատոր Evakuators.am-ում։ Խնդրում ենք նշել այլ ' +
           'հեռախոսահամար, կամ դիմեք մեզ, եթե կարծում եք, որ սա սխալ է։',
       )
     }

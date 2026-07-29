@@ -78,6 +78,12 @@ assume one is unused:
   `undefined` card value on the other — see `docs/analytics.md`. The frontend's
   `AnalyticsPeriod` / `AnalyticsReviewStatus` enums mirror the backend TS enums
   in `backend/src/analytics/analytics.enums.ts` the same way.
+- The "pick up to 2 regions" cap on registration exists in two independent
+  places: `MAX_REGIONS` in `frontend/pages/register.vue` (blocks a 3rd
+  checkbox in the UI) and `@ArrayMaxSize(2)` on `CreateRegistrationDto.regionSlugs`
+  (backend/src/registration/dto/create-registration.dto.ts). Raising the cap
+  means changing both, or the API will reject what the form happily lets a
+  driver submit.
 
 ## Quick map: "I need to..."
 

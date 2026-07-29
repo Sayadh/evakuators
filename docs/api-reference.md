@@ -4,7 +4,9 @@ Base: `https://api.evakuators.am/api/v1` (prod) or `http://localhost:4002/api/v1
 (dev). Every route is under the global `/api/v1` prefix (`main.ts`).
 
 Throttle column shows overrides from the global default (60 req/60s per IP,
-`app.module.ts`). "—" means the global default applies.
+`app.module.ts`). "—" means the global default applies. Requests originating
+from the server itself (Nuxt SSR over loopback) skip throttling entirely — see
+`docs/auth-and-security.md` § "SSR is exempt".
 
 ## Public
 
@@ -17,7 +19,7 @@ Throttle column shows overrides from the global default (60 req/60s per IP,
 | `GET` | `/tow-trucks/:slug` | — | The **only** endpoint that returns a full profile. 404 if not found or `isActive: false` |
 | `GET` | `/tow-trucks/:towTruckId/reviews` | — | Approved reviews only |
 | `POST` | `/tow-trucks/:towTruckId/reviews` | 5/60s | Creates with `isApproved: false` — needs admin approval to appear |
-| `POST` | `/images` | 10/60s | Multipart, field name `file`, 30MB max (`MAX_UPLOAD_BYTES`, kept in sync by hand with the same-named constant in `image-processor.service.ts`) → returns `{ id, url, width, height }`, unattached until a registration references its id |
+| `POST` | `/images` | 10/60s | Multipart, field name `file`, 30MB max (`MAX_UPLOAD_BYTES`, kept in sync by hand with the same-named constant in `image-processor.service.ts`) → returns `{ id, url, width, height }`, unattached until a registration references its id. Format is validated from the file's own bytes (`sharp().metadata().format`), not the client-declared mimetype: JPEG/PNG/WebP always, HEIC only if this sharp build has libheif — otherwise it returns a message telling the driver how to change the iPhone setting |
 | `POST` | `/registrations` | 5/60s | Driver registration submission — `imageIds` must reference images uploaded via `/images` and not already attached elsewhere |
 | `GET` | `/free-routes` | — | `ACTIVE` only |
 | `POST` | `/admin-auth/login` | 5/60s | `{ email, password }` → `{ token }`, or `{ requiresCode: true }` if the admin has linked Telegram 2FA (see below) |
@@ -33,7 +35,7 @@ Throttle column shows overrides from the global default (60 req/60s per IP,
 | Method | Path | Notes |
 | --- | --- | --- |
 | `GET` | `/my/tow-truck` | Own profile; throws if `isActive: false` even with a valid token |
-| `PATCH` | `/my/tow-truck` | Partial update; `works24Hours` auto-recomputed if `services` is included |
+| `PATCH` | `/my/tow-truck` | Partial update; `works24Hours` auto-recomputed if `services` is included. `imageIds` is the **full replacement list** — omit it to leave photos alone; sending it accepts 1-6 ids (never 0: a listing with no photo renders a broken image everywhere it appears) |
 | `GET` | `/my/free-routes` | Own routes, any status |
 | `POST` | `/my/free-routes` | Requires `isActive` profile |
 | `PATCH` | `/my/free-routes/:id` | Ownership-checked; force-reactivates to `ACTIVE` |
@@ -56,6 +58,7 @@ Throttle column shows overrides from the global default (60 req/60s per IP,
 | `GET` | `/admin/tow-trucks` | Every truck, active or not (unlike the public `/tow-trucks` list). Query: `limit` (default 50, max 200), `offset` |
 | `PATCH` | `/admin/tow-trucks/:id/active` | Body: `{ isActive: boolean }` — reversible |
 | `PATCH` | `/admin/tow-trucks/:id/featured` | Body: `{ isFeatured: boolean }` — drives the public `GET /tow-trucks/featured` list and the homepage "featured" section |
+| `PATCH` | `/admin/tow-trucks/:id/phone` | Body: `{ phone: string }` (`+374` + 8 digits). Corrects the main login phone — the driver's own dashboard can't touch this field. Rejected with 400 if another **active** truck already uses it (same uniqueness rule as approval) |
 | `DELETE` | `/admin/tow-trucks/:id` | Irreversible — cascades to images (DB row + Supabase Storage object), reviews, OTPs, free routes |
 | `POST` | `/admin/tow-trucks/:id/telegram-link` | (Re)generates the Telegram link — same underlying call whether the truck has never linked or is switching accounts |
 | `GET` | `/admin/tow-trucks/:id/analytics` | Same four reports as the driver's `/my/analytics*`, for any truck — **including deactivated ones** (an admin usually wants exactly that history). Served by the same `AnalyticsDashboardService`, so admin and driver can never see differently-computed numbers. See `docs/analytics.md` |

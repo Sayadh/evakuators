@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import type { Prisma, TowTruck } from '@prisma/client'
+import { IMAGE_ORDER } from '../images/image-order'
 import { PrismaService } from '../prisma/prisma.service'
 import type { TowTruckFilters, TowTruckWhere, TowTruckWithImages } from './tow-truck.types'
 
@@ -34,7 +35,10 @@ const CARD_SELECT = {
   districtSlug: true,
   locationName: true,
   updatedAt: true,
-  images: { select: { url: true }, orderBy: { position: 'asc' }, take: 1 },
+  // IMAGE_ORDER, not just `position` — every legacy row shares position 0, so
+  // without the id tiebreak "the thumbnail" is whatever Postgres returns first
+  // and can differ between two requests for the same truck.
+  images: { select: { url: true }, orderBy: IMAGE_ORDER, take: 1 },
 } satisfies Prisma.TowTruckSelect
 
 /** Five columns — everything needed to count coverage, nothing else */
@@ -92,14 +96,27 @@ export class TowTrucksRepository {
   findBySlug(slug: string): Promise<TowTruckWithImages | null> {
     return this.prisma.towTruck.findFirst({
       where: { slug, isActive: true },
-      include: { images: true },
+      include: { images: { orderBy: IMAGE_ORDER } },
     })
+  }
+
+  /**
+   * Unlike findBySlug() above, this deliberately ignores isActive — slug is
+   * @unique at the DB level regardless of active/deactivated status, so a
+   * collision with a DEACTIVATED truck would still throw an uncaught Prisma
+   * P2002 at create() time if this check only looked at active rows (and
+   * reactivating that truck later would then hit the same wall in reverse).
+   * Used only by AdminService.approve() to pre-check before creating a new
+   * TowTruck, with a friendly message instead of a raw constraint error.
+   */
+  findBySlugAnyStatus(slug: string): Promise<TowTruck | null> {
+    return this.prisma.towTruck.findUnique({ where: { slug } })
   }
 
   findById(id: number): Promise<TowTruckWithImages | null> {
     return this.prisma.towTruck.findUnique({
       where: { id },
-      include: { images: true },
+      include: { images: { orderBy: IMAGE_ORDER } },
     })
   }
 
@@ -127,7 +144,7 @@ export class TowTrucksRepository {
    */
   findAllForAdmin(page: { limit: number; offset: number }): Promise<TowTruckWithImages[]> {
     return this.prisma.towTruck.findMany({
-      include: { images: true },
+      include: { images: { orderBy: IMAGE_ORDER } },
       orderBy: { createdAt: 'desc' },
       take: page.limit,
       skip: page.offset,
@@ -137,14 +154,32 @@ export class TowTrucksRepository {
   /**
    * Matches ONLY the main `phone` column (never `secondaryPhone`) on active
    * trucks. The main phone is the sole driver-login key (see
-   * DriverAuthService) and is enforced unique across active trucks at
-   * approval time — `secondaryPhone` is explicitly allowed to repeat, so it
-   * must never be used to resolve which profile a login or lookup belongs
-   * to. Used both by driver login (request/verify code) and by the
-   * duplicate-main-phone check when approving a registration.
+   * DriverAuthService) — a deactivated truck must never resolve here, login
+   * has to behave exactly as if that phone belonged to no one. This is a
+   * login LOOKUP, not a uniqueness check — see findByMainPhoneAnyStatus()
+   * below for the latter (used by AdminService for approve/reactivate/edit).
    */
   findActiveByMainPhone(phone: string): Promise<TowTruck | null> {
     return this.prisma.towTruck.findFirst({ where: { phone, isActive: true } })
+  }
+
+  /**
+   * Uniqueness check for the main phone — matches ANY truck regardless of
+   * active/deactivated status, same reasoning as findBySlugAnyStatus() for
+   * slug. Without this, a phone freed up by deactivating truck A could be
+   * handed to a brand-new truck B while A is inactive (harmless on its own,
+   * since findActiveByMainPhone only ever resolves one row), but
+   * reactivating A afterward would then silently create two ACTIVE trucks
+   * sharing one login phone — `findFirst` would arbitrarily resolve to only
+   * one of them, and the other driver's login would break with no warning.
+   * `excludeId` lets a caller ask "does anyone ELSE have this phone" against
+   * a row that already exists (edit-phone, reactivate) — approve() has no
+   * id yet, so it's omitted there.
+   */
+  findByMainPhoneAnyStatus(phone: string, excludeId?: number): Promise<TowTruck | null> {
+    return this.prisma.towTruck.findFirst({
+      where: { phone, ...(excludeId !== undefined ? { id: { not: excludeId } } : {}) },
+    })
   }
 
   findByTelegramLinkToken(token: string): Promise<TowTruck | null> {
@@ -194,7 +229,7 @@ export class TowTrucksRepository {
     return this.prisma.towTruck.update({
       where: { id },
       data,
-      include: { images: true },
+      include: { images: { orderBy: IMAGE_ORDER } },
     })
   }
 
@@ -204,6 +239,16 @@ export class TowTrucksRepository {
 
   setFeatured(id: number, isFeatured: boolean): Promise<TowTruck> {
     return this.prisma.towTruck.update({ where: { id }, data: { isFeatured } })
+  }
+
+  /**
+   * Admin-only correction of the main login phone (e.g. driver mistyped it at
+   * registration). Uniqueness against other active trucks is enforced by the
+   * caller (AdminService.setTowTruckPhone) before this runs — same rule as
+   * approve(), since DriverAuthService looks a truck up by this exact field.
+   */
+  setPhone(id: number, phone: string): Promise<TowTruck> {
+    return this.prisma.towTruck.update({ where: { id }, data: { phone } })
   }
 
   /**

@@ -102,7 +102,15 @@ the "service areas showing raw English slugs" bug happened (see
 `docs/data-model.md`'s `TowTruck.serviceAreas` note).
 
 `useLocationPicker()` composable (`frontend/composables/useLocationPicker.ts`)
-is the reusable cascading region → city/district select, built once for
-`register.vue` and reused for the Free Routes start/end pickers (see
-`docs/free-routes.md`). If you need another region/city cascading picker
-anywhere, use this composable rather than re-implementing the cascade logic.
+is the reusable **single-region** cascading region → city/district select,
+used by the Free Routes start/end pickers (see `docs/free-routes.md`). If you
+need a single-region cascade, use this composable rather than re-implementing
+the logic.
+
+`register.vue` does **not** use it — a driver there can pick up to 2 regions
+(`MAX_REGIONS` in that file; e.g. Yerevan + Kotayk), so it needs one
+`cityGroups` list (one city/district checkbox group per selected region)
+instead of a single cascade, and has its own `toggleRegion()`/`toggleCity()`
+state built directly on `buildRegionOptions()`/`buildCityOptions()` from
+`utils/geography.ts`. See `CLAUDE.md`'s "Manual sync points" for the 2-region
+cap's backend counterpart.

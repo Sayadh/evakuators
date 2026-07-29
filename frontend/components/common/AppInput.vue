@@ -6,6 +6,7 @@ interface Props {
   placeholder?: string
   required?: boolean
   error?: string
+  maxlength?: number
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -14,6 +15,7 @@ const props = withDefaults(defineProps<Props>(), {
   placeholder: '',
   required: false,
   error: undefined,
+  maxlength: undefined,
 })
 
 const emit = defineEmits<{ 'update:modelValue': [value: string]; blur: [] }>()
@@ -43,6 +45,43 @@ function onClick(): void {
     // Unsupported in this browser — default icon-click behavior still works.
   }
 }
+
+/**
+ * type="tel" gets no native keyboard restriction in desktop browsers (only
+ * mobile shows a numeric keypad) — without this, a letter is accepted and
+ * only stripped after the fact by whatever v-model transform the caller
+ * applies (e.g. armenianPhoneInputValue), which briefly flashes the letter
+ * before it vanishes. Blocking the keystroke itself means a letter is never
+ * inserted in the first place.
+ *
+ * The two guards before the digit test are what make this safe rather than a
+ * trap, and both were learned the hard way:
+ *
+ * 1. **IME / soft-keyboard events.** Android's GBoard (and most mobile IMEs)
+ *    report every keystroke as `key: 'Unidentified'` with `keyCode: 229`
+ *    while composing — the real character only arrives later, in `input`.
+ *    An allow-list of "digits and + only" therefore matches nothing on
+ *    Android and preventDefault() swallows the entire keystroke, making
+ *    every phone field on the site impossible to type into on a phone
+ *    (including the driver login, i.e. the whole mobile login flow).
+ * 2. **Named keys.** `key.length > 1` is exactly the set of non-printable
+ *    keys — Backspace, Delete, Tab, Enter, Escape, Arrow*, Home, End,
+ *    Shift, F1… — so testing the length covers all of them at once and
+ *    can't fall out of date the way a hand-written key list does.
+ *
+ * What's left after those two guards is a single printable character from a
+ * physical keyboard, which is the only thing we actually want to filter.
+ * Modifier combos are let through so Cmd/Ctrl+A/C/V still work, and paste is
+ * cleaned up by the v-model transform.
+ */
+function onKeydown(event: KeyboardEvent): void {
+  if (props.type !== 'tel') return
+  if (event.isComposing || event.keyCode === 229) return
+  if (event.key.length !== 1) return
+  if (event.ctrlKey || event.metaKey || event.altKey) return
+  if (/^[0-9+]$/.test(event.key)) return
+  event.preventDefault()
+}
 </script>
 
 <template>
@@ -59,10 +98,12 @@ function onClick(): void {
       :value="modelValue"
       :placeholder="placeholder"
       :required="required"
+      :maxlength="maxlength"
       :aria-invalid="Boolean(error)"
       @input="onInput"
       @blur="emit('blur')"
       @click="onClick"
+      @keydown="onKeydown"
     >
     <p v-if="error" class="app-input__error" role="alert">{{ error }}</p>
   </div>

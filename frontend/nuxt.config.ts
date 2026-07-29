@@ -48,6 +48,23 @@ export default defineNuxtConfig({
   },
 
   runtimeConfig: {
+    /**
+     * Server-only API base URL, used for SSR fetches instead of the public one.
+     * Override with NUXT_INTERNAL_API_BASE_URL; empty = fall back to the public
+     * URL (correct for local dev, where both are localhost anyway).
+     *
+     * This exists because SSR requests do not come from the visitor's browser —
+     * they come from this Nitro process. Sent to the public URL they go out
+     * through nginx and reach the backend carrying ONE source address for the
+     * whole site, so every visitor's server-rendered page shares a single
+     * ThrottlerGuard bucket (60 req/min, see backend app.module.ts) and the
+     * site starts 429-ing itself at a few dozen page views per minute.
+     * Pointing SSR at the backend's loopback address instead both skips that
+     * shared bucket (see SsrAwareThrottlerGuard) and removes a pointless
+     * TLS + nginx round-trip from every render.
+     */
+    internalApiBaseUrl: '',
+
     public: {
       siteUrl: 'https://evakuators.am',
       /**
@@ -55,6 +72,9 @@ export default defineNuxtConfig({
        * (e.g. https://api.evakuators.am/api/v1, or http://localhost:4002/api/v1 in dev).
        * Empty string = API disabled → the app falls back to local mock data.
        * Override with NUXT_PUBLIC_API_BASE_URL.
+       *
+       * This is the URL the BROWSER uses. SSR uses internalApiBaseUrl above
+       * when it is set — see `getApiBase()` in repositories/apiClient.ts.
        */
       apiBaseUrl: '',
     },

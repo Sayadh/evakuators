@@ -20,6 +20,7 @@ import { AdminListQuery, AdminRegistrationsQuery } from './dto/admin-list.query'
 import { ApproveRegistrationDto } from './dto/approve-registration.dto'
 import { SetTowTruckActiveDto } from './dto/set-tow-truck-active.dto'
 import { SetTowTruckFeaturedDto } from './dto/set-tow-truck-featured.dto'
+import { SetTowTruckPhoneDto } from './dto/set-tow-truck-phone.dto'
 
 /** Moderation endpoints — every route requires a valid admin JWT (see AdminAuthModule) */
 @UseGuards(AdminJwtGuard)
@@ -92,6 +93,20 @@ export class AdminController {
     @Body() dto: SetTowTruckFeaturedDto,
   ): Promise<{ id: number; isFeatured: boolean }> {
     return this.adminService.setTowTruckFeatured(id, dto.isFeatured)
+  }
+
+  /**
+   * Corrects the main login phone — the driver's own dashboard can't touch
+   * this field (see MyTowTruckService), so a typo made at registration would
+   * otherwise be permanent. Rejects a value already used by another active
+   * truck — see AdminService.setTowTruckPhone.
+   */
+  @Patch('tow-trucks/:id/phone')
+  setPhone(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SetTowTruckPhoneDto,
+  ): Promise<{ id: number; phone: string }> {
+    return this.adminService.setTowTruckPhone(id, dto.phone)
   }
 
   /** Permanently deletes the tow truck + its images/reviews/OTPs. Irreversible. */

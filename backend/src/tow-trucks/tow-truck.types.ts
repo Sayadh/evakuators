@@ -129,6 +129,7 @@ export interface TowTruckApi {
     platformWidthM?: number
     winch: boolean
     manipulator: boolean
+    wheelSkates: boolean
     plateNumber?: string
     showPlateNumber: boolean
   }

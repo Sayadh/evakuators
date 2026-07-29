@@ -54,9 +54,10 @@ function createInitialFormState() {
     platformDimensions: '',
     winch: false,
     manipulator: false,
+    wheelSkates: false,
     workingHoursStart: '',
     workingHoursEnd: '',
-    mainRegionSlug: '',
+    regionSlugs: [] as string[],
     citySlugs: [] as string[],
     services: [] as ServiceType[],
     priceCityCallout: '',
@@ -75,26 +76,47 @@ const errors = reactive<Record<string, string>>({})
 
 const regionOptions = computed<SelectOption[]>(() => buildRegionOptions())
 
-const isYerevanSelected = computed(() => form.mainRegionSlug === YEREVAN_REGION_SLUG)
+/** A driver can cover at most this many marzes — e.g. Yerevan + Kotayk, or Lori + Armavir */
+const MAX_REGIONS = 2
 
 /** "Ծառայություններ" fieldset lets the driver pick 24/7 — hours only make
  * sense to ask about when that isn't selected. */
 const is247 = computed(() => form.services.includes(ServiceType.Available247))
 
-/**
- * Service-area checkboxes — labels only, so this is derived from static geography
- * with no request. Yerevan is a pseudo-region whose "cities" are its districts
- * (see CLAUDE.md).
- */
-const cityOptions = computed<SelectOption[]>(() => buildCityOptions(form.mainRegionSlug))
+interface CityGroup {
+  regionSlug: string
+  regionLabel: string
+  /** Yerevan is a pseudo-region whose "cities" are its districts (see CLAUDE.md) */
+  isYerevan: boolean
+  options: SelectOption[]
+}
 
-// Changing the marz invalidates whatever cities were ticked under the old one.
-watch(
-  () => form.mainRegionSlug,
-  () => {
-    form.citySlugs = []
-  },
+/**
+ * One checkbox group per selected marz, so a driver who picked e.g. Yerevan +
+ * Kotayk sees two clearly-labeled city/district lists instead of one merged,
+ * ambiguous one. Labels only, derived from static geography — no request.
+ */
+const cityGroups = computed<CityGroup[]>(() =>
+  form.regionSlugs.map((regionSlug) => ({
+    regionSlug,
+    regionLabel: regionOptions.value.find((option) => option.value === regionSlug)?.label ?? regionSlug,
+    isYerevan: regionSlug === YEREVAN_REGION_SLUG,
+    options: buildCityOptions(regionSlug),
+  })),
 )
+
+function toggleRegion(slug: string): void {
+  if (form.regionSlugs.includes(slug)) {
+    form.regionSlugs = form.regionSlugs.filter((item) => item !== slug)
+    // Drop only this region's own cities/districts — the other selected
+    // region's picks (if any) must survive untouched.
+    const droppedSlugs = new Set(buildCityOptions(slug).map((option) => option.value))
+    form.citySlugs = form.citySlugs.filter((item) => !droppedSlugs.has(item))
+    return
+  }
+  if (form.regionSlugs.length >= MAX_REGIONS) return
+  form.regionSlugs = [...form.regionSlugs, slug]
+}
 
 function toggleCity(slug: string): void {
   form.citySlugs = form.citySlugs.includes(slug)
@@ -102,9 +124,9 @@ function toggleCity(slug: string): void {
     : [...form.citySlugs, slug]
 }
 
-const isAllCitiesSelected = computed(
-  () => cityOptions.value.length > 0 && form.citySlugs.length === cityOptions.value.length,
-)
+function isAllCitiesSelected(group: CityGroup): boolean {
+  return group.options.length > 0 && group.options.every((option) => form.citySlugs.includes(option.value))
+}
 
 // If they switch to 24/7 after picking custom hours, clear them so a stale
 // value never gets left behind — buildRegistrationPayload ignores them while
@@ -116,8 +138,11 @@ watch(is247, (value) => {
   }
 })
 
-function toggleAllCities(): void {
-  form.citySlugs = isAllCitiesSelected.value ? [] : cityOptions.value.map((option) => option.value)
+function toggleAllCities(group: CityGroup): void {
+  const groupSlugs = group.options.map((option) => option.value)
+  form.citySlugs = isAllCitiesSelected(group)
+    ? form.citySlugs.filter((item) => !groupSlugs.includes(item))
+    : [...form.citySlugs.filter((item) => !groupSlugs.includes(item)), ...groupSlugs]
 }
 
 const vehicleTypeOptions: SelectOption[] = VEHICLE_TYPE_OPTIONS.map((option) => ({
@@ -152,6 +177,26 @@ const extraImagesInput = ref<HTMLInputElement | null>(null)
 const mainImageFile = shallowRef<File | null>(null)
 const extraImageFiles = shallowRef<File[]>([])
 
+/**
+ * Ids of the files already uploaded, in the same order as `selectedFiles()`.
+ *
+ * Uploading is a SEPARATE request per photo (POST /images), throttled at
+ * 10/60s per IP, and the registration itself can legitimately be rejected
+ * afterwards (duplicate phone, taken slug…). Re-uploading all 6 photos on
+ * every retry therefore burns the whole budget on the second attempt and the
+ * driver gets a 429 they can do nothing about for a minute — while the first
+ * attempt's uploads sit orphaned in Storage until the nightly purge.
+ *
+ * So uploads are resumable: this survives a failed submit, and only resets
+ * when the driver actually changes which files they picked (an id points at a
+ * specific uploaded file, so a different selection invalidates all of them).
+ */
+const uploadedImageIds = ref<number[]>([])
+
+function resetUploadedImages(): void {
+  uploadedImageIds.value = []
+}
+
 // Local object URLs so the driver sees a thumbnail of what they picked
 // before it's ever uploaded — revoked on replace/unmount to avoid leaking.
 const mainImagePreview = ref<string | null>(null)
@@ -161,6 +206,7 @@ function onMainImageChange(event: Event): void {
   const input = event.target as HTMLInputElement
   mainImageFile.value = input.files?.[0] ?? null
   form.mainImageName = mainImageFile.value?.name ?? ''
+  resetUploadedImages()
 
   if (mainImagePreview.value) URL.revokeObjectURL(mainImagePreview.value)
   mainImagePreview.value = mainImageFile.value ? URL.createObjectURL(mainImageFile.value) : null
@@ -170,6 +216,7 @@ function onExtraImagesChange(event: Event): void {
   const input = event.target as HTMLInputElement
   extraImageFiles.value = Array.from(input.files ?? []).slice(0, MAX_EXTRA_IMAGES)
   form.extraImageNames = extraImageFiles.value.map((file) => file.name)
+  resetUploadedImages()
 
   extraImagePreviews.value.forEach((url) => URL.revokeObjectURL(url))
   extraImagePreviews.value = extraImageFiles.value.map((file) => URL.createObjectURL(file))
@@ -178,6 +225,7 @@ function onExtraImagesChange(event: Event): void {
 function removeMainImage(): void {
   mainImageFile.value = null
   form.mainImageName = ''
+  resetUploadedImages()
 
   if (mainImagePreview.value) URL.revokeObjectURL(mainImagePreview.value)
   mainImagePreview.value = null
@@ -196,6 +244,7 @@ function removeExtraImage(index: number): void {
   extraImageFiles.value = extraImageFiles.value.filter((_, i) => i !== index)
   extraImagePreviews.value = extraImagePreviews.value.filter((_, i) => i !== index)
   form.extraImageNames = form.extraImageNames.filter((_, i) => i !== index)
+  resetUploadedImages()
 }
 
 onBeforeUnmount(() => {
@@ -217,13 +266,8 @@ function validate(): boolean {
     validateField(form.capacity, [required('Ընտրեք առավելագույն բեռնատարողությունը')]) ?? ''
   errors.platformDimensions =
     validateField(form.platformDimensions, [isPlatformDimensions()]) ?? ''
-  errors.mainRegionSlug = validateField(form.mainRegionSlug, [required('Ընտրեք մարզը')]) ?? ''
-  errors.citySlugs =
-    form.citySlugs.length === 0
-      ? isYerevanSelected.value
-        ? 'Ընտրեք առնվազն մեկ շրջան'
-        : 'Ընտրեք առնվազն մեկ քաղաք'
-      : ''
+  errors.regionSlugs = form.regionSlugs.length === 0 ? 'Ընտրեք 1-2 մարզ' : ''
+  errors.citySlugs = form.citySlugs.length === 0 ? 'Ընտրեք առնվազն մեկ քաղաք կամ շրջան' : ''
   errors.services =
     form.services.length === 0 ? 'Ընտրեք առնվազն մեկ ծառայություն' : ''
   // Fully optional — driver may leave both 24/7 unselected and hours unset.
@@ -260,6 +304,9 @@ function resetForm(): void {
 
   mainImageFile.value = null
   extraImageFiles.value = []
+  // Those ids now belong to the submitted request — a second registration
+  // must upload its own photos, not try to reattach already-attached ones.
+  resetUploadedImages()
 
   if (mainImagePreview.value) URL.revokeObjectURL(mainImagePreview.value)
   mainImagePreview.value = null
@@ -272,17 +319,25 @@ function resetForm(): void {
   if (import.meta.client) window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
-/** Uploads the images through the backend, then submits the request */
-async function submitToApi(): Promise<void> {
-  const files = [mainImageFile.value, ...extraImageFiles.value].filter(
+/** Main image first — the backend treats imageIds[0] as the primary photo */
+function selectedFiles(): File[] {
+  return [mainImageFile.value, ...extraImageFiles.value].filter(
     (file): file is File => file !== null,
   )
-  const uploaded = []
-  for (const file of files) {
-    uploaded.push(await imageRepository.upload(file))
+}
+
+/** Uploads whatever isn't uploaded yet, then submits the request */
+async function submitToApi(): Promise<void> {
+  // Resumes from where the last attempt stopped — see uploadedImageIds. Each
+  // id is committed to the array as soon as its upload returns, so a failure
+  // halfway through (or a rejected submit afterwards) never costs the driver
+  // the photos that already went up.
+  for (const file of selectedFiles().slice(uploadedImageIds.value.length)) {
+    const image = await imageRepository.upload(file)
+    uploadedImageIds.value = [...uploadedImageIds.value, image.id]
   }
 
-  const payload = buildRegistrationPayload(form, uploaded.map((image) => image.id))
+  const payload = buildRegistrationPayload(form, uploadedImageIds.value)
   await registrationRepository.submit(payload)
 }
 
@@ -340,6 +395,7 @@ async function onSubmit(): Promise<void> {
             type="tel"
             placeholder="+37491000001"
             required
+            :maxlength="12"
             :error="errors.phone"
           />
           <AppInput
@@ -347,6 +403,7 @@ async function onSubmit(): Promise<void> {
             label="Երկրորդ հեռախոսահամար (ոչ պարտադիր)"
             type="tel"
             placeholder="+37499000001"
+            :maxlength="12"
             :error="errors.secondaryPhone"
           />
           <AppInput
@@ -354,6 +411,7 @@ async function onSubmit(): Promise<void> {
             label="WhatsApp"
             type="tel"
             placeholder="+37491000001"
+            :maxlength="12"
             :error="errors.whatsapp"
           />
           <AppInput v-model="form.telegram" label="Telegram (username)" placeholder="@username" />
@@ -408,37 +466,52 @@ async function onSubmit(): Promise<void> {
         <div class="register__checks">
           <AppCheckbox v-model="form.winch" label="Ունի ճախարակ (winch, лебедка)" />
           <AppCheckbox v-model="form.manipulator" label="Ունի մանիպուլյատոր" />
+          <AppCheckbox v-model="form.wheelSkates" label="Առկա են անիվային ռոլիկներ">
+            <template #label-suffix>
+              <AppTooltip label="Անիվային ռոլիկների բացատրություն">
+                Անիվային ռոլիկներն օգտագործվում են արգելափակված կամ չպտտվող անիվներով մեքենան
+                անվտանգ հարթակ բարձրացնելու և տեղափոխելու համար։
+              </AppTooltip>
+            </template>
+          </AppCheckbox>
         </div>
       </fieldset>
 
       <fieldset class="register__section">
         <legend class="register__legend">Տարածքներ</legend>
-        <div class="register__grid">
-          <AppSelect
-            v-model="form.mainRegionSlug"
-            :options="regionOptions"
-            label="Հիմնական մարզ"
-            :error="errors.mainRegionSlug"
+
+        <p class="register__cities-label">
+          Ընտրեք 1-2 մարզ<span class="register__required" aria-hidden="true"> *</span>
+        </p>
+        <p v-if="errors.regionSlugs" class="register__error" role="alert">
+          {{ errors.regionSlugs }}
+        </p>
+        <div class="register__cities-grid">
+          <AppCheckbox
+            v-for="option in regionOptions"
+            :key="option.value"
+            :model-value="form.regionSlugs.includes(option.value)"
+            :label="option.label"
+            :disabled="!form.regionSlugs.includes(option.value) && form.regionSlugs.length >= MAX_REGIONS"
+            @update:model-value="toggleRegion(option.value)"
           />
         </div>
 
-        <div v-if="cityOptions.length > 0" class="register__cities">
+        <div v-for="group in cityGroups" :key="group.regionSlug" class="register__cities">
           <p class="register__cities-label">
-            {{ isYerevanSelected ? 'Սպասարկվող շրջաններ' : 'Սպասարկվող քաղաքներ'
+            {{ group.regionLabel }} —
+            {{ group.isYerevan ? 'Սպասարկվող շրջաններ' : 'Սպասարկվող քաղաքներ'
             }}<span class="register__required" aria-hidden="true"> *</span>
           </p>
-          <p v-if="errors.citySlugs" class="register__error" role="alert">
-            {{ errors.citySlugs }}
-          </p>
           <AppCheckbox
-            :model-value="isAllCitiesSelected"
-            :label="isYerevanSelected ? 'Ամբողջ Երևանը' : 'Ամբողջ մարզը'"
+            :model-value="isAllCitiesSelected(group)"
+            :label="group.isYerevan ? 'Ամբողջ Երևանը' : 'Ամբողջ մարզը'"
             class="register__all-cities"
-            @update:model-value="toggleAllCities"
+            @update:model-value="toggleAllCities(group)"
           />
           <div class="register__cities-grid">
             <AppCheckbox
-              v-for="option in cityOptions"
+              v-for="option in group.options"
               :key="option.value"
               :model-value="form.citySlugs.includes(option.value)"
               :label="option.label"
@@ -446,6 +519,9 @@ async function onSubmit(): Promise<void> {
             />
           </div>
         </div>
+        <p v-if="cityGroups.length > 0 && errors.citySlugs" class="register__error" role="alert">
+          {{ errors.citySlugs }}
+        </p>
       </fieldset>
 
       <fieldset class="register__section">

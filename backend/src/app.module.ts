@@ -2,7 +2,8 @@ import { Module } from '@nestjs/common'
 import { ConfigModule } from '@nestjs/config'
 import { APP_GUARD } from '@nestjs/core'
 import { ScheduleModule } from '@nestjs/schedule'
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler'
+import { ThrottlerModule } from '@nestjs/throttler'
+import { SsrAwareThrottlerGuard } from './common/ssr-aware-throttler.guard'
 import configuration from './config/configuration'
 import { validateEnv } from './config/env.validation'
 import { AdminAuthModule } from './admin-auth/admin-auth.module'
@@ -29,7 +30,9 @@ import { TowTrucksModule } from './tow-trucks/tow-trucks.module'
     }),
     // Global default: 60 requests / 60s per IP. Abuse-prone endpoints
     // (image upload, registration/review submission, driver-auth) apply a
-    // stricter @Throttle() override — see their controllers.
+    // stricter @Throttle() override — see their controllers. Requests coming
+    // from this machine (the Nuxt SSR process) are exempt — see
+    // SsrAwareThrottlerGuard for why they'd otherwise all share one bucket.
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 60 }]),
     // Powers @Cron() in FreeRoutesService (auto-expiry cleanup) and in
     // AnalyticsTrackingService (visitor-day retention purge)
@@ -49,6 +52,6 @@ import { TowTrucksModule } from './tow-trucks/tow-trucks.module'
     FreeRoutesModule,
     AnalyticsModule,
   ],
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [{ provide: APP_GUARD, useClass: SsrAwareThrottlerGuard }],
 })
 export class AppModule {}

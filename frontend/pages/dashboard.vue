@@ -6,6 +6,8 @@ import { useDriverAuthStore } from '~/stores/driverAuth'
 import { ServiceType } from '~/types/enums'
 import type { TowTruck } from '~/types/towTruck'
 import { extractErrorMessage } from '~/utils/errors'
+import { armenianPhoneInputValue } from '~/utils/formatPhone'
+import { isPhone, validateField } from '~/utils/validators'
 import { formatWorkingHoursRange, splitWorkingHoursRange } from '~/utils/workingHours'
 
 useSeoMetaData({
@@ -41,6 +43,24 @@ const form = reactive({
   priceExtraLoading: '',
 })
 
+/** v-model wrapper that keeps a phone field locked to +374 + up to 8 digits */
+function armenianPhoneModel(key: 'secondaryPhone' | 'whatsapp') {
+  return computed<string>({
+    get: () => form[key],
+    set: (value) => {
+      form[key] = armenianPhoneInputValue(value)
+    },
+  })
+}
+
+const secondaryPhoneModel = armenianPhoneModel('secondaryPhone')
+const whatsappModel = armenianPhoneModel('whatsapp')
+
+const errors = reactive({
+  secondaryPhone: '',
+  whatsapp: '',
+})
+
 const saving = ref(false)
 const saveError = ref('')
 const saveSuccess = ref(false)
@@ -49,7 +69,35 @@ const existingImages = ref<{ id: number; url: string }[]>([])
 const newImageFiles = shallowRef<File[]>([])
 const newImagePreviews = ref<string[]>([])
 
+/**
+ * Ids of the newly picked files already uploaded, in `newImageFiles` order.
+ *
+ * Same reason as register.vue: uploads are one throttled request per photo
+ * (10/60s per IP) and the save itself can still be rejected afterwards
+ * (description too short, and so on). Without this, every retry re-uploads
+ * every photo, so the second attempt can hit a 429 the driver can't act on —
+ * and each abandoned attempt leaves orphans in Storage. Cleared whenever the
+ * selection changes, since an id points at one specific uploaded file.
+ */
+const uploadedNewImageIds = ref<number[]>([])
+
+function resetUploadedNewImages(): void {
+  uploadedNewImageIds.value = []
+}
+
+/**
+ * A published listing must always keep at least one photo — the backend
+ * rejects an empty imageIds array (UpdateMyTowTruckDto), so blocking the last
+ * removal here turns a confusing save-time rejection into an obvious disabled
+ * button. Newly picked (not yet uploaded) files count toward the total, so a
+ * driver can still swap their only photo: add the new one first, then drop
+ * the old one.
+ */
+const totalImageCount = computed(() => existingImages.value.length + newImageFiles.value.length)
+const canRemoveImage = computed(() => totalImageCount.value > 1)
+
 function removeExistingImage(index: number): void {
+  if (!canRemoveImage.value) return
   existingImages.value.splice(index, 1)
 }
 
@@ -70,6 +118,9 @@ function onNewImagesChange(event: Event): void {
   }
 
   newImageFiles.value.push(...files)
+  // Appending is safe for already-uploaded ids (they keep their indexes), but
+  // resetting keeps the invariant trivially true rather than subtly true.
+  resetUploadedNewImages()
 
   const previews = files.map((file) => URL.createObjectURL(file))
   newImagePreviews.value.push(...previews)
@@ -78,9 +129,11 @@ function onNewImagesChange(event: Event): void {
 }
 
 function removeNewImage(index: number): void {
+  if (!canRemoveImage.value) return
   URL.revokeObjectURL(newImagePreviews.value[index])
   newImageFiles.value.splice(index, 1)
   newImagePreviews.value.splice(index, 1)
+  resetUploadedNewImages()
 }
 
 onBeforeUnmount(() => {
@@ -133,6 +186,13 @@ async function submit(): Promise<void> {
   saveError.value = ''
   saveSuccess.value = false
 
+  errors.secondaryPhone = validateField(form.secondaryPhone, [isPhone()]) ?? ''
+  errors.whatsapp = validateField(form.whatsapp, [isPhone()]) ?? ''
+  if (errors.secondaryPhone || errors.whatsapp) {
+    saveError.value = 'Ստուգիր հեռախոսահամարների դաշտերը'
+    return
+  }
+
   // Fully optional — a driver may leave both 24/7 unselected and hours
   // unset. Only flag it when exactly one of the two times got filled in,
   // since that combination can't be saved as a valid range either way.
@@ -162,23 +222,23 @@ async function submit(): Promise<void> {
       priceExtraLoading: toOptionalInt(form.priceExtraLoading),
     }
 
-    if (newImageFiles.value.length > 0) {
-      const uploaded = []
-      for (const file of newImageFiles.value) {
-        uploaded.push(await imageRepository.upload(file))
-      }
-      payload.imageIds = [
-        ...existingImages.value.map((i) => i.id),
-        ...uploaded.map((i) => i.id),
-      ]
-    } else {
-      payload.imageIds = existingImages.value.map((i) => i.id)
+    // Resumes from where a previous attempt stopped — see uploadedNewImageIds
+    for (const file of newImageFiles.value.slice(uploadedNewImageIds.value.length)) {
+      const image = await imageRepository.upload(file)
+      uploadedNewImageIds.value = [...uploadedNewImageIds.value, image.id]
     }
+    payload.imageIds = [
+      ...existingImages.value.map((i) => i.id),
+      ...uploadedNewImageIds.value,
+    ]
 
     truck.value = await myTowTruckRepository.updateMine(payload)
     fillFormFromTruck(truck.value)
     saveSuccess.value = true
     newImageFiles.value = []
+    // Attached to the profile now — a later save must not resend these ids
+    // as if they were still unattached uploads.
+    resetUploadedNewImages()
     newImagePreviews.value.forEach((url) => URL.revokeObjectURL(url))
     newImagePreviews.value = []
   } catch (error) {
@@ -223,8 +283,22 @@ async function logout(): Promise<void> {
         <details class="dashboard-section">
           <summary class="dashboard-summary">Կոնտակտներ</summary>
           <div class="dashboard-details-content">
-            <AppInput v-model="form.secondaryPhone" type="tel" label="Լրացուցիչ հեռախոս" />
-            <AppInput v-model="form.whatsapp" type="tel" label="WhatsApp" />
+            <AppInput
+              v-model="secondaryPhoneModel"
+              type="tel"
+              label="Լրացուցիչ հեռախոս"
+              placeholder="+37499000001"
+              :maxlength="12"
+              :error="errors.secondaryPhone"
+            />
+            <AppInput
+              v-model="whatsappModel"
+              type="tel"
+              label="WhatsApp"
+              placeholder="+37491000001"
+              :maxlength="12"
+              :error="errors.whatsapp"
+            />
             <AppInput v-model="form.telegram" label="Telegram username" />
             <AppInput v-model="form.email" type="email" label="Email" />
           </div>
@@ -281,6 +355,7 @@ async function logout(): Promise<void> {
                 type="button"
                 class="dashboard-image-remove"
                 aria-label="Հեռացնել նկարը"
+                :disabled="!canRemoveImage"
                 @click="removeExistingImage(index)"
               >
                 <AppIcon name="close" :size="14" />
@@ -298,6 +373,7 @@ async function logout(): Promise<void> {
                 type="button"
                 class="dashboard-image-remove"
                 aria-label="Հեռացնել նկարը"
+                :disabled="!canRemoveImage"
                 @click="removeNewImage(index)"
               >
                 <AppIcon name="close" :size="14" />
@@ -499,8 +575,14 @@ details[open] .dashboard-summary::after {
   box-shadow: var(--shadow-sm);
   transition: background var(--transition);
 
-  &:hover {
+  &:hover:not(:disabled) {
     background: #c0392b;
+  }
+
+  // Last remaining photo — a listing can never drop to zero images
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 }
 

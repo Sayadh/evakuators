@@ -142,6 +142,17 @@ populated by the driver tapping a one-time deep link
 - `MyTowTruckService` re-checks `isActive` on **every** call, not just at
   login — a 30-day token from a driver who gets deactivated mid-lifetime
   stops working immediately, it doesn't just "eventually" get invalidated.
+- **Any 401 auto-logs out**, for both sessions. `apiFetch`
+  (`frontend/repositories/apiClient.ts`) is the single chokepoint every
+  repository calls through, so it's the one place watching for a 401 rather
+  than each page catching it separately: a 401 on a `/my/*` path clears
+  `driverAuth` and redirects to `/login`; a 401 on `/admin/*` clears
+  `adminAuth` and redirects to `/admin` (the login form and the panel are the
+  same route, gated on `adminAuth.isLoggedIn`). The path prefix is what tells
+  the two sessions apart — `apiFetch` has no other way to know which store
+  issued a given call. This deliberately does not fire for the login calls
+  themselves (`/admin-auth/*`, `/driver-auth/*`) — a wrong password/code there
+  is a normal 401 with its own message, not an expired session.
 
 ### The Telegram bot's webhook is singular — this bites people
 
@@ -179,6 +190,31 @@ one hop"), and two genuinely different clients get separate buckets. See
 Also note `HOST` now defaults to `127.0.0.1`: with the API previously listening
 on `*:4002`, a client could skip nginx entirely and hit the app with no
 `X-Forwarded-For` at all.
+
+### SSR is exempt — `SsrAwareThrottlerGuard`
+
+The global guard is `SsrAwareThrottlerGuard`
+(`backend/src/common/ssr-aware-throttler.guard.ts`), not the stock
+`ThrottlerGuard`: it skips throttling entirely when `req.ip` is loopback.
+
+This is not a loosening for convenience, it fixes a self-inflicted outage.
+Server-side rendering fetches are made by the **Nuxt process**, not by the
+visitor, so they all reach the backend from one address and shared a single
+60/min bucket. A page render costs 2-3 API calls, so the site began returning
+429 to its own renderer at roughly 20-30 page views per minute — site-wide,
+regardless of how many distinct visitors were browsing.
+
+Matching on loopback is safe precisely because of the two rules above: the API
+binds `127.0.0.1`, so only a process on the same machine can present a loopback
+peer address, and public traffic always comes through nginx, where
+`trust proxy 1` resolves `req.ip` to the real client and ignores a forged
+`X-Forwarded-For: 127.0.0.1`.
+
+For this to apply, the frontend must call the backend over loopback during SSR —
+that is what `NUXT_INTERNAL_API_BASE_URL` (`ecosystem.config.js`) is for. Going
+out through the public hostname would present the server's *public* address,
+which is not loopback, and put every rendered page back in the shared bucket.
+Browser-originated requests are unaffected and still throttled per client IP.
 
 ## Things that are NOT implemented (don't assume otherwise)
 

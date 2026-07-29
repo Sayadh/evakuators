@@ -15,6 +15,8 @@ export interface TowTruckVehicle extends TowTruckCardVehicle {
   platformLengthM?: number
   platformWidthM?: number
   winch: boolean
+  /** Wheel skates — for loading a vehicle with locked/non-rotating wheels */
+  wheelSkates: boolean
   /** Absent when the driver chose not to publish it — the backend withholds it */
   plateNumber?: string
   showPlateNumber: boolean

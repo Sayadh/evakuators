@@ -2,9 +2,11 @@
 interface Props {
   modelValue: boolean
   label: string
+  /** e.g. a region checkbox once the caller's own max-selection limit is reached */
+  disabled?: boolean
 }
 
-defineProps<Props>()
+withDefaults(defineProps<Props>(), { disabled: false })
 
 const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
 
@@ -12,18 +14,22 @@ const id = useId()
 </script>
 
 <template>
-  <label :for="id" class="app-checkbox">
+  <label :for="id" class="app-checkbox" :class="{ 'app-checkbox--disabled': disabled }">
     <input
       :id="id"
       type="checkbox"
       class="app-checkbox__input"
       :checked="modelValue"
+      :disabled="disabled"
       @change="emit('update:modelValue', ($event.target as HTMLInputElement).checked)"
     >
     <span class="app-checkbox__box" aria-hidden="true">
       <AppIcon v-if="modelValue" name="check" :size="14" />
     </span>
-    <span class="app-checkbox__label">{{ label }}</span>
+    <span class="app-checkbox__label">
+      {{ label }}
+      <slot name="label-suffix" />
+    </span>
   </label>
 </template>
 
@@ -74,8 +80,16 @@ const id = useId()
   }
 
   &__label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
     font-size: 0.95rem;
     line-height: 1.35;
+  }
+
+  &--disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
   }
 }
 </style>

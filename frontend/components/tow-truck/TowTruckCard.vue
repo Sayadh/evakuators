@@ -30,6 +30,7 @@ const mainAreas = computed(() =>
     <div class="truck-card__media">
       <NuxtLink :to="getTowTruckRoute(towTruck.slug)" tabindex="-1">
         <NuxtImg
+          v-if="towTruck.images[0]"
           :src="towTruck.images[0]"
           :alt="`${displayName} — ${towTruck.vehicle.brand} ${towTruck.vehicle.model} էվակուատոր`"
           class="truck-card__image"
@@ -38,6 +39,13 @@ const mainAreas = computed(() =>
           loading="lazy"
           format="webp"
         />
+        <!-- Registration requires a photo and the dashboard can't remove the
+             last one, so this should be unreachable — but an <img> with an
+             undefined src renders as a broken-image icon, which is a much
+             worse failure than a neutral placeholder if it ever happens. -->
+        <span v-else class="truck-card__image truck-card__image--empty" aria-hidden="true">
+          <AppIcon name="truck" :size="40" />
+        </span>
       </NuxtLink>
     </div>
 
@@ -130,6 +138,14 @@ const mainAreas = computed(() =>
     width: 100%;
     aspect-ratio: 16 / 9;
     object-fit: cover;
+
+    &--empty {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--color-bg);
+      color: var(--color-text-muted);
+    }
   }
 
   &__body {

@@ -20,10 +20,13 @@ export interface RegistrationFormState {
   platformDimensions: string
   winch: boolean
   manipulator: boolean
+  /** Wheel skates — for loading a vehicle with locked/non-rotating wheels */
+  wheelSkates: boolean
   /** Only meaningful when the "available-24-7" service isn't selected — raw <input type="time"> values */
   workingHoursStart: string
   workingHoursEnd: string
-  mainRegionSlug: string
+  /** Up to 2 marzes */
+  regionSlugs: string[]
   citySlugs: string[]
   services: string[]
   priceCityCallout: string
@@ -64,6 +67,7 @@ export function buildRegistrationPayload(
     platformDimensions: optionalString(form.platformDimensions),
     winch: form.winch,
     manipulator: form.manipulator,
+    wheelSkates: form.wheelSkates,
     // Fully optional — only combine into a value when both sides are filled
     // in and 24/7 wasn't picked; otherwise leave it unset entirely rather
     // than send a half-formed range.
@@ -73,7 +77,7 @@ export function buildRegistrationPayload(
       !form.workingHoursEnd
         ? undefined
         : formatWorkingHoursRange(form.workingHoursStart, form.workingHoursEnd),
-    mainRegionSlug: form.mainRegionSlug,
+    regionSlugs: form.regionSlugs,
     citySlugs: form.citySlugs,
     services: form.services,
     priceCityCallout: optionalInt(form.priceCityCallout),

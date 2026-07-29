@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { Prisma, RegistrationStatus } from '@prisma/client'
 import { randomBytes } from 'node:crypto'
+import { IMAGE_ORDER } from '../images/image-order'
 import { PrismaService } from '../prisma/prisma.service'
 import type { RegistrationWithImages } from '../registration/registration.repository'
 import { ReviewsRepository, ReviewWithTruck } from '../reviews/reviews.repository'
@@ -38,7 +39,8 @@ export class AdminService {
   listRegistrations(query: AdminRegistrationsQuery): Promise<RegistrationWithImages[]> {
     return this.prisma.registrationRequest.findMany({
       where: query.status ? { status: query.status } : undefined,
-      include: { images: true },
+      // Driver's own order — main photo first (see IMAGE_ORDER)
+      include: { images: { orderBy: IMAGE_ORDER } },
       orderBy: { createdAt: 'desc' },
       take: query.limit,
       skip: query.offset,
@@ -52,7 +54,7 @@ export class AdminService {
   ): Promise<{ towTruckId: number; telegramLinkUrl: string }> {
     const request = await this.prisma.registrationRequest.findUnique({
       where: { id },
-      include: { images: true },
+      include: { images: { orderBy: IMAGE_ORDER } },
     })
     if (!request) throw new NotFoundException(`Հայտ #${id}-ը չի գտնվել`)
     if (request.status !== RegistrationStatus.PENDING) {
@@ -62,13 +64,27 @@ export class AdminService {
     }
 
     // The main phone is the driver-login key (DriverAuthService looks a
-    // truck up by it) — two active trucks sharing one would make the second
-    // one unreachable at login (findFirst always resolves to the same row).
-    // A secondary phone is allowed to repeat, only the main one is guarded.
-    const phoneConflict = await this.towTrucksRepository.findActiveByMainPhone(request.phone)
+    // truck up by it). Checked against EVERY truck, active or deactivated —
+    // same reasoning as the slug check below: allowing a deactivated
+    // truck's phone to be reused would silently break the moment that truck
+    // is reactivated (two ACTIVE trucks sharing one login phone). A
+    // secondary phone is allowed to repeat, only the main one is guarded.
+    const phoneConflict = await this.towTrucksRepository.findByMainPhoneAnyStatus(request.phone)
     if (phoneConflict) {
       throw new BadRequestException(
-        `Այս հեռախոսահամարով (${request.phone}) արդեն կա ակտիվ էվակուատոր՝ «${phoneConflict.slug}»։ Հիմնական հեռախոսահամարը պետք է եզակի լինի։`,
+        `Այս հեռախոսահամարով (${request.phone}) արդեն կա էվակուատոր՝ «${phoneConflict.slug}» (${phoneConflict.isActive ? 'ակտիվ' : 'ապաակտիվացված'})։ Հիմնական հեռախոսահամարը պետք է եզակի լինի։`,
+      )
+    }
+
+    // slug is @unique regardless of active/deactivated status — checked
+    // against EVERY truck, not just active ones, so a deactivated truck's
+    // slug can never be handed to a new one (which would otherwise only
+    // surface as a raw, uncaught DB constraint error) and reactivating that
+    // truck later never runs into a slug someone else has since taken.
+    const slugConflict = await this.towTrucksRepository.findBySlugAnyStatus(dto.slug)
+    if (slugConflict) {
+      throw new BadRequestException(
+        `Այս slug-ն (${dto.slug}) արդեն օգտագործվում է մեկ այլ էվակուատորի կողմից (${slugConflict.isActive ? 'ակտիվ' : 'ապաակտիվացված'})։ Ընտրիր այլ slug։`,
       )
     }
 
@@ -103,7 +119,13 @@ export class AdminService {
           capacityTons: dto.capacityTons,
           winch: request.winch,
           manipulator: request.manipulator,
-          regionSlug: request.mainRegionSlug === 'yerevan' ? null : request.mainRegionSlug,
+          wheelSkates: request.wheelSkates,
+          // Resolved by the admin frontend from the chosen citySlug/districtSlug
+          // (see ApproveRegistrationDto.regionSlug) — the backend has no
+          // geography of its own, and with up to 2 regionSlugs on the request
+          // it can no longer just take "the" region the way a single
+          // mainRegionSlug used to allow.
+          regionSlug: dto.regionSlug ?? null,
           citySlug: dto.citySlug,
           districtSlug: dto.districtSlug,
           locationName: dto.locationName,
@@ -117,6 +139,11 @@ export class AdminService {
         },
       })
 
+      // Only re-points the owner — `position` was already written from the
+      // driver's own order when the request was created (see
+      // RegistrationRepository.create) and must survive approval untouched,
+      // otherwise the main photo they picked stops being the main photo the
+      // moment their profile goes live.
       await tx.towTruckImage.updateMany({
         where: { registrationRequestId: request.id },
         data: { towTruckId: created.id },
@@ -197,13 +224,55 @@ export class AdminService {
    * Deactivate (hide from public listing + block driver login/dashboard —
    * see MyTowTruckService's isActive check) or reactivate a tow truck.
    * Non-destructive: nothing is deleted, this is fully reversible.
+   *
+   * Deactivating never needs a phone check — it only ever REDUCES the active
+   * count. Reactivating does: approve()/submit()/setTowTruckPhone() all now
+   * block a phone from ever being reused across trucks regardless of status,
+   * so this should be unreachable going forward — but it's the one path that
+   * could still resurrect a duplicate from data created before that
+   * invariant existed, so it's checked here too rather than assumed safe.
    */
   async setTowTruckActive(id: number, isActive: boolean): Promise<{ id: number; isActive: boolean }> {
     const towTruck = await this.towTrucksRepository.findById(id)
     if (!towTruck) throw new NotFoundException(`Էվակուատոր #${id}-ը չի գտնվել`)
 
+    if (isActive) {
+      const conflict = await this.towTrucksRepository.findByMainPhoneAnyStatus(towTruck.phone, id)
+      if (conflict && conflict.isActive) {
+        throw new BadRequestException(
+          `Այս էվակուատորի հեռախոսահամարով (${towTruck.phone}) արդեն կա ակտիվ էվակուատոր՝ «${conflict.slug}»։ Նախ փոխիր հեռախոսահամարներից մեկը, հետո ակտիվացրու։`,
+        )
+      }
+    }
+
     const updated = await this.towTrucksRepository.setActive(id, isActive)
     return { id: updated.id, isActive: updated.isActive }
+  }
+
+  /**
+   * Admin correction of the main login phone — e.g. a driver mistyped it at
+   * registration and there's no self-service way to fix it (MyTowTruckService
+   * never exposes `phone`, only `secondaryPhone`/`whatsapp`, since the main
+   * phone doubles as the driver-login lookup key). Same uniqueness rule as
+   * approve(): checked against EVERY other truck regardless of
+   * active/deactivated status, or a later reactivation could silently create
+   * two active trucks sharing one login phone.
+   */
+  async setTowTruckPhone(id: number, phone: string): Promise<{ id: number; phone: string }> {
+    const towTruck = await this.towTrucksRepository.findById(id)
+    if (!towTruck) throw new NotFoundException(`Էվակուատոր #${id}-ը չի գտնվել`)
+
+    if (phone !== towTruck.phone) {
+      const conflict = await this.towTrucksRepository.findByMainPhoneAnyStatus(phone, id)
+      if (conflict) {
+        throw new BadRequestException(
+          `Այս հեռախոսահամարով (${phone}) արդեն կա էվակուատոր՝ «${conflict.slug}» (${conflict.isActive ? 'ակտիվ' : 'ապաակտիվացված'})։ Հիմնական հեռախոսահամարը պետք է եզակի լինի։`,
+        )
+      }
+    }
+
+    const updated = await this.towTrucksRepository.setPhone(id, phone)
+    return { id: updated.id, phone: updated.phone }
   }
 
   /**

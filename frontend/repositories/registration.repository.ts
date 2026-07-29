@@ -18,8 +18,10 @@ export interface RegistrationPayload {
   platformDimensions?: string
   winch: boolean
   manipulator: boolean
+  wheelSkates: boolean
   workingHoursText?: string
-  mainRegionSlug: string
+  /** Up to 2 marzes — see backend CreateRegistrationDto */
+  regionSlugs: string[]
   citySlugs: string[]
   services: string[]
   priceCityCallout?: number

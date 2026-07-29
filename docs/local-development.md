@@ -74,6 +74,10 @@ Verify it actually took effect from the browser console:
 `useNuxtApp().$config.public.apiBaseUrl` should print
 `'http://localhost:4002/api/v1'`, not an empty string.
 
+`NUXT_INTERNAL_API_BASE_URL` (the URL SSR uses — see `docs/deployment.md`) is
+deliberately left unset here: locally the public URL is already localhost, so
+it falls back to that. Production must set it.
+
 ### 4. Admin account
 
 ```bash

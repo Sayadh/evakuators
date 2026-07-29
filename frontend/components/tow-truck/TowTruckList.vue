@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import type { TowTruck } from '~/types/towTruck'
+import type { TowTruckCard } from '~/types/towTruck'
 
 interface Props {
-  towTrucks: TowTruck[]
+  towTrucks: TowTruckCard[]
   pending?: boolean
   skeletonCount?: number
   /** 'grid' (default, responsive 1/2/3 columns) or 'stack' (always a single column) */

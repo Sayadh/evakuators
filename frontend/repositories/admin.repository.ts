@@ -83,11 +83,25 @@ function authHeader(): Record<string, string> {
   return useAdminAuthStore().authHeader
 }
 
+/**
+ * Paging for the admin listings. These are the tables that grow forever —
+ * registration requests are kept as an audit trail and nothing deletes them —
+ * so the panel loads a page at a time and offers "load more" rather than
+ * fetching every row it has ever accumulated on each visit.
+ */
+export interface AdminListParams {
+  limit?: number
+  offset?: number
+}
+
 /** All moderation reads/writes against the backend admin endpoints */
 export const adminRepository = {
-  listRegistrations(status?: string): Promise<AdminRegistrationRequest[]> {
+  listRegistrations(
+    status?: string,
+    params: AdminListParams = {},
+  ): Promise<AdminRegistrationRequest[]> {
     return apiFetch<AdminRegistrationRequest[]>('/admin/registration-requests', {
-      query: status ? { status } : undefined,
+      query: { ...(status ? { status } : {}), limit: params.limit, offset: params.offset },
       headers: authHeader(),
     })
   },
@@ -117,8 +131,11 @@ export const adminRepository = {
     )
   },
 
-  listPendingReviews(): Promise<AdminReview[]> {
-    return apiFetch<AdminReview[]>('/admin/reviews', { headers: authHeader() })
+  listPendingReviews(params: AdminListParams = {}): Promise<AdminReview[]> {
+    return apiFetch<AdminReview[]>('/admin/reviews', {
+      query: { limit: params.limit, offset: params.offset },
+      headers: authHeader(),
+    })
   },
 
   approveReview(id: number): Promise<{ id: number; isApproved: boolean }> {
@@ -135,8 +152,11 @@ export const adminRepository = {
     })
   },
 
-  listTowTrucks(): Promise<AdminTowTruck[]> {
-    return apiFetch<AdminTowTruck[]>('/admin/tow-trucks', { headers: authHeader() })
+  listTowTrucks(params: AdminListParams = {}): Promise<AdminTowTruck[]> {
+    return apiFetch<AdminTowTruck[]>('/admin/tow-trucks', {
+      query: { limit: params.limit, offset: params.offset },
+      headers: authHeader(),
+    })
   },
 
   /** Deactivate (isActive: false) hides the truck publicly and blocks driver login — reversible */

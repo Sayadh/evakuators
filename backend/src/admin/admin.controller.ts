@@ -16,6 +16,7 @@ import type { RegistrationWithImages } from '../registration/registration.reposi
 import type { ReviewWithTruck } from '../reviews/reviews.repository'
 import type { AdminTowTruckSummary } from './admin-tow-truck.mapper'
 import { AdminService } from './admin.service'
+import { AdminListQuery, AdminRegistrationsQuery } from './dto/admin-list.query'
 import { ApproveRegistrationDto } from './dto/approve-registration.dto'
 import { SetTowTruckActiveDto } from './dto/set-tow-truck-active.dto'
 import { SetTowTruckFeaturedDto } from './dto/set-tow-truck-featured.dto'
@@ -27,8 +28,8 @@ export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
   @Get('registration-requests')
-  list(@Query('status') status?: RegistrationStatus): Promise<RegistrationWithImages[]> {
-    return this.adminService.listRegistrations(status)
+  list(@Query() query: AdminRegistrationsQuery): Promise<RegistrationWithImages[]> {
+    return this.adminService.listRegistrations(query)
   }
 
   @Post('registration-requests/:id/approve')
@@ -55,8 +56,8 @@ export class AdminController {
   }
 
   @Get('reviews')
-  listReviews(): Promise<ReviewWithTruck[]> {
-    return this.adminService.listPendingReviews()
+  listReviews(@Query() query: AdminListQuery): Promise<ReviewWithTruck[]> {
+    return this.adminService.listPendingReviews(query)
   }
 
   @Post('reviews/:id/approve')
@@ -69,10 +70,10 @@ export class AdminController {
     return this.adminService.rejectReview(id)
   }
 
-  /** Every tow truck, active or not */
+  /** Every tow truck, active or not — paginated, unlike the public listing */
   @Get('tow-trucks')
-  listTowTrucks(): Promise<AdminTowTruckSummary[]> {
-    return this.adminService.listTowTrucks()
+  listTowTrucks(@Query() query: AdminListQuery): Promise<AdminTowTruckSummary[]> {
+    return this.adminService.listTowTrucks(query)
   }
 
   /** Deactivate/reactivate — non-destructive, reversible, hides from public listing */

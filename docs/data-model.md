@@ -92,6 +92,15 @@ Notable fields beyond the obvious:
   new OTP requests (`DriverAuthService.requestCode` checks it via
   `findByPhone`, which itself filters `isActive: true`).
 
+### Read shapes
+
+`TowTruck` is read through three different Prisma `select`s, not one:
+`CARD_SELECT` (listings — no description, no secondary contacts, one image row),
+`COVERAGE_SELECT` (five columns, for the geography counters) and a full
+`include: { images: true }` for a single profile. The narrowing happens in
+Postgres rather than in a mapper, so the wide columns are never read off disk for
+a listing. See `docs/api-reference.md` § "List vs detail".
+
 ## `RegistrationRequest`
 
 What a driver submits from `/register`, before any admin has looked at it.

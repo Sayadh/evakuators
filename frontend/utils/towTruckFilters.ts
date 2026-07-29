@@ -1,6 +1,6 @@
 import { matchesCapacityRange } from '~/constants/vehicles'
 import { SortOption } from '~/types/enums'
-import type { TowTruck } from '~/types/towTruck'
+import type { TowTruckCard } from '~/types/towTruck'
 import type { TowTruckFilterState } from '~/types/filters'
 
 export function createDefaultFilterState(): TowTruckFilterState {
@@ -13,7 +13,7 @@ export function createDefaultFilterState(): TowTruckFilterState {
   }
 }
 
-export function matchesFilters(truck: TowTruck, filters: TowTruckFilterState): boolean {
+export function matchesFilters(truck: TowTruckCard, filters: TowTruckFilterState): boolean {
   if (filters.works24Hours && !truck.works24Hours) return false
   if (filters.manipulator && !truck.vehicle.manipulator) return false
   if (filters.capacity !== null && !matchesCapacityRange(truck.vehicle.capacityTons, filters.capacity))
@@ -26,11 +26,11 @@ export function matchesFilters(truck: TowTruck, filters: TowTruckFilterState): b
 }
 
 /** "Recommended" score: 24/7 services first */
-function getRecommendedScore(truck: TowTruck): number {
+function getRecommendedScore(truck: TowTruckCard): number {
   return truck.works24Hours ? 1 : 0
 }
 
-export function sortTowTrucks(trucks: TowTruck[], sort: SortOption): TowTruck[] {
+export function sortTowTrucks(trucks: TowTruckCard[], sort: SortOption): TowTruckCard[] {
   const sorted = [...trucks]
   switch (sort) {
     case SortOption.Price:
@@ -45,9 +45,9 @@ export function sortTowTrucks(trucks: TowTruck[], sort: SortOption): TowTruck[] 
 }
 
 export function applyTowTruckFilters(
-  trucks: TowTruck[],
+  trucks: TowTruckCard[],
   filters: TowTruckFilterState,
-): TowTruck[] {
+): TowTruckCard[] {
   return sortTowTrucks(
     trucks.filter((truck) => matchesFilters(truck, filters)),
     filters.sort,

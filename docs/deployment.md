@@ -107,39 +107,54 @@ PM2's `HOST`.
 
 ## Database backups
 
-**There is no automatic backup unless you set one up — nothing in this repo does
-it for you.** Postgres lives on the same single VPS as the app, so a disk failure
-or a bad `DELETE` loses every registration, review and analytics counter with no
-way back.
+**There is no automatic backup until you install one — nothing does it for
+you.** Postgres lives on the same single VPS as the app, so a disk failure or a
+bad `DELETE` loses every registration, review and analytics counter with no way
+back.
 
-Minimum viable setup — nightly `pg_dump`, 14 days of history:
+`scripts/backup-db.sh` is in the repo and ready to run:
 
 ```bash
-mkdir -p /var/backups/evakuators
+chmod +x scripts/backup-db.sh
 crontab -e
 ```
 
 ```cron
-# 03:30 daily — dump, gzip, keep 14 days
-30 3 * * * pg_dump "$DATABASE_URL" | gzip > /var/backups/evakuators/db-$(date +\%F).sql.gz && find /var/backups/evakuators -name 'db-*.sql.gz' -mtime +14 -delete
+30 3 * * * /srv/evakuators/scripts/backup-db.sh >> /var/log/evakuators-backup.log 2>&1
 ```
 
-Two things this is still missing, in priority order:
+It reads `DATABASE_URL` from `backend/.env` (so credentials stay in one place),
+dumps to `/var/backups/evakuators/db-<date>.sql.gz`, verifies the gzip, and
+prunes dumps older than 14 days. Two details that matter:
 
-1. **Off-server copies.** A backup on the same disk as the database does not
-   survive the failure it exists for. Sync the directory somewhere else (`rclone`
-   to any S3-compatible bucket, or `scp` to another machine) — Supabase already
-   gives you an object store, and it is not the same disk.
-2. **A restore you have actually run.** An untested backup is a guess. Restore a
-   dump into a scratch database once and note how long it takes:
+- It writes to `.partial` and renames only on success. A cron job killed halfway
+  through would otherwise leave a truncated file that looks like a valid backup
+  until the day someone tries to restore it.
+- Pruning runs **last**, so a failed dump never deletes the previous good copy.
+
+Tunables via the environment: `BACKUP_DIR`, `RETENTION_DAYS`, `ENV_FILE`,
+`OFFSITE_CMD`.
+
+### Two things the script cannot do for you
+
+1. **Get the backup off this machine.** A dump on the same disk as the database
+   does not survive the failure it exists for. Set `OFFSITE_CMD` to anything that
+   takes the dump path as `$1` — the script warns on every run until you do:
+   ```cron
+   30 3 * * * OFFSITE_CMD='rclone copy "$1" remote:evakuators-backups' /srv/evakuators/scripts/backup-db.sh >> /var/log/evakuators-backup.log 2>&1
+   ```
+2. **Prove a restore works.** An untested backup is a guess. Do this once and
+   note how long it takes:
    ```bash
    createdb evakuators_restore_test
-   gunzip -c /var/backups/evakuators/db-YYYY-MM-DD.sql.gz | psql evakuators_restore_test
+   gunzip -c /var/backups/evakuators/db-YYYY-MM-DD-HHMM.sql.gz | psql evakuators_restore_test
+   psql evakuators_restore_test -c 'SELECT count(*) FROM "TowTruck";'
+   dropdb evakuators_restore_test
    ```
 
 Supabase Storage (the tow truck photos) is a separate system with its own
-retention — a Postgres dump does not include the images, only the rows pointing
-at them.
+retention — a Postgres dump contains the rows that point at the images, not the
+images.
 
 ## Log rotation
 

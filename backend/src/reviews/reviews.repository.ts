@@ -42,12 +42,14 @@ export class ReviewsRepository {
     return this.prisma.review.findUnique({ where: { id } })
   }
 
-  /** Unapproved reviews awaiting moderation, newest first */
-  listPending(): Promise<ReviewWithTruck[]> {
+  /** Unapproved reviews awaiting moderation, newest first — paginated for the admin panel */
+  listPending(page: { limit: number; offset: number }): Promise<ReviewWithTruck[]> {
     return this.prisma.review.findMany({
       where: { isApproved: false },
       include: { towTruck: { select: { slug: true, driverName: true } } },
       orderBy: { createdAt: 'desc' },
+      take: page.limit,
+      skip: page.offset,
     })
   }
 

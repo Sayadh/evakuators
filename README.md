@@ -154,8 +154,9 @@ the table below is a summary.
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/api/v1/health` | Liveness + DB status |
-| `GET` | `/api/v1/tow-trucks` | List (filters: `city`, `district`, `region`+`regionCities`, `yerevan`, `limit`) |
-| `GET` | `/api/v1/tow-trucks/:slug` | Single profile |
+| `GET` | `/api/v1/tow-trucks` | List — **card shape**, not full profiles (filters: `city`, `district`, `region`+`regionCities`, `yerevan`, `limit`, `offset`) |
+| `GET` | `/api/v1/tow-trucks/coverage` | Per-truck geography footprint for the region/city/district counters — no contact data |
+| `GET` | `/api/v1/tow-trucks/:slug` | Single **full** profile |
 | `GET` | `/api/v1/tow-trucks/:id/reviews` | Approved reviews |
 | `POST` | `/api/v1/tow-trucks/:id/reviews` | Submit review (moderated) |
 | `POST` | `/api/v1/images` | Upload image (multipart `file`) → WebP → Supabase |
@@ -198,6 +199,13 @@ instead of Telegram OTP. `AdminJwtGuard` checks the token on the backend itself
    Re-run the same command any time to change the password (it upserts by email).
 3. Log in at `https://evakuators.am/admin` with that email/password. The token is
    kept in the browser (localStorage) and expires after 24h.
+
+## Backups
+
+Nothing backs up the database automatically. `scripts/backup-db.sh` is ready to
+install as a cron job — see `docs/deployment.md` § "Database backups", including
+the two things it can't do for you (getting the dump off the machine, and proving
+a restore works).
 
 ## Provider analytics
 

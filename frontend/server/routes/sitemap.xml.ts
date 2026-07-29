@@ -3,9 +3,19 @@ import { staticCities } from '~/data/cities'
 import { staticDistricts } from '~/data/districts'
 import { staticRegions } from '~/data/regions'
 import { mockTowTrucks } from '~/mocks/towTrucks'
-import type { TowTruck } from '~/types/towTruck'
 
 const SITE_URL = 'https://evakuators.am'
+
+/** Matches the backend's TOW_TRUCK_LIST_MAX_LIMIT — one request per 200 trucks */
+const SITEMAP_PAGE_SIZE = 200
+
+/**
+ * Hard stop on the page walk. A sitemap is generated per crawler request, so an
+ * unbounded loop against a misbehaving backend (one that keeps returning full
+ * pages) would be a self-inflicted denial of service. 10k tow truck pages is far
+ * beyond anything realistic for Armenia and still only 50 requests.
+ */
+const SITEMAP_MAX_TRUCKS = 10_000
 
 interface SitemapEntry {
   path: string
@@ -38,13 +48,25 @@ async function getTowTrucksForSitemap(event: H3Event): Promise<TowTruckSitemapEn
     return mockTowTrucks.map((truck) => ({ slug: truck.slug, updatedAt: truck.updatedAt }))
   }
 
+  // The listing endpoint is capped (see backend tow-trucks.constants.ts), and a
+  // sitemap that silently stops at the cap is worse than no sitemap: Google
+  // would simply never learn about the trucks past it. So this is the one
+  // consumer that walks the pages.
+  const entries: TowTruckSitemapEntry[] = []
   try {
-    const trucks = await $fetch<TowTruck[]>('/tow-trucks', { baseURL: apiBase })
-    return trucks.map((truck) => ({ slug: truck.slug, updatedAt: truck.updatedAt }))
+    for (let offset = 0; offset < SITEMAP_MAX_TRUCKS; offset += SITEMAP_PAGE_SIZE) {
+      const page = await $fetch<TowTruckSitemapEntry[]>('/tow-trucks', {
+        baseURL: apiBase,
+        query: { limit: SITEMAP_PAGE_SIZE, offset },
+      })
+      entries.push(...page.map((truck) => ({ slug: truck.slug, updatedAt: truck.updatedAt })))
+      if (page.length < SITEMAP_PAGE_SIZE) break
+    }
+    return entries
   } catch {
-    // Backend unreachable — better to serve a sitemap without truck pages
-    // than to fail the whole route or leak stale mock URLs.
-    return []
+    // Backend unreachable — better to serve a sitemap with whatever pages we
+    // already collected than to fail the whole route or leak stale mock URLs.
+    return entries
   }
 }
 

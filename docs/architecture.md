@@ -37,7 +37,7 @@ utils/*.ts               pure helpers, no network, no Nuxt context needed
 
 Note that not every service method fetches: the location services
 (`regions`/`cities`/`districts`) are pure synchronous stat builders that take an
-already-fetched tow truck list — see "Geography: name vs count" below.
+already-fetched coverage list — see "Geography: name vs count" below.
 
 A component should never import a repository directly, and a service should
 never import `$fetch` directly — everything HTTP-shaped funnels through
@@ -47,7 +47,7 @@ service starts hitting real endpoints with zero component changes.
 
 ## Geography: name vs count — the rule that keeps request counts sane
 
-Two ways to get at regions/cities/districts, and picking the wrong one is
+Three ways to get at regions/cities/districts, and picking the wrong one is
 expensive:
 
 - **Need a name or a route?** `frontend/utils/geography.ts` — synchronous, pure,
@@ -55,41 +55,49 @@ expensive:
   `buildRegionOptions()` / `buildCityOptions()` cascade (Yerevan's "cities" are
   its districts) and `cityOrDistrictLabel()`.
 - **Need a `towTruckCount`?** `useRegions()` / `useCitiesByRegion()` /
-  `useDistricts()` / `useTowTrucksInYerevan()` — all derived from **one** shared
-  `useAllTowTrucks()` fetch (`composables/useAllTowTrucks.ts`), with the
-  location services (`services/{regions,cities,districts}.service.ts`) reduced
-  to pure synchronous stat builders over the list they're handed.
+  `useDistricts()` / `useYerevanTowTruckCount()` — all derived from **one**
+  shared `useTowTruckCoverage()` fetch of `GET /tow-trucks/coverage`, with the
+  location services (`services/{regions,cities,districts}.service.ts`) reduced to
+  pure synchronous stat builders over the records they are handed.
+- **Need the trucks themselves?** `useTowTrucksByCity/District/Region`,
+  `useTowTrucksInYerevan` — filtered backend requests returning the card shape.
 
-This is not premature optimisation; it fixed a measured problem. Previously each
+This is not premature optimisation; it fixed a measured problem. Originally each
 location service called `towTrucksService.getAll()` itself, and callers that only
 wanted labels went through them anyway:
 
 | Page | `GET /tow-trucks` before | after |
 | --- | --- | --- |
-| `/` | 5 (+1 `?yerevan=true`, +1 `/featured`) | 1 (+1 `/featured`) |
-| `/about`, `/contact`, `/register` | 2 | **0** |
-| `/regions`, `/yerevan` | 2–3 | 1 |
+| `/` | 5 full-fleet (+1 `?yerevan=true`, +1 `/featured`) | 1 coverage (+1 `/featured`) |
+| `/about`, `/contact`, `/register` | 2 full-fleet | **0** |
+| `/regions` | 2–3 full-fleet | 1 coverage |
+| `/yerevan` | 3 full-fleet | 1 coverage + 1 filtered list |
+| `/regions/[region]/[city]` | 3 full-fleet | 1 coverage + 1 filtered list |
 
-Two independent causes, both worth knowing about:
+Three independent causes, all worth knowing about:
 
 1. **`AppFooter` fetched the whole fleet to render plain links.** It lives in the
    default layout, so *every page on the site* downloaded every tow truck —
-   twice — for names it got from static data anyway.
+   twice — for names it gets from static data anyway.
 2. **`useAsyncData`'s default is `dedupe: 'cancel'`.** When a second component
    calls the same key, Nuxt **aborts the in-flight request and starts a new
    one**. `useRegions()` is called from three components on the homepage and
    `useDistricts()` from two → 3 + 2 = 5 requests for two distinct keys.
-   `useAllTowTrucks()` sets `dedupe: 'defer'` (later callers await the request
-   already in flight) plus `getCachedData` (client-side navigation reuses the
-   payload). **Any new shared-key `useAsyncData` in this codebase should set
-   both.**
+   `useTowTruckCoverage()` sets `dedupe: 'defer'` (later callers await the
+   request already in flight) plus `getCachedData` (client-side navigation
+   reuses the payload). **Any new shared-key `useAsyncData` in this codebase
+   should set both.**
+3. **Counting required whole profiles.** Even after collapsing to one request,
+   that request was the entire fleet with contacts, descriptions and photo URLs,
+   in order to print a number on a card. `GET /tow-trucks/coverage` returns ~11%
+   of those bytes and no personal data — see `docs/api-reference.md` § "List vs
+   detail".
 
-Page-level lists (`useTowTrucksByCity/District/Region`) deliberately keep their
-own filtered backend requests — one city's trucks genuinely is different data,
-and letting Postgres filter beats shipping the whole fleet. Yerevan is the
-exception: `useTowTrucksInYerevan()` derives from the shared list, because both
-callers already load it for per-district counts. `GET /tow-trucks?yerevan=true`
-is still served, just no longer called by this frontend.
+Region counts must be **distinct trucks**, not the sum of their cities' counts:
+a driver covering several cities in one marz would otherwise be counted several
+times. That is why coverage returns per-truck records rather than ready-made
+totals — the backend has no geography data and cannot know which cities belong
+to which marz (see `CLAUDE.md`), while the frontend can and does.
 
 Global components are registered with `pathPrefix: false` in
 `nuxt.config.ts`, so e.g. `frontend/components/location/RegionCard.vue` is
@@ -111,9 +119,9 @@ Every service (`frontend/services/*.service.ts`) branches on this at the top
 of nearly every method:
 
 ```ts
-getAll(): Promise<TowTruck[]> {
-  if (isApiEnabled()) return towTruckRepository.getAll()
-  return mockRequest(() => mockTowTrucks)
+getByCitySlug(citySlug: string): Promise<TowTruckCard[]> {
+  if (isApiEnabled()) return towTruckRepository.getByCity(citySlug)
+  return mockRequest(() => mockTowTrucks.filter((truck) => servesCity(truck, citySlug)))
 }
 ```
 

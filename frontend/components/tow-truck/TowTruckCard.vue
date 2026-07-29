@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import type { TowTruck } from '~/types/towTruck'
+import type { TowTruckCard } from '~/types/towTruck'
 import { VEHICLE_TYPE_LABELS } from '~/constants/vehicles'
 import { formatCapacity } from '~/utils/formatters'
 import { formatStartingPrice } from '~/utils/formatPrice'
 import { getTowTruckRoute } from '~/utils/routeHelpers'
 
 interface Props {
-  towTruck: TowTruck
+  towTruck: TowTruckCard
 }
 
 const props = defineProps<Props>()

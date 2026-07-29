@@ -3,17 +3,89 @@ import type { Prisma, TowTruck } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 import type { TowTruckFilters, TowTruckWhere, TowTruckWithImages } from './tow-truck.types'
 
+/**
+ * Exactly the columns a listing card renders — see TowTruckCardApi for why the
+ * list and detail shapes differ.
+ *
+ * This is a `select`, not a post-mapping step, so the narrowing happens in
+ * Postgres: `description` (unbounded text) and the driver's other contact
+ * columns are never read off disk, and `images` is capped at the one thumbnail
+ * the card shows instead of loading every photo row for every truck in the list.
+ */
+const CARD_SELECT = {
+  id: true,
+  slug: true,
+  driverName: true,
+  companyName: true,
+  phone: true,
+  whatsapp: true,
+  works24Hours: true,
+  workingHoursText: true,
+  priceCityCallout: true,
+  vehicleBrand: true,
+  vehicleModel: true,
+  vehicleType: true,
+  capacityTons: true,
+  manipulator: true,
+  services: true,
+  serviceAreas: true,
+  regionSlug: true,
+  citySlug: true,
+  districtSlug: true,
+  locationName: true,
+  updatedAt: true,
+  images: { select: { url: true }, orderBy: { position: 'asc' }, take: 1 },
+} satisfies Prisma.TowTruckSelect
+
+/** Five columns — everything needed to count coverage, nothing else */
+const COVERAGE_SELECT = {
+  regionSlug: true,
+  citySlug: true,
+  districtSlug: true,
+  serviceAreas: true,
+  works24Hours: true,
+} satisfies Prisma.TowTruckSelect
+
+export type TowTruckCardRow = Prisma.TowTruckGetPayload<{ select: typeof CARD_SELECT }>
+export type TowTruckCoverageRow = Prisma.TowTruckGetPayload<{ select: typeof COVERAGE_SELECT }>
+
 /** All TowTruck database access lives here — services never touch Prisma directly */
 @Injectable()
 export class TowTrucksRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  findMany(filters: TowTruckFilters): Promise<TowTruckWithImages[]> {
+  /** Public listing — card columns only, always bounded by the caller's limit */
+  findManyCards(filters: TowTruckFilters & { limit: number }): Promise<TowTruckCardRow[]> {
     return this.prisma.towTruck.findMany({
       where: this.buildWhere(filters),
-      include: { images: true },
-      orderBy: [{ works24Hours: 'desc' }, { createdAt: 'desc' }],
-      ...(filters.limit ? { take: filters.limit } : {}),
+      select: CARD_SELECT,
+      // Deterministic tie-break: without `id` a stable order is not guaranteed
+      // across pages, so an offset walk could repeat or skip rows.
+      orderBy: [{ works24Hours: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+      take: filters.limit,
+      skip: filters.offset ?? 0,
+    })
+  }
+
+  /**
+   * Every active truck's geography footprint, for the per-region/city/district
+   * counters. Unbounded on purpose — it is one small row per truck and the
+   * frontend needs all of them to count correctly — but it carries no contact
+   * details, no description and no images, so "all of them" stays cheap.
+   */
+  findCoverage(): Promise<TowTruckCoverageRow[]> {
+    return this.prisma.towTruck.findMany({
+      where: { isActive: true },
+      select: COVERAGE_SELECT,
+    })
+  }
+
+  /** Card columns for the admin-curated homepage picks */
+  findFeaturedCards(): Promise<TowTruckCardRow[]> {
+    return this.prisma.towTruck.findMany({
+      where: { isActive: true, isFeatured: true },
+      select: CARD_SELECT,
+      orderBy: { createdAt: 'desc' },
     })
   }
 
@@ -48,24 +120,17 @@ export class TowTrucksRepository {
     })
   }
 
-  /** Admin-only — unlike findMany(), this intentionally includes inactive trucks */
-  findAllForAdmin(): Promise<TowTruckWithImages[]> {
-    return this.prisma.towTruck.findMany({
-      include: { images: true },
-      orderBy: { createdAt: 'desc' },
-    })
-  }
-
   /**
-   * Admin-curated "best tow trucks" for the homepage. Active trucks only —
-   * an admin marking a truck featured doesn't override a deactivation.
-   * Empty when nothing is marked; the frontend hides the whole section then.
+   * Admin-only — unlike the public listing, this intentionally includes
+   * inactive trucks, and it is paginated: the admin table is the one listing
+   * that grows monotonically and is never filtered down by geography.
    */
-  findFeatured(): Promise<TowTruckWithImages[]> {
+  findAllForAdmin(page: { limit: number; offset: number }): Promise<TowTruckWithImages[]> {
     return this.prisma.towTruck.findMany({
-      where: { isActive: true, isFeatured: true },
       include: { images: true },
       orderBy: { createdAt: 'desc' },
+      take: page.limit,
+      skip: page.offset,
     })
   }
 

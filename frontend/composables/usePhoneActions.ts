@@ -1,4 +1,4 @@
-import type { TowTruck } from '~/types/towTruck'
+import type { TowTruckContactable } from '~/types/towTruck'
 import {
   trackEmailClick,
   trackPhoneClick,
@@ -21,7 +21,7 @@ import { getPhoneHref, getTelegramUrl, getWhatsAppUrl } from '~/utils/formatPhon
  * - `useAnalyticsTracking` — this driver's own dashboard counters, keyed by id,
  *   deduplicated to once per visitor per calendar day (see docs/analytics.md)
  */
-export function usePhoneActions(truck: MaybeRefOrGetter<TowTruck>) {
+export function usePhoneActions(truck: MaybeRefOrGetter<TowTruckContactable>) {
   const analytics = useAnalyticsTracking()
   const phoneHref = computed(() => getPhoneHref(toValue(truck).phone))
 

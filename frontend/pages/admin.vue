@@ -116,6 +116,13 @@ const statusOptions = [
   { value: 'ALL', label: 'Բոլորը' },
 ]
 
+/**
+ * Admin listings are paginated server-side (see backend AdminListQuery): these
+ * tables only ever grow, and the panel was refetching every row ever created on
+ * each visit. One page at a time, "load more" for the rest.
+ */
+const ADMIN_PAGE_SIZE = 50
+
 const statusFilter = ref<StatusFilter>('PENDING')
 const registrations = ref<AdminRegistrationRequest[]>([])
 const reviews = ref<AdminReview[]>([])
@@ -128,6 +135,10 @@ const reviewsError = ref('')
 const towTrucksError = ref('')
 /** Id of the row whose action button is currently in flight (disables just that button) */
 const actioningId = ref<number | null>(null)
+/** A full page came back, so there is probably another one — drives "load more" */
+const hasMoreRegistrations = ref(false)
+const hasMoreReviews = ref(false)
+const hasMoreTowTrucks = ref(false)
 
 function serviceLabel(slug: string): string {
   return SERVICE_LABELS[slug as ServiceType] ?? slug
@@ -151,13 +162,22 @@ function statusBadgeVariant(status: AdminRegistrationRequest['status']): 'accent
   return 'neutral'
 }
 
-async function loadRegistrations(): Promise<void> {
+/**
+ * `append: false` reloads from the top (first visit, filter change, after an
+ * approve/reject); `append: true` is the "load more" button. A full page back
+ * means there is probably more — that is what enables the button.
+ */
+async function loadRegistrations(append = false): Promise<void> {
   loadingRegistrations.value = true
   registrationsError.value = ''
   try {
-    registrations.value = await adminRepository.listRegistrations(
+    const offset = append ? registrations.value.length : 0
+    const page = await adminRepository.listRegistrations(
       statusFilter.value === 'ALL' ? undefined : statusFilter.value,
+      { limit: ADMIN_PAGE_SIZE, offset },
     )
+    registrations.value = append ? [...registrations.value, ...page] : page
+    hasMoreRegistrations.value = page.length === ADMIN_PAGE_SIZE
   } catch {
     registrationsError.value = 'Հայտերը բեռնել չհաջողվեց։'
   } finally {
@@ -165,11 +185,14 @@ async function loadRegistrations(): Promise<void> {
   }
 }
 
-async function loadReviews(): Promise<void> {
+async function loadReviews(append = false): Promise<void> {
   loadingReviews.value = true
   reviewsError.value = ''
   try {
-    reviews.value = await adminRepository.listPendingReviews()
+    const offset = append ? reviews.value.length : 0
+    const page = await adminRepository.listPendingReviews({ limit: ADMIN_PAGE_SIZE, offset })
+    reviews.value = append ? [...reviews.value, ...page] : page
+    hasMoreReviews.value = page.length === ADMIN_PAGE_SIZE
   } catch {
     reviewsError.value = 'Կարծիքները բեռնել չհաջողվեց։'
   } finally {
@@ -177,11 +200,14 @@ async function loadReviews(): Promise<void> {
   }
 }
 
-async function loadTowTrucks(): Promise<void> {
+async function loadTowTrucks(append = false): Promise<void> {
   loadingTowTrucks.value = true
   towTrucksError.value = ''
   try {
-    towTrucks.value = await adminRepository.listTowTrucks()
+    const offset = append ? towTrucks.value.length : 0
+    const page = await adminRepository.listTowTrucks({ limit: ADMIN_PAGE_SIZE, offset })
+    towTrucks.value = append ? [...towTrucks.value, ...page] : page
+    hasMoreTowTrucks.value = page.length === ADMIN_PAGE_SIZE
   } catch {
     towTrucksError.value = 'Էվակուատորները բեռնել չհաջողվեց։'
   } finally {
@@ -567,6 +593,12 @@ async function rejectReview(review: AdminReview): Promise<void> {
             </footer>
           </article>
         </div>
+
+        <div v-if="hasMoreRegistrations" class="admin-section__more">
+          <AppButton variant="outline" :disabled="loadingRegistrations" @click="loadRegistrations(true)">
+            {{ loadingRegistrations ? 'Բեռնվում է…' : 'Ցույց տալ ավելին' }}
+          </AppButton>
+        </div>
       </section>
 
       <!-- ── Reviews ── -->
@@ -618,6 +650,12 @@ async function rejectReview(review: AdminReview): Promise<void> {
               </div>
             </footer>
           </article>
+        </div>
+
+        <div v-if="hasMoreReviews" class="admin-section__more">
+          <AppButton variant="outline" :disabled="loadingReviews" @click="loadReviews(true)">
+            {{ loadingReviews ? 'Բեռնվում է…' : 'Ցույց տալ ավելին' }}
+          </AppButton>
         </div>
       </section>
 
@@ -731,6 +769,12 @@ async function rejectReview(review: AdminReview): Promise<void> {
             </div>
           </article>
         </div>
+
+        <div v-if="hasMoreTowTrucks" class="admin-section__more">
+          <AppButton variant="outline" :disabled="loadingTowTrucks" @click="loadTowTrucks(true)">
+            {{ loadingTowTrucks ? 'Բեռնվում է…' : 'Ցույց տալ ավելին' }}
+          </AppButton>
+        </div>
       </section>
     </template>
 
@@ -829,6 +873,12 @@ async function rejectReview(review: AdminReview): Promise<void> {
     h2 {
       margin: 0;
     }
+  }
+
+  &__more {
+    display: flex;
+    justify-content: center;
+    margin-top: var(--space-4);
   }
 
   &__filter {

@@ -1,6 +1,6 @@
 import { servesDistrict } from './towTrucks.service'
 import type { District, DistrictWithStats } from '~/types/location'
-import type { TowTruck } from '~/types/towTruck'
+import type { TowTruckCoverage } from '~/types/towTruck'
 import { findStaticDistrict, getStaticDistricts } from '~/utils/geography'
 
 /**
@@ -9,7 +9,7 @@ import { findStaticDistrict, getStaticDistricts } from '~/utils/geography'
  * District *names* come from `~/utils/geography.ts` and need no truck data.
  */
 
-function withStats(district: District, trucks: TowTruck[]): DistrictWithStats {
+function withStats(district: District, trucks: TowTruckCoverage[]): DistrictWithStats {
   const serving = trucks.filter((truck) => servesDistrict(truck, district.slug))
   return {
     ...district,
@@ -19,17 +19,17 @@ function withStats(district: District, trucks: TowTruck[]): DistrictWithStats {
 }
 
 export const districtsService = {
-  allWithStats(trucks: TowTruck[]): DistrictWithStats[] {
+  allWithStats(trucks: TowTruckCoverage[]): DistrictWithStats[] {
     return getStaticDistricts().map((district) => withStats(district, trucks))
   },
 
-  findWithStats(districtSlug: string, trucks: TowTruck[]): DistrictWithStats | null {
+  findWithStats(districtSlug: string, trucks: TowTruckCoverage[]): DistrictWithStats | null {
     const district = findStaticDistrict(districtSlug)
     return district ? withStats(district, trucks) : null
   },
 
   /** Busiest other districts — used for "nearby districts" links */
-  nearbyWithStats(districtSlug: string, trucks: TowTruck[], limit = 4): DistrictWithStats[] {
+  nearbyWithStats(districtSlug: string, trucks: TowTruckCoverage[], limit = 4): DistrictWithStats[] {
     return getStaticDistricts()
       .filter((district) => district.slug !== districtSlug)
       .map((district) => withStats(district, trucks))

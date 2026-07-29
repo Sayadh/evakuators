@@ -24,7 +24,7 @@ import type { City, District, Region } from '~/types/location'
  * So the rule is now explicit:
  * - need a **name or a route** → use this file (free, synchronous)
  * - need a **count** → use `useRegions()` / `useCities*()` / `useDistricts()`,
- *   which all derive from the one shared `useAllTowTrucks()` fetch
+ *   which all derive from the one shared `useTowTruckCoverage()` fetch
  */
 
 /**

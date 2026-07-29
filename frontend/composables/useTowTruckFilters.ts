@@ -1,5 +1,5 @@
 import { useTowTruckFiltersStore } from '~/stores/towTruckFilters'
-import type { TowTruck } from '~/types/towTruck'
+import type { TowTruckCard } from '~/types/towTruck'
 import { trackFilterApply } from '~/utils/analytics'
 import { buildFilterQueryParams, parseFilterQueryParams } from '~/utils/queryParams'
 import { applyTowTruckFilters } from '~/utils/towTruckFilters'
@@ -10,7 +10,7 @@ const FILTER_QUERY_KEYS = ['24h', 'manipulator', 'services', 'capacity', 'sort']
  * Connects the filter store to a tow truck list:
  * restores state from the URL, keeps the URL in sync and returns the filtered list.
  */
-export function useTowTruckFilters(towTrucks: Ref<TowTruck[]>) {
+export function useTowTruckFilters(towTrucks: Ref<TowTruckCard[]>) {
   const store = useTowTruckFiltersStore()
   const route = useRoute()
   const router = useRouter()

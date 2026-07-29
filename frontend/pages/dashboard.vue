@@ -305,7 +305,7 @@ async function logout(): Promise<void> {
             </div>
           </div>
           
-            <div class="dashboard-file-input" v-if="existingImages.length + newImageFiles.length < 6">
+            <div v-if="existingImages.length + newImageFiles.length < 6" class="dashboard-file-input">
               <label for="new-images">Ավելացնել նկարներ (մինչև 6 նկար)</label>
               <input
                 id="new-images"

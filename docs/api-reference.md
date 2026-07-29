@@ -11,9 +11,10 @@ Throttle column shows overrides from the global default (60 req/60s per IP,
 | Method | Path | Throttle | Notes |
 | --- | --- | --- | --- |
 | `GET` | `/health` | — | `{ status, database: 'up'|'down', timestamp }` — checks DB with `SELECT 1` |
-| `GET` | `/tow-trucks` | — | Query: `city`, `district`, `region` (+`regionCities`), `yerevan`, `limit` |
-| `GET` | `/tow-trucks/featured` | — | Admin-curated pick, `isFeatured: true` only — empty array if the admin hasn't marked any (homepage section then hides itself) |
-| `GET` | `/tow-trucks/:slug` | — | 404 if not found or `isActive: false` |
+| `GET` | `/tow-trucks` | — | Returns the **card shape**, not full profiles — see "List vs detail" below. Query: `city`, `district`, `region` (+`regionCities`), `yerevan`, `limit` (default & max 200), `offset` |
+| `GET` | `/tow-trucks/featured` | — | Card shape. Admin-curated pick, `isFeatured: true` only — empty array if the admin hasn't marked any (homepage section then hides itself) |
+| `GET` | `/tow-trucks/coverage` | — | One tiny record per active truck (`location`, `serviceAreas` slugs, `works24Hours`) — the input for every region/city/district `towTruckCount`. No contact details at all. See "List vs detail" |
+| `GET` | `/tow-trucks/:slug` | — | The **only** endpoint that returns a full profile. 404 if not found or `isActive: false` |
 | `GET` | `/tow-trucks/:towTruckId/reviews` | — | Approved reviews only |
 | `POST` | `/tow-trucks/:towTruckId/reviews` | 5/60s | Creates with `isApproved: false` — needs admin approval to appear |
 | `POST` | `/images` | 10/60s | Multipart, field name `file`, 30MB max (`MAX_UPLOAD_BYTES`, kept in sync by hand with the same-named constant in `image-processor.service.ts`) → returns `{ id, url, width, height }`, unattached until a registration references its id |
@@ -46,13 +47,13 @@ Throttle column shows overrides from the global default (60 req/60s per IP,
 
 | Method | Path | Notes |
 | --- | --- | --- |
-| `GET` | `/admin/registration-requests` | Query: `?status=PENDING\|APPROVED\|REJECTED` |
+| `GET` | `/admin/registration-requests` | Query: `?status=PENDING\|APPROVED\|REJECTED`, `limit` (default 50, max 200), `offset` |
 | `POST` | `/admin/registration-requests/:id/approve` | Body: `ApproveRegistrationDto` (see `docs/data-model.md`'s `TowTruck` section for what the admin frontend fills in vs. what carries over from the request) → creates `TowTruck`, returns `{ towTruckId, telegramLinkUrl }` |
 | `POST` | `/admin/registration-requests/:id/reject` | |
-| `GET` | `/admin/reviews` | Pending (`isApproved: false`) only |
+| `GET` | `/admin/reviews` | Pending (`isApproved: false`) only. Query: `limit` (default 50, max 200), `offset` |
 | `POST` | `/admin/reviews/:id/approve` | |
 | `POST` | `/admin/reviews/:id/reject` | Deletes the review row outright |
-| `GET` | `/admin/tow-trucks` | Every truck, active or not (unlike the public `/tow-trucks` list) |
+| `GET` | `/admin/tow-trucks` | Every truck, active or not (unlike the public `/tow-trucks` list). Query: `limit` (default 50, max 200), `offset` |
 | `PATCH` | `/admin/tow-trucks/:id/active` | Body: `{ isActive: boolean }` — reversible |
 | `PATCH` | `/admin/tow-trucks/:id/featured` | Body: `{ isFeatured: boolean }` — drives the public `GET /tow-trucks/featured` list and the homepage "featured" section |
 | `DELETE` | `/admin/tow-trucks/:id` | Irreversible — cascades to images (DB row + Supabase Storage object), reviews, OTPs, free routes |
@@ -61,6 +62,51 @@ Throttle column shows overrides from the global default (60 req/60s per IP,
 | `GET` | `/admin/tow-trucks/:id/analytics/charts` | |
 | `GET` | `/admin/tow-trucks/:id/analytics/reviews` | |
 | `GET` | `/admin/tow-trucks/:id/analytics/ratings` | |
+
+## List vs detail — two different shapes on purpose
+
+`GET /tow-trucks` used to return the **full profile** of every truck, which meant
+one unauthenticated request handed out every driver's secondary phone, WhatsApp,
+Telegram and email — the platform's entire contact database — plus descriptions,
+price tables, plate numbers and every photo URL that no card renders.
+
+There are now three shapes, and which one you get depends on the endpoint:
+
+| Shape | Endpoints | Contains | Size |
+| --- | --- | --- | --- |
+| **Coverage** | `/tow-trucks/coverage` | base location, service-area slugs, `works24Hours` | ~230 B/truck, **no personal data** |
+| **Card** | `/tow-trucks`, `/tow-trucks/featured` | what a listing card renders: main phone + WhatsApp, vehicle summary, services, service areas, one thumbnail | ~1.1 KB/truck |
+| **Full** | `/tow-trucks/:slug`, `/my/tow-truck` | everything | ~2.0 KB/truck |
+
+Measured on a representative fixture: the card is 54% of the old list row and
+the coverage record 11%. `whatsapp` is in the card because the card has a
+WhatsApp button; `telegram` and `email` are not, because it doesn't.
+
+The narrowing is a Prisma `select`, not a post-mapping step — the omitted
+columns are never read off disk, and a list query loads one image row per truck
+instead of all of them.
+
+**`plateNumber` is withheld whenever `showPlateNumber` is false**, at the mapper.
+It used to be sent regardless and merely hidden by the UI, so a driver who opted
+out had it published anyway, one "view source" away.
+
+## Pagination
+
+- **Public listing** — `limit` defaults to 200 and is capped at 200, with an
+  optional `offset`. There is no pagination envelope: responses stay bare arrays
+  and the frontend filters them client-side, which is correct as long as one
+  geography's trucks fit in one response (an Armenian city has dozens, not
+  thousands). `TowTrucksService.list()` logs a warning when a response actually
+  hits the cap — that is the tripwire saying filtering and pagination now have to
+  move server-side, because client-side filtering would otherwise silently hide
+  matches on later pages.
+- **Sitemap** — the one consumer that must see every truck, so
+  `server/routes/sitemap.xml.ts` walks pages with `limit`/`offset` rather than
+  being truncated at 200.
+- **Admin listings** — real `limit`/`offset` pagination with a "load more"
+  button. These are the tables that grow without bound (registration requests are
+  kept forever as an audit trail) and nothing about them is filtered
+  client-side, so offset paging is both necessary and safe here.
 
 ## Response shape conventions
 

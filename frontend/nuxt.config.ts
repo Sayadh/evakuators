@@ -34,6 +34,8 @@ export default defineNuxtConfig({
         // Fallback for tools/browsers that don't support SVG favicons
         // (some link-preview bots, older Android Chrome, etc.)
         { rel: 'icon', type: 'image/png', href: '/favicon.png' },
+        // Legacy fallback — some old browsers/tools only ever look for this.
+        { rel: 'shortcut icon', type: 'image/x-icon', href: '/favicon.ico' },
       ],
     },
   },

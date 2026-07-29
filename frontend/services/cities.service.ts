@@ -1,19 +1,19 @@
 import { servesCity } from './towTrucks.service'
 import { staticRegions } from '~/data/regions'
 import type { City, CityWithStats } from '~/types/location'
-import type { TowTruck } from '~/types/towTruck'
+import type { TowTruckCoverage } from '~/types/towTruck'
 import { findStaticCity, getRegionCities } from '~/utils/geography'
 
 /**
  * City statistics — pure and synchronous, same contract as `regionsService`.
  *
  * Cities themselves are STATIC frontend data; only the counts are dynamic, and
- * they are computed from the tow truck list the caller passes in (fetched once
- * by `useAllTowTrucks()`). For city *names* and *routes*, use
+ * they are computed from the coverage records the caller passes in (fetched once
+ * by `useTowTruckCoverage()`). For city *names* and *routes*, use
  * `~/utils/geography.ts` — no truck data required.
  */
 
-function withStats(city: City, trucks: TowTruck[]): CityWithStats | null {
+function withStats(city: City, trucks: TowTruckCoverage[]): CityWithStats | null {
   const region = staticRegions.find((item) => item.id === city.regionId)
   if (!region) return null
 
@@ -28,18 +28,18 @@ function withStats(city: City, trucks: TowTruck[]): CityWithStats | null {
 }
 
 /** Drops cities whose region is missing — a data error, not a renderable row */
-function mapWithStats(cities: City[], trucks: TowTruck[]): CityWithStats[] {
+function mapWithStats(cities: City[], trucks: TowTruckCoverage[]): CityWithStats[] {
   return cities
     .map((city) => withStats(city, trucks))
     .filter((city): city is CityWithStats => city !== null)
 }
 
 export const citiesService = {
-  byRegionWithStats(regionSlug: string, trucks: TowTruck[]): CityWithStats[] {
+  byRegionWithStats(regionSlug: string, trucks: TowTruckCoverage[]): CityWithStats[] {
     return mapWithStats(getRegionCities(regionSlug), trucks)
   },
 
-  findWithStats(regionSlug: string, citySlug: string, trucks: TowTruck[]): CityWithStats | null {
+  findWithStats(regionSlug: string, citySlug: string, trucks: TowTruckCoverage[]): CityWithStats | null {
     const city = findStaticCity(regionSlug, citySlug)
     return city ? withStats(city, trucks) : null
   },
@@ -48,7 +48,7 @@ export const citiesService = {
   nearbyWithStats(
     regionSlug: string,
     citySlug: string,
-    trucks: TowTruck[],
+    trucks: TowTruckCoverage[],
     limit = 4,
   ): CityWithStats[] {
     return mapWithStats(

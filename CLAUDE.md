@@ -23,6 +23,7 @@ number in this codebase, it is not arbitrary.
 frontend/     Nuxt 3, Vue 3 Composition API, TypeScript, Pinia, SCSS — port 3002
 backend/      NestJS, Prisma, PostgreSQL, Supabase Storage — port 4002, routes under /api/v1
 nginx/        Example reverse-proxy config for production
+scripts/      Ops scripts run on the VPS (backup-db.sh)
 ecosystem.config.js   PM2 process definitions for both apps
 docs/         Deep-dive docs — read these before making non-trivial changes
 ```
@@ -93,6 +94,7 @@ assume one is unused:
 | Run the app on a local machine | `docs/local-development.md` |
 | Deploy to the VPS | `docs/deployment.md` |
 | Look up an endpoint | `docs/api-reference.md` |
+| Add a field to a tow truck response | `docs/api-reference.md` § "List vs detail" — decide card vs detail first |
 
 ## Commands
 
@@ -115,8 +117,24 @@ Both apps have independent lint/build — always verify both after a
 cross-cutting change (e.g. anything touching `serviceAreas`, `capacityRange`,
 or a Prisma model) even if you only edited one side.
 
+## A listing is not a profile
+
+`GET /tow-trucks` returns a deliberately smaller **card** shape, `GET
+/tow-trucks/coverage` an even smaller counting shape, and only `GET
+/tow-trucks/:slug` a full profile. Adding a field to the card means publishing it
+for every driver at once to anyone who calls the endpoint — the list used to
+include every driver's secondary phone, WhatsApp, Telegram and email for exactly
+that reason. See `docs/api-reference.md` § "List vs detail".
+
+The same rule shows up on the frontend as `TowTruckCard` vs `TowTruck`
+(`frontend/types/towTruck.ts`); `TowTruck extends TowTruckCard`, so a card type
+accepts a profile but not the reverse.
+
 ## Non-obvious things worth knowing up front
 
+- **Nothing backs up the database unless you set up `scripts/backup-db.sh`
+  on the server** — see `docs/deployment.md`. Postgres is on the same VPS as
+  the app.
 - **The Telegram bot has exactly one webhook URL, globally, for the whole
   bot.** It is normally pointed at production. Testing the Telegram
   login/link flow against a local backend does **not work** unless you stand

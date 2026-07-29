@@ -6,9 +6,11 @@ const { data: districts } = useDistricts()
 // Distinct trucks serving Yerevan (servesYerevan) — NOT a sum of each
 // district's own towTruckCount, which double(/12x)-counts a single truck
 // that lists many districts as its service area.
-const { data: yerevanTrucks } = useTowTrucksInYerevan()
-
-const yerevanTruckCount = computed(() => yerevanTrucks.value.length)
+//
+// Counted from the shared coverage response, not from the Yerevan listing: this
+// tile shows a number, so fetching the trucks themselves just to read `.length`
+// is exactly what the coverage endpoint exists to avoid.
+const { data: yerevanTruckCount } = useYerevanTowTruckCount()
 // "+" only makes sense once the real count is large enough that it reads as
 // an approximation — below that it's just the exact number.
 const yerevanTruckCountLabel = computed(() =>

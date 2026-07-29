@@ -1,6 +1,22 @@
-import type { TowTruckApi, TowTruckWithImages, ServiceAreaJson } from './tow-truck.types'
+import type { TowTruckCardRow, TowTruckCoverageRow } from './tow-trucks.repository'
+import type {
+  ServiceAreaJson,
+  TowTruckApi,
+  TowTruckCardApi,
+  TowTruckCoverageApi,
+  TowTruckWithImages,
+} from './tow-truck.types'
 
 const HOURS_24 = 'Շուրջօրյա (24/7)'
+
+/**
+ * The one place that decides what "working hours" reads as. Shared by the card
+ * and the detail mapper so the two can't drift into showing different text for
+ * the same truck.
+ */
+function buildWorkingHours(works24Hours: boolean, workingHoursText: string | null): string | undefined {
+  return works24Hours ? HOURS_24 : (workingHoursText ?? undefined)
+}
 
 function buildPricing(truck: TowTruckWithImages): TowTruckApi['pricing'] {
   const pricing: NonNullable<TowTruckApi['pricing']> = {}
@@ -29,7 +45,7 @@ export function toTowTruckApi(truck: TowTruckWithImages): TowTruckApi {
     // No fake default anymore — if the driver never specified real hours and
     // isn't 24/7, this stays undefined and the frontend hides the line
     // instead of showing a made-up "09:00 – 21:00" for everyone.
-    workingHours: truck.works24Hours ? HOURS_24 : (truck.workingHoursText ?? undefined),
+    workingHours: buildWorkingHours(truck.works24Hours, truck.workingHoursText),
     workingHoursText: truck.workingHoursText ?? undefined,
     startingPrice: truck.priceCityCallout ?? undefined,
     description: truck.description,
@@ -69,5 +85,69 @@ export function toTowTruckApi(truck: TowTruckWithImages): TowTruckApi {
       .sort((a, b) => a.position - b.position)
       .map((image) => ({ id: image.id, url: image.url })),
     updatedAt: truck.updatedAt.toISOString(),
+  }
+}
+
+/**
+ * Narrow row → listing card shape.
+ *
+ * Everything absent here is absent on purpose — see `TowTruckCardApi`. The
+ * biggest omission is the contact set: a list response carries only the main
+ * phone and WhatsApp, because those are the two buttons a card has.
+ * `telegram`, `email`, `secondaryPhone`, the plate number, platform
+ * dimensions, the full price table, the description and every photo past the
+ * first are detail-page data, served by `GET /tow-trucks/:slug` one truck at a
+ * time.
+ */
+export function toTowTruckCardApi(truck: TowTruckCardRow): TowTruckCardApi {
+  return {
+    id: truck.id,
+    slug: truck.slug,
+    driverName: truck.driverName,
+    companyName: truck.companyName ?? undefined,
+    phone: truck.phone,
+    whatsapp: truck.whatsapp ?? undefined,
+    works24Hours: truck.works24Hours,
+    workingHours: buildWorkingHours(truck.works24Hours, truck.workingHoursText),
+    startingPrice: truck.priceCityCallout ?? undefined,
+    vehicle: {
+      brand: truck.vehicleBrand,
+      model: truck.vehicleModel ?? '',
+      type: truck.vehicleType,
+      capacityTons: truck.capacityTons,
+      manipulator: truck.manipulator,
+    },
+    services: truck.services,
+    serviceAreas: (truck.serviceAreas as unknown as ServiceAreaJson[]) ?? [],
+    location: {
+      regionSlug: truck.regionSlug ?? undefined,
+      citySlug: truck.citySlug ?? undefined,
+      districtSlug: truck.districtSlug ?? undefined,
+      name: truck.locationName,
+    },
+    // The repository already capped this at one row (`take: 1`, ordered by
+    // position). Kept as an array so the frontend's card type stays a strict
+    // subset of the full TowTruck type.
+    images: truck.images.map((image) => image.url),
+    updatedAt: truck.updatedAt.toISOString(),
+  }
+}
+
+/**
+ * Narrow row → coverage record. Drops the `name` from each service area: the
+ * frontend resolves Armenian labels from its own static data anyway (see
+ * CLAUDE.md), so sending them would be pure weight on a response whose entire
+ * purpose is to be small.
+ */
+export function toTowTruckCoverageApi(truck: TowTruckCoverageRow): TowTruckCoverageApi {
+  const areas = (truck.serviceAreas as unknown as ServiceAreaJson[]) ?? []
+  return {
+    location: {
+      regionSlug: truck.regionSlug ?? undefined,
+      citySlug: truck.citySlug ?? undefined,
+      districtSlug: truck.districtSlug ?? undefined,
+    },
+    serviceAreas: areas.map((area) => ({ slug: area.slug, type: area.type })),
+    works24Hours: truck.works24Hours,
   }
 }

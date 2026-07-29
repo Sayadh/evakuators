@@ -9,6 +9,7 @@ import { TelegramService } from '../telegram/telegram.service'
 import { AVAILABLE_24_7_SLUG } from '../tow-trucks/service-slugs'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
 import { AdminTowTruckSummary, toAdminTowTruckSummary } from './admin-tow-truck.mapper'
+import type { AdminListQuery, AdminRegistrationsQuery } from './dto/admin-list.query'
 import type { ApproveRegistrationDto } from './dto/approve-registration.dto'
 
 const DEFAULT_DESCRIPTION = (locationName: string): string =>
@@ -34,11 +35,13 @@ export class AdminService {
     private readonly storage: SupabaseStorageService,
   ) {}
 
-  listRegistrations(status?: RegistrationStatus): Promise<RegistrationWithImages[]> {
+  listRegistrations(query: AdminRegistrationsQuery): Promise<RegistrationWithImages[]> {
     return this.prisma.registrationRequest.findMany({
-      where: status ? { status } : undefined,
+      where: query.status ? { status: query.status } : undefined,
       include: { images: true },
       orderBy: { createdAt: 'desc' },
+      take: query.limit,
+      skip: query.offset,
     })
   }
 
@@ -160,13 +163,13 @@ export class AdminService {
     return { id: updated.id, status: updated.status }
   }
 
-  listPendingReviews(): Promise<ReviewWithTruck[]> {
-    return this.reviewsRepository.listPending()
+  listPendingReviews(query: AdminListQuery): Promise<ReviewWithTruck[]> {
+    return this.reviewsRepository.listPending(query)
   }
 
   /** Every tow truck, active or not — the public list only ever shows isActive: true */
-  async listTowTrucks(): Promise<AdminTowTruckSummary[]> {
-    const trucks = await this.towTrucksRepository.findAllForAdmin()
+  async listTowTrucks(query: AdminListQuery): Promise<AdminTowTruckSummary[]> {
+    const trucks = await this.towTrucksRepository.findAllForAdmin(query)
     return trucks.map(toAdminTowTruckSummary)
   }
 

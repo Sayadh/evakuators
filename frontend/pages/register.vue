@@ -217,8 +217,7 @@ function validate(): boolean {
       : '')
   errors.regionSlugs = form.regionSlugs.length === 0 ? 'Ընտրեք 1-2 մարզ' : ''
   errors.citySlugs = form.citySlugs.length === 0 ? 'Ընտրեք առնվազն մեկ քաղաք կամ շրջան' : ''
-  errors.services =
-    form.services.length === 0 ? 'Ընտրեք առնվազն մեկ ծառայություն' : ''
+  errors.services = form.services.length === 0 ? 'Ընտրեք առնվազն մեկ ծառայություն' : ''
   // Fully optional — driver may leave both 24/7 unselected and hours unset.
   // Only flag it when exactly one of the two times got filled in, since
   // that combination can't be saved as a valid range either way.
@@ -228,7 +227,8 @@ function validate(): boolean {
       : ''
   errors.mainImage = form.mainImageName ? '' : 'Ավելացրեք գլխավոր նկարը'
   errors.priceCityCallout = validateField(form.priceCityCallout, [isAmount()]) ?? ''
-  errors.pricePerKm = validateField(form.pricePerKm, [isAmount('Մուտքագրեք 1 կմ-ի գինը թվերով (օր.՝ 300)')]) ?? ''
+  errors.pricePerKm =
+    validateField(form.pricePerKm, [isAmount('Մուտքագրեք 1 կմ-ի գինը թվերով (օր.՝ 300)')]) ?? ''
   errors.priceWaitingPerHour = validateField(form.priceWaitingPerHour, [isAmount()]) ?? ''
   errors.priceNightSurchargePercent =
     validateField(form.priceNightSurchargePercent, [isPercent()]) ?? ''
@@ -377,9 +377,22 @@ async function onSubmit(): Promise<void> {
       <fieldset class="register__section">
         <legend class="register__legend">Մեքենայի տվյալներ</legend>
         <div class="register__grid">
-          <AppInput v-model="form.brand" label="Մակնիշ" placeholder="Isuzu" required :error="errors.brand" />
+          <AppInput
+            v-model="form.brand"
+            label="Մակնիշ"
+            placeholder="Isuzu"
+            required
+            :error="errors.brand"
+          />
           <AppInput v-model="form.model" label="Մոդել (ոչ պարտադիր)" placeholder="NPR 75" />
-          <AppInput v-model="form.year" label="Տարեթիվ" type="number" placeholder="2018" required :error="errors.year" />
+          <AppInput
+            v-model="form.year"
+            label="Տարեթիվ"
+            type="number"
+            placeholder="2018"
+            required
+            :error="errors.year"
+          />
           <AppSelect
             v-model="form.vehicleType"
             :options="vehicleTypeOptions"
@@ -427,6 +440,15 @@ async function onSubmit(): Promise<void> {
 
       <fieldset class="register__section">
         <legend class="register__legend">Տարածքներ</legend>
+        <p class="register__note">
+          Խնդրում ենք ընտրել միայն այն քաղաքներն, որտեղ պատրաստ եք մոտենալ և բարձել
+          մեքենան։ Խորհուրդ ենք տալիս չընտրել հիմնական վայրից ավելի քան 30 կմ հեռու տարածքներ, քանի
+          որ նման պատվերները կարող են շահավետ չլինել։
+        </p>
+        <p class="register__note">
+          Ընտրված տարածքը վերաբերում է միայն բարձման վայրին․ տեղափոխման վերջնակետը կարող է լինել ՀՀ
+          ցանկացած բնակավայր։
+        </p>
         <!-- Same component the dashboard uses, so what a driver can pick here
              and what they can change later can never drift apart. -->
         <ServiceAreaPicker
@@ -440,7 +462,11 @@ async function onSubmit(): Promise<void> {
       <fieldset class="register__section">
         <legend class="register__legend">Ծառայություններ</legend>
         <p v-if="errors.services" class="register__error" role="alert">{{ errors.services }}</p>
-        <ServiceCategoryPicker v-model="form.services" :categories="SERVICE_CATEGORIES" mode="form" />
+        <ServiceCategoryPicker
+          v-model="form.services"
+          :categories="SERVICE_CATEGORIES"
+          mode="form"
+        />
 
         <div v-if="!is247" class="register__working-hours">
           <p class="register__working-hours-label">Աշխատանքային ժամեր (ոչ պարտադիր)</p>
@@ -457,8 +483,8 @@ async function onSubmit(): Promise<void> {
       <fieldset class="register__section">
         <legend class="register__legend">Գներ (ոչ պարտադիր)</legend>
         <p class="register__note">
-          Այս հատվածը լրացնելով և մրցունակ գին նշելով՝ կարող եք ավելացնել ձեր պատվերների քանակը։
-          Ձեր էջում կցուցադրվեն միայն լրացված դաշտերը։
+          Այս հատվածը լրացնելով և մրցունակ գին նշելով՝ կարող եք ավելացնել ձեր պատվերների քանակը։ Ձեր
+          էջում կցուցադրվեն միայն լրացված դաշտերը։
         </p>
         <div class="register__grid">
           <AppInput
@@ -512,10 +538,12 @@ async function onSubmit(): Promise<void> {
               type="file"
               accept="image/*"
               @change="onMainImageChange"
-            >
-            <span v-if="form.mainImageName" class="register__file-name">{{ form.mainImageName }}</span>
+            />
+            <span v-if="form.mainImageName" class="register__file-name">{{
+              form.mainImageName
+            }}</span>
             <div v-if="mainImagePreview" class="register__image-preview-wrap">
-              <img :src="mainImagePreview" alt="" class="register__image-preview" >
+              <img :src="mainImagePreview" alt="" class="register__image-preview" />
               <button
                 type="button"
                 class="register__image-remove"
@@ -538,7 +566,7 @@ async function onSubmit(): Promise<void> {
               accept="image/*"
               multiple
               @change="onExtraImagesChange"
-            >
+            />
             <span v-if="form.extraImageNames.length" class="register__file-name">
               {{ form.extraImageNames.length }}/{{ MAX_EXTRA_IMAGES }} ֆայլ ընտրված է
             </span>
@@ -548,7 +576,7 @@ async function onSubmit(): Promise<void> {
                 :key="index"
                 class="register__image-preview-wrap"
               >
-                <img :src="preview" alt="" class="register__image-preview" >
+                <img :src="preview" alt="" class="register__image-preview" />
                 <button
                   type="button"
                   class="register__image-remove"
@@ -779,7 +807,7 @@ async function onSubmit(): Promise<void> {
 
   &__note {
     margin: calc(-1 * var(--space-2)) 0 var(--space-4);
-    font-size: 0.85rem;
+    font-size: 1rem;
     color: var(--color-text-muted);
   }
 

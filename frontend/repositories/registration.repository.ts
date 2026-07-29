@@ -15,7 +15,9 @@ export interface RegistrationPayload {
   vehicleYear: number
   vehicleType: string
   capacityRange: string
-  platformDimensions?: string
+  /** Two numbers, not a formatted string — see PlatformDimensionsInput.vue */
+  platformLengthM?: number
+  platformWidthM?: number
   winch: boolean
   manipulator: boolean
   wheelSkates: boolean

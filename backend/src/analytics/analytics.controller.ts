@@ -3,6 +3,7 @@ import { Throttle } from '@nestjs/throttler'
 import { AnalyticsTrackingService } from './analytics-tracking.service'
 import { ANALYTICS_TRACK_RATE_LIMIT } from './analytics.constants'
 import { TrackEventDto } from './dto/track-event.dto'
+import { TrackSiteEventDto } from './dto/track-site-event.dto'
 
 /**
  * The only public, unauthenticated route in this module — anonymous visitors
@@ -32,5 +33,19 @@ export class AnalyticsController {
   @Post('events')
   async track(@Body() dto: TrackEventDto): Promise<void> {
     await this.trackingService.track(dto)
+  }
+
+  /**
+   * Site-wide traffic (admin panel), same three protections as above.
+   *
+   * Even blinder than its sibling: there is no target id, so not even a 404 can
+   * leak from here. The response is 202 and empty whether the event counted or
+   * was the same visitor's second visit today.
+   */
+  @Throttle({ default: ANALYTICS_TRACK_RATE_LIMIT })
+  @HttpCode(HttpStatus.ACCEPTED)
+  @Post('site-events')
+  async trackSite(@Body() dto: TrackSiteEventDto): Promise<void> {
+    await this.trackingService.trackSite(dto)
   }
 }

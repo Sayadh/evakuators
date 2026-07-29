@@ -1,4 +1,4 @@
-import type { AnalyticsEventType, AnalyticsPeriod } from './enums'
+import type { AnalyticsEventType, AnalyticsPeriod, SiteEventType } from './enums'
 
 /**
  * Mirrors the backend analytics API shapes (backend/src/analytics/
@@ -91,4 +91,30 @@ export interface TrackAnalyticsEventPayload {
   eventType: AnalyticsEventType
   /** Anonymous, browser-generated UUID v4 — see utils/visitorId.ts */
   visitorId: string
+}
+
+/* ── Site-wide (admin panel only) ── */
+
+/** What the frontend sends to POST /analytics/site-events — no target id */
+export interface TrackSiteEventPayload {
+  eventType: SiteEventType
+  visitorId: string
+}
+
+export type SiteEventTotals = Record<SiteEventType, number>
+
+/**
+ * GET /admin/site-analytics.
+ *
+ * `totals` sums the per-day deduplicated counts (a person returning on three
+ * days counts three times — visits), `uniqueVisitors` counts distinct people
+ * across the whole window (that person counts once — reach). Neither derives
+ * from the other, which is why the panel shows both.
+ */
+export interface SiteAnalyticsOverview {
+  range: AnalyticsRange
+  totals: SiteEventTotals
+  uniqueVisitors: SiteEventTotals
+  /** Lifetime counters, unaffected by the period switcher */
+  allTimeTotals: SiteEventTotals
 }

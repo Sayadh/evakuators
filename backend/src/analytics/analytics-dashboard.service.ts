@@ -3,7 +3,7 @@ import { ReviewsRepository } from '../reviews/reviews.repository'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
 import { AnalyticsClock } from './analytics-clock.service'
 import { ANALYTICS_UNIQUE_VISITOR_EVENT_TYPE } from './analytics.constants'
-import { AnalyticsPeriod, AnalyticsReviewStatus } from './analytics.enums'
+import { AnalyticsPeriod, AnalyticsReviewStatus, SiteEventType } from './analytics.enums'
 import {
   toAnalyticsReviewApi,
   toChartPoints,
@@ -11,13 +11,16 @@ import {
   toRatingCounters,
   toRatingDistribution,
   toReviewCounters,
+  toSiteEventTotals,
 } from './analytics.mapper'
 import { AnalyticsRepository } from './analytics.repository'
+import { SiteAnalyticsRepository } from './site-analytics.repository'
 import type {
   AnalyticsChartsApi,
   AnalyticsOverviewApi,
   AnalyticsRatingsApi,
   AnalyticsReviewsApi,
+  SiteAnalyticsOverviewApi,
 } from './analytics.types'
 import { buildDateKeyRange } from './analytics.utils'
 
@@ -37,10 +40,46 @@ import { buildDateKeyRange } from './analytics.utils'
 export class AnalyticsDashboardService {
   constructor(
     private readonly analyticsRepository: AnalyticsRepository,
+    private readonly siteAnalyticsRepository: SiteAnalyticsRepository,
     private readonly reviewsRepository: ReviewsRepository,
     private readonly towTrucksRepository: TowTrucksRepository,
     private readonly clock: AnalyticsClock,
   ) {}
+
+  /**
+   * Site-wide traffic for the admin panel: how many people opened the site, and
+   * how many opened the Free Routes page.
+   *
+   * No `towTruckId` anywhere — this is the one report in the module that isn't
+   * scoped to a driver, which is exactly why it is admin-only (see
+   * AdminSiteAnalyticsController).
+   *
+   * `totals` and `uniqueVisitors` answer different questions and the admin
+   * panel shows both, same asymmetry as getOverview() above: totals sums the
+   * *daily* deduplicated counts (a person returning on three days counts
+   * three times — that's "visits"), uniqueVisitors is distinct people across
+   * the whole window (that person counts once — that's "reach").
+   */
+  async getSiteOverview(period: AnalyticsPeriod): Promise<SiteAnalyticsOverviewApi> {
+    const range = this.clock.resolveRange(period)
+
+    const [periodRows, allTimeRows, uniqueVisits, uniqueFreeRoutes] = await Promise.all([
+      this.siteAnalyticsRepository.sumByEventType(range),
+      this.siteAnalyticsRepository.sumByEventType(),
+      this.siteAnalyticsRepository.countUniqueVisitors(SiteEventType.SITE_VISIT, range),
+      this.siteAnalyticsRepository.countUniqueVisitors(SiteEventType.FREE_ROUTES_VIEW, range),
+    ])
+
+    return {
+      range,
+      totals: toSiteEventTotals(periodRows),
+      uniqueVisitors: {
+        [SiteEventType.SITE_VISIT]: uniqueVisits,
+        [SiteEventType.FREE_ROUTES_VIEW]: uniqueFreeRoutes,
+      },
+      allTimeTotals: toSiteEventTotals(allTimeRows),
+    }
+  }
 
   /**
    * Overview cards + customer activity.

@@ -2,8 +2,10 @@ import { Module } from '@nestjs/common'
 import { AdminAuthModule } from '../admin-auth/admin-auth.module'
 import { DriverAuthModule } from '../driver-auth/driver-auth.module'
 import { ReviewsModule } from '../reviews/reviews.module'
+import { TelegramModule } from '../telegram/telegram.module'
 import { TowTrucksModule } from '../tow-trucks/tow-trucks.module'
 import { AdminAnalyticsController } from './admin-analytics.controller'
+import { AdminSiteAnalyticsController } from './admin-site-analytics.controller'
 import { AnalyticsClock } from './analytics-clock.service'
 import { AnalyticsDashboardService } from './analytics-dashboard.service'
 import { AnalyticsEventFactory } from './analytics-event.factory'
@@ -12,6 +14,7 @@ import { AnalyticsVisitorKeyService } from './analytics-visitor-key.service'
 import { AnalyticsController } from './analytics.controller'
 import { AnalyticsRepository } from './analytics.repository'
 import { MyAnalyticsController } from './my-analytics.controller'
+import { SiteAnalyticsRepository } from './site-analytics.repository'
 
 /**
  * Provider analytics — see docs/analytics.md.
@@ -23,15 +26,22 @@ import { MyAnalyticsController } from './my-analytics.controller'
  * authenticated.
  *
  * Dependencies are inbound only: this module imports TowTrucks (existence
- * checks) and Reviews (review/rating counters) repositories and exports
- * nothing. Nothing else in the application depends on analytics, so the whole
- * feature could be removed by deleting this folder and one line in app.module.
+ * checks), Reviews (review/rating counters) and Telegram (driver contact
+ * notices) and exports nothing. Nothing else in the application depends on
+ * analytics, so the whole feature could be removed by deleting this folder and
+ * one line in app.module.
  */
 @Module({
-  imports: [TowTrucksModule, ReviewsModule, DriverAuthModule, AdminAuthModule],
-  controllers: [AnalyticsController, MyAnalyticsController, AdminAnalyticsController],
+  imports: [TowTrucksModule, ReviewsModule, DriverAuthModule, AdminAuthModule, TelegramModule],
+  controllers: [
+    AnalyticsController,
+    MyAnalyticsController,
+    AdminAnalyticsController,
+    AdminSiteAnalyticsController,
+  ],
   providers: [
     AnalyticsRepository,
+    SiteAnalyticsRepository,
     AnalyticsTrackingService,
     AnalyticsDashboardService,
     AnalyticsEventFactory,

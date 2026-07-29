@@ -4,7 +4,7 @@ import type {
   ReviewRatingBucket,
 } from '../reviews/reviews.repository'
 import { ANALYTICS_RATING_VALUES } from './analytics.constants'
-import { AnalyticsEventType } from './analytics.enums'
+import { AnalyticsEventType, SiteEventType } from './analytics.enums'
 import type {
   AnalyticsChartPointApi,
   AnalyticsDailyStatRow,
@@ -14,6 +14,8 @@ import type {
   AnalyticsRatingCountersApi,
   AnalyticsReviewApi,
   AnalyticsReviewCountersApi,
+  SiteEventTotals,
+  SiteEventTypeSumRow,
 } from './analytics.types'
 import { AnalyticsDateKey, dateToDateKey } from './analytics.utils'
 
@@ -42,6 +44,22 @@ export function emptyEventTotals(): AnalyticsEventTotals {
 
 export function toEventTotals(rows: AnalyticsEventTypeSumRow[]): AnalyticsEventTotals {
   const totals = emptyEventTotals()
+  for (const row of rows) {
+    totals[row.eventType] = row.total
+  }
+  return totals
+}
+
+/** Site-wide counters at zero — same zero-fill contract as emptyEventTotals() */
+export function emptySiteEventTotals(): SiteEventTotals {
+  return {
+    [SiteEventType.SITE_VISIT]: 0,
+    [SiteEventType.FREE_ROUTES_VIEW]: 0,
+  }
+}
+
+export function toSiteEventTotals(rows: SiteEventTypeSumRow[]): SiteEventTotals {
+  const totals = emptySiteEventTotals()
   for (const row of rows) {
     totals[row.eventType] = row.total
   }

@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
+import type { Prisma } from '@prisma/client'
 import { ImagesRepository } from '../images/images.repository'
 import { AVAILABLE_24_7_SLUG } from '../tow-trucks/service-slugs'
 import { toTowTruckApi } from '../tow-trucks/tow-truck.mapper'
@@ -71,14 +72,49 @@ export class MyTowTruckService {
       await this.imagesRepository.applyGallery(imageIds, towTruckId)
     }
 
-    // works24Hours is derived, not directly editable — see service-slugs.ts.
-    // Only touch it when services are actually part of this update. The
-    // dashboard always sends both together, and UpdateMyTowTruckDto's
-    // @ValidateIf already guarantees workingHoursText is a properly
-    // formatted, non-empty string whenever 24/7 isn't selected.
-    const data = {
-      ...updateData,
-      ...(updateData.services ? { works24Hours: updateData.services.includes(AVAILABLE_24_7_SLUG) } : {}),
+    const { serviceAreas, companyName, ...rest } = updateData
+
+    // Coverage is one decision, not four independent fields: the JSON list the
+    // public profile renders and the citySlug/districtSlug/regionSlug the
+    // browsing pages filter on have to describe the same geography. Accepting
+    // one without the other is how a truck ends up listed in a city it no
+    // longer serves, so the combination is rejected outright instead.
+    if (serviceAreas !== undefined && !rest.citySlug && !rest.districtSlug) {
+      throw new BadRequestException(
+        'Սպասարկվող տարածքները փոխելիս պետք է նշվի նաև հիմնական քաղաքը կամ շրջանը։',
+      )
+    }
+
+    const data: Prisma.TowTruckUpdateInput = {
+      ...rest,
+
+      // The only field where empty means "clear it" rather than "skip it" —
+      // a driver must be able to take a company name back OUT of an optional
+      // box they filled in by mistake. See UpdateMyTowTruckDto.companyName.
+      ...(companyName !== undefined ? { companyName: companyName.trim() || null } : {}),
+
+      // Yerevan is a pseudo-region with no regionSlug (see CLAUDE.md), so a
+      // truck moving into or out of Yerevan has to be able to null the
+      // opposite half of the pair — `?? null` rather than a spread guard.
+      ...(serviceAreas !== undefined
+        ? {
+            // Mapped to plain objects, not passed through as DTO instances —
+            // Prisma's InputJsonValue rejects class instances. Same shape and
+            // same reason as AdminService.approve().
+            serviceAreas: serviceAreas.map((area) => ({
+              slug: area.slug,
+              name: area.name,
+              type: area.type,
+            })) satisfies Prisma.InputJsonValue,
+            regionSlug: rest.regionSlug ?? null,
+            citySlug: rest.citySlug ?? null,
+            districtSlug: rest.districtSlug ?? null,
+          }
+        : {}),
+
+      // works24Hours is derived, not directly editable — see service-slugs.ts.
+      // Only touch it when services are actually part of this update.
+      ...(rest.services ? { works24Hours: rest.services.includes(AVAILABLE_24_7_SLUG) } : {}),
     }
 
     const updated = await this.towTrucksRepository.updateOwnProfile(towTruckId, data)

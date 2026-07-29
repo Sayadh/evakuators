@@ -13,13 +13,12 @@ import type { SelectOption } from '~/types/common'
 import { trackRegistrationSubmit } from '~/utils/analytics'
 import { extractErrorMessage } from '~/utils/errors'
 import { armenianPhoneInputValue } from '~/utils/formatPhone'
-import { buildCityOptions, buildRegionOptions, YEREVAN_REGION_SLUG } from '~/utils/geography'
 import {
   isAmount,
   isEmail,
   isPercent,
   isPhone,
-  isPlatformDimensions,
+  isDimension,
   isYear,
   required,
   validateField,
@@ -51,7 +50,8 @@ function createInitialFormState() {
     year: '',
     vehicleType: '' as VehicleType | '',
     capacity: '' as string,
-    platformDimensions: '',
+    platformLengthM: '',
+    platformWidthM: '',
     winch: false,
     manipulator: false,
     wheelSkates: false,
@@ -74,59 +74,9 @@ const form = reactive(createInitialFormState())
 
 const errors = reactive<Record<string, string>>({})
 
-const regionOptions = computed<SelectOption[]>(() => buildRegionOptions())
-
-/** A driver can cover at most this many marzes — e.g. Yerevan + Kotayk, or Lori + Armavir */
-const MAX_REGIONS = 2
-
 /** "Ծառայություններ" fieldset lets the driver pick 24/7 — hours only make
  * sense to ask about when that isn't selected. */
 const is247 = computed(() => form.services.includes(ServiceType.Available247))
-
-interface CityGroup {
-  regionSlug: string
-  regionLabel: string
-  /** Yerevan is a pseudo-region whose "cities" are its districts (see CLAUDE.md) */
-  isYerevan: boolean
-  options: SelectOption[]
-}
-
-/**
- * One checkbox group per selected marz, so a driver who picked e.g. Yerevan +
- * Kotayk sees two clearly-labeled city/district lists instead of one merged,
- * ambiguous one. Labels only, derived from static geography — no request.
- */
-const cityGroups = computed<CityGroup[]>(() =>
-  form.regionSlugs.map((regionSlug) => ({
-    regionSlug,
-    regionLabel: regionOptions.value.find((option) => option.value === regionSlug)?.label ?? regionSlug,
-    isYerevan: regionSlug === YEREVAN_REGION_SLUG,
-    options: buildCityOptions(regionSlug),
-  })),
-)
-
-function toggleRegion(slug: string): void {
-  if (form.regionSlugs.includes(slug)) {
-    form.regionSlugs = form.regionSlugs.filter((item) => item !== slug)
-    // Drop only this region's own cities/districts — the other selected
-    // region's picks (if any) must survive untouched.
-    const droppedSlugs = new Set(buildCityOptions(slug).map((option) => option.value))
-    form.citySlugs = form.citySlugs.filter((item) => !droppedSlugs.has(item))
-    return
-  }
-  if (form.regionSlugs.length >= MAX_REGIONS) return
-  form.regionSlugs = [...form.regionSlugs, slug]
-}
-
-function toggleCity(slug: string): void {
-  form.citySlugs = form.citySlugs.includes(slug)
-    ? form.citySlugs.filter((item) => item !== slug)
-    : [...form.citySlugs, slug]
-}
-
-function isAllCitiesSelected(group: CityGroup): boolean {
-  return group.options.length > 0 && group.options.every((option) => form.citySlugs.includes(option.value))
-}
 
 // If they switch to 24/7 after picking custom hours, clear them so a stale
 // value never gets left behind — buildRegistrationPayload ignores them while
@@ -137,13 +87,6 @@ watch(is247, (value) => {
     form.workingHoursEnd = ''
   }
 })
-
-function toggleAllCities(group: CityGroup): void {
-  const groupSlugs = group.options.map((option) => option.value)
-  form.citySlugs = isAllCitiesSelected(group)
-    ? form.citySlugs.filter((item) => !groupSlugs.includes(item))
-    : [...form.citySlugs.filter((item) => !groupSlugs.includes(item)), ...groupSlugs]
-}
 
 const vehicleTypeOptions: SelectOption[] = VEHICLE_TYPE_OPTIONS.map((option) => ({
   value: option.value as string,
@@ -264,8 +207,14 @@ function validate(): boolean {
   errors.vehicleType = validateField(form.vehicleType, [required('Ընտրեք մեքենայի տեսակը')]) ?? ''
   errors.capacity =
     validateField(form.capacity, [required('Ընտրեք առավելագույն բեռնատարողությունը')]) ?? ''
+  // Optional, but both-or-neither: half a size is not a size. Same rule the
+  // working-hours pair uses.
   errors.platformDimensions =
-    validateField(form.platformDimensions, [isPlatformDimensions()]) ?? ''
+    validateField(form.platformLengthM, [isDimension()]) ??
+    validateField(form.platformWidthM, [isDimension()]) ??
+    (Boolean(form.platformLengthM.trim()) !== Boolean(form.platformWidthM.trim())
+      ? 'Լրացրեք և՛ երկարությունը, և՛ լայնությունը, կամ թողեք երկուսն էլ դատարկ'
+      : '')
   errors.regionSlugs = form.regionSlugs.length === 0 ? 'Ընտրեք 1-2 մարզ' : ''
   errors.citySlugs = form.citySlugs.length === 0 ? 'Ընտրեք առնվազն մեկ քաղաք կամ շրջան' : ''
   errors.services =
@@ -456,10 +405,9 @@ async function onSubmit(): Promise<void> {
             label="Առավելագույն բեռնատարողություն *"
             :error="errors.capacity"
           />
-          <AppInput
-            v-model="form.platformDimensions"
-            label="Հարթակի չափսեր (ոչ պարտադիր)"
-            placeholder="5.5 մ × 2.2 մ"
+          <PlatformDimensionsInput
+            v-model:length="form.platformLengthM"
+            v-model:width="form.platformWidthM"
             :error="errors.platformDimensions"
           />
         </div>
@@ -479,49 +427,14 @@ async function onSubmit(): Promise<void> {
 
       <fieldset class="register__section">
         <legend class="register__legend">Տարածքներ</legend>
-
-        <p class="register__cities-label">
-          Ընտրեք 1-2 մարզ<span class="register__required" aria-hidden="true"> *</span>
-        </p>
-        <p v-if="errors.regionSlugs" class="register__error" role="alert">
-          {{ errors.regionSlugs }}
-        </p>
-        <div class="register__cities-grid">
-          <AppCheckbox
-            v-for="option in regionOptions"
-            :key="option.value"
-            :model-value="form.regionSlugs.includes(option.value)"
-            :label="option.label"
-            :disabled="!form.regionSlugs.includes(option.value) && form.regionSlugs.length >= MAX_REGIONS"
-            @update:model-value="toggleRegion(option.value)"
-          />
-        </div>
-
-        <div v-for="group in cityGroups" :key="group.regionSlug" class="register__cities">
-          <p class="register__cities-label">
-            {{ group.regionLabel }} —
-            {{ group.isYerevan ? 'Սպասարկվող շրջաններ' : 'Սպասարկվող քաղաքներ'
-            }}<span class="register__required" aria-hidden="true"> *</span>
-          </p>
-          <AppCheckbox
-            :model-value="isAllCitiesSelected(group)"
-            :label="group.isYerevan ? 'Ամբողջ Երևանը' : 'Ամբողջ մարզը'"
-            class="register__all-cities"
-            @update:model-value="toggleAllCities(group)"
-          />
-          <div class="register__cities-grid">
-            <AppCheckbox
-              v-for="option in group.options"
-              :key="option.value"
-              :model-value="form.citySlugs.includes(option.value)"
-              :label="option.label"
-              @update:model-value="toggleCity(option.value)"
-            />
-          </div>
-        </div>
-        <p v-if="cityGroups.length > 0 && errors.citySlugs" class="register__error" role="alert">
-          {{ errors.citySlugs }}
-        </p>
+        <!-- Same component the dashboard uses, so what a driver can pick here
+             and what they can change later can never drift apart. -->
+        <ServiceAreaPicker
+          v-model:regions="form.regionSlugs"
+          v-model:cities="form.citySlugs"
+          :regions-error="errors.regionSlugs"
+          :cities-error="errors.citySlugs"
+        />
       </fieldset>
 
       <fieldset class="register__section">

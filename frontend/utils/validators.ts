@@ -20,16 +20,21 @@ export const isEmail =
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim()) || message
   }
 
-/** Accepts "5.5 x 2.2", "5,5 × 2,2", with or without "մ"/"m" units */
-export const isPlatformDimensions =
-  (message = 'Սխալ ձևաչափ․ լրացրեք այսպես՝ 5.5 մ × 2.2 մ'): ValidationRule =>
+/**
+ * One platform dimension in metres — a plain positive number, comma or dot.
+ *
+ * Replaced `isPlatformDimensions`, which validated a whole formatted string
+ * (`"5.5 մ × 2.2 մ"`) because the field used to ask for one. Now that the UI
+ * collects length and width as two number inputs
+ * (`PlatformDimensionsInput.vue`), there is no format left to get wrong — only
+ * a range. Empty passes: the dimensions are optional everywhere they're asked.
+ */
+export const isDimension =
+  (message = 'Մուտքագրեք չափսը մետրերով, օր.՝ 5.5'): ValidationRule =>
   (value) => {
     if (!value.trim()) return true
-    return (
-      /^\d{1,2}([.,]\d{1,2})?\s*(մ|m)?\s*[x×*]\s*\d{1,2}([.,]\d{1,2})?\s*(մ|m)?$/i.test(
-        value.trim(),
-      ) || message
-    )
+    const parsed = Number(value.trim().replace(',', '.'))
+    return (Number.isFinite(parsed) && parsed > 0 && parsed <= 30) || message
   }
 
 /** Optional positive amount in AMD (digits only) */

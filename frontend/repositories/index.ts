@@ -10,6 +10,7 @@ export { adminAuthRepository } from './adminAuth.repository'
 export type { AdminSession } from './adminAuth.repository'
 export {
   adminAnalyticsRepository,
+  adminSiteAnalyticsRepository,
   analyticsRepository,
   myAnalyticsRepository,
 } from './analytics.repository'

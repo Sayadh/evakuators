@@ -81,6 +81,10 @@ function buildEntries(towTrucks: TowTruckSitemapEntry[]): SitemapEntry[] {
   return [
     { path: '/', priority: '1.0', changefreq: 'daily' },
     { path: '/yerevan', priority: '0.9', changefreq: 'daily' },
+    // `daily` is not a guess here: free routes are posted and auto-expire
+    // continuously (see docs/free-routes.md), so this page's content genuinely
+    // turns over faster than any other non-listing page on the site.
+    { path: '/free-routes', priority: '0.8', changefreq: 'daily' },
     { path: '/regions', priority: '0.8', changefreq: 'weekly' },
     { path: '/register', priority: '0.6', changefreq: 'monthly' },
     { path: '/about', priority: '0.4', changefreq: 'monthly' },

@@ -1,6 +1,19 @@
 import { analyticsRepository, isApiEnabled } from '~/repositories'
-import { AnalyticsEventType } from '~/types/enums'
+import { AnalyticsEventType, SiteEventType } from '~/types/enums'
 import { getOrCreateVisitorId } from '~/utils/visitorId'
+
+/**
+ * Site-wide events already sent in THIS page session.
+ *
+ * Module scope, not component state, so it survives client-side navigation —
+ * without it, a visitor clicking through five pages would fire five SITE_VISIT
+ * requests where four are guaranteed server-side no-ops (the dedup constraint
+ * already collapses them to one per calendar day). The DB would be correct
+ * either way; this just stops us paying for four pointless round-trips per
+ * visitor. Reset naturally on a full page load, which is the point: it is a
+ * request-saving cache, never the source of truth for "has this counted".
+ */
+const sentSiteEvents = new Set<SiteEventType>()
 
 /**
  * Records a visitor interaction with a tow truck's profile for that driver's
@@ -43,8 +56,33 @@ export function useAnalyticsTracking() {
       })
   }
 
+  /**
+   * Site-wide counterpart, for the admin panel's own traffic numbers. Same
+   * three rules as trackEvent (client only, never breaks the page, respects
+   * the mock switch) plus the per-session guard above.
+   */
+  function trackSiteEvent(eventType: SiteEventType): void {
+    if (!import.meta.client || !isApiEnabled()) return
+    if (sentSiteEvents.has(eventType)) return
+
+    const visitorId = getOrCreateVisitorId()
+    if (!visitorId) return
+
+    sentSiteEvents.add(eventType)
+    void analyticsRepository.trackSiteEvent({ eventType, visitorId }).catch(() => {
+      // Same as above: a visitor must never see an analytics failure. Allow a
+      // retry on the next page load rather than silently marking it sent.
+      sentSiteEvents.delete(eventType)
+    })
+  }
+
   return {
     trackEvent,
+    trackSiteEvent,
+    /** "Someone opened the site" — fired once per page session from app.vue */
+    trackSiteVisit: (): void => trackSiteEvent(SiteEventType.SiteVisit),
+    /** "Someone opened Ազատ երթուղիներ" — fired from the /free-routes page */
+    trackFreeRoutesView: (): void => trackSiteEvent(SiteEventType.FreeRoutesView),
     trackPageView: (towTruckId: number): void =>
       trackEvent(towTruckId, AnalyticsEventType.PageView),
     trackPhoneClick: (towTruckId: number): void =>

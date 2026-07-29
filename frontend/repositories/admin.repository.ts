@@ -18,7 +18,8 @@ export interface AdminRegistrationRequest {
   vehicleYear: number
   vehicleType: string
   capacityRange: string
-  platformDimensions?: string
+  platformLengthM?: number
+  platformWidthM?: number
   winch: boolean
   manipulator: boolean
   wheelSkates: boolean

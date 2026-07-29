@@ -240,6 +240,101 @@ Without that, a 30-day chart with traffic on 4 days would render as a 4-point
 line and read as continuous activity. The frontend chart never has to reason
 about gaps.
 
+## Side effect: driver contact notices
+
+A counted `PHONE_CLICK` / `WHATSAPP_CLICK` also fires a Telegram message to the
+driver — `DriverNotificationService` (`backend/src/telegram/`), invoked
+fire-and-forget from `AnalyticsTrackingService.track()`.
+
+**Why it hangs off analytics rather than off the click handler.** The dedup
+constraint is exactly the rate control this needs. `recordEvent()` returns
+`true` only for a genuinely new (visitor, truck, day, event) combination, so
+one notice means one interested person — not one finger. A driver whose number
+is tapped five times by the same visitor gets one message. That is why the
+feature has no throttle of its own, and deliberately shouldn't: suppressing a
+*second, different* caller would break the one thing the notice is for.
+
+**Why the wording is what it is.** Pressing "Զանգահարել" opens the dialer; it
+does not place a call, and the visitor may never complete it. So the message
+says only what was observed — «Հենց նոր ձեր համարը վերցրել են Evakuators.am-ից՝
+ձեզ զանգելու համար» — and never predicts a call. The attribution is the whole
+point (the driver connects the ringing phone to us), but a notice that
+overpromises stops being believed, and then attribution fails permanently.
+Do not "improve" this copy into a claim.
+
+**There is no opt-out.** Every driver with a linked Telegram gets these; the
+only thing that suppresses a notice is having no `telegramChatId` yet. This is
+a deliberate product decision — the notices exist so drivers attribute their
+work to the platform, and a driver who silences them stops attributing.
+
+The cost of that decision is real and worth stating plainly: these notices ride
+the **same bot as login OTP codes**, so a driver who finds them noisy and
+mutes or blocks the bot loses the ability to sign in, with nothing on screen to
+explain why. The only mitigation is the warning in the Telegram
+link-confirmation message («Bot-ը մի՛ արգելափակեք — հակառակ դեպքում մուտքի
+կոդերն էլ չեն գա»). If support ever starts seeing "I can't log in, the code
+never arrives" reports, check `getWebhookInfo` / the bot's send failures for
+that chat before debugging the OTP code path — a blocked bot looks exactly like
+a broken login.
+
+**One column on `TowTruck`:** `contactNoticeIntroAt` — when the one-time
+"here's why you get these" explanation was appended. Claimed atomically via
+`claimContactNoticeIntro()` (an `updateMany` whose `WHERE` includes
+`contactNoticeIntroAt: null`), so two simultaneous clicks can't both send it;
+released again if the send fails, so a Telegram outage doesn't consume it.
+Same principle as `recordEvent()` — the database arbitrates, never a
+read-then-write in application code.
+
+**No inline button.** The notice arrives while the driver's phone is about to
+ring; it has to be readable at a glance from a lock screen and nothing else.
+
+Every failure path is swallowed and logged at `warn`. A blocked bot must never
+surface to the visitor who just pressed a button, and the notice is never
+awaited — the browser is being handed off to `tel:` at that moment.
+
+## Site-wide traffic (admin panel)
+
+A second, smaller pair of tables answers two questions about the **platform**
+rather than about one driver: how many people opened the site, and how many
+opened Ազատ երթուղիներ.
+
+`SiteDailyStat` / `SiteVisitorDay` are the per-truck design with the truck
+removed — same one-statement CTE dedup, same visitor hash, same retention cron
+(`purgeExpiredVisitorDays` purges both ledgers with one cutoff). Read
+`AnalyticsRepository.recordEvent()` first; `SiteAnalyticsRepository` repeats the
+shape without repeating the reasoning.
+
+**Why separate tables and not a nullable `towTruckId`.** That column is part of
+both unique constraints and leads every index on the per-truck pair. Making it
+nullable would change what every existing driver-facing query means, and `NULL`
+would silently stand for "not a driver's number" in code that has no idea the
+case exists. Two small purpose-built tables are cheaper than one overloaded one.
+
+**Where the events come from.** `SITE_VISIT` fires from `app.vue`'s `onMounted`
+— that component mounts once per page session for every route, including ones
+that skip the default layout. `FREE_ROUTES_VIEW` fires from the free-routes
+page. Both go through `useAnalyticsTracking`, which keeps a module-scoped
+`Set` of events already sent this session: without it a visitor clicking
+through five pages would fire five `SITE_VISIT` requests, four of them
+guaranteed server-side no-ops. That set is a request-saving cache only — the
+database is still the sole authority on whether something counted.
+
+**Reading the two numbers.** `uniqueVisitors` is distinct people across the
+whole window; `totals` sums the per-day deduplicated counts. Someone who visits
+on Monday and Friday is 1 unique visitor and 2 visits. Neither derives from the
+other, which is why the admin panel shows both.
+
+### Relationship to Google Analytics
+
+GA (`nuxt-gtag`, id in `nuxt.config.ts`) is installed and stays — it answers
+acquisition questions this module never will: which channel, which country,
+which landing page, returning vs new. What it cannot do is appear inside
+`/admin` without a Google Cloud service account, the GA4 Data API, a stored
+private key and that API's reporting latency. These two numbers were wanted
+*in the panel*, next to the moderation queue, so they are computed from data we
+already collect with machinery we already own. Use GA for marketing analysis;
+use this for the operational number an admin checks daily.
+
 ## API
 
 All paths under the global `/api/v1` prefix. See `docs/api-reference.md` for
@@ -247,7 +342,7 @@ the table alongside every other endpoint.
 
 | Method | Path | Auth | Notes |
 | --- | --- | --- | --- |
-| `POST` | `/analytics/events` | none | Body `{ towTruckId, eventType, visitorId }`. `202` + empty body. Throttled 60/60s. |
+| `POST` | `/analytics/events` | none | Body `{ towTruckId, eventType, visitorId }`. `202` + empty body. Throttled 60/60s. A counted contact event also fires a driver Telegram notice — see above |
 | `GET` | `/my/analytics` | driver JWT | Overview cards + review/rating counters. `?period=` |
 | `GET` | `/my/analytics/charts` | driver JWT | Daily series, zero-filled. `?period=` |
 | `GET` | `/my/analytics/reviews` | driver JWT | Own reviews incl. unmoderated. `?status=CONFIRMED\|PENDING\|ALL&limit=` |
@@ -256,6 +351,8 @@ the table alongside every other endpoint.
 | `GET` | `/admin/tow-trucks/:id/analytics/charts` | admin JWT | |
 | `GET` | `/admin/tow-trucks/:id/analytics/reviews` | admin JWT | |
 | `GET` | `/admin/tow-trucks/:id/analytics/ratings` | admin JWT | |
+| `POST` | `/analytics/site-events` | none | Body `{ eventType, visitorId }`, no target id. `202` + empty body, same throttle |
+| `GET` | `/admin/site-analytics` | admin JWT | Site-wide visits + Free Routes views. `?period=` |
 
 Paths follow this codebase's existing conventions (`/my/*` for own data,
 `/admin/tow-trucks/:id/*` for the admin family) rather than a `/provider/…`

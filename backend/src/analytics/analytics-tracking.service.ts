@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
+import { DriverNotificationService } from '../telegram/driver-notification.service'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
 import { AnalyticsClock } from './analytics-clock.service'
 import { AnalyticsEventFactory } from './analytics-event.factory'
@@ -8,7 +9,9 @@ import {
   ANALYTICS_VISITOR_DAY_RETENTION_DAYS,
 } from './analytics.constants'
 import { AnalyticsRepository } from './analytics.repository'
+import { SiteAnalyticsRepository } from './site-analytics.repository'
 import type { TrackEventDto } from './dto/track-event.dto'
+import type { TrackSiteEventDto } from './dto/track-site-event.dto'
 
 /**
  * The WRITE half of the module. Owns exactly two things: turning a tracking
@@ -25,10 +28,24 @@ export class AnalyticsTrackingService {
 
   constructor(
     private readonly analyticsRepository: AnalyticsRepository,
+    private readonly siteAnalyticsRepository: SiteAnalyticsRepository,
     private readonly towTrucksRepository: TowTrucksRepository,
     private readonly eventFactory: AnalyticsEventFactory,
     private readonly clock: AnalyticsClock,
+    private readonly driverNotification: DriverNotificationService,
   ) {}
+
+  /**
+   * Records a site-wide interaction — "someone opened the site", "someone
+   * opened /free-routes" — at most once per Armenia calendar day per visitor.
+   *
+   * Much simpler than track() below because there is no target to validate:
+   * the site always exists, so there is no 404 case and nothing to check for
+   * being deactivated. The dedup constraint does the rest.
+   */
+  async trackSite(dto: TrackSiteEventDto): Promise<boolean> {
+    return this.siteAnalyticsRepository.recordEvent(this.eventFactory.createSite(dto))
+  }
 
   /**
    * Records one visitor interaction, at most once per Armenia calendar day per
@@ -56,7 +73,24 @@ export class AnalyticsTrackingService {
     if (!towTruck.isActive) return false
 
     const event = this.eventFactory.create(towTruck.id, dto)
-    return this.analyticsRepository.recordEvent(event)
+    const counted = await this.analyticsRepository.recordEvent(event)
+
+    // Only on a counted event, never on a duplicate. That single condition is
+    // the whole rate control for driver notices: the dedup constraint already
+    // collapses one visitor's repeated taps within a calendar day into one
+    // event, so a driver gets one message per genuinely interested person
+    // rather than one per finger — no throttle of its own needed, and none
+    // wanted, since suppressing a second real caller would be exactly the
+    // attribution failure the feature exists to prevent.
+    //
+    // Deliberately not awaited: this is the anonymous write path, and the
+    // visitor who just pressed "call" is being handed off to the dialer right
+    // now. The service swallows its own errors, so there is nothing to catch.
+    if (counted) {
+      void this.driverNotification.notifyContactIntent(towTruck.id, dto.eventType)
+    }
+
+    return counted
   }
 
   /**
@@ -76,9 +110,17 @@ export class AnalyticsTrackingService {
   @Cron(ANALYTICS_PURGE_CRON)
   async purgeExpiredVisitorDays(): Promise<void> {
     const cutoff = this.clock.retentionCutoff(ANALYTICS_VISITOR_DAY_RETENTION_DAYS)
-    const deleted = await this.analyticsRepository.purgeVisitorDaysBefore(cutoff)
-    if (deleted > 0) {
-      this.logger.log(`Analytics retention: purged ${deleted} visitor-day rows older than ${cutoff}`)
+    // Both ledgers, one job and one cutoff — they are the same mechanism with
+    // the same retention rule, and two crons that can drift apart would let one
+    // table's unique-visitor window quietly outlive the other's.
+    const [perTruck, site] = await Promise.all([
+      this.analyticsRepository.purgeVisitorDaysBefore(cutoff),
+      this.siteAnalyticsRepository.purgeVisitorDaysBefore(cutoff),
+    ])
+    if (perTruck > 0 || site > 0) {
+      this.logger.log(
+        `Analytics retention: purged ${perTruck} tow-truck and ${site} site visitor-day rows older than ${cutoff}`,
+      )
     }
   }
 }

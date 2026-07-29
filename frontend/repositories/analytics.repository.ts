@@ -6,7 +6,9 @@ import type {
   AnalyticsOverview,
   AnalyticsRatings,
   AnalyticsReviews,
+  SiteAnalyticsOverview,
   TrackAnalyticsEventPayload,
+  TrackSiteEventPayload,
 } from '~/types/analytics'
 import type { AnalyticsPeriod, AnalyticsReviewStatus } from '~/types/enums'
 
@@ -28,6 +30,24 @@ export const analyticsRepository = {
     await apiFetch<unknown>('/analytics/events', {
       method: 'POST',
       body: payload as unknown as Record<string, unknown>,
+    })
+  },
+
+  /** Site-wide traffic for the admin panel — same fire-and-forget contract */
+  async trackSiteEvent(payload: TrackSiteEventPayload): Promise<void> {
+    await apiFetch<unknown>('/analytics/site-events', {
+      method: 'POST',
+      body: payload as unknown as Record<string, unknown>,
+    })
+  },
+}
+
+/** Admin-only view of the platform's own traffic — no tow truck involved */
+export const adminSiteAnalyticsRepository = {
+  getOverview(period: AnalyticsPeriod): Promise<SiteAnalyticsOverview> {
+    return apiFetch<SiteAnalyticsOverview>('/admin/site-analytics', {
+      query: { period },
+      headers: useAdminAuthStore().authHeader,
     })
   },
 }

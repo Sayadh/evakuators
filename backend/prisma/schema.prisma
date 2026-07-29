@@ -45,6 +45,17 @@ enum AnalyticsEventType {
   EMAIL_CLICK
 }
 
+/// Site-wide traffic, for the ADMIN panel — deliberately a separate enum from
+/// AnalyticsEventType above, which is per-tow-truck and belongs to a driver.
+/// Mixing them would mean one nullable towTruckId column whose null-ness
+/// silently changes what every existing query means.
+enum SiteEventType {
+  /// Any page of the site opened, once per visitor per Armenia day
+  SITE_VISIT
+  /// The "Ազատ երթուղիներ" page (/free-routes) specifically
+  FREE_ROUTES_VIEW
+}
+
 model TowTruck {
   id             Int     @id @default(autoincrement())
   slug           String  @unique
@@ -125,6 +136,16 @@ model TowTruck {
   telegramLinkToken          String?   @unique
   telegramLinkTokenExpiresAt DateTime?
   otps                       DriverOtp[]
+
+  /// When the one-time "here is why you get these" explanation was delivered
+  /// with the driver's first contact notice (see DriverNotificationService).
+  /// Null = never sent. Claimed atomically, which is what guarantees the
+  /// explanation rides along with the FIRST notice only and never repeats —
+  /// see its comment for the concurrency argument.
+  ///
+  /// Contact notices themselves are not optional: every linked driver gets
+  /// them, there is no per-driver switch.
+  contactNoticeIntroAt DateTime?
 
   @@index([citySlug])
   @@index([districtSlug])
@@ -212,8 +233,13 @@ model RegistrationRequest {
   vehicleType        String
   /// CAPACITY_RANGE_OPTIONS value from frontend constants (e.g. "2-3.5") — required
   capacityRange      String
-  /// Free-form, validated on the frontend (e.g. "5.5 մ × 2.2 մ")
-  platformDimensions String?
+  /// Same two typed columns as TowTruck, so approve() is a straight copy.
+  /// These replaced a single free-text `platformDimensions` ("5.5 մ × 2.2 մ"):
+  /// that asked the driver to produce a format instead of two numbers, and
+  /// forced a parse step on the way to the live profile — which for a while
+  /// simply wasn't there, silently dropping the answer at approval.
+  platformLengthM    Float?
+  platformWidthM     Float?
   winch              Boolean @default(false)
   manipulator        Boolean @default(false)
   /// See TowTruck.wheelSkates — carried over as-is by AdminService.approve()
@@ -342,6 +368,49 @@ model AnalyticsVisitorDay {
   @@unique([towTruckId, statDate, eventType, visitorKey])
   /// Only for the retention purge, which filters on statDate across ALL tow
   /// trucks and therefore cannot use the towTruckId-leading index above.
+  @@index([statDate])
+}
+
+/// Site-wide counters for the admin panel — the exact same two-table design as
+/// AnalyticsDailyStat / AnalyticsVisitorDay above, minus the tow truck.
+///
+/// Separate tables rather than a nullable `towTruckId` on the existing pair:
+/// that column is part of both unique constraints and leads every index, so
+/// making it nullable would change the meaning of every driver-facing query and
+/// every aggregate already stored. Two small purpose-built tables cost less
+/// than one overloaded one.
+model SiteDailyStat {
+  id Int @id @default(autoincrement())
+
+  statDate  DateTime      @db.Date
+  eventType SiteEventType
+
+  eventCount Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  /// Dedup target of the counter UPSERT, and the read index for the admin panel
+  @@unique([statDate, eventType])
+}
+
+/// The site-wide half of the deduplication ledger — proves "this visitor already
+/// triggered this event today", so one person refreshing the homepage twenty
+/// times is one visit. Same retention rule and same daily purge as
+/// AnalyticsVisitorDay.
+model SiteVisitorDay {
+  id Int @id @default(autoincrement())
+
+  statDate  DateTime      @db.Date
+  eventType SiteEventType
+
+  /// sha256(rawVisitorId + pepper), hex — same construction, same guarantees
+  visitorKey String @db.VarChar(64)
+
+  createdAt DateTime @default(now())
+
+  /// visitorKey last again, so COUNT(DISTINCT visitorKey) over a date range
+  /// stays an index-only scan
+  @@unique([statDate, eventType, visitorKey])
   @@index([statDate])
 }
 

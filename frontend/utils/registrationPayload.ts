@@ -17,7 +17,9 @@ export interface RegistrationFormState {
   year: string
   vehicleType: string
   capacity: string
-  platformDimensions: string
+  /** Raw strings from the two number inputs — see PlatformDimensionsInput.vue */
+  platformLengthM: string
+  platformWidthM: string
   winch: boolean
   manipulator: boolean
   /** Wheel skates — for loading a vehicle with locked/non-rotating wheels */
@@ -45,6 +47,18 @@ const optionalInt = (value: string): number | undefined => {
   return Number.isFinite(parsed) ? Math.round(parsed) : undefined
 }
 
+/**
+ * Decimals, not rounded — and comma-tolerant, because an Armenian keyboard
+ * layout puts `,` where JSON needs `.` and a driver typing "5,5" means 5.5.
+ * `AppInput` lets both through for exactly this reason.
+ */
+export const toOptionalFloat = (value: string): number | undefined => {
+  const trimmed = value.trim().replace(',', '.')
+  if (!trimmed) return undefined
+  const parsed = Number(trimmed)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
 /** Maps the validated form state to the backend CreateRegistrationDto shape */
 export function buildRegistrationPayload(
   form: RegistrationFormState,
@@ -64,7 +78,8 @@ export function buildRegistrationPayload(
     vehicleYear: Number(form.year),
     vehicleType: form.vehicleType,
     capacityRange: form.capacity.trim(),
-    platformDimensions: optionalString(form.platformDimensions),
+    platformLengthM: toOptionalFloat(form.platformLengthM),
+    platformWidthM: toOptionalFloat(form.platformWidthM),
     winch: form.winch,
     manipulator: form.manipulator,
     wheelSkates: form.wheelSkates,

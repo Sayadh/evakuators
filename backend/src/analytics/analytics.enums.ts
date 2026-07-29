@@ -4,7 +4,7 @@
  * has to import from `@prisma/client` directly and every analytics enum has
  * one import site.
  */
-export { AnalyticsEventType } from '@prisma/client'
+export { AnalyticsEventType, SiteEventType } from '@prisma/client'
 
 /**
  * The only date ranges a dashboard can ask for. Deliberately a closed set

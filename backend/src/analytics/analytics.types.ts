@@ -1,4 +1,4 @@
-import type { AnalyticsEventType, AnalyticsPeriod } from './analytics.enums'
+import type { AnalyticsEventType, AnalyticsPeriod, SiteEventType } from './analytics.enums'
 import type { AnalyticsDateKey } from './analytics.utils'
 
 /**
@@ -112,4 +112,41 @@ export interface AnalyticsDailyStatRow {
 export interface AnalyticsEventTypeSumRow {
   eventType: AnalyticsEventType
   total: number
+}
+
+/* ── Site-wide (admin panel) ── */
+
+/** The site-wide twin of AnalyticsEventRecord — no tow truck, same guarantees */
+export interface SiteEventRecord {
+  /** Armenia calendar day, resolved server-side — never taken from the client */
+  statDate: AnalyticsDateKey
+  eventType: SiteEventType
+  /** sha256(rawVisitorId + pepper) — the raw id never reaches the repository */
+  visitorKey: string
+}
+
+/** Counter per site event type. Always has every key, zero-filled. */
+export type SiteEventTotals = Record<SiteEventType, number>
+
+export interface SiteEventTypeSumRow {
+  eventType: SiteEventType
+  total: number
+}
+
+/**
+ * GET /admin/site-analytics — the two numbers the admin panel exists to show.
+ *
+ * Both are already deduplicated to once per visitor per Armenia day at write
+ * time, so `totals.SITE_VISIT` IS the distinct-people count for the period's
+ * days summed, and `uniqueVisitors` is the distinct-people count across the
+ * whole window (someone visiting Monday and Friday is 2 daily visits but 1
+ * unique visitor). Both are useful and neither can be derived from the other.
+ */
+export interface SiteAnalyticsOverviewApi {
+  range: AnalyticsRangeApi
+  totals: SiteEventTotals
+  /** Distinct visitors over the whole window, per event type */
+  uniqueVisitors: SiteEventTotals
+  /** Same counters over all recorded history — never purged */
+  allTimeTotals: SiteEventTotals
 }

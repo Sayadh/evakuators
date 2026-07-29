@@ -117,6 +117,12 @@ export class AdminService {
           vehicleYear: request.vehicleYear,
           vehicleType: request.vehicleType,
           capacityTons: dto.capacityTons,
+          // Straight copy, same as winch/manipulator — the request stores these
+          // as the same two Float columns. They used to be one free-text field
+          // that approval never read at all, so the driver's answer was
+          // collected and silently thrown away.
+          platformLengthM: request.platformLengthM,
+          platformWidthM: request.platformWidthM,
           winch: request.winch,
           manipulator: request.manipulator,
           wheelSkates: request.wheelSkates,

@@ -47,23 +47,36 @@ function onClick(): void {
 }
 
 /**
- * type="tel" gets no native keyboard restriction in desktop browsers (only
- * mobile shows a numeric keypad) — without this, a letter is accepted and
- * only stripped after the fact by whatever v-model transform the caller
- * applies (e.g. armenianPhoneInputValue), which briefly flashes the letter
- * before it vanishes. Blocking the keystroke itself means a letter is never
- * inserted in the first place.
+ * Which single characters each restricted field type accepts. Anything not
+ * listed here never reaches the input at all.
  *
- * The two guards before the digit test are what make this safe rather than a
- * trap, and both were learned the hard way:
+ * - `tel` — digits and the `+` of the country code.
+ * - `number` — digits plus both decimal separators, because an Armenian
+ *   keyboard/locale produces `,` where the value needs `.`; callers normalise
+ *   it (see `toOptionalFloat`). Note this also blocks `e`, `-` and `+`, which
+ *   `<input type="number">` otherwise happily accepts and then reports as an
+ *   empty value — the classic "I typed something and the field says it's
+ *   empty" bug. Every numeric field in this app is a positive quantity.
+ */
+const ALLOWED_KEYS: Partial<Record<NonNullable<Props['type']>, RegExp>> = {
+  tel: /^[0-9+]$/,
+  number: /^[0-9.,]$/,
+}
+
+/**
+ * Keeps letters (and other junk) out of restricted fields at the keystroke,
+ * rather than stripping them afterwards — a value that briefly appears and
+ * then vanishes reads as a bug to the person typing.
+ *
+ * The two guards before the character test are what make this safe rather
+ * than a trap, and both were learned the hard way:
  *
  * 1. **IME / soft-keyboard events.** Android's GBoard (and most mobile IMEs)
  *    report every keystroke as `key: 'Unidentified'` with `keyCode: 229`
  *    while composing — the real character only arrives later, in `input`.
- *    An allow-list of "digits and + only" therefore matches nothing on
- *    Android and preventDefault() swallows the entire keystroke, making
- *    every phone field on the site impossible to type into on a phone
- *    (including the driver login, i.e. the whole mobile login flow).
+ *    An allow-list therefore matches nothing on Android, and preventDefault()
+ *    swallows the entire keystroke, making the field impossible to type into
+ *    on a phone. This shipped once and broke the driver login on Android.
  * 2. **Named keys.** `key.length > 1` is exactly the set of non-printable
  *    keys — Backspace, Delete, Tab, Enter, Escape, Arrow*, Home, End,
  *    Shift, F1… — so testing the length covers all of them at once and
@@ -71,15 +84,16 @@ function onClick(): void {
  *
  * What's left after those two guards is a single printable character from a
  * physical keyboard, which is the only thing we actually want to filter.
- * Modifier combos are let through so Cmd/Ctrl+A/C/V still work, and paste is
- * cleaned up by the v-model transform.
+ * Modifier combos are let through so Cmd/Ctrl+A/C/V still work; pasted junk
+ * is caught by the field's validator instead.
  */
 function onKeydown(event: KeyboardEvent): void {
-  if (props.type !== 'tel') return
+  const allowed = ALLOWED_KEYS[props.type]
+  if (!allowed) return
   if (event.isComposing || event.keyCode === 229) return
   if (event.key.length !== 1) return
   if (event.ctrlKey || event.metaKey || event.altKey) return
-  if (/^[0-9+]$/.test(event.key)) return
+  if (allowed.test(event.key)) return
   event.preventDefault()
 }
 </script>

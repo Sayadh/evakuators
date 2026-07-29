@@ -528,6 +528,9 @@ async function submitApprove(): Promise<void> {
   // geography data to do this itself (see CLAUDE.md).
   const primaryRegionSlug =
     primaryType === 'district' ? undefined : findCityLocation(primarySlug)?.regionSlug
+  // No platform dimensions in this payload: the request stores them as the
+  // same two Float columns the TowTruck does, so AdminService.approve() copies
+  // them across directly. Nothing to parse and nothing for this form to ask.
   const payload: ApproveRegistrationPayload = {
     slug: approveForm.slug,
     capacityTons: representativeCapacityTons(approveTarget.value.capacityRange),
@@ -639,6 +642,14 @@ async function rejectReview(review: AdminReview): Promise<void> {
     </div>
 
     <template v-else>
+      <!-- Site traffic first: it's the question the panel gets opened for -->
+      <section class="admin-section">
+        <div class="admin-section__header">
+          <h2>Կայքի այցելություններ</h2>
+        </div>
+        <SiteAnalyticsPanel />
+      </section>
+
       <!-- ── Registration requests ── -->
       <section class="admin-section">
         <div class="admin-section__header">

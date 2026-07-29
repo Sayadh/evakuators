@@ -2,6 +2,7 @@
 import type { TowTruckVehicle } from '~/types/towTruck'
 import { VEHICLE_TYPE_DESCRIPTIONS, VEHICLE_TYPE_LABELS } from '~/constants/vehicles'
 import { formatCapacity } from '~/utils/formatters'
+import { formatPlatformDimensions } from '~/utils/platformDimensions'
 
 interface Props {
   vehicle: TowTruckVehicle
@@ -29,11 +30,9 @@ const rows = computed<InfoRow[]>(() => {
     { label: 'Բեռնատարողություն', value: `մինչև ${formatCapacity(vehicle.capacityTons)}` },
   ]
 
-  if (vehicle.platformLengthM && vehicle.platformWidthM) {
-    result.push({
-      label: 'Հարթակի չափսեր',
-      value: `${vehicle.platformLengthM} մ × ${vehicle.platformWidthM} մ`,
-    })
+  const platformSize = formatPlatformDimensions(vehicle.platformLengthM, vehicle.platformWidthM)
+  if (platformSize) {
+    result.push({ label: 'Հարթակի չափսեր', value: platformSize })
   }
 
   result.push(

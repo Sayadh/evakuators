@@ -5,6 +5,7 @@ import {
   IsBoolean,
   IsEmail,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   Matches,
@@ -85,10 +86,24 @@ export class CreateRegistrationDto {
   @MaxLength(20)
   capacityRange!: string
 
+  /**
+   * Two numbers, not a formatted string. The form collects them as two
+   * separate number inputs (PlatformDimensionsInput.vue) precisely so there is
+   * no format for a driver to get wrong and nothing to parse afterwards —
+   * these carry straight through to TowTruck's identically-named columns at
+   * approval.
+   */
   @IsOptional()
-  @IsString()
-  @MaxLength(40)
-  platformDimensions?: string
+  @IsNumber()
+  @Min(0.5)
+  @Max(30)
+  platformLengthM?: number
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0.5)
+  @Max(30)
+  platformWidthM?: number
 
   @IsBoolean()
   winch!: boolean

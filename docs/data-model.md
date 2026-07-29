@@ -43,18 +43,26 @@ Notable fields beyond the obvious:
   `RegistrationRequest.capacityRange` (a band slug like `"3.5-5"`) — see
   `docs/taxonomies.md` for how one becomes the other at approval time.
 - `locationName: String` — free-text display label for where the truck is
-  actually based (e.g. "Նոր Նորք"), filled in by the admin at approval time.
-  Independent of `citySlug`/`districtSlug`, which are a best-effort structural
-  placement (defaulted to the driver's first listed service area) used only
-  for the region/city browsing pages' filtering fallback — not shown to users
-  directly.
+  actually based (e.g. "Նոր Նորք"), set by the admin at approval and editable
+  by the driver afterwards. Independent of `citySlug`/`districtSlug`, which are
+  a best-effort structural placement (defaulted to the first listed service
+  area) used only for the region/city browsing pages' filtering fallback — not
+  shown to users directly.
 - `serviceAreas: Json` — `[{ slug, name, type: "city" | "district" }]`. The
-  `name` is resolved to a real Armenian label **by the admin frontend** at
-  approval time (`cityOrDistrictLabel()` in `pages/admin.vue`) and sent
-  as-is — the backend just stores whatever it's given. If this ever regresses
-  to storing `name: slug`, you'll see raw English slugs on public profiles
-  (this exact bug happened once — see git history around
-  `backend/src/admin/dto/approve-registration.dto.ts`'s `ServiceAreaDto`).
+  `name` is resolved to a real Armenian label **by whichever frontend is
+  writing** — `pages/admin.vue` at approval, `pages/dashboard.vue` when the
+  driver edits their own coverage — and sent as-is; the backend just stores
+  what it is given, because it has no geography data to resolve names with.
+  Both paths validate against the shared `ServiceAreaDto`
+  (`backend/src/tow-trucks/dto/service-area.dto.ts`). If this ever regresses to
+  storing `name: slug`, you'll see raw English slugs on public profiles (this
+  exact bug shipped once).
+
+  Changing `serviceAreas` and changing `citySlug`/`districtSlug`/`regionSlug`
+  is **one decision, not two**: `MyTowTruckService.updateMine()` rejects an
+  update that sends the JSON list without a structural placement, because the
+  two describing different geography is how a truck ends up filtered into a
+  city it no longer serves.
 - `works24Hours: Boolean` — derived, not directly editable. It mirrors
   whether `AVAILABLE_24_7_SLUG` is present in `services[]`. Kept as a real
   column purely so Postgres can `ORDER BY works24Hours DESC` cheaply for the
@@ -64,6 +72,11 @@ Notable fields beyond the obvious:
   through one of those two paths.
 - `telegramChatId` / `telegramLinkToken` / `telegramLinkTokenExpiresAt` —
   driver login state. See `docs/auth-and-security.md`.
+- `contactNoticeIntroAt` — the atomically-claimed marker that keeps the
+  one-time explanation attached to a driver's FIRST contact notice only. There
+  is deliberately no companion opt-out column: the notices are not optional.
+  Full reasoning, and the login-outage risk that comes with that, in
+  `docs/analytics.md` § "Side effect: driver contact notices".
 - `isFeatured: Boolean` — admin-only toggle (`PATCH
   /admin/tow-trucks/:id/featured`), unrelated to `works24Hours` or approval
   status. Drives `GET /tow-trucks/featured` (public) and the homepage
@@ -114,6 +127,18 @@ nothing deletes `RegistrationRequest` rows.
 `capacityRange` here is a **band slug** (driver only picks a range at
 registration), not the same shape as `TowTruck.capacityTons` (an exact
 float) — see `docs/taxonomies.md`.
+
+`platformLengthM` / `platformWidthM` are the **same two `Float?` columns**
+`TowTruck` has, so `approve()` copies them straight across like
+`winch`/`manipulator`.
+
+They used to be one free-text `platformDimensions` string (`"5.5 մ × 2.2 մ"`),
+and that single decision cost a format regex, a parser, and a conversion step
+at approval — a step which for a long time simply wasn't written, so the answer
+was collected from every driver and shown to nobody. Both forms now ask for two
+numbers (`PlatformDimensionsInput.vue`), so there is no format for a driver to
+get wrong and nothing left to parse. `frontend/utils/platformDimensions.ts` is
+now display formatting only.
 
 `regionSlugs: String[]` — up to 2 marzes (e.g. Yerevan + Kotayk), enforced by
 `CreateRegistrationDto`'s `@ArrayMaxSize(2)`. Was a single `mainRegionSlug`
@@ -189,6 +214,14 @@ The one remaining exception is `AdminService.deleteTowTruck()`, which removes th
 Storage objects itself (correct order, tolerating failure) because the admin
 explicitly asked for the data to be gone now rather than tomorrow. `TowTruck`
 deletion cascades the rows.
+
+## `SiteDailyStat` / `SiteVisitorDay`
+
+The two tables above with the tow truck removed — site-wide traffic for the
+admin panel (visits, Free Routes views). Same one-statement CTE dedup, same
+hashed visitor key, same retention purge. Why they are separate tables rather
+than a nullable `towTruckId` on the per-truck pair is argued in
+`docs/analytics.md` § "Site-wide traffic (admin panel)".
 
 ## `Review`
 

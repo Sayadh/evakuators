@@ -77,13 +77,21 @@ assume one is unused:
   keys), so a mismatch means a silently uncounted metric on one side and an
   `undefined` card value on the other — see `docs/analytics.md`. The frontend's
   `AnalyticsPeriod` / `AnalyticsReviewStatus` enums mirror the backend TS enums
-  in `backend/src/analytics/analytics.enums.ts` the same way.
-- The "pick up to 2 regions" cap on registration exists in two independent
-  places: `MAX_REGIONS` in `frontend/pages/register.vue` (blocks a 3rd
-  checkbox in the UI) and `@ArrayMaxSize(2)` on `CreateRegistrationDto.regionSlugs`
-  (backend/src/registration/dto/create-registration.dto.ts). Raising the cap
-  means changing both, or the API will reject what the form happily lets a
-  driver submit.
+  in `backend/src/analytics/analytics.enums.ts` the same way. `SiteEventType`
+  (site-wide admin traffic) is a third such pair with the same rule.
+- The "pick up to 2 regions" cap lives in `MAX_REGIONS` inside
+  `frontend/components/common/ServiceAreaPicker.vue` (the shared picker used by
+  BOTH the registration form and the driver dashboard) and in `@ArrayMaxSize(2)`
+  on `CreateRegistrationDto.regionSlugs`. Raising the cap means changing both,
+  or the API will reject what the form happily lets a driver submit.
+- **Registration and the driver dashboard must offer the same fields.** Anything
+  asked at sign-up has to be editable afterwards, or the only way to fix a typo
+  is to register again — which is exactly what happened before
+  `UpdateMyTowTruckDto` was widened. The two genuine exceptions (`slug`,
+  main `phone`) are argued in that DTO and are still *displayed* read-only on
+  the dashboard. If you add a field to `register.vue`, add it there too.
+  `ServiceAreaPicker.vue` and `PlatformDimensionsInput.vue` are shared by both
+  forms for exactly that reason.
 
 ## Quick map: "I need to..."
 
@@ -96,6 +104,7 @@ assume one is unused:
 | Touch services/vehicle-types/capacity pickers or filters | `docs/taxonomies.md` |
 | Touch "Ազատ երթուղիներ" (Free Routes) | `docs/free-routes.md` |
 | Touch per-driver statistics / visitor tracking | `docs/analytics.md` |
+| Decide whether a field is driver-editable or admin-only | `backend/src/my-tow-truck/dto/update-my-tow-truck.dto.ts` — the boundary and its two exceptions are argued there |
 | Find what a specific page/route does | `docs/pages-and-routes.md` |
 | Run the app on a local machine | `docs/local-development.md` |
 | Deploy to the VPS | `docs/deployment.md` |

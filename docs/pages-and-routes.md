@@ -16,7 +16,7 @@ and what auth (if any) gates it.
 | `/free-routes` | `pages/free-routes/index.vue` | Public "Ազատ երթուղիներ" listing | Mock or API; only `ACTIVE` routes | Public |
 | `/register` | `pages/register.vue` | Driver registration form (multi-section: identity, vehicle, capacity range, services by category, pricing, image upload) | Submits to `registrationRepository` (needs a real backend to actually persist — meaningless in pure mock mode beyond UI preview) | Public |
 | `/login` | `pages/login.vue` | Driver login — phone number → Telegram OTP → JWT. Redirects to `/dashboard` if already logged in (client-side check) | Real API only (mock mode has no OTP flow) | Public (self-redirects once authenticated) |
-| `/dashboard` | `pages/dashboard.vue` | Driver's own analytics (`AnalyticsDashboard scope="driver"` — views, unique visitors, contact clicks, chart, reviews/ratings incl. unmoderated) + own-profile editor (contact info, description, services, pricing) + embeds `FreeRoutesManager` for the driver's own routes | Real API only | Driver JWT — redirects to `/login` if not authenticated (client-side check, `import.meta.client` guarded) |
+| `/dashboard` | `pages/dashboard.vue` | Driver's own analytics (`AnalyticsDashboard scope="driver"`) + **full** own-profile editor — it mirrors the registration form field-for-field (name, company, contacts, vehicle facts, equipment, capacity band, platform dimensions, base location, service areas via the shared `ServiceAreaPicker`, description, services, hours, pricing, photos), with `slug` and the main `phone` shown read-only — plus `FreeRoutesManager` for the driver's own routes | Real API only | Driver JWT — redirects to `/login` if not authenticated (client-side check, `import.meta.client` guarded) |
 | `/admin` | `pages/admin.vue` | Internal moderation panel — registration requests (approve/reject), pending reviews (approve/reject), tow truck list (activate/deactivate/delete, Telegram link management, expandable per-truck analytics via the same `AnalyticsDashboard` component with `scope="admin"`) | Real API only | Admin JWT; `noindex`, not linked from public nav, excluded from sitemap |
 | `/about` | `pages/about.vue` | Static "about us" content | Static | Public |
 | `/contact` | `pages/contact.vue` | Static contact info | Static | Public |
@@ -62,3 +62,13 @@ homepage, `/regions`, and `/free-routes` — `buildHomeFaq()` /
 sitemap.xml.ts` generates the sitemap dynamically — `/admin`, `/dashboard`,
 `/login` are excluded (`noindex: true` set on those pages' `useSeoMetaData`
 calls).
+
+**Every other public route must be listed in that file, and the static ones are
+listed by hand.** Region/city/district/tow-truck URLs are generated from
+`frontend/data/*` and the API, so adding a city adds itself — but a new
+top-level page does not. `/free-routes` shipped missing from the sitemap for
+exactly that reason: it was indexable in every other respect (no `noindex`,
+canonical set, `BreadcrumbList` + `FAQPage` JSON-LD emitted by
+`AppBreadcrumbs.vue` / `FaqSection.vue`, linked from `NAV_LINKS` on every page,
+SSR-rendered content) and still never announced to crawlers. If you add a page
+under `pages/`, add it here too.

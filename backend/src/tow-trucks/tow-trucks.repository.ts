@@ -138,6 +138,52 @@ export class TowTrucksRepository {
   }
 
   /**
+   * The two columns DriverNotificationService needs, and nothing else.
+   *
+   * This sits on the analytics write path, which runs on every contact-button
+   * press in the system — pulling the full row plus its images the way
+   * findById() does would be a wide read for a chat id and a timestamp.
+   * Same reasoning as findStatusById() above.
+   */
+  findNotificationTargetById(id: number): Promise<{
+    telegramChatId: bigint | null
+    contactNoticeIntroAt: Date | null
+  } | null> {
+    return this.prisma.towTruck.findUnique({
+      where: { id },
+      select: { telegramChatId: true, contactNoticeIntroAt: true },
+    })
+  }
+
+  /**
+   * Claims the right to send the one-time explanation, atomically.
+   *
+   * The `contactNoticeIntroAt: null` condition is the whole point: two contact
+   * clicks landing in the same instant would both read "not sent yet" and both
+   * append the explanation. Letting the UPDATE's own WHERE decide means
+   * Postgres arbitrates — exactly one caller sees `count === 1`. Same principle
+   * as the analytics dedup constraint (see AnalyticsRepository.recordEvent):
+   * the database is the arbiter, never a read-then-write in application code.
+   *
+   * @returns true when THIS caller won the claim and must include the intro.
+   */
+  async claimContactNoticeIntro(id: number): Promise<boolean> {
+    const result = await this.prisma.towTruck.updateMany({
+      where: { id, contactNoticeIntroAt: null },
+      data: { contactNoticeIntroAt: new Date() },
+    })
+    return result.count === 1
+  }
+
+  /** Releases a claim whose message never actually got delivered */
+  async releaseContactNoticeIntro(id: number): Promise<void> {
+    await this.prisma.towTruck.update({
+      where: { id },
+      data: { contactNoticeIntroAt: null },
+    })
+  }
+
+  /**
    * Admin-only — unlike the public listing, this intentionally includes
    * inactive trucks, and it is paginated: the admin table is the one listing
    * that grows monotonically and is never filtered down by geography.

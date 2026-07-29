@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common'
 import { AnalyticsClock } from './analytics-clock.service'
 import { AnalyticsVisitorKeyService } from './analytics-visitor-key.service'
-import type { AnalyticsEventRecord } from './analytics.types'
+import type { AnalyticsEventRecord, SiteEventRecord } from './analytics.types'
 import type { TrackEventDto } from './dto/track-event.dto'
+import type { TrackSiteEventDto } from './dto/track-site-event.dto'
 
 /**
  * The anti-corruption boundary between an HTTP request and the database.
@@ -31,6 +32,19 @@ export class AnalyticsEventFactory {
   create(towTruckId: number, dto: TrackEventDto): AnalyticsEventRecord {
     return {
       towTruckId,
+      statDate: this.clock.today(),
+      eventType: dto.eventType,
+      visitorKey: this.visitorKey.hash(dto.visitorId),
+    }
+  }
+
+  /**
+   * Site-wide twin. Same two guarantees, and the same reason for existing: the
+   * server decides the calendar day and does the hashing, so a client cannot
+   * pick a fresh date per request and defeat the once-per-day rule.
+   */
+  createSite(dto: TrackSiteEventDto): SiteEventRecord {
+    return {
       statDate: this.clock.today(),
       eventType: dto.eventType,
       visitorKey: this.visitorKey.hash(dto.visitorId),

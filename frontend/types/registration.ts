@@ -18,8 +18,9 @@ export interface RegistrationVehicleData {
   type: VehicleType | null
   /** Value from CAPACITY_RANGE_OPTIONS (e.g. "2-3.5") */
   capacityRange: string
-  /** Optional, format "5.5 մ × 2.2 մ" */
-  platformDimensions: string
+  /** Optional, metres — collected as two number inputs */
+  platformLengthM: string
+  platformWidthM: string
   winch: boolean
   manipulator: boolean
   wheelSkates: boolean

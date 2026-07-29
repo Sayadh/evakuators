@@ -16,6 +16,14 @@ const faqItems = buildFreeRoutesFaq()
 const { data: routes, pending } = useAsyncData('free-routes', () => freeRoutesService.getActive(), {
   default: () => [],
 })
+
+/**
+ * The second number the admin panel tracks: how many people actually open
+ * Ազատ երթուղիներ. onMounted for the same reason as the site-wide visit —
+ * an SSR render or a crawl is not a person opening the page.
+ */
+const { trackFreeRoutesView } = useAnalyticsTracking()
+onMounted(trackFreeRoutesView)
 </script>
 
 <template>

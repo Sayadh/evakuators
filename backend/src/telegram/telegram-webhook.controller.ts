@@ -112,9 +112,17 @@ export class TelegramWebhookController {
 
     await this.towTrucksRepository.linkTelegramChat(towTruck.id, BigInt(chatId))
 
+    // Names BOTH kinds of message this bot sends, so a driver who later gets a
+    // contact notice isn't surprised by it — and, more importantly, knows the
+    // same bot carries their login codes. Since contact notices have no
+    // opt-out, that warning is the only thing standing between an annoyed
+    // driver and a self-inflicted login outage (see DriverNotificationService).
     await this.telegram.sendMessage(
       chatId,
-      `Բարև, ${towTruck.driverName}։ Ձեր Telegram-ը հաջողությամբ կապակցվեց Evakuators.am-ի հետ։ Այսուհետ մուտքի կոդերը կստանաք այստեղ։`,
+      `Բարև, ${towTruck.driverName}։ Ձեր Telegram-ը հաջողությամբ կապակցվեց Evakuators.am-ի հետ։ ` +
+        'Այսուհետ մուտքի կոդերը կստանաք այստեղ։\n\n' +
+        'Այստեղ կստանաք նաև ծանուցում, երբ որևէ մեկը կայքում սեղմում է ձեզ հետ կապվելու ' +
+        'կոճակը։ Bot-ը մի՛ արգելափակեք — հակառակ դեպքում մուտքի կոդերն էլ չեն գա։',
       { text: 'Մուտք գործել', url: this.telegram.loginUrl },
     )
     this.logger.log(`Linked Telegram chat ${chatId} to TowTruck #${towTruck.id}`)

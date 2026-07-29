@@ -154,6 +154,31 @@ populated by the driver tapping a one-time deep link
   themselves (`/admin-auth/*`, `/driver-auth/*`) — a wrong password/code there
   is a normal 401 with its own message, not an expired session.
 
+### The driver bot carries login codes AND marketing notices
+
+The same bot that delivers OTP codes also sends the "someone just took your
+number" contact notices (`DriverNotificationService`, see `docs/analytics.md`),
+and those notices have **no opt-out** — every linked driver receives them.
+
+That coupling is an accepted operational risk, not an oversight: a driver who
+finds the notices noisy and **mutes or blocks the bot loses the ability to log
+in**, with nothing on screen to explain why — the login page just keeps saying
+a code was sent. The single mitigation is the link-confirmation message
+(`TelegramWebhookController.handleStart`), which names both kinds of message
+and warns explicitly not to block the bot.
+
+Two consequences to keep in mind:
+
+- **When triaging "I never get my login code", check whether that chat has
+  blocked the bot before touching the OTP code path.** The two failures are
+  indistinguishable from the driver's side and nearly so from ours — a blocked
+  chat just makes `sendMessage` fail, which `DriverAuthService` currently
+  surfaces as a generic error.
+- **Anything new added to this bot raises the same risk.** The more reasons a
+  driver has to silence it, the more likely a self-inflicted login outage
+  becomes. A third message type should come with a real justification, or with
+  the opt-out this one deliberately doesn't have.
+
 ### The Telegram bot's webhook is singular — this bites people
 
 A Telegram bot has exactly one webhook URL, registered globally via

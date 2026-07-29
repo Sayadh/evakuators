@@ -98,6 +98,21 @@ export enum AnalyticsEventType {
   EmailClick = 'EMAIL_CLICK',
 }
 
+/**
+ * Site-wide event taxonomy, for the admin panel's own traffic numbers.
+ *
+ * MANUAL SYNC POINT, same as AnalyticsEventType above: these must match
+ * `enum SiteEventType` in `backend/prisma/schema.prisma` exactly. Separate
+ * from AnalyticsEventType on purpose — those belong to one driver's listing,
+ * these describe the platform.
+ */
+export enum SiteEventType {
+  /** Any page of the site opened, once per visitor per Armenia day */
+  SiteVisit = 'SITE_VISIT',
+  /** The "Ազատ երթուղիներ" page specifically */
+  FreeRoutesView = 'FREE_ROUTES_VIEW',
+}
+
 /** Selectable chart/overview windows — mirrors backend AnalyticsPeriod */
 export enum AnalyticsPeriod {
   Last7Days = 'LAST_7_DAYS',

@@ -1,13 +1,29 @@
 <script setup lang="ts">
 import { SERVICE_CATEGORIES } from '~/constants/services'
 import { SITE_NAME } from '~/constants/site'
+import {
+  CAPACITY_RANGE_OPTIONS,
+  matchesCapacityRange,
+  representativeCapacityTons,
+  VEHICLE_TYPE_DESCRIPTIONS,
+  VEHICLE_TYPE_OPTIONS,
+} from '~/constants/vehicles'
 import { imageRepository, myTowTruckRepository, type UpdateMyTowTruckPayload } from '~/repositories'
 import { useDriverAuthStore } from '~/stores/driverAuth'
-import { ServiceType } from '~/types/enums'
+import { LocationType, ServiceType } from '~/types/enums'
+import type { VehicleType } from '~/types/enums'
+import type { SelectOption } from '~/types/common'
 import type { TowTruck } from '~/types/towTruck'
 import { extractErrorMessage } from '~/utils/errors'
 import { armenianPhoneInputValue } from '~/utils/formatPhone'
-import { isPhone, validateField } from '~/utils/validators'
+import {
+  cityOrDistrictLabel,
+  findCityLocation,
+  findStaticDistrict,
+  YEREVAN_REGION_SLUG,
+} from '~/utils/geography'
+import { toOptionalFloat } from '~/utils/registrationPayload'
+import { isDimension, isPhone, isYear, required, validateField } from '~/utils/validators'
 import { formatWorkingHoursRange, splitWorkingHoursRange } from '~/utils/workingHours'
 
 useSeoMetaData({
@@ -27,21 +43,57 @@ const truck = ref<TowTruck | null>(null)
 const loading = ref(true)
 const loadError = ref('')
 
+/**
+ * Mirrors the registration form field-for-field, minus the two things a driver
+ * can't change about themselves (`slug`, main `phone` — shown read-only below).
+ * That symmetry is the point: anything asked at sign-up must be fixable here,
+ * or the only way to correct a typo is to register all over again.
+ */
 const form = reactive({
+  driverName: '',
+  companyName: '',
   secondaryPhone: '',
   whatsapp: '',
   telegram: '',
   email: '',
+
+  vehicleBrand: '',
+  vehicleModel: '',
+  vehicleYear: '',
+  vehicleType: '' as VehicleType | '',
+  /** A band slug, exactly as at registration — converted to an exact float on submit */
+  capacity: '',
+  platformLengthM: '',
+  platformWidthM: '',
+  winch: false,
+  manipulator: false,
+  wheelSkates: false,
+
   description: '',
   services: [] as ServiceType[],
   workingHoursStart: '',
   workingHoursEnd: '',
+
+  locationName: '',
+  regionSlugs: [] as string[],
+  citySlugs: [] as string[],
+
   priceCityCallout: '',
   pricePerKm: '',
   priceWaitingPerHour: '',
   priceNightSurchargePercent: '',
   priceExtraLoading: '',
 })
+
+const vehicleTypeOptions: SelectOption[] = VEHICLE_TYPE_OPTIONS.map((option) => ({
+  value: option.value as string,
+  label: option.label,
+}))
+
+const vehicleTypeHints = VEHICLE_TYPE_OPTIONS.map((option) => ({
+  label: option.label,
+  description: VEHICLE_TYPE_DESCRIPTIONS[option.value],
+}))
 
 /** v-model wrapper that keeps a phone field locked to +374 + up to 8 digits */
 function armenianPhoneModel(key: 'secondaryPhone' | 'whatsapp') {
@@ -56,9 +108,18 @@ function armenianPhoneModel(key: 'secondaryPhone' | 'whatsapp') {
 const secondaryPhoneModel = armenianPhoneModel('secondaryPhone')
 const whatsappModel = armenianPhoneModel('whatsapp')
 
-const errors = reactive({
+const errors = reactive<Record<string, string>>({
+  driverName: '',
   secondaryPhone: '',
   whatsapp: '',
+  vehicleBrand: '',
+  vehicleYear: '',
+  vehicleType: '',
+  capacity: '',
+  platformDimensions: '',
+  locationName: '',
+  regionSlugs: '',
+  citySlugs: '',
 })
 
 const saving = ref(false)
@@ -140,16 +201,64 @@ onBeforeUnmount(() => {
   newImagePreviews.value.forEach((url) => URL.revokeObjectURL(url))
 })
 
+/**
+ * Turns the profile back into the band slug the driver originally picked.
+ *
+ * The DB stores an exact float, but the form has to offer the same five bands
+ * registration does — showing a raw `5` where the driver chose «3.5–5 տոննա»
+ * would be a different question than the one they answered. `matchesCapacityRange`
+ * is the same predicate the public filter uses, so a truck always lands back in
+ * the band a customer would find it under. See docs/taxonomies.md.
+ */
+function capacityRangeFromTons(capacityTons: number): string {
+  return (
+    CAPACITY_RANGE_OPTIONS.find((option) => matchesCapacityRange(capacityTons, option.value))
+      ?.value ?? ''
+  )
+}
+
 function fillFormFromTruck(data: TowTruck): void {
+  form.driverName = data.driverName
+  form.companyName = data.companyName ?? ''
   form.secondaryPhone = data.secondaryPhone ?? ''
   form.whatsapp = data.whatsapp ?? ''
   form.telegram = data.telegram ?? ''
   form.email = data.email ?? ''
+
+  form.vehicleBrand = data.vehicle.brand
+  form.vehicleModel = data.vehicle.model
+  form.vehicleYear = data.vehicle.year.toString()
+  form.vehicleType = data.vehicle.type
+  form.capacity = capacityRangeFromTons(data.vehicle.capacityTons)
+  form.platformLengthM = data.vehicle.platformLengthM?.toString() ?? ''
+  form.platformWidthM = data.vehicle.platformWidthM?.toString() ?? ''
+  form.winch = data.vehicle.winch
+  form.manipulator = data.vehicle.manipulator
+  form.wheelSkates = data.vehicle.wheelSkates
+
   form.description = data.description
   form.services = [...data.services]
   const { start, end } = splitWorkingHoursRange(data.workingHoursText)
   form.workingHoursStart = start
   form.workingHoursEnd = end
+
+  form.locationName = data.location.name
+  form.citySlugs = data.serviceAreas.map((area) => area.slug)
+  // Regions aren't stored — they're implied by the areas. Yerevan districts map
+  // to the pseudo-region, real cities to their own marz (static lookup, no
+  // request). Deduped because two cities of one marz must not tick it twice.
+  form.regionSlugs = [
+    ...new Set(
+      data.serviceAreas
+        .map((area) =>
+          area.type === LocationType.District
+            ? YEREVAN_REGION_SLUG
+            : findCityLocation(area.slug)?.regionSlug,
+        )
+        .filter((slug): slug is string => Boolean(slug)),
+    ),
+  ]
+
   form.priceCityCallout = data.pricing?.cityCallout?.toString() ?? ''
   form.pricePerKm = data.pricing?.perKm?.toString() ?? ''
   form.priceWaitingPerHour = data.pricing?.waitingPerHour?.toString() ?? ''
@@ -182,14 +291,41 @@ function toOptionalInt(value: string): number | undefined {
   return trimmed ? Number(trimmed) : undefined
 }
 
+/** Same per-slug resolution the admin approval flow does — a driver's areas can mix
+ *  real cities and Yerevan districts when they cover two regions (see admin.vue) */
+function areaType(slug: string): 'city' | 'district' {
+  return findStaticDistrict(slug) ? 'district' : 'city'
+}
+
+function validate(): boolean {
+  errors.driverName = validateField(form.driverName, [required('Լրացրեք Անուն Ազգանունը')]) ?? ''
+  errors.secondaryPhone = validateField(form.secondaryPhone, [isPhone()]) ?? ''
+  errors.whatsapp = validateField(form.whatsapp, [isPhone()]) ?? ''
+  errors.vehicleBrand = validateField(form.vehicleBrand, [required('Լրացրեք մեքենայի մակնիշը')]) ?? ''
+  errors.vehicleYear = validateField(form.vehicleYear, [required(), isYear()]) ?? ''
+  errors.vehicleType = validateField(form.vehicleType, [required('Ընտրեք մեքենայի տեսակը')]) ?? ''
+  errors.capacity =
+    validateField(form.capacity, [required('Ընտրեք առավելագույն բեռնատարողությունը')]) ?? ''
+  // Optional, but both-or-neither — same rule as the working-hours pair
+  errors.platformDimensions =
+    validateField(form.platformLengthM, [isDimension()]) ??
+    validateField(form.platformWidthM, [isDimension()]) ??
+    (Boolean(form.platformLengthM.trim()) !== Boolean(form.platformWidthM.trim())
+      ? 'Լրացրեք և՛ երկարությունը, և՛ լայնությունը, կամ թողեք երկուսն էլ դատարկ'
+      : '')
+  errors.locationName = validateField(form.locationName, [required('Լրացրեք հիմնական վայրը')]) ?? ''
+  errors.regionSlugs = form.regionSlugs.length === 0 ? 'Ընտրեք 1-2 մարզ' : ''
+  errors.citySlugs = form.citySlugs.length === 0 ? 'Ընտրեք առնվազն մեկ քաղաք կամ շրջան' : ''
+
+  return Object.values(errors).every((error) => !error)
+}
+
 async function submit(): Promise<void> {
   saveError.value = ''
   saveSuccess.value = false
 
-  errors.secondaryPhone = validateField(form.secondaryPhone, [isPhone()]) ?? ''
-  errors.whatsapp = validateField(form.whatsapp, [isPhone()]) ?? ''
-  if (errors.secondaryPhone || errors.whatsapp) {
-    saveError.value = 'Ստուգիր հեռախոսահամարների դաշտերը'
+  if (!validate()) {
+    saveError.value = 'Ստուգիր նշված դաշտերը'
     return
   }
 
@@ -204,17 +340,54 @@ async function submit(): Promise<void> {
   saving.value = true
   try {
     const hasFullHours = Boolean(form.workingHoursStart) && Boolean(form.workingHoursEnd)
+
+    // Resolved here, not on the backend, which has no geography at all — the
+    // same contract the admin approval flow follows (see ServiceAreaDto).
+    const serviceAreas = form.citySlugs.map((slug) => ({
+      slug,
+      name: cityOrDistrictLabel(slug),
+      type: areaType(slug),
+    }))
+
+    // Structural placement, derived from the first area exactly as approve()
+    // derives it: a Yerevan district truck has a districtSlug and no region,
+    // a real city has both.
+    const primarySlug = form.citySlugs[0]
+    const primaryType = areaType(primarySlug)
+
     const payload: UpdateMyTowTruckPayload = {
+      driverName: form.driverName.trim(),
+      // Sent even when empty — '' is how the backend is told to clear it
+      companyName: form.companyName.trim(),
       secondaryPhone: form.secondaryPhone.trim() || undefined,
       whatsapp: form.whatsapp.trim() || undefined,
       telegram: form.telegram.trim() || undefined,
       email: form.email.trim() || undefined,
+
+      vehicleBrand: form.vehicleBrand.trim(),
+      vehicleModel: form.vehicleModel.trim() || undefined,
+      vehicleYear: Number(form.vehicleYear),
+      vehicleType: form.vehicleType || undefined,
+      capacityTons: representativeCapacityTons(form.capacity),
+      platformLengthM: toOptionalFloat(form.platformLengthM),
+      platformWidthM: toOptionalFloat(form.platformWidthM),
+      winch: form.winch,
+      manipulator: form.manipulator,
+      wheelSkates: form.wheelSkates,
+
       description: form.description.trim(),
       services: form.services,
       workingHoursText:
         is247.value || !hasFullHours
           ? undefined
           : formatWorkingHoursRange(form.workingHoursStart, form.workingHoursEnd),
+
+      locationName: form.locationName.trim(),
+      serviceAreas,
+      ...(primaryType === 'district'
+        ? { districtSlug: primarySlug }
+        : { citySlug: primarySlug, regionSlug: findCityLocation(primarySlug)?.regionSlug }),
+
       priceCityCallout: toOptionalInt(form.priceCityCallout),
       pricePerKm: toOptionalInt(form.pricePerKm),
       priceWaitingPerHour: toOptionalInt(form.priceWaitingPerHour),
@@ -281,6 +454,42 @@ async function logout(): Promise<void> {
 
       <form class="dashboard-form" @submit.prevent="submit">
         <details class="dashboard-section">
+          <summary class="dashboard-summary">Ընդհանուր տվյալներ</summary>
+          <div class="dashboard-details-content">
+            <AppInput
+              v-model="form.driverName"
+              label="Անուն Ազգանուն"
+              required
+              :error="errors.driverName"
+            />
+            <AppInput
+              v-model="form.companyName"
+              label="Կազմակերպության անուն (ոչ պարտադիր)"
+              placeholder="Թողեք դատարկ, եթե չունեք"
+            />
+
+            <!-- Read-only, but shown: everything from registration has to be
+                 visible here, and silently omitting these two would just make
+                 a driver hunt for them. See UpdateMyTowTruckDto for why they
+                 stay admin-only. -->
+            <div class="dashboard-readonly">
+              <div>
+                <dt>Հիմնական հեռախոսահամար</dt>
+                <dd>{{ truck.phone }}</dd>
+              </div>
+              <div>
+                <dt>Պրոֆիլի հասցե</dt>
+                <dd>/tow-trucks/{{ truck.slug }}</dd>
+              </div>
+              <p class="dashboard-readonly__note">
+                Այս երկուսը փոխվում են միայն admin-ի միջոցով — հիմնական համարով եք մուտք
+                գործում, իսկ հասցեն փոխելը կկոտրի արդեն տարածված հղումները։ Դիմեք մեզ։
+              </p>
+            </div>
+          </div>
+        </details>
+
+        <details class="dashboard-section">
           <summary class="dashboard-summary">Կոնտակտներ</summary>
           <div class="dashboard-details-content">
             <AppInput
@@ -301,6 +510,91 @@ async function logout(): Promise<void> {
             />
             <AppInput v-model="form.telegram" label="Telegram username" />
             <AppInput v-model="form.email" type="email" label="Email" />
+          </div>
+        </details>
+
+        <details class="dashboard-section">
+          <summary class="dashboard-summary">Մեքենա</summary>
+          <div class="dashboard-details-content">
+            <AppInput
+              v-model="form.vehicleBrand"
+              label="Մակնիշ"
+              required
+              :error="errors.vehicleBrand"
+            />
+            <AppInput v-model="form.vehicleModel" label="Մոդել (ոչ պարտադիր)" />
+            <AppInput
+              v-model="form.vehicleYear"
+              type="number"
+              label="Արտադրության տարեթիվ"
+              required
+              :error="errors.vehicleYear"
+            />
+            <AppSelect
+              v-model="form.vehicleType"
+              :options="vehicleTypeOptions"
+              label="Տեսակ"
+              :error="errors.vehicleType"
+            >
+              <template #label-suffix>
+                <AppTooltip label="Էվակուատորի տեսակների բացատրություն">
+                  <span
+                    v-for="hint in vehicleTypeHints"
+                    :key="hint.label"
+                    class="dashboard-type-hint"
+                  >
+                    <strong>{{ hint.label }}</strong>
+                    {{ hint.description }}
+                  </span>
+                </AppTooltip>
+              </template>
+            </AppSelect>
+            <AppSelect
+              v-model="form.capacity"
+              :options="CAPACITY_RANGE_OPTIONS"
+              label="Առավելագույն բեռնատարողություն"
+              :error="errors.capacity"
+            />
+            <PlatformDimensionsInput
+              v-model:length="form.platformLengthM"
+              v-model:width="form.platformWidthM"
+              :error="errors.platformDimensions"
+            />
+
+            <div class="dashboard-checks">
+              <AppCheckbox v-model="form.winch" label="Ունի ճախարակ (winch, лебедка)" />
+              <AppCheckbox v-model="form.manipulator" label="Ունի մանիպուլյատոր" />
+              <AppCheckbox v-model="form.wheelSkates" label="Առկա են անիվային ռոլիկներ">
+                <template #label-suffix>
+                  <AppTooltip label="Անիվային ռոլիկների բացատրություն">
+                    Անիվային ռոլիկներն օգտագործվում են արգելափակված կամ չպտտվող անիվներով
+                    մեքենան անվտանգ հարթակ բարձրացնելու և տեղափոխելու համար։
+                  </AppTooltip>
+                </template>
+              </AppCheckbox>
+            </div>
+          </div>
+        </details>
+
+        <details class="dashboard-section">
+          <summary class="dashboard-summary">Տարածքներ</summary>
+          <div class="dashboard-details-content">
+            <AppInput
+              v-model="form.locationName"
+              label="Որտե՞ղ եք սովորաբար կանգնում"
+              placeholder="Օր.՝ Նոր Նորք"
+              required
+              :error="errors.locationName"
+            />
+            <!-- The very same component the registration form uses — what a
+                 driver could pick at sign-up is exactly what they can change
+                 here, by construction rather than by remembering to. -->
+            <ServiceAreaPicker
+              v-model:regions="form.regionSlugs"
+              v-model:cities="form.citySlugs"
+              :regions-error="errors.regionSlugs"
+              :cities-error="errors.citySlugs"
+            />
           </div>
         </details>
 
@@ -503,6 +797,53 @@ details[open] .dashboard-summary::after {
   flex-direction: column;
   gap: var(--space-4);
   padding: 0 var(--space-4) var(--space-4);
+}
+
+.dashboard-checks {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Tooltip body listing every vehicle type — same content as the register form */
+.dashboard-type-hint {
+  display: block;
+
+  & + & {
+    margin-top: var(--space-2);
+  }
+
+  strong {
+    display: block;
+  }
+}
+
+/* Fields a driver can see but not edit (main phone, profile URL) */
+.dashboard-readonly {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+
+  dt {
+    font-size: 0.78rem;
+    color: var(--color-text-secondary);
+    margin-bottom: 2px;
+  }
+
+  dd {
+    margin: 0;
+    font-weight: 600;
+    word-break: break-all;
+  }
+
+  &__note {
+    margin: 0;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    color: var(--color-text-secondary);
+  }
 }
 
 .dashboard-section--routes {

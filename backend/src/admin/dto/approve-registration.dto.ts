@@ -2,7 +2,6 @@ import { Type } from 'class-transformer'
 import {
   ArrayMaxSize,
   IsArray,
-  IsIn,
   IsNumber,
   IsOptional,
   IsString,
@@ -11,26 +10,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator'
-
-/**
- * The backend has no geography data of its own — regions/cities/districts
- * are static frontend constants (see schema.prisma). So the admin frontend
- * resolves each citySlug to its real Armenian name (it already does this
- * for display, via cityOrDistrictLabel()) and sends the resolved list here,
- * instead of the backend fabricating `name: slug`.
- */
-class ServiceAreaDto {
-  @IsString()
-  @MaxLength(40)
-  slug!: string
-
-  @IsString()
-  @MaxLength(80)
-  name!: string
-
-  @IsIn(['city', 'district'])
-  type!: 'city' | 'district'
-}
+import { ServiceAreaDto } from '../../tow-trucks/dto/service-area.dto'
 
 /**
  * Data the moderator provides on approval — things the request itself
@@ -45,6 +25,12 @@ export class ApproveRegistrationDto {
   @IsNumber()
   @Min(0.5)
   capacityTons!: number
+
+  // No platform dimensions here: the request now stores them as the same two
+  // Float columns the TowTruck does, so approve() copies them across like
+  // winch/manipulator. They briefly lived on this DTO, parsed client-side out
+  // of a free-text answer — that whole detour disappeared when the registration
+  // form started asking for two numbers instead of a formatted string.
 
   @IsString()
   @MaxLength(80)

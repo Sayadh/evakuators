@@ -20,6 +20,7 @@ from the server itself (Nuxt SSR over loopback) skip throttling entirely — see
 | `GET` | `/tow-trucks/:towTruckId/reviews` | — | Approved reviews only |
 | `POST` | `/tow-trucks/:towTruckId/reviews` | 5/60s | Creates with `isApproved: false` — needs admin approval to appear |
 | `POST` | `/images` | 10/60s | Multipart, field name `file`, 30MB max (`MAX_UPLOAD_BYTES`, kept in sync by hand with the same-named constant in `image-processor.service.ts`) → returns `{ id, url, width, height }`, unattached until a registration references its id. Format is validated from the file's own bytes (`sharp().metadata().format`), not the client-declared mimetype: JPEG/PNG/WebP always, HEIC only if this sharp build has libheif — otherwise it returns a message telling the driver how to change the iPhone setting |
+| `POST` | `/analytics/site-events` | 60/60s | Body `{ eventType: SITE_VISIT\|FREE_ROUTES_VIEW, visitorId }`. `202` + empty body, deduplicated to once per visitor per Armenia day — see `docs/analytics.md` § "Site-wide traffic" |
 | `POST` | `/registrations` | 5/60s | Driver registration submission — `imageIds` must reference images uploaded via `/images` and not already attached elsewhere |
 | `GET` | `/free-routes` | — | `ACTIVE` only |
 | `POST` | `/admin-auth/login` | 5/60s | `{ email, password }` → `{ token }`, or `{ requiresCode: true }` if the admin has linked Telegram 2FA (see below) |
@@ -35,7 +36,7 @@ from the server itself (Nuxt SSR over loopback) skip throttling entirely — see
 | Method | Path | Notes |
 | --- | --- | --- |
 | `GET` | `/my/tow-truck` | Own profile; throws if `isActive: false` even with a valid token |
-| `PATCH` | `/my/tow-truck` | Partial update; `works24Hours` auto-recomputed if `services` is included. `imageIds` is the **full replacement list** — omit it to leave photos alone; sending it accepts 1-6 ids (never 0: a listing with no photo renders a broken image everywhere it appears) |
+| `PATCH` | `/my/tow-truck` | Partial update covering **everything the registration form asks**, except `slug` and the main `phone` (both admin-only — see `UpdateMyTowTruckDto`). `works24Hours` auto-recomputed if `services` is included. `companyName: ""` **clears** it — the one field where empty differs from omitted. `serviceAreas` must be sent together with `citySlug`/`districtSlug` or the request is rejected. `imageIds` is the **full replacement list** — omit it to leave photos alone; sending it accepts 1-6 ids (never 0: a listing with no photo renders a broken image everywhere it appears) and its order becomes the gallery order |
 | `GET` | `/my/free-routes` | Own routes, any status |
 | `POST` | `/my/free-routes` | Requires `isActive` profile |
 | `PATCH` | `/my/free-routes/:id` | Ownership-checked; force-reactivates to `ACTIVE` |
@@ -50,7 +51,7 @@ from the server itself (Nuxt SSR over loopback) skip throttling entirely — see
 | Method | Path | Notes |
 | --- | --- | --- |
 | `GET` | `/admin/registration-requests` | Query: `?status=PENDING\|APPROVED\|REJECTED`, `limit` (default 50, max 200), `offset` |
-| `POST` | `/admin/registration-requests/:id/approve` | Body: `ApproveRegistrationDto` (see `docs/data-model.md`'s `TowTruck` section for what the admin frontend fills in vs. what carries over from the request) → creates `TowTruck`, returns `{ towTruckId, telegramLinkUrl }` |
+| `POST` | `/admin/registration-requests/:id/approve` | Body: `ApproveRegistrationDto` (see `docs/data-model.md`'s `TowTruck` section for what the admin frontend fills in vs. what carries over from the request). `regionSlug`, `platformLengthM`/`platformWidthM` and the `serviceAreas` names are all **resolved/parsed client-side** — the backend has no geography and no dimension parser. → creates `TowTruck`, returns `{ towTruckId, telegramLinkUrl }` |
 | `POST` | `/admin/registration-requests/:id/reject` | |
 | `GET` | `/admin/reviews` | Pending (`isApproved: false`) only. Query: `limit` (default 50, max 200), `offset` |
 | `POST` | `/admin/reviews/:id/approve` | |
@@ -65,6 +66,7 @@ from the server itself (Nuxt SSR over loopback) skip throttling entirely — see
 | `GET` | `/admin/tow-trucks/:id/analytics/charts` | |
 | `GET` | `/admin/tow-trucks/:id/analytics/reviews` | |
 | `GET` | `/admin/tow-trucks/:id/analytics/ratings` | |
+| `GET` | `/admin/site-analytics` | Site-wide traffic, no tow truck involved: visits + Free Routes views, each as distinct people and as daily-summed visits, for `?period=` and all time. The only report in the analytics module that isn't scoped to a driver, which is why it has its own controller |
 
 ## List vs detail — two different shapes on purpose
 

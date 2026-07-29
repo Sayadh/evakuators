@@ -67,18 +67,41 @@ Two functions bridge them, both in `frontend/constants/vehicles.ts`:
   tonnage fall inside a customer-selected band? (min exclusive, max
   inclusive — a truck at exactly `3.5` tons matches `"2-3.5"`, not `"3.5-5"`).
   Used by `frontend/utils/towTruckFilters.ts` for the public listing filter.
-- `representativeCapacityTons(rangeValue)` — turns a driver's registration
-  band into one concrete number when an admin approves the request (a driver
-  only ever picks a band, never an exact figure — the admin approve flow used
-  to also ask for an exact number redundantly; that was removed, this
-  function now derives it automatically: the band's `maxTons` if it has one,
-  else `minTons + 2` for the open-ended top band). Called from
-  `frontend/pages/admin.vue`'s `submitApprove()`.
+- `representativeCapacityTons(rangeValue)` — turns a driver's picked band into
+  one concrete number (a driver only ever picks a band, never an exact figure).
+  The band's `maxTons` if it has one, else `minTons + 2` for the open-ended top
+  band. Called from `frontend/pages/admin.vue`'s `submitApprove()` **and** from
+  `frontend/pages/dashboard.vue`'s `submit()` — a driver editing their own
+  capacity must land on the same number an admin approval would produce, or a
+  self-edited truck would start matching a different filter band than an
+  identical approved one.
+
+The round trip goes the other way too: the dashboard has to show the driver the
+band they originally picked, not the raw float. `capacityRangeFromTons()` in
+`dashboard.vue` does that with `matchesCapacityRange` — the *same* predicate the
+public filter uses, so the band a driver sees in their own form is always the
+band a customer would find them under.
 
 If you ever add a new range, make sure it round-trips through both functions
 sensibly (a truck approved with the new range's representative value should
 immediately match that same range in the filter — this is not covered by
 automated tests, verify manually).
+
+## A note on "ask for the value, not the format"
+
+Capacity is a picker, not a free-text tonnage. Working hours are two
+`<input type="time">`, not a `"09:00 – 21:00"` box. Platform size is two number
+inputs, not a `"5.5 մ × 2.2 մ"` box (`PlatformDimensionsInput.vue`).
+
+That last one was the exception until recently, and it is worth remembering why
+it changed: a field that asks a driver to produce a *format* needs a regex to
+validate it, a parser to read it back, and a string column that doesn't match
+the typed columns the value actually lives in — and every one of those is a
+place to get it wrong. The parser was in fact missing for a long time, so the
+platform dimensions were collected from every driver and displayed to nobody.
+
+If a new field has a natural shape (a number, a date, a choice), collect it in
+that shape. The separator, the unit and the punctuation are the UI's job.
 
 ## Vehicle types — `frontend/constants/vehicles.ts`
 
@@ -107,10 +130,14 @@ used by the Free Routes start/end pickers (see `docs/free-routes.md`). If you
 need a single-region cascade, use this composable rather than re-implementing
 the logic.
 
-`register.vue` does **not** use it — a driver there can pick up to 2 regions
-(`MAX_REGIONS` in that file; e.g. Yerevan + Kotayk), so it needs one
-`cityGroups` list (one city/district checkbox group per selected region)
-instead of a single cascade, and has its own `toggleRegion()`/`toggleCity()`
-state built directly on `buildRegionOptions()`/`buildCityOptions()` from
-`utils/geography.ts`. See `CLAUDE.md`'s "Manual sync points" for the 2-region
-cap's backend counterpart.
+Neither `register.vue` nor `dashboard.vue` uses it — a driver there can pick up
+to 2 regions (e.g. Yerevan + Kotayk), so coverage needs one city/district
+checkbox group *per* selected region rather than a single cascade. That lives in
+`frontend/components/common/ServiceAreaPicker.vue`, built directly on
+`buildRegionOptions()`/`buildCityOptions()`, and **both pages render the exact
+same component**.
+
+That sharing is deliberate and load-bearing: registration and self-service have
+to offer identical choices, or a driver can select something at sign-up that
+they can never change afterwards. `MAX_REGIONS` lives there; see `CLAUDE.md`'s
+"Manual sync points" for its backend counterpart.

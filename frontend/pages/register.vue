@@ -538,12 +538,12 @@ async function onSubmit(): Promise<void> {
               type="file"
               accept="image/*"
               @change="onMainImageChange"
-            />
+            >
             <span v-if="form.mainImageName" class="register__file-name">{{
               form.mainImageName
             }}</span>
             <div v-if="mainImagePreview" class="register__image-preview-wrap">
-              <img :src="mainImagePreview" alt="" class="register__image-preview" />
+              <img :src="mainImagePreview" alt="" class="register__image-preview" >
               <button
                 type="button"
                 class="register__image-remove"
@@ -566,7 +566,7 @@ async function onSubmit(): Promise<void> {
               accept="image/*"
               multiple
               @change="onExtraImagesChange"
-            />
+            >
             <span v-if="form.extraImageNames.length" class="register__file-name">
               {{ form.extraImageNames.length }}/{{ MAX_EXTRA_IMAGES }} ֆայլ ընտրված է
             </span>
@@ -576,7 +576,7 @@ async function onSubmit(): Promise<void> {
                 :key="index"
                 class="register__image-preview-wrap"
               >
-                <img :src="preview" alt="" class="register__image-preview" />
+                <img :src="preview" alt="" class="register__image-preview" >
                 <button
                   type="button"
                   class="register__image-remove"

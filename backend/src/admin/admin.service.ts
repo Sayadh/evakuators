@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service'
 import type { RegistrationWithImages } from '../registration/registration.repository'
 import { ReviewsRepository, ReviewWithTruck } from '../reviews/reviews.repository'
 import { SupabaseStorageService } from '../storage/supabase-storage.service'
+import { telegramTokenFingerprint } from '../telegram/token-fingerprint'
 import { TelegramService } from '../telegram/telegram.service'
 import { AVAILABLE_24_7_SLUG } from '../tow-trucks/service-slugs'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
@@ -176,10 +177,14 @@ export class AdminService {
     const token = randomBytes(24).toString('hex')
     const expiresAt = new Date(Date.now() + TELEGRAM_LINK_TTL_DAYS * 24 * 60 * 60 * 1000)
     await this.towTrucksRepository.setTelegramLinkToken(towTruckId, token, expiresAt)
-    // Logged so a "link is invalid or expired" report can be cross-checked
-    // against what was actually issued (see TelegramWebhookController).
+    // A fingerprint, never the token itself, and never a prefix of it — a
+    // prefix is still part of a live 7-day credential. The hash is stable, so
+    // this line still answers the only question it exists for: when a driver
+    // reports "link is invalid", the fingerprint here can be compared with the
+    // one TelegramWebhookController logs for the token they actually tapped.
     this.logger.log(
-      `Generated Telegram link token for TowTruck #${towTruckId}: "${token}" (expires ${expiresAt.toISOString()})`,
+      `Generated Telegram link token for TowTruck #${towTruckId}: ` +
+        `fp=${telegramTokenFingerprint(token)} (expires ${expiresAt.toISOString()})`,
     )
     return this.telegram.buildLinkUrl(token)
   }
@@ -187,6 +192,17 @@ export class AdminService {
   async reject(id: number): Promise<{ id: number; status: RegistrationStatus }> {
     const request = await this.prisma.registrationRequest.findUnique({ where: { id } })
     if (!request) throw new NotFoundException(`Հայտ #${id}-ը չի գտնվել`)
+    // Same guard approve() has, and for the same reason: a request that has
+    // already been decided must not be re-decided. Without it an APPROVED
+    // request could be flipped to REJECTED while the TowTruck created from it
+    // stays live, which makes the audit trail state something that never
+    // happened — and puts the row into the status the orphaned-image purge
+    // treats as "photos are of no further use".
+    if (request.status !== RegistrationStatus.PENDING) {
+      throw new BadRequestException(
+        `Այս հայտն արդեն ${REGISTRATION_STATUS_LABELS[request.status]} է, կրկին հաստատել/մերժել հնարավոր չէ`,
+      )
+    }
 
     const updated = await this.prisma.registrationRequest.update({
       where: { id },

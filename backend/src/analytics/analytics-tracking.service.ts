@@ -7,7 +7,9 @@ import { AnalyticsEventFactory } from './analytics-event.factory'
 import {
   ANALYTICS_PURGE_CRON,
   ANALYTICS_VISITOR_DAY_RETENTION_DAYS,
+  CONTACT_NOTICE_DAILY_LIMIT,
 } from './analytics.constants'
+import type { AnalyticsDateKey } from './analytics.utils'
 import { AnalyticsRepository } from './analytics.repository'
 import { SiteAnalyticsRepository } from './site-analytics.repository'
 import type { TrackEventDto } from './dto/track-event.dto'
@@ -87,10 +89,55 @@ export class AnalyticsTrackingService {
     // visitor who just pressed "call" is being handed off to the dialer right
     // now. The service swallows its own errors, so there is nothing to catch.
     if (counted) {
-      void this.driverNotification.notifyContactIntent(towTruck.id, dto.eventType)
+      void this.notifyWithinDailyLimit(towTruck.id, event.statDate, dto.eventType)
     }
 
     return counted
+  }
+
+  /**
+   * Sends the driver notice unless this truck has already had its day's worth.
+   *
+   * The counter it reads is the aggregate row `recordEvent()` has just
+   * incremented, so the event being handled is itself included — which makes
+   * `<=` the inclusive form of the limit. Reading it rather than keeping a
+   * counter in memory means the limit survives a restart and stays correct on
+   * the Armenia calendar day the event was actually stamped with.
+   *
+   * Never throws: this is called without await from the anonymous write path,
+   * exactly like the notification service it wraps.
+   */
+  private async notifyWithinDailyLimit(
+    towTruckId: number,
+    statDate: AnalyticsDateKey,
+    eventType: TrackEventDto['eventType'],
+  ): Promise<void> {
+    try {
+      const todayCount = await this.analyticsRepository.countContactEventsOnDay(
+        towTruckId,
+        statDate,
+      )
+
+      if (todayCount <= CONTACT_NOTICE_DAILY_LIMIT) {
+        await this.driverNotification.notifyContactIntent(towTruckId, eventType)
+        return
+      }
+
+      // Logged once per truck per day — on the first event past the limit —
+      // so a driver who genuinely is that busy is visible in the logs without
+      // the log line becoming the very flood it reports.
+      if (todayCount === CONTACT_NOTICE_DAILY_LIMIT + 1) {
+        this.logger.warn(
+          `Contact notices for TowTruck #${towTruckId} reached the daily limit ` +
+            `(${CONTACT_NOTICE_DAILY_LIMIT}) on ${statDate}; further notices suppressed ` +
+            'until tomorrow. Statistics are unaffected.',
+        )
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Contact notice gate failed for TowTruck #${towTruckId}: ${String(error)}`,
+      )
+    }
   }
 
   /**

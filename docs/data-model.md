@@ -159,11 +159,18 @@ described under `TowTruck` above, and copied over as-is by
 
 ## `TowTruckImage`
 
-Nullable FKs to *both* `TowTruck` and `RegistrationRequest` (never both
-non-null at once in practice) — reflects the upload-before-attach flow in
-`docs/architecture.md`'s image pipeline. `onDelete: Cascade` from `TowTruck`,
-`onDelete: SetNull` from `RegistrationRequest` (rejecting a request doesn't
-need to delete its images immediately).
+Nullable FKs to *both* `TowTruck` and `RegistrationRequest` — reflects the
+upload-before-attach flow in `docs/architecture.md`'s image pipeline. **After
+approval both are set**: `AdminService.approve()` only writes `towTruckId` and
+deliberately leaves `registrationRequestId` in place, so the request keeps a
+record of which photos it was submitted with. That is exactly why
+`ImagesRepository.findOrphaned()`'s "rejected application" branch is scoped
+with `towTruckId: null` — without it, rejecting an already-approved request
+would make a live truck's photos look like a rejected application's.
+
+`onDelete: Cascade` from `TowTruck`, `onDelete: SetNull` from
+`RegistrationRequest` (rejecting a request doesn't need to delete its images
+immediately).
 
 **`position` is the driver's own order, and index 0 is the main photo.** It is
 written from the array index in exactly two places —

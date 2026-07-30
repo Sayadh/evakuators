@@ -137,15 +137,38 @@ export class CreateRegistrationDto {
   @MaxLength(40, { each: true })
   regionSlugs!: string[]
 
+  /**
+   * Bounded like every other slug array here (`regionSlugs` above,
+   * `serviceAreas` in UpdateMyTowTruckDto) — an unbounded one on a public,
+   * unauthenticated endpoint is a free write into a String[] column that is
+   * then rendered on the public profile.
+   *
+   * 60 cannot reject a legitimate submission. A driver picks at most 2 regions
+   * (ArrayMaxSize(2) above, MAX_REGIONS in ServiceAreaPicker.vue) and then
+   * checks cities within them, so today's real maximum is **19** — Yerevan's 12
+   * districts plus the largest marz's 7 cities (frontend/data/cities.ts,
+   * districts.ts). Even the absurd ceiling, every city and district in the
+   * country at once, is 46 + 12 = 58. The cap is deliberately set above that
+   * ceiling rather than near the real maximum, so adding cities to the static
+   * data can never turn this into a rejection.
+   */
   @IsArray()
   @ArrayMinSize(1, { message: 'Ընտրեք առնվազն մեկ քաղաք/շրջան' })
+  @ArrayMaxSize(60)
   @IsString({ each: true })
+  @MaxLength(40, { each: true })
   citySlugs!: string[]
 
   // Services — ServiceType slugs
+  /**
+   * 40 is comfortably above the whole ServiceType taxonomy (see
+   * frontend/constants/services.ts), so no legitimate submission can hit it.
+   */
   @IsArray()
   @ArrayMinSize(1, { message: 'Ընտրեք առնվազն մեկ ծառայություն' })
+  @ArrayMaxSize(40)
   @IsString({ each: true })
+  @MaxLength(40, { each: true })
   services!: string[]
 
   // Pricing — optional

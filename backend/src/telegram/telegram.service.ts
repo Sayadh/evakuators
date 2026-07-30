@@ -2,6 +2,9 @@ import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import type { AppConfig } from '../config/configuration'
 
+/** Upper bound on any single Telegram Bot API call — see sendMessage() */
+const TELEGRAM_REQUEST_TIMEOUT_MS = 10_000
+
 /**
  * Thin wrapper around the Telegram Bot API. This is the ONLY place that
  * talks to Telegram — everything else (webhook parsing, OTP logic) lives
@@ -38,6 +41,13 @@ export class TelegramService {
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      // Node's fetch has NO default timeout. Without this, a hanging Telegram
+      // API call hangs the caller with it — and one caller is
+      // DriverAuthService.requestCode, which awaits this before responding, so
+      // a slow Telegram would leave a driver's login request open indefinitely
+      // with no error to show. Fire-and-forget callers (contact notices) would
+      // meanwhile accumulate pending promises.
+      signal: AbortSignal.timeout(TELEGRAM_REQUEST_TIMEOUT_MS),
       body: JSON.stringify({
         chat_id: chatId.toString(),
         text,

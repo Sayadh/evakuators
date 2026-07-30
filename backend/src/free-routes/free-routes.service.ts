@@ -103,7 +103,11 @@ export class FreeRoutesService {
    * disagreeing with it is how the two drift apart.
    */
   private async assertActiveDriver(towTruckId: number): Promise<void> {
-    const towTruck = await this.towTrucksRepository.findById(towTruckId)
+    // findStatusById, not findById: this needs one boolean, and findById pulls
+    // the full row plus an ordered join over every image the driver owns. Same
+    // reasoning as the analytics write path, which is why that lean probe
+    // already exists (see TowTrucksRepository.findStatusById).
+    const towTruck = await this.towTrucksRepository.findStatusById(towTruckId)
     if (!towTruck || !towTruck.isActive) {
       throw new ForbiddenException('Ձեր պրոֆիլն ապաակտիվացված է, դիմեք admin-ին')
     }

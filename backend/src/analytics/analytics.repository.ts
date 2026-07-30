@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common'
-import { Prisma } from '@prisma/client'
+import { AnalyticsEventType as PrismaAnalyticsEventType, Prisma } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 import type { AnalyticsEventType } from './analytics.enums'
 import type {
@@ -13,6 +13,16 @@ import { AnalyticsDateKey, dateKeyToDate } from './analytics.utils'
  * All analytics database access lives here — services never touch Prisma
  * directly (same rule as TowTrucksRepository / FreeRoutesRepository).
  */
+/**
+ * The event types that trigger a driver Telegram notice — kept next to the
+ * query that counts them, and matching CONTACT_MESSAGES in
+ * DriverNotificationService (the only place that decides what gets sent).
+ */
+const CONTACT_EVENT_TYPES: PrismaAnalyticsEventType[] = [
+  PrismaAnalyticsEventType.PHONE_CLICK,
+  PrismaAnalyticsEventType.WHATSAPP_CLICK,
+]
+
 @Injectable()
 export class AnalyticsRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -87,6 +97,30 @@ export class AnalyticsRepository {
         "updatedAt" = NOW()
     `
     return affected > 0
+  }
+
+  /**
+   * How many contact events this truck has already had counted today.
+   *
+   * Reads only the aggregate table, straight off the
+   * (towTruckId, statDate, eventType) unique index — at most two rows, and the
+   * dedup ledger is never touched. Used to bound driver notifications
+   * (see AnalyticsTrackingService.track) without introducing a second source
+   * of truth for "how much happened today".
+   */
+  async countContactEventsOnDay(
+    towTruckId: number,
+    statDate: AnalyticsDateKey,
+  ): Promise<number> {
+    const result = await this.prisma.analyticsDailyStat.aggregate({
+      where: {
+        towTruckId,
+        statDate: dateKeyToDate(statDate),
+        eventType: { in: CONTACT_EVENT_TYPES },
+      },
+      _sum: { eventCount: true },
+    })
+    return result._sum?.eventCount ?? 0
   }
 
   /**

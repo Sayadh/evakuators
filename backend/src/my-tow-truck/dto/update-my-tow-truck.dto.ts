@@ -171,10 +171,16 @@ export class UpdateMyTowTruckDto {
   @MaxLength(2000)
   description?: string
 
+  /**
+   * Bounded exactly like CreateRegistrationDto.services — this is the
+   * self-service path, so whatever a driver sends here is never re-moderated.
+   */
   @IsOptional()
   @IsArray()
   @ArrayMinSize(1)
+  @ArrayMaxSize(40)
   @IsString({ each: true })
+  @MaxLength(40, { each: true })
   services?: string[]
 
   /**

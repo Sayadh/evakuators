@@ -35,7 +35,12 @@ export interface DriverSession {
 export class DriverAuthService {
   private readonly logger = new Logger(DriverAuthService.name)
   private readonly pepper: string
-  /** phone -> last request time, resets on restart — fine for a single-instance app */
+  /**
+   * phone -> last request time, resets on restart — fine for a single-instance
+   * app. Swept in purgeSpentLoginCodes() so it cannot grow without bound: the
+   * cooldown is checked BEFORE the truck is looked up, so an entry is created
+   * for every phone number ever posted to this endpoint, existing or not.
+   */
   private readonly lastRequestAt = new Map<string, number>()
 
   constructor(
@@ -71,6 +76,21 @@ export class DriverAuthService {
 
     if (drivers > 0 || admins > 0) {
       this.logger.log(`Login-code purge: removed ${drivers} driver and ${admins} admin codes`)
+    }
+
+    this.sweepCooldowns()
+  }
+
+  /**
+   * Drops cooldown entries that can no longer block anything. An entry older
+   * than REQUEST_COOLDOWN_MS is already inert — keeping it only costs memory,
+   * and this map is fed by a public endpoint that does not require the phone
+   * number to exist.
+   */
+  private sweepCooldowns(): void {
+    const cutoff = Date.now() - REQUEST_COOLDOWN_MS
+    for (const [phone, at] of this.lastRequestAt) {
+      if (at < cutoff) this.lastRequestAt.delete(phone)
     }
   }
 

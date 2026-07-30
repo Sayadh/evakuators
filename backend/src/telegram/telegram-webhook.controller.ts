@@ -12,6 +12,7 @@ import { timingSafeEqual } from 'node:crypto'
 import type { AppConfig } from '../config/configuration'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
 import { TelegramService } from './telegram.service'
+import { telegramTokenFingerprint } from './token-fingerprint'
 import type { TelegramUpdate } from './telegram.types'
 
 /**
@@ -99,10 +100,15 @@ export class TelegramWebhookController {
 
     const towTruck = await this.towTrucksRepository.findByTelegramLinkToken(token)
     if (!towTruck) {
-      // Logged in full (not just a prefix) on purpose — this is the only way
-      // to tell, after the fact, whether the token was stale (already
-      // overwritten by a newer regenerate) vs genuinely never issued.
-      this.logger.warn(`/start token not found or expired: "${token}" (chat ${chatId})`)
+      // Fingerprint, not the token. This line is fed by world-writable input
+      // (anyone can /start the bot with any text), and a rejected token is
+      // still a credential-shaped string — it may well be a real, live token
+      // that simply reached the wrong environment (see docs/local-development.md
+      // on the single global webhook). Same function AdminService logs with, so
+      // the two fingerprints are directly comparable.
+      this.logger.warn(
+        `/start token not found or expired: fp=${telegramTokenFingerprint(token)} (chat ${chatId})`,
+      )
       await this.telegram.sendMessage(
         chatId,
         'Այս link-ը սխալ է կամ ժամկետանց։ Դիմեք Evakuators.am admin-ին նոր link ստանալու համար։',

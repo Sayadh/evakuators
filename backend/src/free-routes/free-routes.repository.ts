@@ -12,6 +12,9 @@ const DRIVER_CARD_SELECT = {
   vehicleType: true,
 } satisfies Prisma.TowTruckSelect
 
+/** Upper bound on the public listing response — see findActive() */
+const PUBLIC_FREE_ROUTES_LIMIT = 200
+
 interface FreeRouteCreateData {
   startRegionSlug: string
   startCitySlug: string
@@ -36,6 +39,12 @@ export class FreeRoutesRepository {
       where: { status: FreeRouteStatus.ACTIVE, towTruck: { isActive: true } },
       include: { towTruck: { select: DRIVER_CARD_SELECT } },
       orderBy: { departureAt: 'asc' },
+      // Bounded like the tow truck listing (TOW_TRUCK_LIST_MAX_LIMIT). Nothing
+      // caps how many routes a driver may post, so without this one driver can
+      // decide how large every public /free-routes response — and every SSR
+      // render of that page — is. Soonest-departing routes are the ones worth
+      // showing, and the order above already puts them first.
+      take: PUBLIC_FREE_ROUTES_LIMIT,
     })
   }
 

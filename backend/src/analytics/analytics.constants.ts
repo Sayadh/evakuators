@@ -62,6 +62,29 @@ export const ANALYTICS_PURGE_CRON = CronExpression.EVERY_DAY_AT_4AM
  */
 export const ANALYTICS_TRACK_RATE_LIMIT = { limit: 60, ttl: 60_000 } as const
 
+/**
+ * Most contact notices a single driver can be sent in one Armenia calendar day.
+ *
+ * The analytics dedup constraint was the only rate control these notices had,
+ * and against an honest browser it is a good one — one notice per genuinely
+ * interested person. It is not one against an adversary: `visitorId` comes
+ * from the request body (see TrackEventDto), so rotating it produces an
+ * unlimited supply of "new visitors", each of which counts and each of which
+ * fires a Telegram message. At the tracking endpoint's own rate limit that is
+ * 60 messages a minute aimed at one driver.
+ *
+ * The consequence is worse than noise. These notices ride the SAME bot that
+ * delivers login OTP codes (docs/auth-and-security.md), so a flood risks
+ * Telegram throttling or flagging the bot — which takes driver logins down
+ * with it. That is the project's own stated top operational risk.
+ *
+ * 20 is chosen to sit far above a real day's interested callers and far below
+ * the volume at which the bot is at risk. It bounds ONLY the Telegram
+ * messages: every event is still counted in full, so the dashboards a driver
+ * and an admin see are unaffected by this number.
+ */
+export const CONTACT_NOTICE_DAILY_LIMIT = 20
+
 /** Longest accepted raw visitor id — a UUID v4 is 36 chars; anything longer is junk */
 export const ANALYTICS_VISITOR_ID_MAX_LENGTH = 64
 

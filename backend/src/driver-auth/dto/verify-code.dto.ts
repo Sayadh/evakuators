@@ -1,9 +1,9 @@
-import { IsString, Matches, MaxLength, MinLength } from 'class-validator'
+import { IsString, Matches } from 'class-validator'
+import { IsArmenianPhone } from '../../common/phone'
 
 export class VerifyCodeDto {
-  @IsString()
-  @MinLength(8, { message: 'Մուտքագրեք վավեր հեռախոսահամար' })
-  @MaxLength(20, { message: 'Մուտքագրեք վավեր հեռախոսահամար' })
+  /** Same lookup key as RequestCodeDto — see `common/phone.ts` */
+  @IsArmenianPhone()
   phone!: string
 
   @IsString()

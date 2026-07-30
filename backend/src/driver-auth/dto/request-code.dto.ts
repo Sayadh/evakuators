@@ -1,8 +1,13 @@
-import { IsString, MaxLength, MinLength } from 'class-validator'
+import { IsArmenianPhone } from '../../common/phone'
 
 export class RequestCodeDto {
-  @IsString()
-  @MinLength(8, { message: 'Մուտքագրեք վավեր հեռախոսահամար' })
-  @MaxLength(20, { message: 'Մուտքագրեք վավեր հեռախոսահամար' })
+  /**
+   * Looked up against `TowTruck.phone` with an exact string comparison
+   * (`TowTrucksRepository.findActiveByMainPhone`), so anything non-canonical
+   * could never match a stored row regardless — it would surface as a
+   * confusing "profile not found" rather than as a format error.
+   * See `common/phone.ts`.
+   */
+  @IsArmenianPhone()
   phone!: string
 }

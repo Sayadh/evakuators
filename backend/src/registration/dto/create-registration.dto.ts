@@ -14,6 +14,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator'
+import { IsArmenianPhone } from '../../common/phone'
 
 const CURRENT_YEAR = new Date().getFullYear()
 
@@ -37,9 +38,12 @@ export class CreateRegistrationDto {
   @MaxLength(120)
   companyName?: string
 
-  @IsString()
-  @MinLength(8, { message: 'Մուտքագրեք վավեր հեռախոսահամար' })
-  @MaxLength(20, { message: 'Մուտքագրեք վավեր հեռախոսահամար' })
+  /**
+   * The main phone becomes `TowTruck.phone` at approval, which is the
+   * driver-login key and is `@unique` — so it has to arrive canonical. See
+   * `common/phone.ts` for why the rule is shared rather than repeated.
+   */
+  @IsArmenianPhone()
   phone!: string
 
   @IsOptional()

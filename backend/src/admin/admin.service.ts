@@ -97,75 +97,118 @@ export class AdminService {
       type: area.type,
     })) satisfies Prisma.InputJsonValue
 
-    const towTruck = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.towTruck.create({
-        data: {
-          slug: dto.slug,
-          driverName: `${request.firstName} ${request.lastName}`,
-          companyName: request.companyName,
-          phone: request.phone,
-          secondaryPhone: request.secondaryPhone,
-          whatsapp: request.whatsapp ?? request.phone,
-          telegram: request.telegram,
-          email: request.email,
-          // Derived from the services the driver picked — see service-slugs.ts.
-          // RegistrationRequest never stores this as its own column.
-          works24Hours: request.services.includes(AVAILABLE_24_7_SLUG),
-          workingHoursText: request.workingHoursText,
-          description: dto.description ?? DEFAULT_DESCRIPTION(dto.locationName),
-          vehicleBrand: request.vehicleBrand,
-          vehicleModel: request.vehicleModel,
-          vehicleYear: request.vehicleYear,
-          vehicleType: request.vehicleType,
-          capacityTons: dto.capacityTons,
-          // Straight copy, same as winch/manipulator — the request stores these
-          // as the same two Float columns. They used to be one free-text field
-          // that approval never read at all, so the driver's answer was
-          // collected and silently thrown away.
-          platformLengthM: request.platformLengthM,
-          platformWidthM: request.platformWidthM,
-          winch: request.winch,
-          manipulator: request.manipulator,
-          wheelSkates: request.wheelSkates,
-          // Resolved by the admin frontend from the chosen citySlug/districtSlug
-          // (see ApproveRegistrationDto.regionSlug) — the backend has no
-          // geography of its own, and with up to 2 regionSlugs on the request
-          // it can no longer just take "the" region the way a single
-          // mainRegionSlug used to allow.
-          regionSlug: dto.regionSlug ?? null,
-          citySlug: dto.citySlug,
-          districtSlug: dto.districtSlug,
-          locationName: dto.locationName,
-          services: request.services,
-          serviceAreas,
-          priceCityCallout: request.priceCityCallout,
-          pricePerKm: request.pricePerKm,
-          priceWaitingPerHour: request.priceWaitingPerHour,
-          priceNightSurchargePercent: request.priceNightSurchargePercent,
-          priceExtraLoading: request.priceExtraLoading,
-        },
-      })
+    const towTruck = await this.createTowTruckOrRethrowPhoneConflict(request.phone, () =>
+      this.prisma.$transaction(async (tx) => {
+        const created = await tx.towTruck.create({
+          data: {
+            slug: dto.slug,
+            driverName: `${request.firstName} ${request.lastName}`,
+            companyName: request.companyName,
+            phone: request.phone,
+            secondaryPhone: request.secondaryPhone,
+            whatsapp: request.whatsapp ?? request.phone,
+            telegram: request.telegram,
+            email: request.email,
+            // Derived from the services the driver picked — see service-slugs.ts.
+            // RegistrationRequest never stores this as its own column.
+            works24Hours: request.services.includes(AVAILABLE_24_7_SLUG),
+            workingHoursText: request.workingHoursText,
+            description: dto.description ?? DEFAULT_DESCRIPTION(dto.locationName),
+            vehicleBrand: request.vehicleBrand,
+            vehicleModel: request.vehicleModel,
+            vehicleYear: request.vehicleYear,
+            vehicleType: request.vehicleType,
+            capacityTons: dto.capacityTons,
+            // Straight copy, same as winch/manipulator — the request stores these
+            // as the same two Float columns. They used to be one free-text field
+            // that approval never read at all, so the driver's answer was
+            // collected and silently thrown away.
+            platformLengthM: request.platformLengthM,
+            platformWidthM: request.platformWidthM,
+            winch: request.winch,
+            manipulator: request.manipulator,
+            wheelSkates: request.wheelSkates,
+            // Resolved by the admin frontend from the chosen citySlug/districtSlug
+            // (see ApproveRegistrationDto.regionSlug) — the backend has no
+            // geography of its own, and with up to 2 regionSlugs on the request
+            // it can no longer just take "the" region the way a single
+            // mainRegionSlug used to allow.
+            regionSlug: dto.regionSlug ?? null,
+            citySlug: dto.citySlug,
+            districtSlug: dto.districtSlug,
+            locationName: dto.locationName,
+            services: request.services,
+            serviceAreas,
+            priceCityCallout: request.priceCityCallout,
+            pricePerKm: request.pricePerKm,
+            priceWaitingPerHour: request.priceWaitingPerHour,
+            priceNightSurchargePercent: request.priceNightSurchargePercent,
+            priceExtraLoading: request.priceExtraLoading,
+          },
+        })
 
-      // Only re-points the owner — `position` was already written from the
-      // driver's own order when the request was created (see
-      // RegistrationRepository.create) and must survive approval untouched,
-      // otherwise the main photo they picked stops being the main photo the
-      // moment their profile goes live.
-      await tx.towTruckImage.updateMany({
-        where: { registrationRequestId: request.id },
-        data: { towTruckId: created.id },
-      })
+        // Only re-points the owner — `position` was already written from the
+        // driver's own order when the request was created (see
+        // RegistrationRepository.create) and must survive approval untouched,
+        // otherwise the main photo they picked stops being the main photo the
+        // moment their profile goes live.
+        await tx.towTruckImage.updateMany({
+          where: { registrationRequestId: request.id },
+          data: { towTruckId: created.id },
+        })
 
-      await tx.registrationRequest.update({
-        where: { id: request.id },
-        data: { status: RegistrationStatus.APPROVED },
-      })
+        await tx.registrationRequest.update({
+          where: { id: request.id },
+          data: { status: RegistrationStatus.APPROVED },
+        })
 
-      return created
-    })
+        return created
+      }),
+    )
 
     const telegramLinkUrl = await this.generateTelegramLink(towTruck.id)
     return { towTruckId: towTruck.id, telegramLinkUrl }
+  }
+
+  /**
+   * Runs a write that sets `TowTruck.phone` and turns the database's own
+   * uniqueness verdict into the same Armenian message the pre-check produces.
+   *
+   * Both write paths already look the phone up first, which gives a friendly,
+   * context-rich error — but a check followed by a write has a race window,
+   * and `TowTruck.phone` is `@unique` precisely so that window cannot produce
+   * two trucks sharing one login key. When the constraint is what catches it,
+   * Prisma raises P2002, which would otherwise surface as an uncaught 500.
+   *
+   * `meta.target` is checked so this never swallows a different unique
+   * violation — `slug`, `telegramChatId` and `telegramLinkToken` are all
+   * `@unique` on the same model and must keep failing loudly.
+   */
+  private async createTowTruckOrRethrowPhoneConflict<T>(
+    phone: string,
+    write: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await write()
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002' &&
+        this.conflictTargets(error).includes('phone')
+      ) {
+        throw new BadRequestException(
+          `Այս հեռախոսահամարով (${phone}) արդեն կա էվակուատոր։ Հիմնական հեռախոսահամարը պետք է եզակի լինի։`,
+        )
+      }
+      throw error
+    }
+  }
+
+  /** P2002's `meta.target` is a string[] on Postgres, but typed as unknown */
+  private conflictTargets(error: Prisma.PrismaClientKnownRequestError): string[] {
+    const target = error.meta?.target
+    if (Array.isArray(target)) return target.map(String)
+    return typeof target === 'string' ? [target] : []
   }
 
   /**
@@ -293,7 +336,11 @@ export class AdminService {
       }
     }
 
-    const updated = await this.towTrucksRepository.setPhone(id, phone)
+    // Second write path that sets `phone`, so it gets the same P2002 net as
+    // approve() — the pre-check above can lose a race, the constraint cannot.
+    const updated = await this.createTowTruckOrRethrowPhoneConflict(phone, () =>
+      this.towTrucksRepository.setPhone(id, phone),
+    )
     return { id: updated.id, phone: updated.phone }
   }
 

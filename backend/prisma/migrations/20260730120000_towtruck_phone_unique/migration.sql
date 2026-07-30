@@ -1,0 +1,16 @@
+-- CreateIndex
+-- The main phone is the driver-login key (DriverAuthService looks a truck up by
+-- it) and has always been required to be unique — but the rule lived only in
+-- application code, in four separate check-then-write places, none of which is
+-- race-free. This makes the database the arbiter, the same way slug already was.
+--
+-- Deliberately UNIQUE and nothing else: in Postgres a unique constraint is
+-- itself a b-tree index, so an additional plain index on the same column would
+-- only add write cost. It also fixes the sequential scan that every login
+-- attempt used to do.
+--
+-- If this statement fails with a duplicate-key error, the invariant was already
+-- violated in the data. That is the intended behaviour — resolve the duplicates
+-- first (PATCH /admin/tow-trucks/:id/phone), then re-run. This migration does
+-- not modify any existing row.
+CREATE UNIQUE INDEX "TowTruck_phone_key" ON "TowTruck"("phone");

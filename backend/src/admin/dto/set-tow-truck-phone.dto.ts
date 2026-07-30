@@ -1,11 +1,12 @@
-import { Matches } from 'class-validator'
+import { IsArmenianPhone } from '../../common/phone'
 
-/** Same exact shape the frontend locks every phone input to — see armenianPhoneInputValue() */
-export const ARMENIAN_PHONE_PATTERN = /^\+374\d{8}$/
-
+/**
+ * The pattern itself now lives in `common/phone.ts`. It used to be defined
+ * here, which made this — the admin-only correction endpoint — the only place
+ * in the backend that enforced the canonical phone shape, while registration
+ * and both driver-auth endpoints accepted any 8-20 character string.
+ */
 export class SetTowTruckPhoneDto {
-  @Matches(ARMENIAN_PHONE_PATTERN, {
-    message: 'Հեռախոսահամարը պետք է լինի այս ձևաչափով՝ +37491000001',
-  })
+  @IsArmenianPhone()
   phone!: string
 }

@@ -61,7 +61,21 @@ model TowTruck {
   slug           String  @unique
   driverName     String
   companyName    String?
-  phone          String
+  /// The driver-login key: DriverAuthService finds a truck by this exact
+  /// string. @unique covers active AND deactivated rows together, because
+  /// handing a deactivated truck's freed-up number to a new one would break
+  /// silently the moment the old truck is reactivated — two active trucks
+  /// sharing one login phone, with findFirst resolving arbitrarily to one of
+  /// them. Until this constraint existed the rule lived only in application
+  /// code, in four separate check-then-write places, each with a race window.
+  ///
+  /// No companion @@index([phone]): in Postgres a unique constraint IS a
+  /// b-tree index, so a second one would only add write cost.
+  ///
+  /// The canonical format (+374 followed by 8 digits) is enforced at every
+  /// entry point by IsArmenianPhone (src/common/phone.ts). Without that this
+  /// constraint would guarantee uniqueness of the string, not of the number.
+  phone          String  @unique
   secondaryPhone String?
   whatsapp       String?
   telegram       String?

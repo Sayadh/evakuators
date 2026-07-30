@@ -107,6 +107,19 @@ export interface TowTruckCard {
   services: ServiceType[]
   serviceAreas: ServiceArea[]
   location: TowTruckLocation
+  /**
+   * Approved reviews only, **absent when the driver has none** — mirrors
+   * `TowTruckCardApi.rating` on the backend.
+   *
+   * The absence is load-bearing, not laziness: it is how the listing order
+   * tells "not rated yet" from "rated badly" (see `getRecommendedScore()` in
+   * `utils/towTruckFilters.ts`). Nothing renders this today — it exists so the
+   * ordering has real data to work with.
+   */
+  rating?: {
+    average: number
+    count: number
+  }
   /** One thumbnail from a list endpoint; the full gallery on a profile */
   images: string[]
   /** ISO datetime — used for an honest sitemap <lastmod> */

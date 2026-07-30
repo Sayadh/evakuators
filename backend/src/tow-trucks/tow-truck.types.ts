@@ -58,6 +58,21 @@ export interface TowTruckCardApi {
     districtSlug?: string
     name: string
   }
+  /**
+   * Approved reviews only, and **omitted entirely when there are none** —
+   * never `null`, never a zero, and never an invented default.
+   *
+   * That absence is meaningful: it is how the frontend tells "nobody has rated
+   * this driver yet" apart from "rated badly", which the listing order depends
+   * on (see `getRecommendedScore()` in frontend/utils/towTruckFilters.ts). A
+   * placeholder value here would make an unrated driver indistinguishable from
+   * a rated one, and any invented figure would also be a rating the site
+   * displays without anyone having given it.
+   */
+  rating?: {
+    average: number
+    count: number
+  }
   /** At most one — the card shows a single thumbnail */
   images: string[]
   updatedAt: string

@@ -49,6 +49,8 @@ interface TowTruckSeed {
   extraLoading?: number
   vehicle: Omit<TowTruckVehicle, 'winch' | 'manipulator' | 'wheelSkates' | 'showPlateNumber'> &
     Partial<Pick<TowTruckVehicle, 'winch' | 'manipulator' | 'wheelSkates' | 'showPlateNumber'>>
+  /** Approved-review aggregate; omit to demo an unrated (brand-new) driver */
+  rating?: { average: number; count: number }
   extraServices?: ServiceType[]
   serviceAreas: ServiceArea[]
   location: TowTruckLocation
@@ -100,6 +102,11 @@ function defineTowTruck(seed: TowTruckSeed): TowTruck {
     serviceAreas: seed.serviceAreas,
     location: seed.location,
     pricing: buildPricing(seed),
+    // Omitted entirely when the seed has none, exactly like the API — that
+    // absence is what the listing order reads as "not rated yet". Only a few
+    // seeds carry one, so mock mode can actually exercise the ordering instead
+    // of showing every truck as equally unrated.
+    ...(seed.rating ? { rating: seed.rating } : {}),
     images: [1, 2, 3].map((n) => `https://picsum.photos/seed/evak-${seed.id}-${n}/800/600`),
     // Mock data has no real edit history — "now" is as honest as anything else here.
     updatedAt: new Date().toISOString(),
@@ -119,6 +126,7 @@ export const mockTowTrucks: TowTruck[] = [
   defineTowTruck({
     id: 1,
     slug: 'arman-avetisyan',
+    rating: { average: 4.6, count: 20 },   // ապացուցված լավ — sort score 4.56
     driverName: 'Արման Ավետիսյան',
     phone: '+374 91 00 00 01',
     secondaryPhone: '+374 99 11 00 01',
@@ -162,6 +170,7 @@ export const mockTowTrucks: TowTruck[] = [
   defineTowTruck({
     id: 2,
     slug: 'davit-grigoryan',
+    rating: { average: 5, count: 1 },      // մեկ կարծիք — sort score 4.48, ցածր է 4.6/20-ից
     driverName: 'Դավիթ Գրիգորյան',
     companyName: 'Sevan Evak Service',
     phone: '+374 93 00 00 02',
@@ -194,6 +203,7 @@ export const mockTowTrucks: TowTruck[] = [
   defineTowTruck({
     id: 3,
     slug: 'tigran-hakobyan',
+    rating: { average: 3.2, count: 8 },    // ապացուցված թույլ — sort score 3.50
     driverName: 'Տիգրան Հակոբյան',
     phone: '+374 94 00 00 03',
     workingHoursText: '08:00 – 20:00',

@@ -12,6 +12,13 @@ export interface ReviewApprovalStats {
   averageRating: number | null
 }
 
+/** One row per tow truck — approved reviews only, for the public listing */
+export interface TowTruckRatingRow {
+  towTruckId: number
+  count: number
+  averageRating: number
+}
+
 /** One row per (star value, moderation state) — feeds the rating histogram */
 export interface ReviewRatingBucket {
   rating: number
@@ -96,6 +103,34 @@ export class ReviewsRepository {
       isApproved: row.isApproved,
       count: row._count._all,
       averageRating: row._avg.rating,
+    }))
+  }
+
+  /**
+   * Approved count + mean rating for a whole page of tow trucks, in ONE query.
+   *
+   * Used by the public listing, which is the hottest read in the system: doing
+   * this per truck would be a textbook N+1 (one extra round-trip per card, 200
+   * of them on a full page). Grouped in Postgres instead, it is a single
+   * indexed pass over `Review(towTruckId)` returning at most one row per truck.
+   *
+   * Unapproved reviews are excluded, exactly like the public review list —
+   * a rating nobody can read must not move a number everybody can see.
+   */
+  async groupApprovedByTowTruckIds(towTruckIds: number[]): Promise<TowTruckRatingRow[]> {
+    if (towTruckIds.length === 0) return []
+
+    const rows = await this.prisma.review.groupBy({
+      by: ['towTruckId'],
+      where: { towTruckId: { in: towTruckIds }, isApproved: true },
+      _count: { _all: true },
+      _avg: { rating: true },
+    })
+
+    return rows.map((row) => ({
+      towTruckId: row.towTruckId,
+      count: row._count._all,
+      averageRating: row._avg.rating ?? 0,
     }))
   }
 

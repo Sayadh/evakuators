@@ -100,7 +100,16 @@ export function toTowTruckApi(truck: TowTruckWithImages): TowTruckApi {
  * first are detail-page data, served by `GET /tow-trucks/:slug` one truck at a
  * time.
  */
-export function toTowTruckCardApi(truck: TowTruckCardRow): TowTruckCardApi {
+/**
+ * @param rating Approved-review aggregate for THIS truck, or undefined when it
+ *   has none. Passed in rather than read here because it comes from a single
+ *   grouped query over the whole page (see `TowTrucksService.attachRatings`) —
+ *   the mapper stays a pure row → shape function.
+ */
+export function toTowTruckCardApi(
+  truck: TowTruckCardRow,
+  rating?: TowTruckCardApi['rating'],
+): TowTruckCardApi {
   return {
     id: truck.id,
     slug: truck.slug,
@@ -126,6 +135,9 @@ export function toTowTruckCardApi(truck: TowTruckCardRow): TowTruckCardApi {
       districtSlug: truck.districtSlug ?? undefined,
       name: truck.locationName,
     },
+    // Spread, not `rating: rating` — an unrated truck must have no `rating`
+    // key at all, not a key holding undefined. See TowTruckCardApi.
+    ...(rating ? { rating } : {}),
     // The repository already capped this at one row (`take: 1`, ordered by
     // position). Kept as an array so the frontend's card type stays a strict
     // subset of the full TowTruck type.

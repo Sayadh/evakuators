@@ -29,13 +29,34 @@ export default defineNuxtConfig({
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
         { name: 'theme-color', content: '#122a43' },
       ],
+      /**
+       * Favicon set. Every entry carries an explicit `sizes` (except the
+       * vector one, where `any` is the correct answer) — without it a consumer
+       * has to download each candidate to find out how big it is, and Google in
+       * particular then picks unpredictably.
+       *
+       * Sizes are not arbitrary: **Google asks for a multiple of 48px** because
+       * it downsizes to ~16px itself for the search result, and its downscaler
+       * does a better job from 96px than any 16px file we could ship. This set
+       * used to be 32×32 only, which is below that recommendation — a likely
+       * reason a stale icon kept showing in search results. See
+       * docs/pages-and-routes.md.
+       */
       link: [
-        { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
-        // Fallback for tools/browsers that don't support SVG favicons
-        // (some link-preview bots, older Android Chrome, etc.)
-        { rel: 'icon', type: 'image/png', href: '/favicon.png' },
-        // Legacy fallback — some old browsers/tools only ever look for this.
-        { rel: 'shortcut icon', type: 'image/x-icon', href: '/favicon.ico' },
+        // Modern browsers prefer this and scale it perfectly at any size.
+        { rel: 'icon', type: 'image/svg+xml', sizes: 'any', href: '/favicon.svg' },
+        // What Google reads. 96 = 48 × 2.
+        { rel: 'icon', type: 'image/png', sizes: '96x96', href: '/favicon.png' },
+        // Android Chrome's fallback when there's no web manifest.
+        { rel: 'icon', type: 'image/png', sizes: '192x192', href: '/favicon-192.png' },
+        // iOS home screen. Declared rather than left to iOS's /apple-touch-icon.png
+        // convention, so it can't silently break if the filename ever changes.
+        { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' },
+        // Legacy, and the URL crawlers probe blindly at the domain root.
+        // Genuinely multi-resolution (16+32+48 in the one file) — that is what
+        // ICO is for, and a browser picking the tab size gets a purpose-rendered
+        // 16px instead of a squashed 32px.
+        { rel: 'icon', type: 'image/x-icon', sizes: '16x16 32x32 48x48', href: '/favicon.ico' },
       ],
     },
   },

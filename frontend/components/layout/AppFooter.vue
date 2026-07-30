@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { FOOTER_PAGES } from '~/constants/navigation'
-import { CONTACT_PHONE, CONTACT_TELEGRAM, SITE_DESCRIPTION } from '~/constants/site'
+import { CONTACT_PHONE, CONTACT_TELEGRAM, SITE_DESCRIPTION, SOCIAL_LINKS } from '~/constants/site'
 import { getDistrictRoute, getRegionRoute } from '~/utils/routeHelpers'
 import { getPhoneHref, getTelegramUrl } from '~/utils/formatPhone'
 import { getStaticDistricts, getStaticRegions } from '~/utils/geography'
@@ -43,6 +43,20 @@ const currentYear = new Date().getFullYear()
               <AppIcon name="telegram" :size="16" /> @{{ CONTACT_TELEGRAM }}
             </a>
           </p>
+          <ul v-if="SOCIAL_LINKS.length" class="footer__social" aria-label="Սոցիալական ցանցեր">
+            <li v-for="social in SOCIAL_LINKS" :key="social.url">
+              <a
+                :href="social.url"
+                target="_blank"
+                rel="noopener"
+                class="footer__social-link"
+                :aria-label="social.label"
+                :title="social.label"
+              >
+                <AppIcon :name="social.icon" :size="20" />
+              </a>
+            </li>
+          </ul>
         </div>
 
         <nav class="footer__col" aria-label="Մարզեր">
@@ -136,6 +150,33 @@ const currentYear = new Date().getFullYear()
 
     &:hover {
       color: var(--color-accent);
+    }
+  }
+
+  &__social {
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-top: var(--space-4);
+    padding: 0;
+  }
+
+  &__social-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    color: #fff;
+    background: rgba(255, 255, 255, 0.1);
+    transition: background 0.2s ease, color 0.2s ease;
+
+    &:hover,
+    &:focus-visible {
+      background: var(--color-accent);
+      color: var(--color-primary-dark);
     }
   }
 

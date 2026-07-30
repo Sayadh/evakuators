@@ -49,10 +49,48 @@ guarded.
 ## SEO
 
 Every public page calls `useSeoMetaData()` (title/description/canonical/OG
-image) — `frontend/composables/useSeoMetaData.ts`. `og-image.png` and
-`favicon.svg`/`favicon.png` (`frontend/public/`) are built from the same
-truck artwork as the header/footer logo (`evakuators-logo.svg`) — regenerate
-all of them together if the mark ever changes, not just the header. Structured
+image) — `frontend/composables/useSeoMetaData.ts`. `og-image.png` and the whole
+favicon set (`frontend/public/`) are built from the same truck artwork as the
+header/footer logo (`evakuators-logo.svg`) — regenerate all of them together if
+the mark ever changes, not just the header.
+
+### The favicon set, and why the sizes are what they are
+
+`favicon.svg` is the source of truth; every raster file is rendered from it
+(cairosvg for the PNGs, then ImageMagick to pack the ICO):
+
+| File | Size | Consumer |
+| --- | --- | --- |
+| `favicon.svg` | vector | modern browsers |
+| `favicon.png` | 96×96 | **Google Search** |
+| `favicon-192.png` | 192×192 | Android Chrome (no web manifest exists) |
+| `apple-touch-icon.png` | 180×180 | iOS home screen |
+| `favicon.ico` | 16+32+48 in one file | legacy, and blind `/favicon.ico` probes |
+
+Two rules worth not breaking:
+
+- **Google wants a multiple of 48px.** It renders the search-result icon at
+  roughly 16px and downsizes itself, and its downscaler produces a better 16px
+  than any 16px file we could ship. The set was 32×32-only for a while, which
+  is below that recommendation and the most likely reason a stale icon kept
+  appearing in search results long after the artwork changed.
+- **`sizes` on every `<link>`.** Without it a consumer has to fetch each
+  candidate to learn how big it is, and Google in particular then chooses
+  unpredictably.
+
+Note also that Google crawls favicons on its **own schedule**, separately from
+pages — weeks, sometimes months — and there is no Search Console tool to force
+it. Requesting indexing of the homepage is the only nudge available, so after
+changing the artwork expect a long tail regardless of correctness.
+
+The 16×16 entry inside the ICO is unavoidably muddy: the mark is detailed
+line-art (crane, hook, cab, wheels) and that does not survive 16px, which was a
+deliberate design choice made with that trade-off understood. Rendering it
+directly from the vector at 16px was measured against downscaling a 192px
+render with Lanczos — the direct render is crisper, which is why the pipeline
+does that.
+
+Structured
 data (JSON-LD) is added via `useJsonLd()` on the homepage (`WebSite` schema)
 and tow truck profile pages (`LocalBusiness`-style schema via
 `buildTowTruckBusinessSchema()`). `frontend/utils/faqContent.ts` builds FAQ

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { buildHomeFaq } from '~/utils/faqContent'
-import { buildWebsiteSchema } from '~/utils/schemaOrg'
+import { buildOrganizationSchema, buildWebsiteSchema } from '~/utils/schemaOrg'
 import { buildHomeParagraphs, buildHomeSeo } from '~/utils/seoContent'
 
 useSeoMetaData({
@@ -8,7 +8,7 @@ useSeoMetaData({
   path: '/',
 })
 
-useJsonLd([buildWebsiteSchema()])
+useJsonLd([buildOrganizationSchema(), buildWebsiteSchema()])
 
 const faqItems = buildHomeFaq()
 const seoParagraphs = buildHomeParagraphs()

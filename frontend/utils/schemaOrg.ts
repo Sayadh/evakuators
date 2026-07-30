@@ -2,7 +2,7 @@ import type { BreadcrumbItem, FaqItem } from '~/types/common'
 import type { Review } from '~/types/review'
 import type { TowTruck } from '~/types/towTruck'
 import { SERVICE_LABELS } from '~/constants/services'
-import { SITE_NAME, SITE_URL } from '~/constants/site'
+import { SITE_NAME, SITE_URL, SOCIAL_LINKS } from '~/constants/site'
 import { getTowTruckRoute } from './routeHelpers'
 
 type JsonLd = Record<string, unknown>
@@ -107,11 +107,47 @@ export function buildTowTruckBusinessSchema(truck: TowTruck, reviews: Review[] =
   return schema
 }
 
+/**
+ * Stable node ids so the two homepage schemas reference each other instead of
+ * repeating themselves. Google treats `@id` as the entity's identity, so the
+ * Organization is one thing mentioned twice, not two competing organizations.
+ */
+const ORGANIZATION_ID = `${SITE_URL}/#organization`
+const WEBSITE_ID = `${SITE_URL}/#website`
+
+/**
+ * The platform itself as an entity — this is where `sameAs` belongs (not on
+ * `WebSite`), because the social profiles identify the *company*.
+ *
+ * Emit this ONLY on pages that are actually about Evakuators.am (homepage,
+ * /about, /contact). Never on `/tow-trucks/[slug]`, where the page's subject
+ * is the driver's own business (`buildTowTruckBusinessSchema`) — two
+ * business-shaped entities on one page is how reviews and phone numbers get
+ * attributed to the wrong one.
+ */
+export function buildOrganizationSchema(): JsonLd {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    '@id': ORGANIZATION_ID,
+    name: SITE_NAME,
+    url: SITE_URL,
+    // Raster on purpose: Google's logo guidelines want a real image file, and
+    // SVG support there is unreliable.
+    logo: `${SITE_URL}/evakuators-logo.png`,
+    // Same list the footer renders — one constant, so a new network shows up
+    // in both places at once.
+    ...(SOCIAL_LINKS.length ? { sameAs: SOCIAL_LINKS.map((social) => social.url) } : {}),
+  }
+}
+
 export function buildWebsiteSchema(): JsonLd {
   return {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
+    '@id': WEBSITE_ID,
     name: SITE_NAME,
     url: SITE_URL,
+    publisher: { '@id': ORGANIZATION_ID },
   }
 }

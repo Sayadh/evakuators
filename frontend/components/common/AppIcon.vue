@@ -25,6 +25,9 @@ export type IconName =
   | 'weight'
   | 'star'
   | 'star-filled'
+  | 'facebook'
+  | 'instagram'
+  | 'tiktok'
 
 interface IconDefinition {
   paths: string[]
@@ -104,6 +107,22 @@ const ICONS: Record<IconName, IconDefinition> = {
   'star-filled': {
     paths: ['M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.77 5.82 21 7 14.14 2 9.27l6.91-1.01L12 2z'],
     filled: true,
+  },
+  facebook: {
+    paths: ['M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z'],
+  },
+  // The square is a path, not a <rect>, because this component only renders <path>.
+  instagram: {
+    paths: [
+      'M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5z',
+      'M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z',
+      'M17.5 6.5h.01',
+    ],
+  },
+  tiktok: {
+    paths: [
+      'M21 7.92v4.03a9.95 9.95 0 0 1-5-1.95v4.5a6.5 6.5 0 1 1-8-6.33v4.33a2.5 2.5 0 1 0 4 2V3h4.08A6.01 6.01 0 0 0 21 7.92z',
+    ],
   },
 }
 

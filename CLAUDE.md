@@ -171,7 +171,9 @@ accepts a profile but not the reverse.
   white/gold wordmark, for dark surfaces), with a light-surface companion at
   `evakuators-logo-light-bg.svg` (navy truck + navy wordmark, gold accent
   kept). Both are the single source of truth — the header (`AppHeader.vue`),
-  footer (`AppFooter.vue`), `favicon.svg`/`favicon.png`, and `og-image.png`
+  footer (`AppFooter.vue`), the favicon set (`favicon.svg` is the source, every
+  raster size is rendered from it — see `docs/pages-and-routes.md` § "The
+  favicon set" for the sizes and why they're those sizes), and `og-image.png`
   (all in `frontend/public/`) are all derived from the same truck
   illustration. If the mark ever changes, regenerate all four together, not
   just the header.

@@ -1,9 +1,11 @@
 import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { JwtService } from '@nestjs/jwt'
+import { UserRole } from '@prisma/client'
 import bcrypt from 'bcrypt'
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto'
 import { AdminOtpRepository } from './admin-otp.repository'
+import { ADMIN_2FA_AUDIENCE, ADMIN_SESSION_AUDIENCE } from './admin-token.audience'
 import { AdminTelegramService } from './admin-telegram.service'
 import { AdminUserRepository } from './admin-user.repository'
 
@@ -16,17 +18,37 @@ const MAX_ATTEMPTS = 5
 // faster than "wrong password" and an attacker can enumerate valid emails.
 const DUMMY_HASH = '$2b$12$CwTycUXWue0Thq9StjUM0uJ8G8Kn8UYwUIQEEcxJp/nDdX7O/HgFa'
 
+/**
+ * How long the proof-of-password token stays usable. Matches the OTP's own
+ * TTL — there is nothing to prove once the code it points at has expired.
+ */
+const PENDING_TOKEN_TTL_SECONDS = CODE_TTL_MINUTES * 60
+
 export interface AdminSession {
   token: string
+}
+
+/**
+ * Payload of the step-1 token. `otpId` is what binds it to ONE challenge:
+ * without it, "this request passed the password check" would be all the token
+ * said, and it would still be usable against whatever OTP happened to be
+ * active for that account later.
+ */
+interface AdminPendingPayload {
+  sub: number
+  otpId: number
 }
 
 /**
  * `requiresCode: false` means the password alone was enough (the admin
  * hasn't linked Telegram yet, see `npm run admin:telegram-link` — a fresh
  * account must never be permanently locked out). Once linked, every login
- * returns `requiresCode: true` and the frontend must call verifyCode() next.
+ * returns `requiresCode: true` plus a short-lived `pendingToken`, which the
+ * frontend must send back to verifyCode() together with the code.
  */
-export type AdminLoginResult = { requiresCode: true } | ({ requiresCode: false } & AdminSession)
+export type AdminLoginResult =
+  | { requiresCode: true; pendingToken: string; expiresInSeconds: number }
+  | ({ requiresCode: false } & AdminSession)
 
 @Injectable()
 export class AdminAuthService {
@@ -54,18 +76,14 @@ export class AdminAuthService {
     // until then, stay single-factor so a freshly `admin:create`-d account
     // is never locked out before it's had a chance to link.
     if (!user.telegramChatId) {
-      const token = await this.jwt.signAsync(
-        { sub: user.id, role: user.role },
-        { secret: this.secret, expiresIn: TOKEN_TTL },
-      )
-      return { requiresCode: false, token }
+      return { requiresCode: false, token: await this.signSession(user.id, user.role) }
     }
 
     await this.otpRepository.invalidateActive(user.id)
 
     const code = randomInt(100_000, 1_000_000).toString()
     const expiresAt = new Date(Date.now() + CODE_TTL_MINUTES * 60_000)
-    await this.otpRepository.create(user.id, this.hashCode(code), expiresAt)
+    const otp = await this.otpRepository.create(user.id, this.hashCode(code), expiresAt)
 
     await this.telegram.sendMessage(
       user.telegramChatId,
@@ -73,38 +91,97 @@ export class AdminAuthService {
         'մուտք գործել, խորհուրդ ենք տալիս անմիջապես փոխել գաղտնաբառը։',
     )
 
-    return { requiresCode: true }
+    // Step 1's proof, bound to the challenge just created. The second step
+    // used to take an email, which identifies but proves nothing — the
+    // password played no part in it at all.
+    const pendingToken = await this.jwt.signAsync(
+      { sub: user.id, otpId: otp.id } satisfies AdminPendingPayload,
+      {
+        secret: this.secret,
+        audience: ADMIN_2FA_AUDIENCE,
+        expiresIn: PENDING_TOKEN_TTL_SECONDS,
+      },
+    )
+
+    return { requiresCode: true, pendingToken, expiresInSeconds: PENDING_TOKEN_TTL_SECONDS }
   }
 
-  async verifyCode(email: string, code: string): Promise<AdminSession> {
-    const user = await this.adminUserRepository.findAdminByEmail(email)
-    if (!user) {
-      throw new UnauthorizedException('Սխալ email կամ գաղտնաբառ')
+  async verifyCode(pendingToken: string, code: string): Promise<AdminSession> {
+    // The audience is passed to verify, so a full session token — same secret,
+    // same signature algorithm — cannot be presented here as proof of the
+    // password step. The mirror of this check lives in AdminJwtGuard.
+    let payload: AdminPendingPayload
+    try {
+      payload = await this.jwt.verifyAsync<AdminPendingPayload>(pendingToken, {
+        secret: this.secret,
+        audience: ADMIN_2FA_AUDIENCE,
+      })
+    } catch {
+      throw new UnauthorizedException(
+        'Մուտքի նստաշրջանը սպառվել է, մուտք գործեք նորից email-ով ու գաղտնաբառով',
+      )
     }
 
-    const otp = await this.otpRepository.findActive(user.id)
-    if (!otp) {
-      throw new BadRequestException('Կոդը ժամկետանց է կամ գոյություն չունի, մուտք գործեք նորից email-ով ու գաղտնաբառով')
+    // THE challenge this token was issued for — not "the newest active OTP for
+    // this account". The difference is the whole point: the old lookup was by
+    // user, so anyone who knew the email could aim at whatever code happened
+    // to be live.
+    const otp = await this.otpRepository.findById(payload.otpId)
+    if (!otp || otp.userId !== payload.sub) {
+      throw new UnauthorizedException('Մուտքի նստաշրջանը սպառվել է, մուտք գործեք նորից')
     }
-
-    if (otp.attempts >= MAX_ATTEMPTS) {
-      await this.otpRepository.consume(otp.id)
-      throw new BadRequestException('Չափազանց շատ սխալ փորձեր, մուտք գործեք նորից email-ով ու գաղտնաբառով')
+    if (otp.consumedAt || otp.expiresAt <= new Date()) {
+      throw new BadRequestException(
+        'Կոդը ժամկետանց է կամ արդեն օգտագործված, մուտք գործեք նորից email-ով ու գաղտնաբառով',
+      )
     }
 
     if (!this.hashesMatch(otp.codeHash, this.hashCode(code))) {
-      await this.otpRepository.incrementAttempts(otp.id)
+      // Atomic: the limit is enforced inside the UPDATE, so N concurrent wrong
+      // guesses cannot all read the same pre-limit counter and slip past it.
+      const allowed = await this.otpRepository.registerFailedAttempt(
+        otp.id,
+        payload.sub,
+        MAX_ATTEMPTS,
+      )
+      if (!allowed) {
+        throw new BadRequestException('Չափազանց շատ սխալ փորձեր, մուտք գործեք նորից')
+      }
       throw new UnauthorizedException('Սխալ կոդ')
     }
 
-    await this.otpRepository.consume(otp.id)
+    // The claim, not a check. Reading the row above and consuming it here as
+    // two steps would let two requests carrying the same token and the same
+    // correct code both be issued a session from one second factor. Exactly
+    // one caller gets `true`.
+    //
+    // Note this is also what makes the pending token one-time: its challenge
+    // is now consumed, so a replay lands on the `otp.consumedAt` check above.
+    const claimed = await this.otpRepository.consumeIfUnused(otp.id, payload.sub, MAX_ATTEMPTS)
+    if (!claimed) {
+      throw new BadRequestException(
+        'Կոդը ժամկետանց է, արդեն օգտագործված կամ արգելափակված, մուտք գործեք նորից',
+      )
+    }
 
-    const token = await this.jwt.signAsync(
-      { sub: user.id, role: user.role },
-      { secret: this.secret, expiresIn: TOKEN_TTL },
+    const user = await this.adminUserRepository.findById(payload.sub)
+    if (!user) {
+      throw new UnauthorizedException('Հաշիվը չի գտնվել')
+    }
+
+    return { token: await this.signSession(user.id, user.role) }
+  }
+
+  /**
+   * The ONLY place a full admin session token is signed — both login branches
+   * and verifyCode() go through it, so the audience can never be attached to
+   * one and forgotten on another.
+   */
+  private signSession(userId: number, role: UserRole): Promise<string> {
+    return this.jwt.signAsync(
+      { sub: userId, role },
+      { secret: this.secret, audience: ADMIN_SESSION_AUDIENCE, expiresIn: TOKEN_TTL },
     )
-
-    return { token }
   }
 
   private hashCode(code: string): string {

@@ -55,6 +55,15 @@ const loginCode = ref('')
 const loginSubmitting = ref(false)
 const loginError = ref('')
 
+/**
+ * Step 1's proof, held in component state only — deliberately NOT in
+ * localStorage the way the session token is. It is valid for 5 minutes and is
+ * single-use, so it has no reason to survive a page reload, and not storing it
+ * removes one place a credential can leak from. Reloading mid-login simply
+ * sends the admin back to the password step, which is the correct outcome.
+ */
+const pendingToken = ref('')
+
 function isUnauthorized(error: unknown): boolean {
   return error instanceof FetchError && error.statusCode === 401
 }
@@ -70,6 +79,7 @@ async function submitCredentials(): Promise<void> {
   try {
     const result = await adminAuthRepository.login(loginEmail.value.trim(), loginPassword.value)
     if (result.requiresCode) {
+      pendingToken.value = result.pendingToken
       loginStep.value = 'code'
     } else {
       await afterLogin(result.token)
@@ -87,7 +97,10 @@ async function submitCode(): Promise<void> {
   loginError.value = ''
   loginSubmitting.value = true
   try {
-    const session = await adminAuthRepository.verifyCode(loginEmail.value.trim(), loginCode.value.trim())
+    const session = await adminAuthRepository.verifyCode(pendingToken.value, loginCode.value.trim())
+    // Single-use on the backend too (its challenge is consumed), but there is
+    // no reason to keep a spent credential in memory either.
+    pendingToken.value = ''
     await afterLogin(session.token)
   } catch (error) {
     loginError.value = isUnauthorized(error)
@@ -102,6 +115,9 @@ function backToCredentials(): void {
   loginStep.value = 'credentials'
   loginCode.value = ''
   loginError.value = ''
+  // Going back means starting over: the next password submit issues a fresh
+  // challenge and a fresh token, so this one is dead either way.
+  pendingToken.value = ''
 }
 
 function logout(): void {
@@ -110,6 +126,7 @@ function logout(): void {
   loginEmail.value = ''
   loginPassword.value = ''
   loginCode.value = ''
+  pendingToken.value = ''
   registrations.value = []
   reviews.value = []
   towTrucks.value = []

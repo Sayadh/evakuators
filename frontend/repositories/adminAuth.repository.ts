@@ -10,7 +10,9 @@ export interface AdminSession {
  * then. Once linked, login() always returns `requiresCode: true` and
  * verifyCode() must be called next with the code sent to Telegram.
  */
-export type AdminLoginResult = { requiresCode: true } | ({ requiresCode: false } & AdminSession)
+export type AdminLoginResult =
+  | { requiresCode: true; pendingToken: string; expiresInSeconds: number }
+  | ({ requiresCode: false } & AdminSession)
 
 export const adminAuthRepository = {
   login(email: string, password: string): Promise<AdminLoginResult> {
@@ -20,10 +22,16 @@ export const adminAuthRepository = {
     })
   },
 
-  verifyCode(email: string, code: string): Promise<AdminSession> {
+  /**
+   * `pendingToken` comes from login()'s `requiresCode: true` response and
+   * replaces the email this used to send. The email identified the account but
+   * proved nothing — the password played no part in the second step at all.
+   * The token is bound to one specific code challenge and is single-use.
+   */
+  verifyCode(pendingToken: string, code: string): Promise<AdminSession> {
     return apiFetch<AdminSession>('/admin-auth/verify-code', {
       method: 'POST',
-      body: { email, code },
+      body: { pendingToken, code },
     })
   },
 }

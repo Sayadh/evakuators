@@ -21,6 +21,6 @@ export class AdminAuthController {
   @Post('verify-code')
   @HttpCode(200)
   verifyCode(@Body() dto: VerifyAdminCodeDto): Promise<AdminSession> {
-    return this.adminAuthService.verifyCode(dto.email, dto.code)
+    return this.adminAuthService.verifyCode(dto.pendingToken, dto.code)
   }
 }

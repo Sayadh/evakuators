@@ -21,6 +21,31 @@ const CURRENT_YEAR = new Date().getFullYear()
 /** Built from two <input type="time"> values on the frontend, e.g. "09:00 – 20:00" */
 export const WORKING_HOURS_PATTERN = /^\d{2}:\d{2}\s[–-]\s\d{2}:\d{2}$/
 
+/**
+ * Upper bound for every slug array a driver submits (services, cities).
+ *
+ * This is a payload guard and nothing else: it exists so an anonymous POST
+ * cannot write an unbounded String[] into the database, not to encode how many
+ * options the taxonomy happens to have. So it is deliberately set at roughly
+ * double the largest reachable value rather than snugly above it.
+ *
+ * That distinction is not academic — it shipped as a bug. The first version of
+ * this cap was 40, chosen as "comfortably above the whole taxonomy" without
+ * counting it. The taxonomy is 45 slugs, and every category in the
+ * registration form has a "select all" button, so any driver who ticked
+ * everything was rejected with an untranslated
+ * "services must contain no more than 40 elements" and could not register at
+ * all. A cap sized to today's data turns tomorrow's new option into an outage.
+ *
+ * Current reachable maxima, for reference: services 45
+ * (frontend/constants/services.ts), citySlugs 19 in practice and 58 in the
+ * absolute worst case (46 cities + 12 districts).
+ */
+export const MAX_SLUG_ARRAY_SIZE = 100
+
+/** One message for both arrays — a driver hitting either has the same problem */
+export const TOO_MANY_MESSAGE = 'Ընտրված տարբերակները չափազանց շատ են'
+
 export class CreateRegistrationDto {
   // Personal
   @IsString()
@@ -142,35 +167,32 @@ export class CreateRegistrationDto {
   regionSlugs!: string[]
 
   /**
-   * Bounded like every other slug array here (`regionSlugs` above,
-   * `serviceAreas` in UpdateMyTowTruckDto) — an unbounded one on a public,
+   * Bounded like every other slug array here — an unbounded one on a public,
    * unauthenticated endpoint is a free write into a String[] column that is
    * then rendered on the public profile.
    *
-   * 60 cannot reject a legitimate submission. A driver picks at most 2 regions
-   * (ArrayMaxSize(2) above, MAX_REGIONS in ServiceAreaPicker.vue) and then
-   * checks cities within them, so today's real maximum is **19** — Yerevan's 12
-   * districts plus the largest marz's 7 cities (frontend/data/cities.ts,
-   * districts.ts). Even the absurd ceiling, every city and district in the
-   * country at once, is 46 + 12 = 58. The cap is deliberately set above that
-   * ceiling rather than near the real maximum, so adding cities to the static
-   * data can never turn this into a rejection.
+   * The cap is a payload guard, NOT a statement about the taxonomy, so it sits
+   * far above anything reachable: today's real maximum is 19 (Yerevan's 12
+   * districts plus the largest marz's 7 cities, with the 2-region cap above),
+   * and even every city and district in the country at once is 58. See
+   * MAX_SLUG_ARRAY_SIZE.
    */
   @IsArray()
   @ArrayMinSize(1, { message: 'Ընտրեք առնվազն մեկ քաղաք/շրջան' })
-  @ArrayMaxSize(60)
+  @ArrayMaxSize(MAX_SLUG_ARRAY_SIZE, { message: TOO_MANY_MESSAGE })
   @IsString({ each: true })
   @MaxLength(40, { each: true })
   citySlugs!: string[]
 
   // Services — ServiceType slugs
   /**
-   * 40 is comfortably above the whole ServiceType taxonomy (see
-   * frontend/constants/services.ts), so no legitimate submission can hit it.
+   * The full ServiceType taxonomy is 45 slugs, and every category in the form
+   * has a "select all" button, so a driver ticking everything sends all 45.
+   * See MAX_SLUG_ARRAY_SIZE for why the cap is not set anywhere near that.
    */
   @IsArray()
   @ArrayMinSize(1, { message: 'Ընտրեք առնվազն մեկ ծառայություն' })
-  @ArrayMaxSize(40)
+  @ArrayMaxSize(MAX_SLUG_ARRAY_SIZE, { message: TOO_MANY_MESSAGE })
   @IsString({ each: true })
   @MaxLength(40, { each: true })
   services!: string[]

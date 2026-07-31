@@ -17,7 +17,11 @@ import {
   ValidateNested,
 } from 'class-validator'
 import { ServiceAreaDto } from '../../tow-trucks/dto/service-area.dto'
-import { WORKING_HOURS_PATTERN } from '../../registration/dto/create-registration.dto'
+import {
+  MAX_SLUG_ARRAY_SIZE,
+  TOO_MANY_MESSAGE,
+  WORKING_HOURS_PATTERN,
+} from '../../registration/dto/create-registration.dto'
 
 const CURRENT_YEAR = new Date().getFullYear()
 
@@ -172,13 +176,16 @@ export class UpdateMyTowTruckDto {
   description?: string
 
   /**
-   * Bounded exactly like CreateRegistrationDto.services — this is the
-   * self-service path, so whatever a driver sends here is never re-moderated.
+   * Bounded exactly like CreateRegistrationDto.services, and for the same
+   * reason — this is the self-service path, so whatever a driver sends here is
+   * never re-moderated. The cap had the same off-by-taxonomy bug: at 40 it
+   * rejected any driver who ticked all 45 services, which the form's
+   * "select all" buttons make a single click away.
    */
   @IsOptional()
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayMaxSize(40)
+  @ArrayMaxSize(MAX_SLUG_ARRAY_SIZE, { message: TOO_MANY_MESSAGE })
   @IsString({ each: true })
   @MaxLength(40, { each: true })
   services?: string[]

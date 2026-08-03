@@ -14,6 +14,7 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator'
 import { ServiceAreaDto } from '../../tow-trucks/dto/service-area.dto'
@@ -89,6 +90,11 @@ export class UpdateMyTowTruckDto {
   @MaxLength(120)
   companyName?: string
 
+  /**
+   * These four, like `companyName` above, accept `''` as "remove this value" —
+   * see MyTowTruckService's `clearable()`. Omitting the key still means "leave
+   * it alone", so a PATCH that doesn't mention a field never touches it.
+   */
   @IsOptional()
   @IsString()
   @MaxLength(20)
@@ -104,7 +110,14 @@ export class UpdateMyTowTruckDto {
   @MaxLength(60)
   telegram?: string
 
+  /**
+   * `@ValidateIf` before `@IsEmail`, because an empty string is not an email
+   * and would otherwise be rejected — which would make this the one contact
+   * field a driver still could not clear, and would fail the whole save for
+   * every driver who never had an email in the first place.
+   */
   @IsOptional()
+  @ValidateIf((dto: UpdateMyTowTruckDto) => dto.email !== '')
   @IsEmail()
   email?: string
 

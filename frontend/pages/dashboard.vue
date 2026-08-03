@@ -357,12 +357,16 @@ async function submit(): Promise<void> {
 
     const payload: UpdateMyTowTruckPayload = {
       driverName: form.driverName.trim(),
-      // Sent even when empty — '' is how the backend is told to clear it
+      // All five are sent even when empty — '' is how the backend is told to
+      // clear the field, while omitting the key means "leave it alone".
+      // Sending `undefined` for a box the driver just emptied is how a value
+      // became impossible to remove: they cleared WhatsApp, saved, and the old
+      // number was still on their card because the request never mentioned it.
       companyName: form.companyName.trim(),
-      secondaryPhone: form.secondaryPhone.trim() || undefined,
-      whatsapp: form.whatsapp.trim() || undefined,
-      telegram: form.telegram.trim() || undefined,
-      email: form.email.trim() || undefined,
+      secondaryPhone: form.secondaryPhone.trim(),
+      whatsapp: form.whatsapp.trim(),
+      telegram: form.telegram.trim(),
+      email: form.email.trim(),
 
       vehicleBrand: form.vehicleBrand.trim(),
       vehicleModel: form.vehicleModel.trim() || undefined,

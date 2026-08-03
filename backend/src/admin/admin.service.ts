@@ -106,7 +106,14 @@ export class AdminService {
             companyName: request.companyName,
             phone: request.phone,
             secondaryPhone: request.secondaryPhone,
-            whatsapp: request.whatsapp ?? request.phone,
+            // NOT `?? request.phone`. Defaulting it meant every approved truck
+            // had a WhatsApp number whether or not the driver uses WhatsApp, so
+            // the button showed on every card and profile — sending customers
+            // to a chat nobody reads, and firing a "someone opened your
+            // WhatsApp" Telegram notice at a driver who has none. An empty
+            // field in the registration form means "I don't use WhatsApp";
+            // that is the answer, and it is the one we store.
+            whatsapp: request.whatsapp ?? null,
             telegram: request.telegram,
             email: request.email,
             // Derived from the services the driver picked — see service-slugs.ts.

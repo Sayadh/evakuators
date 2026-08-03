@@ -14,6 +14,22 @@ import type { UpdateMyTowTruckDto } from './dto/update-my-tow-truck.dto'
  * deletion, so Storage has exactly one owner instead of two with different
  * failure handling. See the comment in updateMine().
  */
+/**
+ * Turns the optional contact fields into Prisma update input, mapping a
+ * trimmed-empty value to `null` and leaving an omitted key out entirely.
+ *
+ * Split out so the same rule applies to all of them by construction: the
+ * previous version handled `companyName` inline and silently left the other
+ * four unclearable.
+ */
+function clearable(fields: Record<string, string | undefined>): Record<string, string | null> {
+  return Object.fromEntries(
+    Object.entries(fields)
+      .filter(([, value]) => value !== undefined)
+      .map(([key, value]) => [key, (value as string).trim() || null]),
+  )
+}
+
 @Injectable()
 export class MyTowTruckService {
   constructor(
@@ -72,7 +88,8 @@ export class MyTowTruckService {
       await this.imagesRepository.applyGallery(imageIds, towTruckId)
     }
 
-    const { serviceAreas, companyName, ...rest } = updateData
+    const { serviceAreas, companyName, secondaryPhone, whatsapp, telegram, email, ...rest } =
+      updateData
 
     // Coverage is one decision, not four independent fields: the JSON list the
     // public profile renders and the citySlug/districtSlug/regionSlug the
@@ -88,10 +105,16 @@ export class MyTowTruckService {
     const data: Prisma.TowTruckUpdateInput = {
       ...rest,
 
-      // The only field where empty means "clear it" rather than "skip it" —
-      // a driver must be able to take a company name back OUT of an optional
-      // box they filled in by mistake. See UpdateMyTowTruckDto.companyName.
-      ...(companyName !== undefined ? { companyName: companyName.trim() || null } : {}),
+      // Empty means "clear it", not "skip it", for every optional free-text
+      // contact field — a driver must be able to take a value back OUT of a box
+      // they filled in by mistake, or that stopped being true.
+      //
+      // This was `companyName` alone for a while, and the gap showed: a driver
+      // who stopped using WhatsApp could not remove it, so the card kept
+      // offering a chat nobody read. Omitting the key means "leave it alone",
+      // which is the right default for a PATCH — but then there has to be some
+      // value that means "remove", and for a text field that value is "".
+      ...clearable({ companyName, secondaryPhone, whatsapp, telegram, email }),
 
       // Yerevan is a pseudo-region with no regionSlug (see CLAUDE.md), so a
       // truck moving into or out of Yerevan has to be able to null the

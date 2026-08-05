@@ -140,6 +140,18 @@ sudo -u postgres createdb "$STAGING_DB" -O evakuators
 log "restoring into $STAGING_DB"
 sudo -u postgres pg_restore --no-owner --no-privileges -d "$STAGING_DB" "$DUMP_FILE"
 
+# pg_restore above runs AS the postgres OS user (peer auth -> postgres role),
+# and --no-owner/--no-privileges deliberately strip the dump's own owner/GRANT
+# statements (see the "Database: copy, not connection" note in
+# docs/deployment.md for why: we don't want to import PRODUCTION's exact
+# role/ownership setup wholesale). Net effect: every restored table/sequence
+# ends up owned by the `postgres` role, with no privileges granted to
+# `evakuators` — the role staging's DATABASE_URL actually connects as. Without
+# this step every query fails with Postgres error 42501 "permission denied
+# for table X", even though the data restored successfully.
+log "granting evakuators full privileges on the restored schema"
+sudo -u postgres psql -d "$STAGING_DB" -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO evakuators; GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO evakuators; GRANT USAGE, CREATE ON SCHEMA public TO evakuators;" >/dev/null
+
 log "starting $STAGING_PM2_APP"
 pm2 start "$STAGING_PM2_APP" >/dev/null
 

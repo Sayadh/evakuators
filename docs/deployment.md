@@ -240,6 +240,11 @@ scripts/refresh-staging-db.sh
 Dumps production (`pg_dump`, read-only — nothing this script does can write
 to production), stops staging's backend, drops and recreates
 `evakuators_staging`, restores the dump into it, restarts staging's backend.
+Because the restore runs `pg_restore --no-owner --no-privileges` as the
+`postgres` OS user, it also re-grants privileges on the restored schema to
+the `evakuators` role right after — otherwise every table comes back owned
+by `postgres` with nothing granted to `evakuators`, and staging's backend
+fails every query with Postgres error 42501 "permission denied for table X".
 Prompts for a typed `REFRESH STAGING` confirmation before touching anything,
 because "on demand" + "drops a database" is exactly the kind of command that
 is dangerous to run twice with the wrong arguments.

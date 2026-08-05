@@ -172,7 +172,8 @@ function toggleAll(group: CityGroup): void {
           class="area-picker__required"
           aria-hidden="true"
         >
-          *</span>
+          *</span
+        >
       </p>
       <AppCheckbox
         :model-value="isAllSelected(group)"
@@ -196,9 +197,11 @@ function toggleAll(group: CityGroup): void {
            settlements on it. -->
       <template v-if="group.zones.length > 0">
         <p class="area-picker__sublabel">
-          Ուղղություններ
+          Հավելյալ սպասարկման ուղղություններ
           <span class="area-picker__hint">
-            — ճանապարհահատված, առանց հարակից բնակավայրերի
+            — այս ուղղություններն օգնում են հաճախորդներին ավելի հեշտ գտնել տվյալ տարածքին մոտ գտնվող
+            էվակուատորներին։ Եթե սպասարկում եք նշված ուղղություններից որևէ մեկը, խնդրում ենք ընտրել
+            այն։
           </span>
         </p>
         <div class="area-picker__grid">

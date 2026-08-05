@@ -118,8 +118,16 @@ git clone <repo-url> /var/www/evakuators-staging
 cd /var/www/evakuators-staging
 
 # A separate database on the SAME Postgres instance — full data isolation,
-# no new server.
-psql postgres -c "CREATE DATABASE evakuators_staging OWNER evakuators;"
+# no new server. The `evakuators` role already exists (production created
+# it) — this only needs a new database owned by it.
+#
+# Run as the `postgres` OS user, not root/your login: `psql postgres` with
+# no -U tries to peer-auth as whatever OS user is running it, and Postgres
+# has no role by that name unless it happens to be `postgres` or
+# `evakuators` themselves. On a VPS shell you are usually root, and there is
+# no Postgres role called `root` — that's the
+# `FATAL: role "root" does not exist` you'll see if you skip `sudo -u postgres`.
+sudo -u postgres psql -c "CREATE DATABASE evakuators_staging OWNER evakuators;"
 
 cp backend/.env.staging.example backend/.env
 # Fill in DATABASE_URL's password, copy SUPABASE_*/TELEGRAM_* from

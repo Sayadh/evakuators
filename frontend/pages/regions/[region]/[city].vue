@@ -332,6 +332,23 @@ useJsonLd([
     box-shadow: var(--shadow-sm);
   }
 
+  /**
+   * Pinned to the second column so the sidebar's absence cannot move it.
+   *
+   * `<aside v-if="isDesktop">` is necessarily false in the server-rendered HTML
+   * and on the first client render: `useMediaQuery` cannot know the viewport
+   * until there is a browser. Without this rule the results div is then the
+   * grid's ONLY child, so auto-placement drops it into column one — a 300px
+   * box containing a three-column card grid, i.e. ~90px cards — and it stays
+   * that way for as long as hydration takes. Placing it explicitly makes the
+   * server HTML already correct; the sidebar simply appears beside it later.
+   */
+  &__results {
+    @media (min-width: 1024px) {
+      grid-column: 2;
+    }
+  }
+
   /* With the sidebar the results area is narrower — 2 columns keep cards readable */
   &__results :deep(.card-grid) {
     @media (min-width: 1024px) {

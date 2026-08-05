@@ -202,6 +202,18 @@ useJsonLd([
     box-shadow: var(--shadow-sm);
   }
 
+  /**
+   * Pinned to the second column so the sidebar's absence cannot move it — the
+   * same rule, and the same reason, as on the city page: `isDesktop` is false
+   * in the server-rendered HTML, and an unplaced lone child lands in the 300px
+   * sidebar column, squeezing the cards to ~90px until hydration runs.
+   */
+  &__results {
+    @media (min-width: 1024px) {
+      grid-column: 2;
+    }
+  }
+
   /* With the sidebar the results area is narrower — 2 columns keep cards readable */
   &__results :deep(.card-grid) {
     @media (min-width: 1024px) {

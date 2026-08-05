@@ -219,3 +219,53 @@ Nuxt 3 SSR (not static generation) — `frontend/server/routes/sitemap.xml.ts`
 builds a dynamic sitemap. `useSeoMetaData` composable centralizes
 title/description/canonical/og-image per page. `frontend/utils/schemaOrg.ts`
 builds JSON-LD structured data for tow truck profiles.
+
+## A CSS grid with a viewport-conditional child is an SSR bug waiting to happen
+
+`useResponsiveFilters()` (`frontend/composables/useResponsiveFilters.ts`)
+exposes `isDesktop` from `useMediaQuery('(min-width: 1024px)')`. On the
+server, and on the client's very first paint before hydration completes,
+there is no viewport to query — `isDesktop` is `false` no matter what device
+is actually asking. Any `v-if="isDesktop"` therefore renders as absent in
+the HTML that first reaches the browser, full stop, regardless of screen
+size.
+
+That is fine for the sidebar itself (`pages/regions/[region]/[city].vue`,
+`pages/yerevan/[district].vue`): a missing `<aside>` is invisible. It is
+**not** fine when that sidebar is one cell of a CSS grid:
+
+```scss
+&__layout {
+  display: grid;
+  @media (min-width: 1024px) {
+    grid-template-columns: 300px 1fr;   // [sidebar] [results]
+  }
+}
+```
+
+With the `<aside>` absent, `__results` is the grid's only child, and CSS
+grid auto-placement drops the sole child into the **first** track — the
+300px column meant for the sidebar — not the `1fr` column meant for it. A
+three-column card grid squeezed into 300px renders as a strip of ~90px
+cards, for as long as hydration takes to run and mount the real sidebar.
+Slow hydration (a cold dev server, a production API reached over the
+network instead of loopback) turns "for as long as hydration takes" into
+something a real visitor can see and screenshot.
+
+Both pages now pin the results column explicitly, so the server-rendered
+HTML is correct before any JavaScript runs:
+
+```scss
+&__results {
+  @media (min-width: 1024px) {
+    grid-column: 2;   // correct even with zero grid children before it
+  }
+}
+```
+
+**The general rule, for any future sidebar-plus-content layout on this
+site:** if a grid or flex container has a child gated by `v-if="isDesktop"`
+(or any other client-only viewport check), every *other* child's position
+in that container must be pinned explicitly (`grid-column`, `order`, or
+equivalent) rather than left to auto-placement. Auto-placement is only safe
+when every child that affects layout is always present in the DOM.

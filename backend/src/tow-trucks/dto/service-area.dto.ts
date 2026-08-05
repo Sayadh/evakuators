@@ -25,6 +25,16 @@ export class ServiceAreaDto {
   @MaxLength(80)
   name!: string
 
-  @IsIn(['city', 'district'])
-  type!: 'city' | 'district'
+  /**
+   * `route` is a named road corridor («Գառնի–Գեղարդ»), not a settlement. It
+   * matches on its own slug only — the backend never expands it to the places
+   * along it, and there is nothing here to expand it with anyway.
+   *
+   * MANUAL SYNC POINT: must equal `LocationType` in
+   * `frontend/types/enums.ts`. These values travel in both directions inside
+   * `TowTruck.serviceAreas` and are matched literally by
+   * `TowTrucksRepository.buildWhere`, so a mismatch silently returns nothing.
+   */
+  @IsIn(['city', 'district', 'route'])
+  type!: 'city' | 'district' | 'route'
 }

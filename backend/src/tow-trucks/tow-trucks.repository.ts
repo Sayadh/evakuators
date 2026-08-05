@@ -326,10 +326,25 @@ export class TowTrucksRepository {
       )
     }
 
+    // A road corridor matches its own slug and nothing else. No `citySlug`
+    // fallback the way cities and districts have one: a zone is not a place a
+    // truck can be based in, and nothing along it is implied. Picking
+    // «Գառնի–Գեղարդ» returns the drivers who picked «Գառնի–Գեղարդ».
+    if (filters.zoneSlug) {
+      or.push({ serviceAreas: { array_contains: [{ slug: filters.zoneSlug, type: 'route' }] } })
+    }
+
     if (filters.regionSlug) {
       or.push({ regionSlug: filters.regionSlug })
       for (const citySlug of filters.regionCitySlugs ?? []) {
         or.push({ serviceAreas: { array_contains: [{ slug: citySlug, type: 'city' }] } })
+      }
+      // Covering a corridor in a marz counts as serving that marz, exactly as
+      // covering one of its cities does. Without this a driver whose only
+      // coverage is «Գառնի–Գեղարդ» would be absent from Kotayk's own page —
+      // findable solely by someone who already knew to pick that corridor.
+      for (const zoneSlug of filters.regionZoneSlugs ?? []) {
+        or.push({ serviceAreas: { array_contains: [{ slug: zoneSlug, type: 'route' }] } })
       }
     }
 

@@ -30,6 +30,21 @@ export function useBreadcrumbs() {
     { label: city.name },
   ]
 
+  /**
+   * A road corridor sits under its marz exactly like a city does — same depth,
+   * same trail. It takes plain values rather than a `ServiceZone` because the
+   * region's display name is not on the zone record (it holds a `regionId`).
+   */
+  const forServiceZone = (
+    regionName: string,
+    regionSlug: string,
+    zoneName: string,
+  ): BreadcrumbItem[] => [
+    HOME,
+    { label: regionName, to: getRegionRoute(regionSlug) },
+    { label: zoneName },
+  ]
+
   const forYerevan = (): BreadcrumbItem[] => [HOME, { label: 'Երևան' }]
 
   const forDistrict = (district: Pick<District, 'name'>): BreadcrumbItem[] => [
@@ -56,5 +71,14 @@ export function useBreadcrumbs() {
     return trail
   }
 
-  return { forRegions, forFreeRoutes, forRegion, forCity, forYerevan, forDistrict, forTowTruck }
+  return {
+    forRegions,
+    forFreeRoutes,
+    forRegion,
+    forCity,
+    forServiceZone,
+    forYerevan,
+    forDistrict,
+    forTowTruck,
+  }
 }

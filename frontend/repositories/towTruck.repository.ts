@@ -19,10 +19,27 @@ export const towTruckRepository = {
     return apiFetch<TowTruckCard[]>('/tow-trucks', { query: { district: districtSlug } })
   },
 
-  /** regionCitySlugs come from the frontend static data (backend has no geography) */
-  getByRegion(regionSlug: string, regionCitySlugs: string[]): Promise<TowTruckCard[]> {
+  /** Exact corridor match — the backend adds no city fallback for this one */
+  getByZone(zoneSlug: string): Promise<TowTruckCard[]> {
+    return apiFetch<TowTruckCard[]>('/tow-trucks', { query: { zone: zoneSlug } })
+  },
+
+  /**
+   * `regionCitySlugs` and `regionZoneSlugs` both come from the frontend static
+   * data — the backend has no geography and cannot work out which cities or
+   * corridors belong to a marz.
+   */
+  getByRegion(
+    regionSlug: string,
+    regionCitySlugs: string[],
+    regionZoneSlugs: string[],
+  ): Promise<TowTruckCard[]> {
     return apiFetch<TowTruckCard[]>('/tow-trucks', {
-      query: { region: regionSlug, regionCities: regionCitySlugs.join(',') },
+      query: {
+        region: regionSlug,
+        regionCities: regionCitySlugs.join(','),
+        ...(regionZoneSlugs.length ? { regionZones: regionZoneSlugs.join(',') } : {}),
+      },
     })
   },
 

@@ -2,6 +2,10 @@ import type { H3Event } from 'h3'
 import { staticCities } from '~/data/cities'
 import { staticDistricts } from '~/data/districts'
 import { staticRegions } from '~/data/regions'
+import { staticServiceZones } from '~/data/serviceZones'
+import { servesCity } from '~/services/towTrucks.service'
+import type { TowTruckCoverage } from '~/types/towTruck'
+import { findSettlementTargetCity, getLandingSettlements } from '~/utils/settlements'
 import { mockTowTrucks } from '~/mocks/towTrucks'
 
 const SITE_URL = 'https://evakuators.am'
@@ -42,6 +46,54 @@ interface TowTruckSitemapEntry {
  * read real slugs (+ real updatedAt) from the backend; otherwise fall back
  * to mock data. Never hardcode mocks here — this route runs in production too.
  */
+/**
+ * Landing settlements that are safe to announce.
+ *
+ * A landing page is only worth indexing when it can show something: the rule is
+ * complete SEO copy AND at least one driver covering its target city. An
+ * indexable URL that renders an empty list is a thin page, and 300 of them
+ * would be a doorway farm — which is exactly why only four settlements have
+ * landing pages at all.
+ *
+ * Driver presence is read from `/tow-trucks/coverage`, the same tiny endpoint
+ * the browse counters use (~230 B per truck, no contact data). If that call
+ * fails the answer is "none": a sitemap that omits a good page costs a little
+ * discovery time, one that lists an empty page costs trust.
+ */
+async function getIndexableLandingPaths(event: H3Event): Promise<string[]> {
+  const landings = getLandingSettlements()
+  if (landings.length === 0) return []
+
+  const config = useRuntimeConfig(event)
+  let coverage: TowTruckCoverage[]
+
+  if (!config.public.apiBaseUrl) {
+    coverage = mockTowTrucks.map((truck) => ({
+      location: truck.location,
+      serviceAreas: truck.serviceAreas.map((area) => ({ slug: area.slug, type: area.type })),
+      works24Hours: truck.works24Hours,
+    }))
+  } else {
+    try {
+      coverage = await $fetch<TowTruckCoverage[]>('/tow-trucks/coverage', {
+        baseURL: config.internalApiBaseUrl || config.public.apiBaseUrl,
+      })
+    } catch {
+      return []
+    }
+  }
+
+  const paths: string[] = []
+  for (const settlement of landings) {
+    const city = findSettlementTargetCity(settlement)
+    const region = staticRegions.find((item) => item.id === settlement.regionId)
+    if (!city || !region) continue
+    if (!coverage.some((truck) => servesCity(truck, city.slug))) continue
+    paths.push(`/regions/${region.slug}/${settlement.slug}`)
+  }
+  return paths
+}
+
 async function getTowTrucksForSitemap(event: H3Event): Promise<TowTruckSitemapEntry[]> {
   const config = useRuntimeConfig(event)
   if (!config.public.apiBaseUrl) {
@@ -75,7 +127,10 @@ async function getTowTrucksForSitemap(event: H3Event): Promise<TowTruckSitemapEn
   }
 }
 
-function buildEntries(towTrucks: TowTruckSitemapEntry[]): SitemapEntry[] {
+function buildEntries(
+  towTrucks: TowTruckSitemapEntry[],
+  landingPaths: string[],
+): SitemapEntry[] {
   const regionSlugById = new Map(staticRegions.map((region) => [region.id, region.slug]))
 
   return [
@@ -100,10 +155,30 @@ function buildEntries(towTrucks: TowTruckSitemapEntry[]): SitemapEntry[] {
         ? [{ path: `/regions/${regionSlug}/${city.slug}`, priority: '0.9', changefreq: 'daily' as const }]
         : []
     }),
+    // Road corridors share the city URL shape and are real, indexable pages —
+    // a page that exists and is linked from the pickers has to be announced
+    // here too, which is exactly what /free-routes was missing once (see
+    // docs/pages-and-routes.md). Lower priority than a city: fewer drivers,
+    // narrower intent.
+    ...staticServiceZones.flatMap((zone) => {
+      const regionSlug = regionSlugById.get(zone.regionId)
+      return regionSlug
+        ? [{ path: `/regions/${regionSlug}/${zone.slug}`, priority: '0.6', changefreq: 'weekly' as const }]
+        : []
+    }),
     ...staticDistricts.map((district) => ({
       path: `/yerevan/${district.slug}`,
       priority: '0.9',
       changefreq: 'daily' as const,
+    })),
+    // Only the landing settlements that passed the checks above. The other 296
+    // have no URL of their own: 20 redirect to their corridor (and a redirect
+    // must never appear in a sitemap), and 276 are simply part of a city's
+    // coverage. Aliases never become URLs at all.
+    ...landingPaths.map((path) => ({
+      path,
+      priority: '0.5',
+      changefreq: 'weekly' as const,
     })),
     // The only entries with a real, honest lastmod — TowTruck.updatedAt
     // changes whenever the driver or admin actually edits that profile.
@@ -117,8 +192,11 @@ function buildEntries(towTrucks: TowTruckSitemapEntry[]): SitemapEntry[] {
 }
 
 export default defineEventHandler(async (event) => {
-  const towTrucks = await getTowTrucksForSitemap(event)
-  const urls = buildEntries(towTrucks)
+  const [towTrucks, landingPaths] = await Promise.all([
+    getTowTrucksForSitemap(event),
+    getIndexableLandingPaths(event),
+  ])
+  const urls = buildEntries(towTrucks, landingPaths)
     .map((entry) => {
       const lastmod = entry.lastmod ? `<lastmod>${entry.lastmod}</lastmod>` : ''
       return `  <url><loc>${SITE_URL}${entry.path}</loc>${lastmod}<changefreq>${entry.changefreq}</changefreq><priority>${entry.priority}</priority></url>`

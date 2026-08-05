@@ -1,8 +1,10 @@
 import { staticCities } from '~/data/cities'
 import { staticDistricts } from '~/data/districts'
 import { staticRegions } from '~/data/regions'
+import { staticServiceZones } from '~/data/serviceZones'
 import type { SelectOption } from '~/types/common'
-import type { City, District, Region } from '~/types/location'
+import { LocationType } from '~/types/enums'
+import type { City, District, Region, ServiceZone } from '~/types/location'
 
 /**
  * Pure, synchronous geography lookups over `~/data/*` — **no tow truck data, no
@@ -37,6 +39,13 @@ import type { City, District, Region } from '~/types/location'
 export const YEREVAN_REGION_SLUG = 'yerevan'
 
 const YEREVAN_LABEL = 'Երևան'
+
+/**
+ * Shown next to every road corridor so a visitor reading a flat list knows
+ * «Գառնի–Գեղարդ» is a route and not a town. One constant, because it appears in
+ * the hero cascade, the coverage picker and the zone page heading.
+ */
+export const SERVICE_ZONE_LABEL = 'ուղղություն'
 
 /** Armenia's 10 marzes, in their canonical order */
 export function getStaticRegions(): Region[] {
@@ -94,9 +103,61 @@ export function findCityLocation(
   return { slug: city.slug, name: city.name, regionSlug: region.slug }
 }
 
+/* ── Service zones (road corridors) ──────────────────────────────────────── */
+
+/** Road corridors belonging to one marz — empty for Yerevan and unknown slugs */
+export function getRegionServiceZones(regionSlug: string): ServiceZone[] {
+  const region = findStaticRegion(regionSlug)
+  if (!region) return []
+  return staticServiceZones.filter((zone) => zone.regionId === region.id)
+}
+
 /**
- * Armenian display name for a city **or** Yerevan district slug, falling back to
- * the raw slug when it matches neither.
+ * Zone slugs of one marz. Sent as `regionZones` when filtering by region, for
+ * the same reason `getRegionCitySlugs` is sent as `regionCities`: the backend
+ * has no geography and cannot work out which zones belong where.
+ */
+export function getRegionServiceZoneSlugs(regionSlug: string): string[] {
+  return getRegionServiceZones(regionSlug).map((zone) => zone.slug)
+}
+
+export function findStaticServiceZone(zoneSlug: string): ServiceZone | undefined {
+  return staticServiceZones.find((zone) => zone.slug === zoneSlug)
+}
+
+/** Same job as `findCityLocation`, for a zone — its URL also needs the marz */
+export function findServiceZoneLocation(
+  zoneSlug: string,
+): { slug: string; name: string; regionSlug: string } | null {
+  const zone = findStaticServiceZone(zoneSlug)
+  if (!zone) return null
+
+  const region = staticRegions.find((item) => item.id === zone.regionId)
+  if (!region) return null
+
+  return { slug: zone.slug, name: zone.name, regionSlug: region.slug }
+}
+
+/**
+ * Which kind of area a bare slug refers to.
+ *
+ * Every form that collects coverage stores a flat `string[]` of slugs and has
+ * to label each one before sending it (`serviceAreas[].type`) — registration,
+ * the dashboard and the admin approval screen all did this with their own
+ * two-branch `findStaticDistrict(slug) ? 'district' : 'city'`, which silently
+ * called anything unrecognised a city. With zones in the mix that default would
+ * quietly turn «Գառնի–Գեղարդ» into a city and put it in city search results.
+ * One function, three callers, no default guess.
+ */
+export function resolveAreaType(slug: string): LocationType {
+  if (findStaticDistrict(slug)) return LocationType.District
+  if (findStaticServiceZone(slug)) return LocationType.Route
+  return LocationType.City
+}
+
+/**
+ * Armenian display name for a city, Yerevan district **or** service zone slug,
+ * falling back to the raw slug when it matches none.
  *
  * The fallback is deliberately the slug itself and not a title-cased guess: the
  * backend stores raw slugs and cannot resolve names, and inventing a name from
@@ -107,6 +168,7 @@ export function cityOrDistrictLabel(slug: string): string {
   return (
     staticCities.find((city) => city.slug === slug)?.name ??
     staticDistricts.find((district) => district.slug === slug)?.name ??
+    findStaticServiceZone(slug)?.name ??
     slug
   )
 }
@@ -128,12 +190,27 @@ export function buildRegionOptions(): SelectOption[] {
   ]
 }
 
-/** The second step of that cascade: districts for Yerevan, cities otherwise */
+/**
+ * The second step of that cascade: districts for Yerevan, cities otherwise —
+ * plus the marz's road corridors, appended after the cities and marked so the
+ * two are never confused in a flat `<select>`.
+ *
+ * The marker is part of the label rather than a separate optgroup because this
+ * feeds a plain `AppSelect`, and a caller that needs the structure (the
+ * coverage picker, which renders zones as their own sub-group) builds it from
+ * `getRegionServiceZones()` directly instead.
+ */
 export function buildCityOptions(regionSlug: string): SelectOption[] {
   if (!regionSlug) return []
 
   if (regionSlug === YEREVAN_REGION_SLUG) {
     return staticDistricts.map((district) => ({ value: district.slug, label: district.name }))
   }
-  return getRegionCities(regionSlug).map((city) => ({ value: city.slug, label: city.name }))
+  return [
+    ...getRegionCities(regionSlug).map((city) => ({ value: city.slug, label: city.name })),
+    ...getRegionServiceZones(regionSlug).map((zone) => ({
+      value: zone.slug,
+      label: `${zone.name} (${SERVICE_ZONE_LABEL})`,
+    })),
+  ]
 }

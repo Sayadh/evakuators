@@ -8,6 +8,10 @@ export interface TowTruckFilters {
   regionSlug?: string
   /** Extra city slugs of a region (static data lives in the frontend) */
   regionCitySlugs?: string[]
+  /** A road corridor slug — matched exactly, never expanded to nearby places */
+  zoneSlug?: string
+  /** Road corridors of a region, the zone counterpart of `regionCitySlugs` */
+  regionZoneSlugs?: string[]
   /** Any Yerevan-related truck (based in a district or serving one) */
   yerevan?: boolean
   limit?: number

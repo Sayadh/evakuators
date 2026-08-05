@@ -77,6 +77,19 @@ export enum LocationType {
   Region = 'region',
   City = 'city',
   District = 'district',
+  /**
+   * A named road corridor a driver serves as a whole — «Գառնի–Գեղարդ»,
+   * «Տաթև–Հալիձոր». Not a settlement, so it has no population, no nearby-city
+   * relationships and no implied coverage of the places along it: picking
+   * «Գառնի–Գեղարդ» says the driver works that route, NOT that they serve Գառնի
+   * or Գեղարդ. Matching is therefore exact-slug only.
+   *
+   * MANUAL SYNC POINT: the value must equal `@IsIn` in
+   * `backend/src/tow-trucks/dto/service-area.dto.ts`. It travels in both
+   * directions inside `TowTruck.serviceAreas` JSON, and nothing checks it at
+   * compile time — same rule as `available-24-7` (see CLAUDE.md).
+   */
+  Route = 'route',
 }
 
 /**

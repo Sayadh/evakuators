@@ -19,7 +19,7 @@ import { armenianPhoneInputValue } from '~/utils/formatPhone'
 import {
   cityOrDistrictLabel,
   findCityLocation,
-  findStaticDistrict,
+  resolveAreaType,
   YEREVAN_REGION_SLUG,
 } from '~/utils/geography'
 import { toOptionalFloat } from '~/utils/registrationPayload'
@@ -291,10 +291,19 @@ function toOptionalInt(value: string): number | undefined {
   return trimmed ? Number(trimmed) : undefined
 }
 
-/** Same per-slug resolution the admin approval flow does — a driver's areas can mix
- *  real cities and Yerevan districts when they cover two regions (see admin.vue) */
-function areaType(slug: string): 'city' | 'district' {
-  return findStaticDistrict(slug) ? 'district' : 'city'
+/**
+ * Structural placement slug: the first selected area that is an actual place.
+ *
+ * `citySlug`/`districtSlug` is what the browsing pages filter on, so it has to
+ * be a city or a district. Road corridors are neither — a truck cannot be
+ * "based in" «Գառնի–Գեղարդ», and writing a corridor slug into `citySlug` would
+ * put the driver in a city listing that does not exist. A driver whose ONLY
+ * coverage is corridors has no structural placement at all, which the backend
+ * already allows (both columns are nullable) and which the region rollup in
+ * `servesRegion` covers.
+ */
+function findPlaceSlug(slugs: string[]): string | undefined {
+  return slugs.find((slug) => resolveAreaType(slug) !== LocationType.Route)
 }
 
 function validate(): boolean {
@@ -346,14 +355,14 @@ async function submit(): Promise<void> {
     const serviceAreas = form.citySlugs.map((slug) => ({
       slug,
       name: cityOrDistrictLabel(slug),
-      type: areaType(slug),
+      type: resolveAreaType(slug),
     }))
 
-    // Structural placement, derived from the first area exactly as approve()
-    // derives it: a Yerevan district truck has a districtSlug and no region,
-    // a real city has both.
-    const primarySlug = form.citySlugs[0]
-    const primaryType = areaType(primarySlug)
+    // Structural placement, derived exactly as approve() derives it: a Yerevan
+    // district truck has a districtSlug and no region, a real city has both —
+    // and a corridor is skipped entirely (see findPlaceSlug).
+    const primarySlug = findPlaceSlug(form.citySlugs)
+    const primaryType = primarySlug ? resolveAreaType(primarySlug) : undefined
 
     const payload: UpdateMyTowTruckPayload = {
       driverName: form.driverName.trim(),
@@ -388,9 +397,11 @@ async function submit(): Promise<void> {
 
       locationName: form.locationName.trim(),
       serviceAreas,
-      ...(primaryType === 'district'
+      ...(primaryType === LocationType.District
         ? { districtSlug: primarySlug }
-        : { citySlug: primarySlug, regionSlug: findCityLocation(primarySlug)?.regionSlug }),
+        : primaryType === LocationType.City
+          ? { citySlug: primarySlug, regionSlug: findCityLocation(primarySlug as string)?.regionSlug }
+          : {}),
 
       priceCityCallout: toOptionalInt(form.priceCityCallout),
       pricePerKm: toOptionalInt(form.pricePerKm),

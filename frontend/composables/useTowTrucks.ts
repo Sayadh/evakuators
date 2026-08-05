@@ -95,6 +95,19 @@ export function useYerevanTowTruckCount() {
   return useDerivedFromCoverage((coverage) => coverage.filter(servesYerevan).length)
 }
 
+/**
+ * Drivers on one road corridor — exact slug match, no city fallback. Its own
+ * composable rather than a flag on `useTowTrucksByCity`, because it is a
+ * different endpoint answering a different question.
+ */
+export function useTowTrucksByZone(zoneSlug: string) {
+  return useAsyncData(
+    `tow-trucks-zone-${zoneSlug}`,
+    () => towTrucksService.getByZoneSlug(zoneSlug),
+    { default: () => [], transform: recommended },
+  )
+}
+
 export function useTowTrucksByRegion(regionSlug: string) {
   return useAsyncData(
     `tow-trucks-region-${regionSlug}`,

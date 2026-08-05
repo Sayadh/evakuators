@@ -23,6 +23,8 @@ export class TowTrucksService {
       districtSlug: query.district,
       regionSlug: query.region,
       regionCitySlugs: query.regionCities,
+      zoneSlug: query.zone,
+      regionZoneSlugs: query.regionZones,
       yerevan: query.yerevan,
       limit,
       offset: query.offset,

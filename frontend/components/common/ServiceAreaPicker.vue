@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import type { SelectOption } from '~/types/common'
-import { buildCityOptions, buildRegionOptions, YEREVAN_REGION_SLUG } from '~/utils/geography'
+import {
+  buildRegionOptions,
+  getRegionCities,
+  getRegionServiceZones,
+  getStaticDistricts,
+  YEREVAN_REGION_SLUG,
+} from '~/utils/geography'
 
 /**
  * "Which marzes, and which of their cities/districts" — the coverage picker,
@@ -48,7 +54,16 @@ interface CityGroup {
   regionLabel: string
   /** Yerevan is a pseudo-region whose "cities" are its districts (see CLAUDE.md) */
   isYerevan: boolean
+  /** Cities, or Yerevan's districts — actual settlements */
   options: SelectOption[]
+  /**
+   * Road corridors of the same marz, kept apart from `options` rather than
+   * appended to it. They are a different kind of answer: «Գառնի–Գեղարդ» is a
+   * road, matched on its own slug and implying nothing about the places along
+   * it, so a driver has to be able to see which of their ticks is which. Empty
+   * for Yerevan.
+   */
+  zones: SelectOption[]
 }
 
 /**
@@ -57,14 +72,33 @@ interface CityGroup {
  * Labels only, derived from static geography — no request.
  */
 const cityGroups = computed<CityGroup[]>(() =>
-  props.regions.map((regionSlug) => ({
-    regionSlug,
-    regionLabel:
-      regionOptions.value.find((option) => option.value === regionSlug)?.label ?? regionSlug,
-    isYerevan: regionSlug === YEREVAN_REGION_SLUG,
-    options: buildCityOptions(regionSlug),
-  })),
+  props.regions.map((regionSlug) => {
+    const isYerevan = regionSlug === YEREVAN_REGION_SLUG
+    return {
+      regionSlug,
+      regionLabel:
+        regionOptions.value.find((option) => option.value === regionSlug)?.label ?? regionSlug,
+      isYerevan,
+      // Built from the data helpers rather than `buildCityOptions()`, which
+      // returns one flat list with the corridors suffixed — right for a plain
+      // `<select>`, wrong here where the two are rendered as separate groups.
+      options: isYerevan
+        ? getStaticDistricts().map((district) => ({ value: district.slug, label: district.name }))
+        : getRegionCities(regionSlug).map((city) => ({ value: city.slug, label: city.name })),
+      zones: isYerevan
+        ? []
+        : getRegionServiceZones(regionSlug).map((zone) => ({
+            value: zone.slug,
+            label: zone.name,
+          })),
+    }
+  }),
 )
+
+/** Everything selectable under one marz — both sub-groups, for the "all" toggle */
+function groupSlugs(group: CityGroup): string[] {
+  return [...group.options, ...group.zones].map((option) => option.value)
+}
 
 function isRegionDisabled(slug: string): boolean {
   return !props.regions.includes(slug) && props.regions.length >= MAX_REGIONS
@@ -78,7 +112,12 @@ function toggleRegion(slug: string): void {
     )
     // Drop only this region's own cities/districts — the other selected
     // region's picks (if any) must survive untouched.
-    const dropped = new Set(buildCityOptions(slug).map((option) => option.value))
+    const dropped = new Set([
+      ...(slug === YEREVAN_REGION_SLUG
+        ? getStaticDistricts().map((district) => district.slug)
+        : getRegionCities(slug).map((city) => city.slug)),
+      ...getRegionServiceZones(slug).map((zone) => zone.slug),
+    ])
     emit(
       'update:cities',
       props.cities.filter((item) => !dropped.has(item)),
@@ -99,16 +138,14 @@ function toggleCity(slug: string): void {
 }
 
 function isAllSelected(group: CityGroup): boolean {
-  return (
-    group.options.length > 0 &&
-    group.options.every((option) => props.cities.includes(option.value))
-  )
+  const slugs = groupSlugs(group)
+  return slugs.length > 0 && slugs.every((slug) => props.cities.includes(slug))
 }
 
 function toggleAll(group: CityGroup): void {
-  const groupSlugs = group.options.map((option) => option.value)
-  const without = props.cities.filter((item) => !groupSlugs.includes(item))
-  emit('update:cities', isAllSelected(group) ? without : [...without, ...groupSlugs])
+  const slugs = groupSlugs(group)
+  const without = props.cities.filter((item) => !slugs.includes(item))
+  emit('update:cities', isAllSelected(group) ? without : [...without, ...slugs])
 }
 </script>
 
@@ -131,9 +168,11 @@ function toggleAll(group: CityGroup): void {
 
     <div v-for="group in cityGroups" :key="group.regionSlug" class="area-picker__group">
       <p class="area-picker__label">
-        {{ group.regionLabel }} —
-        {{ group.isYerevan ? 'Սպասարկվող շրջաններ' : 'Սպասարկվող քաղաքներ'
-        }}<span class="area-picker__required" aria-hidden="true"> *</span>
+        {{ group.regionLabel }} — Սպասարկվող տարածքներ<span
+          class="area-picker__required"
+          aria-hidden="true"
+        >
+          *</span>
       </p>
       <AppCheckbox
         :model-value="isAllSelected(group)"
@@ -150,6 +189,28 @@ function toggleAll(group: CityGroup): void {
           @update:model-value="toggleCity(option.value)"
         />
       </div>
+
+      <!-- Road corridors, in their own labelled block. A driver ticking
+           «Գառնի–Գեղարդ» is answering a different question than one ticking
+           «Աբովյան», and the hint says so plainly: this is the road, not the
+           settlements on it. -->
+      <template v-if="group.zones.length > 0">
+        <p class="area-picker__sublabel">
+          Ուղղություններ
+          <span class="area-picker__hint">
+            — ճանապարհահատված, առանց հարակից բնակավայրերի
+          </span>
+        </p>
+        <div class="area-picker__grid">
+          <AppCheckbox
+            v-for="zone in group.zones"
+            :key="zone.value"
+            :model-value="cities.includes(zone.value)"
+            :label="zone.label"
+            @update:model-value="toggleCity(zone.value)"
+          />
+        </div>
+      </template>
     </div>
 
     <p v-if="cityGroups.length > 0 && citiesError" class="area-picker__error" role="alert">
@@ -174,6 +235,17 @@ function toggleAll(group: CityGroup): void {
     margin: 0 0 var(--space-2);
     font-size: 0.85rem;
     color: var(--color-danger);
+  }
+
+  &__sublabel {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin: var(--space-3) 0 var(--space-2);
+  }
+
+  &__hint {
+    font-weight: 400;
+    color: var(--color-text-muted);
   }
 
   &__group {

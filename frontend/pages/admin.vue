@@ -13,14 +13,15 @@ import {
   type ApproveRegistrationPayload,
 } from '~/repositories'
 import { useAdminAuthStore } from '~/stores/adminAuth'
+import { LocationType } from '~/types/enums'
 import type { ServiceType, VehicleType } from '~/types/enums'
 import { extractErrorMessage } from '~/utils/errors'
 import { armenianPhoneInputValue } from '~/utils/formatPhone'
 import {
   cityOrDistrictLabel,
   findCityLocation,
-  findStaticDistrict,
   findStaticRegion,
+  resolveAreaType,
   YEREVAN_REGION_SLUG,
 } from '~/utils/geography'
 import { isPhone, required, validateField } from '~/utils/validators'
@@ -530,21 +531,29 @@ async function submitApprove(): Promise<void> {
   // citySlugs can be a MIX of real cities and Yerevan districts — a single
   // "isYerevan" flag for the whole request would mislabel half of them.
   // Each slug's own type has to be resolved individually instead.
-  const slugType = (slug: string): 'city' | 'district' =>
-    findStaticDistrict(slug) ? 'district' : 'city'
+  // resolveAreaType, not a local two-branch guess: with road corridors in the
+  // mix, "anything that isn't a district is a city" would label
+  // «Գառնի–Գեղարդ» a city and drop it into city search results.
 
   // The driver already gave us everything else at registration — capacity as
   // a range (see representativeCapacityTons) and the full service-area list
   // (citySlugs). The admin only adds what registration *can't* provide: a
   // unique slug and the truck's actual base location as free text.
-  const primarySlug = approveTarget.value.citySlugs[0]
-  const primaryType = primarySlug ? slugType(primarySlug) : 'city'
+  // The structural placement must be a real place — a truck cannot be based in
+  // a road corridor, and a corridor slug in `citySlug` would file the driver
+  // under a city page that does not exist. A driver covering only corridors
+  // simply has no placement; both columns are nullable and the region rollup
+  // in servesRegion() is what keeps them findable.
+  const primarySlug = approveTarget.value.citySlugs.find(
+    (slug) => resolveAreaType(slug) !== LocationType.Route,
+  )
+  const primaryType = primarySlug ? resolveAreaType(primarySlug) : undefined
   // TowTruck.regionSlug (the "best-effort" browsing fallback — see
   // docs/data-model.md) is resolved from the PRIMARY slug's actual region,
   // not just "the" region the driver picked first — the backend has no
   // geography data to do this itself (see CLAUDE.md).
   const primaryRegionSlug =
-    primaryType === 'district' ? undefined : findCityLocation(primarySlug)?.regionSlug
+    primaryType === LocationType.City ? findCityLocation(primarySlug as string)?.regionSlug : undefined
   // No platform dimensions in this payload: the request stores them as the
   // same two Float columns the TowTruck does, so AdminService.approve() copies
   // them across directly. Nothing to parse and nothing for this form to ask.
@@ -553,7 +562,11 @@ async function submitApprove(): Promise<void> {
     capacityTons: representativeCapacityTons(approveTarget.value.capacityRange),
     locationName: approveForm.locationName.trim(),
     description: approveForm.description.trim() || undefined,
-    ...(primaryType === 'district' ? { districtSlug: primarySlug } : { citySlug: primarySlug }),
+    ...(primaryType === LocationType.District
+      ? { districtSlug: primarySlug }
+      : primaryType === LocationType.City
+        ? { citySlug: primarySlug }
+        : {}),
     regionSlug: primaryRegionSlug,
     // Resolve each slug to its real Armenian name here — the backend has no
     // geography data of its own (see schema.prisma), so if we sent raw
@@ -562,7 +575,7 @@ async function submitApprove(): Promise<void> {
     serviceAreas: approveTarget.value.citySlugs.map((slug) => ({
       slug,
       name: cityOrDistrictLabel(slug),
-      type: slugType(slug),
+      type: resolveAreaType(slug),
     })),
   }
 

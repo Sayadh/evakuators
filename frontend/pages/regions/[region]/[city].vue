@@ -1,61 +1,182 @@
 <script setup lang="ts">
+import { SITE_NAME } from '~/constants/site'
+import type { ServiceZone } from '~/types/location'
 import { buildCityFaq } from '~/utils/faqContent'
+import { findStaticRegion, findStaticServiceZone } from '~/utils/geography'
+import { isLandingSettlement } from '~/utils/locationSearch'
+import { findSettlement, findSettlementTargetCity } from '~/utils/settlements'
 import { getCityRoute, getRegisterRoute } from '~/utils/routeHelpers'
 import { buildTowTruckListSchema } from '~/utils/schemaOrg'
 import { buildLocationSeo, buildTranslitParagraph } from '~/utils/seoContent'
 
+/**
+ * One route, two kinds of area: `/regions/:region/:slug` resolves to a city or
+ * to one of the marz's road corridors (see `data/serviceZones.ts`).
+ *
+ * They share a file rather than getting a second route because they share the
+ * URL shape, the listing, the filters and the breadcrumb trail — and because
+ * two page files cannot match one Nuxt pattern anyway. City and zone slugs live
+ * in one namespace and are checked not to collide, so the resolution is
+ * unambiguous.
+ */
 const route = useRoute()
 const regionSlug = route.params.region as string
 const citySlug = route.params.city as string
 
+const zone = findStaticServiceZone(citySlug)
+const region = findStaticRegion(regionSlug)
+/** A corridor is only valid under its own marz — kotayk/tatev-halidzor is a 404 */
+const isZone = Boolean(zone && region && zone.regionId === region.id)
+
+/**
+ * Third case: a settlement with its own page. Only `seoMode: 'landing'`
+ * settlements reach here — the ones that redirect are answered with a 301 by
+ * `server/middleware/settlement-redirect.ts` before rendering starts, and the
+ * 276 with no routing fields have no URL of their own at all.
+ */
+const settlement = isZone ? undefined : findSettlement(regionSlug, citySlug)
+const landing = settlement && isLandingSettlement(settlement) ? settlement : undefined
+const landingCity = landing ? findSettlementTargetCity(landing) : undefined
+const isLanding = Boolean(landing && landingCity)
+
 const { data: city } = await useCity(regionSlug, citySlug)
 
-if (!city.value) {
-  throw createError({ statusCode: 404, statusMessage: 'Քաղաքը չի գտնվել', fatal: true })
+if (!isZone && !isLanding && !city.value) {
+  throw createError({ statusCode: 404, statusMessage: 'Տարածքը չի գտնվել', fatal: true })
 }
 
-const { data: towTrucks, pending } = await useTowTrucksByCity(citySlug)
+// Three sources, one shape. A corridor matches its own slug exactly (see
+// servesZone); a landing settlement deliberately reuses its target CITY's
+// drivers — there is no settlement-level coverage field and none is being
+// invented, so the honest answer is "the drivers who work the nearest town".
+const { data: towTrucks, pending } = isZone
+  ? await useTowTrucksByZone(citySlug)
+  : isLanding
+    ? await useTowTrucksByCity(landingCity!.slug)
+    : await useTowTrucksByCity(citySlug)
 const { data: nearbyCities } = useNearbyCities(regionSlug, citySlug)
+
+/** What the heading, breadcrumb and metadata call this page */
+const areaName = computed(() =>
+  isZone ? (zone as ServiceZone).name : isLanding ? landing!.name : (city.value?.name ?? ''),
+)
+
+/**
+ * A landing page with no drivers is a thin page: it would rank for a village
+ * name and then show an empty list. `noindex, follow` keeps it reachable and
+ * lets its links be crawled, while asking not to be listed until it has
+ * something to list. The sitemap applies the same rule (see sitemap.xml.ts).
+ */
+const landingHasDrivers = computed(() => towTrucks.value.length > 0)
+
+/**
+ * Armenian takes a different case ending for a place and for a corridor, so the
+ * suffix cannot be one shared string. Computed rather than inlined in the
+ * template because `city` is null on a zone page — reading `city.name` there
+ * was an SSR crash, not a blank heading.
+ */
+const seoSectionTitle = computed(() =>
+  isZone
+    ? `Էվակուատորի ծառայություններ ${areaName.value} ուղղությունում`
+    : isLanding
+      ? landing!.seo!.heading
+      : `Էվակուատորի ծառայություններ ${areaName.value}ում`,
+)
 
 const { filteredTowTrucks, activeFiltersCount } = useTowTruckFilters(towTrucks)
 const { visibleItems, hasMore, loadMore } = usePagination(filteredTowTrucks, 9)
 const { isDesktop, isDrawerOpen, openDrawer } = useResponsiveFilters()
 
-const { forCity } = useBreadcrumbs()
-const breadcrumbs = forCity(city.value)
+const { forCity, forServiceZone } = useBreadcrumbs()
+// A landing settlement sits under its marz like everything else at this depth.
+const breadcrumbs =
+  isZone || isLanding
+    ? forServiceZone(region!.name, region!.slug, areaName.value)
+    : forCity(city.value!)
 
-const faqItems = buildCityFaq(city.value.name)
+// A corridor has no settlements of its own, so the city FAQ — which is written
+// about a town and the places around it — would be answering questions nobody
+// asked here.
+const faqItems = isZone || isLanding ? [] : buildCityFaq(areaName.value)
 
-const seoParagraphs = [
-  `Էվակուատոր ${city.value.name}ում. այս էջում հավաքված են ${city.value.name}ում և հարակից բնակավայրերում աշխատող էվակուատորները։ Յուրաքանչյուր վարորդի էջում կտեսնեք մեքենայի իրական նկարները, ծառայությունների ցանկը, սպասարկվող տարածքները և մեկնարկային գները։`,
-  `Ընտրեք հարմար էվակուատորը ֆիլտրերի օգնությամբ՝ ըստ բեռնատարողության, 24/7 հասանելիության կամ ծառայության տեսակի, և զանգահարեք վարորդին անմիջապես՝ առանց միջնորդների։ ${city.value.regionName}ի մարզի մյուս քաղաքների ծառայությունները հասանելի են ներքևի հղումներով։`,
-  buildTranslitParagraph(city.value.name, citySlug),
-]
+const seoParagraphs = isLanding
+  ? [landing!.seo!.intro]
+  : isZone
+  ? [
+      `Էվակուատոր ${areaName.value} ուղղությունում. այս էջում հավաքված են այն վարորդները, ովքեր հայտարարել են, որ սպասարկում են հենց այս ճանապարհահատվածը։ Դիտեք մեքենաների նկարները, ծառայությունների ցանկը և մեկնարկային գները։`,
+      `Ցանկը կազմված է ճշգրիտ համընկմամբ՝ այստեղ երևում են միայն «${areaName.value}» ուղղությունն ընտրած վարորդները։ ${region!.name}ի մարզի քաղաքների ծառայությունները հասանելի են առանձին էջերով։`,
+    ]
+  : [
+      `Էվակուատոր ${areaName.value}ում. այս էջում հավաքված են ${areaName.value}ում և հարակից բնակավայրերում աշխատող էվակուատորները։ Յուրաքանչյուր վարորդի էջում կտեսնեք մեքենայի իրական նկարները, ծառայությունների ցանկը, սպասարկվող տարածքները և մեկնարկային գները։`,
+      `Ընտրեք հարմար էվակուատորը ֆիլտրերի օգնությամբ՝ ըստ բեռնատարողության, 24/7 հասանելիության կամ ծառայության տեսակի, և զանգահարեք վարորդին անմիջապես՝ առանց միջնորդների։ ${city.value!.regionName}ի մարզի մյուս քաղաքների ծառայությունները հասանելի են ներքևի հղումներով։`,
+      buildTranslitParagraph(areaName.value, citySlug),
+    ]
 
-useSeoMetaData({
-  ...buildLocationSeo(city.value.name, citySlug),
-  path: getCityRoute(regionSlug, citySlug),
-})
+useSeoMetaData(
+  isLanding
+    ? {
+        // Straight from the dataset — one authored title/description per
+        // landing settlement, not a template with a name substituted in.
+        title: landing!.seo!.title,
+        description: landing!.seo!.description,
+        // Self-referencing: this page is its own canonical, and the hash-free
+        // city URL it borrows drivers from is a different page.
+        path: getCityRoute(regionSlug, citySlug),
+        // Thin until it has drivers to show — see landingHasDrivers.
+        noindex: !landingHasDrivers.value,
+      }
+    : isZone
+    ? {
+        title: `Էվակուատոր ${areaName.value} ուղղությունում | ${SITE_NAME}`,
+        description: `Էվակուատոր ${areaName.value} ճանապարհահատվածում՝ ${region!.name}ի մարզ։ Տեսեք այս ուղղությունը սպասարկող վարորդներին և զանգահարեք ուղիղ։`,
+        path: getCityRoute(regionSlug, citySlug),
+      }
+    : {
+        ...buildLocationSeo(areaName.value, citySlug),
+        path: getCityRoute(regionSlug, citySlug),
+      },
+)
 
-useJsonLd([buildTowTruckListSchema(towTrucks.value, `Էվակուատորներ ${city.value.name}ում`)])
+useJsonLd([
+  buildTowTruckListSchema(
+    towTrucks.value,
+    isZone
+      ? `Էվակուատորներ ${areaName.value} ուղղությունում`
+      : `Էվակուատորներ ${areaName.value}ում`,
+  ),
+])
 </script>
 
 <template>
-  <div v-if="city" class="container city-page">
+  <div v-if="isZone || isLanding || city" class="container city-page">
     <AppBreadcrumbs :items="breadcrumbs" />
 
     <header class="city-page__header">
-      <h1>Էվակուատորներ {{ city.name }}ում</h1>
-      <p class="city-page__description">
-        Գտեք {{ city.name }}ում և հարակից բնակավայրերում աշխատող էվակուատորներ։ Դիտեք մեքենաների
+      <h1 v-if="isLanding">{{ landing!.seo!.heading }}</h1>
+      <h1 v-else>Էվակուատորներ {{ areaName }}{{ isZone ? ' ուղղությունում' : 'ում' }}</h1>
+      <p v-if="isLanding" class="city-page__description">
+        {{ landing!.seo!.intro }}
+      </p>
+      <p v-else-if="isZone" class="city-page__description">
+        Այս ցանկում միայն այն վարորդներն են, ովքեր նշել են «{{ areaName }}» ուղղությունը որպես
+        սպասարկվող տարածք։ Ցանկը չի ներառում ճանապարհին գտնվող առանձին բնակավայրերը՝ դրանք
+        փնտրեք համապատասխան քաղաքի էջում։
+      </p>
+      <p v-else class="city-page__description">
+        Գտեք {{ areaName }}ում և հարակից բնակավայրերում աշխատող էվակուատորներ։ Դիտեք մեքենաների
         նկարները, ծառայությունների տեսակները և անմիջապես զանգահարեք վարորդին։
       </p>
-      <div class="city-page__stats">
+      <div v-if="city" class="city-page__stats">
         <AppBadge variant="primary">
           <AppIcon name="truck" :size="14" /> {{ city.towTruckCount }} հասանելի էվակուատոր
         </AppBadge>
         <AppBadge variant="success">
           <AppIcon name="clock" :size="14" /> {{ city.towTruck24hCount }} աշխատում է 24/7
+        </AppBadge>
+      </div>
+      <div v-else class="city-page__stats">
+        <AppBadge variant="primary">
+          <AppIcon name="truck" :size="14" /> {{ towTrucks.length }} հասանելի էվակուատոր
         </AppBadge>
       </div>
     </header>
@@ -83,7 +204,11 @@ useJsonLd([buildTowTruckListSchema(towTrucks.value, `Էվակուատորներ 
           <template #empty>
             <EmptyState
               v-if="towTrucks.length === 0"
-              title="Այս քաղաքում դեռ գրանցված էվակուատոր չկա"
+              :title="
+                isZone
+                  ? 'Այս ուղղությունը դեռ ոչ մի վարորդ չի նշել'
+                  : 'Այս քաղաքում դեռ գրանցված էվակուատոր չկա'
+              "
               description="Կարող եք դիտել մոտակա քաղաքներում աշխատող ծառայությունները կամ գրանցել ձեր էվակուատորը։"
             >
               <template #actions>
@@ -130,10 +255,12 @@ useJsonLd([buildTowTruckListSchema(towTrucks.value, `Էվակուատորներ 
       </ul>
     </section>
 
-    <FaqSection :items="faqItems" class="city-page__section" />
+    <!-- Skipped for a corridor: an empty FaqSection would still render its
+         heading and, worse, emit an FAQPage JSON-LD with no questions. -->
+    <FaqSection v-if="faqItems.length > 0" :items="faqItems" class="city-page__section" />
 
     <SeoTextSection
-      :title="`Էվակուատորի ծառայություններ ${city.name}ում`"
+      :title="seoSectionTitle"
       :paragraphs="seoParagraphs"
       class="city-page__section"
     />

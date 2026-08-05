@@ -8,7 +8,7 @@ import type {
   TowTruckCoverage,
   TowTruckGeography,
 } from '~/types/towTruck'
-import { getRegionCitySlugs } from '~/utils/geography'
+import { getRegionCitySlugs, getRegionServiceZoneSlugs } from '~/utils/geography'
 
 /* ── Pure matchers ────────────────────────────────────────────────────────
  *
@@ -36,19 +36,44 @@ export function servesDistrict(truck: TowTruckGeography, districtSlug: string): 
   )
 }
 
+/**
+ * A truck serves a road corridor only if it listed that exact corridor.
+ *
+ * No `location` fallback and no expansion, unlike `servesCity`: a corridor is
+ * not a place a truck is based in, and «Գառնի–Գեղարդ» implies nothing about
+ * Գառնի, Գեղարդ or anything between them. The driver named a road; that road
+ * is what they are matched on.
+ */
+export function servesZone(truck: TowTruckGeography, zoneSlug: string): boolean {
+  return truck.serviceAreas.some(
+    (area) => area.type === LocationType.Route && area.slug === zoneSlug,
+  )
+}
+
 export function isBasedInRegion(truck: TowTruckGeography, regionSlug: string): boolean {
   return truck.location.regionSlug === regionSlug
 }
 
 /**
- * A truck is related to a region if it is based there
- * or lists any of the region's cities as a service area.
+ * A truck is related to a region if it is based there, or lists any of the
+ * region's cities **or road corridors** as a service area.
+ *
+ * Corridors count here — and only here — for the same reason cities do: a
+ * driver whose whole coverage is «Գառնի–Գեղարդ» genuinely works in Kotayk, and
+ * leaving them out of Kotayk's own listing would make them findable only by
+ * someone who already knew to pick that corridor. This is the one rollup; it
+ * does not make them match any individual city.
  */
 export function servesRegion(truck: TowTruckGeography, regionSlug: string): boolean {
   if (isBasedInRegion(truck, regionSlug)) return true
+
   const citySlugs = new Set(getRegionCitySlugs(regionSlug))
+  const zoneSlugs = new Set(getRegionServiceZoneSlugs(regionSlug))
+
   return truck.serviceAreas.some(
-    (area) => area.type === LocationType.City && citySlugs.has(area.slug),
+    (area) =>
+      (area.type === LocationType.City && citySlugs.has(area.slug)) ||
+      (area.type === LocationType.Route && zoneSlugs.has(area.slug)),
   )
 }
 
@@ -128,9 +153,21 @@ export const towTrucksService = {
     return [...trucks].sort((a, b) => Number(isBasedInYerevan(b)) - Number(isBasedInYerevan(a)))
   },
 
+  /**
+   * Drivers on one road corridor. Exact match, no fallback — see `servesZone`.
+   */
+  getByZoneSlug(zoneSlug: string): Promise<TowTruckCard[]> {
+    if (isApiEnabled()) return towTruckRepository.getByZone(zoneSlug)
+    return mockRequest(() => mockTowTrucks.filter((truck) => servesZone(truck, zoneSlug)))
+  },
+
   async getByRegionSlug(regionSlug: string): Promise<TowTruckCard[]> {
     const trucks = isApiEnabled()
-      ? await towTruckRepository.getByRegion(regionSlug, getRegionCitySlugs(regionSlug))
+      ? await towTruckRepository.getByRegion(
+          regionSlug,
+          getRegionCitySlugs(regionSlug),
+          getRegionServiceZoneSlugs(regionSlug),
+        )
       : await mockRequest(() => mockTowTrucks.filter((truck) => servesRegion(truck, regionSlug)))
     return [...trucks].sort(
       (a, b) => Number(isBasedInRegion(b, regionSlug)) - Number(isBasedInRegion(a, regionSlug)),

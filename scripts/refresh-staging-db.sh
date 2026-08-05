@@ -152,6 +152,75 @@ sudo -u postgres pg_restore --no-owner --no-privileges -d "$STAGING_DB" "$DUMP_F
 log "granting evakuators full privileges on the restored schema"
 sudo -u postgres psql -d "$STAGING_DB" -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO evakuators; GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO evakuators; GRANT USAGE, CREATE ON SCHEMA public TO evakuators;" >/dev/null
 
+# ── Ownership, which is NOT the same thing as the privileges above ──────────
+#
+# `GRANT ALL PRIVILEGES` covers DML — SELECT, INSERT, UPDATE, DELETE — and that
+# is what makes staging's backend able to serve pages after a refresh. It does
+# NOT cover DDL: PostgreSQL requires you to *own* a table to ALTER it, and no
+# GRANT can confer that.
+#
+# So without this block every refresh leaves a database that reads and writes
+# perfectly and then fails the next `prisma migrate deploy` with
+#   ERROR: must be owner of table TowTruck   (SQLSTATE 42501)
+# — which is exactly what happened the first time a migration was deployed to
+# staging after a refresh, and looked like a broken migration rather than a
+# broken restore.
+#
+# Enums are included because a future migration may ALTER TYPE to add a value,
+# and that hits the identical wall. The schema itself is transferred so
+# CREATE TABLE keeps working for a brand-new model.
+#
+# REASSIGN OWNED BY postgres is deliberately NOT used: postgres also owns system
+# catalog objects, and pointing a blanket reassignment at a superuser role is a
+# much bigger hammer than "the things pg_restore just created in public".
+# The schema itself is NOT reassigned — `GRANT USAGE, CREATE` above is already
+# what a future `CREATE TABLE` needs, and owning `public` is a bigger change
+# than this problem calls for.
+#
+# `deptype = 'e'` is the important filter: PostGIS installs `spatial_ref_sys`
+# (and its own types) into `public`, and those are extension members that must
+# stay owned by postgres. A naive loop over `pg_tables WHERE schemaname =
+# 'public'` would try to reassign them too. Filtering on pg_depend is what makes
+# this "the things pg_restore created", not "everything in public".
+#
+# REASSIGN OWNED BY postgres is deliberately not used either: postgres also owns
+# system catalog objects, and pointing a blanket reassignment at a superuser role
+# is a far bigger hammer than this needs.
+log "transferring ownership of the restored objects to evakuators"
+sudo -u postgres psql -d "$STAGING_DB" >/dev/null <<'SQL'
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT c.oid, c.relname, c.relkind
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'public'
+       AND c.relkind IN ('r', 'S', 'p')
+       AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = c.oid AND d.deptype = 'e')
+  LOOP
+    IF r.relkind = 'S' THEN
+      EXECUTE format('ALTER SEQUENCE public.%I OWNER TO evakuators', r.relname);
+    ELSE
+      EXECUTE format('ALTER TABLE public.%I OWNER TO evakuators', r.relname);
+    END IF;
+  END LOOP;
+
+  -- Enums, so a future migration that ALTER TYPE ... ADD VALUE hits the same
+  -- wall as ALTER TABLE would have.
+  FOR r IN
+    SELECT t.oid, t.typname
+      FROM pg_type t
+      JOIN pg_namespace n ON n.oid = t.typnamespace
+     WHERE n.nspname = 'public'
+       AND t.typtype = 'e'
+       AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = t.oid AND d.deptype = 'e')
+  LOOP
+    EXECUTE format('ALTER TYPE public.%I OWNER TO evakuators', r.typname);
+  END LOOP;
+END $$;
+SQL
+
 log "starting $STAGING_PM2_APP"
 pm2 start "$STAGING_PM2_APP" >/dev/null
 

@@ -135,6 +135,12 @@ function buildEntries(
 
   return [
     { path: '/', priority: '1.0', changefreq: 'daily' },
+    // High priority, `monthly` changefreq: the page ranks for "էվակուատոր
+    // մոտակայքում"-style intent, but its own markup is static — the results are
+    // client-side and per-visitor, so there is nothing here for a crawler to
+    // come back for. Claiming `daily` on a page whose HTML never changes is the
+    // signal-poisoning this file already avoids for <lastmod>.
+    { path: '/evakuator', priority: '0.9', changefreq: 'monthly' },
     { path: '/yerevan', priority: '0.9', changefreq: 'daily' },
     // `daily` is not a guess here: free routes are posted and auto-expire
     // continuously (see docs/free-routes.md), so this page's content genuinely

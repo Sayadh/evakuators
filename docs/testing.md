@@ -70,6 +70,7 @@ on is the `~` import alias, resolved above without booting Nuxt itself.
 | `tests/transliteration.spec.ts` | `toSearchKey()` — Armenian/Latin/Russian script folding, and the documented cases it deliberately does NOT fix (see `utils/transliteration.ts`'s own doc comment) |
 | `tests/locationSearch.spec.ts` | `searchLocations()` / `findLocationExact()` ranking, settlement → city/zone routing, dedup by destination |
 | `tests/locationData.spec.ts` | `validateLocationData()` — dangling ids, slug collisions, ambiguous names across the static geography datasets |
+| `tests/formatDistance.spec.ts` | `formatDistance`/`formatDuration` and the two line builders — the metre/kilometre thresholds, the never-zero floors, and that «Ճանապարհով» and «Ուղիղ գծով» are not interchangeable |
 | `tests/coordinates.spec.ts` | `parseCoordinates()` — every accepted separator, every rejection class (illegal character, not-two-numbers, out of ±90/±180, outside Armenia), the order those checks fire in, and that `formatCoordinates()` round-trips back through the parser |
 
 Add a new frontend test here only if it is a pure function over data the
@@ -131,6 +132,7 @@ the declared route order does.
 | `test/admin.controller.count-route.spec.ts` | `GET /admin/tow-trucks/count` is mounted correctly, sits behind `AdminJwtGuard`, is declared before any route that could shadow it, and the shadowing detector itself is tested against known true/false cases |
 | `test/telegram.service.outbound-allowlist.spec.ts` | `TELEGRAM_OUTBOUND_ALLOWED_CHAT_IDS` — a chat id not on the list never reaches `fetch()` at all, a listed one does, an empty list is unrestricted (production's real behaviour). See `docs/deployment.md` § "Staging environment" for what this exists to prevent |
 | `test/supabase-storage.service.read-only.spec.ts` | `SUPABASE_STORAGE_READ_ONLY` — `uploadWebp()`/`remove()` refuse before the Supabase client is ever called, an empty `remove([])` stays a no-op regardless, the flag is unrestricted when false |
+| `test/nearest.spec.ts` | The nearest-search logic that is decided in code: the cache's rounded keys (~110 m — the only form a visitor's position takes on the server), TTL expiry, the size cap that keeps it from being an unbounded write primitive; `RouteMatrixService` returning **null** rather than throwing on every failure path, sending `[longitude, latitude]` origin-first, and dropping a destination with a distance but no duration; and that the endpoint is a POST with a throttle stricter than the global default. **The PostGIS query itself is not tested here** — it needs a real database with the extension, which this suite deliberately excludes (see above); it is a documented manual check against staging |
 | `test/coordinates.spec.ts` | `SetCoordinatesDto` (range, `NaN`/`Infinity`, non-numbers), `assertWithinArmenia` (including a swapped pair and the padded box edges), `decimalToNumber` (null → undefined, never 0), and that both coordinate endpoints are mounted behind their auth guard with no tamperable id on the driver's route |
 
 ### When you touch `AdminController`, `AdminService`, or `TowTrucksRepository`

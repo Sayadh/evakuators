@@ -17,6 +17,15 @@ const seoParagraphs = buildHomeParagraphs()
 <template>
   <div>
     <HeroSection />
+
+    <!-- Immediately under the hero: someone landing on the homepage with a
+         broken car should not have to pick a marz first. The hero's own search
+         stays where it is — this is the shortcut for visitors who do not know
+         which city they are technically in. -->
+    <div class="container home-page__nearest">
+      <NearestTowTrucksCta />
+    </div>
+
     <PopularLocations />
     <RegionsSection />
     <HowItWorksSection />
@@ -38,5 +47,9 @@ const seoParagraphs = buildHomeParagraphs()
 .home-page__section {
   margin-top: var(--space-6);
   margin-bottom: var(--space-6);
+}
+
+.home-page__nearest {
+  margin-top: var(--space-6);
 }
 </style>

@@ -36,6 +36,8 @@ useSeoMetaData({
       </div>
     </header>
 
+    <NearestTowTrucksCta class="yerevan-page__nearest" />
+
     <div v-if="pending" class="card-grid">
       <LoadingSkeleton variant="card" :count="12" />
     </div>
@@ -61,6 +63,10 @@ useSeoMetaData({
   padding-bottom: var(--space-6);
 
   &__header {
+    margin-bottom: var(--space-5);
+  }
+
+  &__nearest {
     margin-bottom: var(--space-5);
   }
 

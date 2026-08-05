@@ -121,8 +121,10 @@ assume one is unused:
 | Touch per-driver statistics / visitor tracking | `docs/analytics.md` |
 | Decide whether a field is driver-editable or admin-only | `backend/src/my-tow-truck/dto/update-my-tow-truck.dto.ts` — the boundary and its two exceptions are argued there |
 | Touch the base parking coordinates (lat/lng) | `backend/src/common/coordinates.ts` + `frontend/utils/coordinates.ts` — one rule each side, mirrored by hand; the UI is `CoordinatesInput.vue` / `CoordinatesDialog.vue`, shared by registration, the driver dashboard and `/admin` |
+| Touch `/evakuator`, PostGIS, or the route-matrix provider | `docs/nearest-search.md` — the two-step design, why the results reuse `TowTruckCard` untouched, and the rule that a straight-line distance never gets a time next to it |
 | Find what a specific page/route does | `docs/pages-and-routes.md` |
 | Run the app on a local machine | `docs/local-development.md` |
+| Make local behave exactly like staging | `docs/local-development.md` § "Mirroring staging locally" — `scripts/refresh-local-db.sh` copies staging (never production), `backend/.env.local.example` lists the four variables that must differ and why |
 | Deploy to the VPS | `docs/deployment.md` |
 | Test a change against a real backend before it reaches production | `docs/deployment.md` § "Staging environment" — separate checkout, ports `3003`/`4003`, `staging.evakuators.am` |
 | Look up an endpoint | `docs/api-reference.md` |

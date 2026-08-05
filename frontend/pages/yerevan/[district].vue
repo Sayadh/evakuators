@@ -60,6 +60,8 @@ useJsonLd([
       </div>
     </header>
 
+    <NearestTowTrucksCta class="district-page__nearest" />
+
     <div class="district-page__toolbar">
       <AppButton v-if="!isDesktop" variant="outline" size="sm" @click="openDrawer">
         <AppIcon name="filter" :size="16" />
@@ -142,6 +144,10 @@ useJsonLd([
   padding-bottom: var(--space-6);
 
   &__header {
+    margin-bottom: var(--space-4);
+  }
+
+  &__nearest {
     margin-bottom: var(--space-4);
   }
 

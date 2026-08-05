@@ -95,6 +95,15 @@ Notable fields beyond the obvious:
     registrations, which closes the gap going forward instead of backfilling
     guesses. `locationUpdatedAt` is null exactly when the pair is.
 
+  A third column, `location` (`geography(Point, 4326)`), is the PostGIS
+  projection of the two above — `GENERATED ALWAYS ... STORED`, so Postgres
+  recomputes it on every write and it cannot disagree with the numbers. It is
+  what the nearest-driver search reads, via a partial GiST index, and it is
+  declared in `schema.prisma` as `Unsupported(...)` only so schema and database
+  agree. It is never written from application code and there is no typed path to
+  it. See `docs/nearest-search.md` § PostGIS, including why
+  `prisma migrate dev` must never regenerate it.
+
   **Withheld from every public response.** `toTowTruckApi` serves both
   `GET /tow-trucks/:slug` and `GET /my/tow-truck`; it takes an
   `includeCoordinates` option that defaults to **false**, so only the driver's

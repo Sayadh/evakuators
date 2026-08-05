@@ -25,6 +25,8 @@ const faqItems = buildAllRegionsFaq()
       Ընտրեք մարզը՝ քաղաքների ցանկը և հասանելի էվակուատորները տեսնելու համար։
     </p>
 
+    <NearestTowTrucksCta class="regions-page__nearest" />
+
     <NuxtLink :to="getYerevanRoute()" class="regions-page__yerevan">
       <div>
         <h2>Երևան</h2>
@@ -46,6 +48,10 @@ const faqItems = buildAllRegionsFaq()
 
 <style scoped lang="scss">
 .regions-page {
+  &__nearest {
+    margin-bottom: var(--space-5);
+  }
+
   &__intro {
     color: var(--color-text-secondary);
     max-width: 600px;

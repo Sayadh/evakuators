@@ -18,6 +18,34 @@ pm2 restart ecosystem.config.js
 Run both sides even if only one changed — cheap insurance, and PM2 restart
 is fast enough that there's no real cost to doing both every time.
 
+## PostGIS is a prerequisite, not a migration step
+
+The nearest-evacuator search needs the `postgis` extension. Its migration says
+`CREATE EXTENSION IF NOT EXISTS postgis;`, but that statement requires a
+**superuser**, and `prisma migrate deploy` connects as the `DATABASE_URL` role —
+which on this deployment is not one. So the package and the extension are a
+one-time server step, done before the first deploy that carries the migration:
+
+```bash
+# once per server — match your Postgres major version
+apt install postgresql-16-postgis-3
+
+# once per database, as the postgres OS user
+sudo -u postgres psql -d evakuators         -c 'CREATE EXTENSION IF NOT EXISTS postgis;'
+sudo -u postgres psql -d evakuators_staging -c 'CREATE EXTENSION IF NOT EXISTS postgis;'
+```
+
+`IF NOT EXISTS` is why doing it by hand and letting the migration try are both
+safe, in either order. If it is skipped, `migrate deploy` fails on
+`20260805150000_add_postgis_tow_truck_location` with a permission error and
+applies nothing — a clean stop, not a half-migrated database.
+
+**On staging this needs the ownership fix too.** `refresh-staging-db.sh` restores
+as the `postgres` role and grants privileges to `evakuators`, but `GRANT` is not
+ownership and `ALTER TABLE` requires ownership — so the first migration after a
+refresh fails with `42501: must be owner of table TowTruck`. See § "Refreshing
+staging's data".
+
 ## The "stale Prisma Client" trap
 
 **If `backend/prisma/schema.prisma` changed, `npx prisma generate` must run
@@ -259,6 +287,22 @@ It does not touch Supabase Storage (nothing needs to — see above) or the
 Telegram webhook (nothing in this codebase ever touches that programmatically
 — see above).
 
+**It also transfers table ownership, which is not the same as granting
+privileges.** `GRANT ALL PRIVILEGES` covers DML and is what lets staging's
+backend serve pages after a refresh; PostgreSQL requires you to *own* a table to
+`ALTER` it, and no GRANT confers that. Without the ownership step every refresh
+left a database that read and wrote perfectly and then failed the next
+`prisma migrate deploy` with `must be owner of table TowTruck` (SQLSTATE 42501)
+— which looked like a broken migration rather than a broken restore. Enums are
+included, since a migration that adds an enum value hits the same wall.
+Extension members (PostGIS's `spatial_ref_sys` lives in `public`) are filtered
+out via `pg_depend` and stay owned by `postgres`.
+
+The mirror of this script for a developer's own machine is
+`scripts/refresh-local-db.sh` — it copies **staging**, not production, so it
+never opens a connection to the production database at all. See
+`docs/local-development.md` § "Mirroring staging locally".
+
 ### Routine workflow — staging before production
 
 ```bash
@@ -455,6 +499,8 @@ wrong link in Telegram messages.
 | `ADMIN_TELEGRAM_BOT_USERNAME` | no, default `''` | Without the `@` |
 | `ADMIN_TELEGRAM_WEBHOOK_SECRET` | no, default `''` | Same `timingSafeEqual` pattern as `TELEGRAM_WEBHOOK_SECRET` |
 | `ADMIN_TELEGRAM_ALLOWED_CHAT_IDS` | no, default `''` | Comma-separated chat ids; anyone else is silently ignored by the bot. Blank = unrestricted |
+| `ROUTE_MATRIX_API_KEY` | no, default `''` | OpenRouteService key for the road distances/times on `/evakuator`. Blank = no external call is ever made and the search shows PostGIS straight-line distances with **no** estimated times — the same fallback a routing outage produces, so a deploy without a key is a working deploy with a smaller answer. Free tier is 2,500 req/day; one visitor search is one request, cached 5 minutes. See `docs/nearest-search.md` |
+| `ROUTE_MATRIX_BASE_URL` | no, default `https://api.openrouteservice.org` | Only for pointing at a self-hosted instance |
 | `ANALYTICS_VISITOR_PEPPER` | no, falls back to `DRIVER_JWT_SECRET` | Pepper for hashing analytics visitor ids (see `docs/analytics.md`). Optional so analytics needs no new setup on an existing deploy. **Changing it makes every returning visitor count as new** from that point on; historical aggregates are unaffected |
 
 ## Environment variables reference (frontend)

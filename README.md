@@ -162,6 +162,7 @@ the table below is a summary.
 | `GET` | `/api/v1/tow-trucks` | List — **card shape**, not full profiles (filters: `city`, `district`, `region`+`regionCities`, `yerevan`, `limit`, `offset`) |
 | `GET` | `/api/v1/tow-trucks/coverage` | Per-truck geography footprint for the region/city/district counters — no contact data |
 | `GET` | `/api/v1/tow-trucks/:slug` | Single **full** profile |
+| `POST` | `/api/v1/nearest-tow-trucks` | Nearest drivers to `{ latitude, longitude }` — PostGIS prefilter + one route-matrix request, max 10 results. Position never stored — see `docs/nearest-search.md` |
 | `GET` | `/api/v1/tow-trucks/:id/reviews` | Approved reviews |
 | `POST` | `/api/v1/tow-trucks/:id/reviews` | Submit review (moderated) |
 | `POST` | `/api/v1/images` | Upload image (multipart `file`) → WebP → Supabase |

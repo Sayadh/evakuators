@@ -53,6 +53,17 @@ const envSchema = z.object({
   // value if you'd rather the two concerns never share a secret. Changing it
   // makes every returning visitor look new from that point on.
   ANALYTICS_VISITOR_PEPPER: z.string().optional().default(''),
+
+  // Road distances/times for the "nearest evacuator" search (OpenRouteService).
+  //
+  // Optional, and empty by default, for the same reason the admin Telegram bot
+  // is: a deploy must not fail to boot because a key has not been obtained yet.
+  // Empty means RouteMatrixService.isConfigured is false, no external call is
+  // ever made, and the search runs permanently on PostGIS straight-line
+  // distances with no times shown — which is the same fallback a routing
+  // outage produces, so it is a path that gets exercised either way.
+  ROUTE_MATRIX_API_KEY: z.string().optional().default(''),
+  ROUTE_MATRIX_BASE_URL: z.string().optional().default('https://api.openrouteservice.org'),
 })
 
 export type Env = z.infer<typeof envSchema>

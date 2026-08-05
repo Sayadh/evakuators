@@ -45,6 +45,8 @@ useSeoMetaData({
       </div>
     </header>
 
+    <NearestTowTrucksCta class="region-page__nearest" />
+
     <section aria-labelledby="cities-title" class="region-page__section">
       <h2 id="cities-title">Քաղաքներ</h2>
       <div v-if="citiesPending" class="card-grid">
@@ -104,6 +106,10 @@ useSeoMetaData({
 
   &__section {
     margin-top: var(--space-6);
+  }
+
+  &__nearest {
+    margin-bottom: var(--space-2);
   }
 
   &__nearby {

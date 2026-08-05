@@ -109,6 +109,11 @@ onMounted(() => {
             Ասեք, որ համարը գտել եք Evakuators.am-ում։
           </p>
         </div>
+
+        <!-- Compact variant, under the contact card rather than above it: this
+             driver's number is why the visitor opened this page, and the offer
+             to look for a closer one belongs after it, not in front of it. -->
+        <NearestTowTrucksCta variant="inline" class="profile__nearest" />
       </aside>
     </div>
 
@@ -199,6 +204,10 @@ onMounted(() => {
     border-radius: var(--radius-lg);
     padding: var(--space-5);
     box-shadow: var(--shadow-md);
+  }
+
+  &__nearest {
+    margin-top: var(--space-4);
   }
 
   &__contact-label {

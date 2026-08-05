@@ -143,6 +143,26 @@ model TowTruck {
   /// and so cannot answer "how stale is this driver's location".
   locationUpdatedAt DateTime?
 
+  /// PostGIS projection of latitude/longitude — the index the "nearest
+  /// evacuator" search actually reads. `Unsupported` because Prisma has no
+  /// geography type; the column is declared here only so schema and database
+  /// agree and drift detection stays quiet.
+  ///
+  /// **Never written from application code, and it cannot be**: it is
+  /// `GENERATED ALWAYS ... STORED` in Postgres (see the migration), so the
+  /// database recomputes it from the two columns above on every write and an
+  /// INSERT that mentioned it would be rejected outright. Prisma also excludes
+  /// `Unsupported` fields from the generated client entirely, so there is no
+  /// typed path to it either — reads go through raw SQL in
+  /// `NearestRepository`.
+  ///
+  /// Because Prisma cannot express `GENERATED ALWAYS`, `prisma migrate dev`
+  /// must never be allowed to regenerate this column: it would emit a plain
+  /// `ADD COLUMN` and silently drop the generation clause, leaving a geography
+  /// column that is permanently NULL. Migrations here are hand-authored SQL
+  /// anyway (see docs/data-model.md § Migrations).
+  location Unsupported("geography(Point, 4326)")?
+
   /// ServiceType slugs from frontend constants
   services     String[]
   /// [{ name, slug, type: "city" | "district" | "region" }]

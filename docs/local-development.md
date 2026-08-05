@@ -87,6 +87,66 @@ npm run admin:create -- admin@example.com 'a-strong-password'
 
 Then log in at `localhost:3002/admin`.
 
+## Mirroring staging locally
+
+The two paths above give you a working local stack with *your own* data. This
+one gives you a local stack that behaves like staging — same rows, same schema,
+same extensions, same Supabase bucket, same bot — so a bug that reproduces on
+one reproduces on the other, and "it works locally" stops being a different
+claim from "it works on staging".
+
+```bash
+cp backend/.env.local.example backend/.env    # then fill it in — see below
+echo 'NUXT_PUBLIC_API_BASE_URL=http://localhost:4002/api/v1' > frontend/.env
+
+scripts/refresh-local-db.sh                   # dumps staging over ssh, restores locally
+
+cd backend && npx prisma generate && npm run start:dev
+cd frontend && npm run dev
+```
+
+`refresh-local-db.sh` copies **staging**, not production, and that is the point:
+staging is already a copy of production, so the rows are the same either way,
+and this script never opens a connection to the production database at all.
+There is no flag, no misconfigured `.env` and no typo'd hostname that can turn
+"refresh my laptop" into something production notices. It also refuses to run if
+your local `DATABASE_URL` points anywhere other than localhost — the safeguard
+against a copy-pasted staging connection string sitting in a local `.env`.
+
+It installs PostGIS into the local database before restoring, because the dump
+contains a `geography` column and the restore fails on the type itself
+otherwise. It also transfers table ownership to `evakuators` afterwards:
+`pg_restore` runs as the superuser, `GRANT` is not ownership, and PostgreSQL
+requires ownership for `ALTER TABLE` — so without that step the next
+`prisma migrate dev` fails with `must be owner of table TowTruck`.
+
+### What differs, and why each one has to
+
+| | Local | Staging | Why |
+| --- | --- | --- | --- |
+| Ports | `3002` / `4002` | `3003` / `4003` | Both pairs are reserved (CLAUDE.md). Never swap the halves of either. |
+| `DATABASE_URL` | your machine | the VPS | Necessarily. |
+| JWT secrets / analytics pepper | fresh | staging's | A token minted in a local experiment must not work against staging. |
+| Everything else | — | — | Copied verbatim. |
+
+`SUPABASE_STORAGE_READ_ONLY="true"` is **not** optional here. Your local database
+now holds copies of production's rows, so an upload or a delete from a local
+dashboard would write into production's real bucket. Expect registration,
+dashboard photo edits and admin image approval to render and validate normally
+and then fail at the final save with a clear read-only error — that is the flag
+working, not a bug.
+
+`TELEGRAM_OUTBOUND_ALLOWED_CHAT_IDS` is not optional either, for the same reason
+it is not on staging: the copied rows carry real drivers' real linked chat ids,
+so requesting a login code for a number that is not your own test account
+delivers a real message to a real person. Set it to your own chat id.
+
+### The one thing that cannot be mirrored
+
+The Telegram **webhook** — see the next section. Outbound messages (OTP codes)
+work locally once the token is copied; inbound account-linking cannot, because
+a bot has exactly one webhook URL globally and it belongs to production.
+
 ## Telegram login/link flow — does NOT work locally by default
 
 This is the single most confusing local-dev gotcha in the project, worth
@@ -124,18 +184,27 @@ call made on this project so far is: **don't bother** — test the Telegram
 flow directly on production instead, and treat local dev as sufficient for
 everything else (this was an explicit decision, not an unresolved TODO).
 
-## Local vs production data — always separate, by design
+## Local vs production data — never a live connection, by design
 
 Local Postgres and production Postgres are two entirely independent
 databases. Approving a registration through the local admin panel will never
 make that tow truck appear on evakuators.am, and data already live on
 evakuators.am will never appear locally — there is no sync, and this is
 intentional (keeps local experimentation, including destructive testing,
-from ever risking real data). If you need realistic data locally, either
-register fresh test entries through the local `/register` + `/admin` flow,
-or take a deliberate read-only snapshot/dump of production and restore it
-locally — never point a local dev `DATABASE_URL` directly at the production
-database for routine work.
+from ever risking real data).
+
+Copying the data is fine and supported; **connecting** to production's database
+is not. Never point a local `DATABASE_URL` at it, not even read-only. For
+realistic data, either register fresh test entries through the local
+`/register` + `/admin` flow, or run `scripts/refresh-local-db.sh` (see
+"Mirroring staging locally" above), which copies staging — already a copy of
+production — and so never touches production at all.
+
+Whichever you choose, a local database holding copies of real rows inherits
+staging's two guards along with the data: `SUPABASE_STORAGE_READ_ONLY="true"`
+and `TELEGRAM_OUTBOUND_ALLOWED_CHAT_IDS` set to your own chat id. Real rows mean
+real phone numbers, real Telegram chat ids and real Storage objects; the data
+being on your laptop changes none of that.
 
 ## Common mistakes seen in practice
 

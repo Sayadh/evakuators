@@ -63,6 +63,24 @@ export class TowTrucksService {
     return toTowTruckApi(truck)
   }
 
+  /**
+   * Cards for a known set of ids, ratings attached — used by the nearest-driver
+   * search after PostGIS has decided *which* drivers.
+   *
+   * Exposed here rather than letting that feature call the repository and the
+   * mapper itself, so every card the API ever emits goes through the one path
+   * that also attaches ratings. A listing that quietly shipped without them
+   * would order differently from every other listing on the site (see
+   * `attachRatings` below for why the absence of a rating is meaningful).
+   *
+   * Returns whatever the ids resolved to, in Postgres' order — the caller owns
+   * the ordering, because the caller is the one holding the distances.
+   */
+  async getCardsByIds(ids: number[]): Promise<TowTruckCardApi[]> {
+    const trucks = await this.repository.findCardsByIds(ids)
+    return this.attachRatings(trucks)
+  }
+
   /** Admin-curated picks — empty array when the admin hasn't marked any */
   async getFeatured(): Promise<TowTruckCardApi[]> {
     const trucks = await this.repository.findFeaturedCards()

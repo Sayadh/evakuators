@@ -67,6 +67,19 @@ export interface AppConfig {
    * moment on (historical aggregates are unaffected — they hold no keys).
    */
   analyticsVisitorPepper: string
+  /**
+   * Road distance/time provider for the "nearest evacuator" search
+   * (OpenRouteService — see RouteMatrixService for why that one).
+   *
+   * Fully optional: an empty `apiKey` means no external call is ever made and
+   * the search shows PostGIS straight-line distances with no estimated times,
+   * exactly as it does during a routing outage. So a deploy without a key is a
+   * working deploy with a smaller answer, not a broken one.
+   */
+  routeMatrix: {
+    apiKey: string
+    baseUrl: string
+  }
 }
 
 const driverJwtSecret = (): string => process.env.DRIVER_JWT_SECRET ?? ''
@@ -110,4 +123,13 @@ export default (): AppConfig => ({
   driverJwtSecret: driverJwtSecret(),
   adminJwtSecret: process.env.ADMIN_JWT_SECRET ?? '',
   analyticsVisitorPepper: process.env.ANALYTICS_VISITOR_PEPPER || driverJwtSecret(),
+  routeMatrix: {
+    apiKey: process.env.ROUTE_MATRIX_API_KEY ?? '',
+    // Trailing slash stripped so the service can concatenate a path without
+    // producing a double slash — same treatment frontendUrl gets above.
+    baseUrl: (process.env.ROUTE_MATRIX_BASE_URL ?? 'https://api.openrouteservice.org').replace(
+      /\/$/,
+      '',
+    ),
+  },
 })

@@ -84,6 +84,31 @@ export class TowTrucksRepository {
     })
   }
 
+  /**
+   * Card columns for a known set of ids — the second half of the nearest-driver
+   * search.
+   *
+   * The PostGIS query (see `NearestRepository`) answers "who and how far" and
+   * returns nothing but ids, precisely so the card itself is still assembled
+   * from `CARD_SELECT` here. Two places building a card would be two places to
+   * accidentally publish a column the public listing withholds.
+   *
+   * Deliberately NOT ordered: distance order lives with the distances, in the
+   * caller. Postgres has no reason to know about it, and an `ORDER BY` here
+   * would be a second, silently-disagreeing opinion about the result order.
+   *
+   * `isActive` is re-checked even though the caller already filtered on it —
+   * this is a public read path and every other one in this file states the rule
+   * rather than inheriting it.
+   */
+  findCardsByIds(ids: number[]): Promise<TowTruckCardRow[]> {
+    if (ids.length === 0) return Promise.resolve([])
+    return this.prisma.towTruck.findMany({
+      where: { id: { in: ids }, isActive: true },
+      select: CARD_SELECT,
+    })
+  }
+
   /** Card columns for the admin-curated homepage picks */
   findFeaturedCards(): Promise<TowTruckCardRow[]> {
     return this.prisma.towTruck.findMany({

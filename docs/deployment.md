@@ -81,33 +81,105 @@ changes or is bypassed in some edge case.
 
 A second, full copy of the stack on the same VPS — `staging.evakuators.am` /
 `staging-api.evakuators.am`, ports `3003`/`4003` (one above production's
-`3002`/`4002`) — so a change can be built, deployed and clicked through
-against a real backend and a real (but separate) database before it ever
-reaches `evakuators.am`. Not a second server: no new cost, and everything in
-`docs/local-development.md` about Postgres/PM2/nginx already applies here,
-just against a second checkout.
+`3002`/`4002`) — loaded with a real, current copy of production's data, so a
+change can be built, deployed and clicked through against real drivers,
+cities, service zones and photos before it ever reaches `evakuators.am`. Not
+a second server: no new cost, and everything in `docs/local-development.md`
+about Postgres/PM2/nginx already applies here, just against a second
+checkout.
 
-**Two things staging deliberately does NOT get, by explicit choice, not
-oversight:**
+**Isolated from production:** its own database (a copy, not a connection —
+see "Database: copy, not connection" below), its own ports, its own PM2
+process names, its own domain, its own JWT/webhook secrets. **Shared with
+production, by deliberate and specifically-guarded choice:** the Telegram
+driver bot's token and the Supabase Storage bucket. Both of the sections
+below explain exactly what makes each of those two safe to share rather than
+just "usually fine."
 
-- **Its own Telegram bot.** Telegram gives one bot exactly one webhook,
-  globally (see `docs/local-development.md` § "one webhook, globally"), and
-  that webhook stays pointed at production. Staging's `.env` holds the same
-  bot token as production, but its backend will never actually *receive* a
-  Telegram update — driver OTP login, admin 2FA, and new-registration
-  Telegram notifications are all untestable on staging, exactly like local
-  development already is. If a change specifically touches one of those
-  flows, verify it against production directly, or accept the gap.
-- **Its own Supabase Storage bucket.** Staging uses production's bucket.
-  Test image uploads on staging land in the same place real driver photos
-  do. Acceptable for now — revisit if that ever causes a real problem
-  (stray test images turning up somewhere they shouldn't, storage costs,
-  etc.).
+### Database: copy, not connection
 
-Everything else — the database, both JWT secrets, the analytics pepper — is
-**staging's own**, generated fresh, never copied from production. See the
-comments in `backend/.env.staging.example` for exactly which variables are
-shared on purpose and which must not be.
+Staging's `DATABASE_URL` points at `evakuators_staging` — a real, separate
+PostgreSQL database on the same instance, never production's `evakuators`
+database. It starts as a `pg_dump`/`pg_restore` copy of production and stays
+that way: nothing after the copy links the two databases, so anything staging
+does to its rows — including a full reset — cannot reach production's.
+`scripts/refresh-staging-db.sh` is the only supported way to (re)populate it;
+see "Refreshing staging's data" below.
+
+### Telegram: same bot token, outbound messages allow-listed
+
+Telegram gives one bot exactly one **webhook** — the URL Telegram calls for
+*incoming* updates (`/start`, account-linking) — globally, and that stays
+pointed at production
+(`https://api.evakuators.am/api/v1/telegram/webhook`, registered by the
+one-time `curl ... /setWebhook` command below). **Nothing in this codebase
+ever calls `setWebhook` or `deleteWebhook`** — grep for it, it isn't there;
+the only place either string appears is a comment explaining what Telegram
+echoes back on a call the *human operator* makes by hand. So staging's
+backend holding the same `TELEGRAM_BOT_TOKEN` does not move, share, or
+otherwise affect where Telegram delivers incoming messages: those keep going
+to production, and only production, exactly as before.
+
+What sharing the token DOES enable: staging's backend can make *outbound*
+`sendMessage` calls through the real bot — real OTP codes, real link
+confirmations — because sending a message needs only the token, not the
+webhook. That is genuinely useful (a real end-to-end login test), and
+genuinely risky on its own: staging's database is a full copy of
+production's, so it contains **other real drivers' real, already-linked
+`telegramChatId` values**. Requesting a login code for a phone number that
+isn't your own test account during staging testing would deliver a real
+"here is your login code" message to that real person.
+
+`TELEGRAM_OUTBOUND_ALLOWED_CHAT_IDS` closes that gap structurally, not just
+by operator care: set on staging to your own Telegram chat id (message
+`@userinfobot` to get it), `TelegramService.sendMessage()` sends only to
+chat ids on that list and silently skips every other one — no HTTP call to
+Telegram happens at all for a skipped send, and the caller (e.g. driver OTP
+request) sees it resolve exactly as if it had sent, so nothing about the
+staging login flow itself needs to change or behaves differently. Leave this
+variable **blank on production** — blank means unrestricted, today's real
+behaviour. See `backend/test/telegram.service.outbound-allowlist.spec.ts`
+for this pinned in a test, and the doc comment on `sendMessage()` itself for
+the full reasoning.
+
+The admin 2FA bot is unaffected by any of this — it's a separate token
+(`ADMIN_TELEGRAM_BOT_TOKEN`), left **blank** on staging by default (see
+`backend/.env.staging.example`), which keeps admin login single-factor there
+and means there is nothing to guard on that side at all.
+
+### Supabase Storage: same bucket, staging is read-only
+
+Staging shares production's real Supabase project and bucket rather than
+getting its own. This is why images "just work" on staging with zero setup:
+every copied `TowTruck`/`RegistrationRequest` row's image URL is an absolute,
+public Supabase Storage URL — Supabase serves it to any browser regardless of
+which app rendered the page linking to it, so nothing about the frontend or
+backend needs to know or care that the photo predates staging's existence.
+
+What must never happen is staging **writing** into that bucket — a driver
+registering, editing a profile, or an admin approving a request on staging
+must not be able to create, replace or delete a real file in production's
+real Storage. `SUPABASE_STORAGE_READ_ONLY=true` enforces exactly that:
+`SupabaseStorageService` — the *only* place in the whole project that talks
+to Supabase — refuses every `uploadWebp()`/`remove()` call before it reaches
+the network, throwing a clear "read-only in this environment" error instead.
+Existing callers already wrap storage calls in `try/catch` for unrelated
+reasons (a Storage hiccup shouldn't block an admin's delete, an orphan-purge
+failure should just retry tomorrow), so this fails exactly as gracefully as
+any other storage error — nothing crashes, nothing silently half-succeeds.
+One consequence worth expecting, not a bug: the daily `purgeOrphanedImages`
+cron (`docs/deployment.md` § "Scheduled jobs") will log a skipped-write
+warning on staging every day it has something to purge; that's the same
+graceful "retry next run" path a real Supabase outage would take.
+
+Concretely, on staging: registration, dashboard photo edits, and admin image
+approval all still render and validate normally — they just fail at the
+final "save the file" step with a clear error, instead of silently
+appearing to work. This is what "read-only" is expected to look like; it is
+not something to work around.
+
+See `backend/test/supabase-storage.service.read-only.spec.ts` for this
+pinned in a test.
 
 ### One-time setup
 
@@ -117,29 +189,37 @@ shared on purpose and which must not be.
 git clone <repo-url> /var/www/evakuators-staging
 cd /var/www/evakuators-staging
 
-# A separate database on the SAME Postgres instance — full data isolation,
-# no new server. The `evakuators` role already exists (production created
-# it) — this only needs a new database owned by it.
+# The database itself — empty at this point. The `evakuators` role already
+# exists (production created it), this only needs a new database owned by it.
 #
-# Run as the `postgres` OS user, not root/your login: `psql postgres` with
-# no -U tries to peer-auth as whatever OS user is running it, and Postgres
-# has no role by that name unless it happens to be `postgres` or
-# `evakuators` themselves. On a VPS shell you are usually root, and there is
-# no Postgres role called `root` — that's the
-# `FATAL: role "root" does not exist` you'll see if you skip `sudo -u postgres`.
+# Run as the `postgres` OS user, not root/your login: `psql postgres` with no
+# -U tries to peer-auth as whatever OS user is running it, and Postgres has
+# no role by that name unless it happens to be `postgres` or `evakuators`
+# themselves. On a VPS shell you are usually root, and there is no Postgres
+# role called `root` — that's the `FATAL: role "root" does not exist` you'll
+# see if you skip `sudo -u postgres`.
 sudo -u postgres psql -c "CREATE DATABASE evakuators_staging OWNER evakuators;"
 
 cp backend/.env.staging.example backend/.env
-# Fill in DATABASE_URL's password, copy SUPABASE_*/TELEGRAM_* from
-# production's backend/.env verbatim, and generate FRESH values for
-# DRIVER_JWT_SECRET / ADMIN_JWT_SECRET / ANALYTICS_VISITOR_PEPPER
-# (openssl rand -hex 32) — see the file's own comments for which is which.
+# Fill in: DATABASE_URL's password; SUPABASE_*/TELEGRAM_BOT_TOKEN/
+# TELEGRAM_BOT_USERNAME/TELEGRAM_WEBHOOK_SECRET copied from production's
+# backend/.env verbatim; SUPABASE_STORAGE_READ_ONLY="true" (already the
+# template default — leave it); TELEGRAM_OUTBOUND_ALLOWED_CHAT_IDS set to
+# YOUR OWN Telegram chat id; and fresh values (openssl rand -hex 32) for
+# DRIVER_JWT_SECRET / ADMIN_JWT_SECRET / ANALYTICS_VISITOR_PEPPER. See the
+# file's own comments for exactly which is which.
 
 cd frontend && npm install && npm run build
 cd ../backend && npm install && npx prisma generate && npx prisma migrate deploy && npm run build
 
 pm2 start ecosystem.staging.config.js
 pm2 save
+
+# Populate it with production's real data — see "Refreshing staging's data"
+# below. Do this AFTER the migration above, not instead of it: migrate
+# deploy makes sure the schema matches this checkout's Prisma schema first,
+# then the refresh script restores production's rows into that schema.
+../scripts/refresh-staging-db.sh
 ```
 
 Then, on the nginx/DNS side: point `staging.evakuators.am` and
@@ -151,6 +231,29 @@ that file's own comments for why it deliberately mirrors
 that keeps the whole staging site out of search results (unlike production,
 where individual pages opt into `noindex` one at a time).
 
+### Refreshing staging's data
+
+```bash
+scripts/refresh-staging-db.sh
+```
+
+Dumps production (`pg_dump`, read-only — nothing this script does can write
+to production), stops staging's backend, drops and recreates
+`evakuators_staging`, restores the dump into it, restarts staging's backend.
+Prompts for a typed `REFRESH STAGING` confirmation before touching anything,
+because "on demand" + "drops a database" is exactly the kind of command that
+is dangerous to run twice with the wrong arguments.
+
+Every check the script makes before it does anything destructive is in its
+own comments, but the one that matters most: it parses the database name out
+of both the production and staging `DATABASE_URL`s and **refuses to run at
+all if they're the same** — the single line standing between "refresh
+staging" and "wipe production" if a `.env` file is ever misconfigured.
+
+It does not touch Supabase Storage (nothing needs to — see above) or the
+Telegram webhook (nothing in this codebase ever touches that programmatically
+— see above).
+
 ### Routine workflow — staging before production
 
 ```bash
@@ -161,8 +264,10 @@ cd frontend && npm install && npm run build
 cd ../backend && npm install && npx prisma generate && npx prisma migrate deploy && npm run build
 pm2 restart ecosystem.staging.config.js
 
-# 2. Click through staging.evakuators.am — the exact change, against a real
-#    backend and database, before production sees it.
+# 2. Click through staging.evakuators.am — the exact change, against real
+#    data, before production sees it. Refresh staging's data first
+#    (scripts/refresh-staging-db.sh) if it's gone stale enough to matter for
+#    what you're testing.
 
 # 3. Only once staging looks right, deploy the SAME commit to production —
 #    the routine deploy at the top of this doc, unchanged, from
@@ -330,6 +435,7 @@ wrong link in Telegram messages.
 | `SUPABASE_URL` | yes | Storage only — never DB/Auth |
 | `SUPABASE_SERVICE_ROLE_KEY` | yes | |
 | `SUPABASE_STORAGE_BUCKET` | yes | Must be a **public** bucket |
+| `SUPABASE_STORAGE_READ_ONLY` | no, default `false` | `true` blocks every upload/delete at `SupabaseStorageService` before it reaches Supabase. Only ever `true` on a deploy sharing production's bucket read-only — staging, see § "Staging environment" |
 | `PORT` | no, default `4002` | Never `3002` |
 | `HOST` | no, default `127.0.0.1` | Interface to bind. Loopback by default so nginx is the only way in — see "Why the API binds loopback" below. Set `0.0.0.0` only if something must reach the API without nginx |
 | `CORS_ORIGIN` | no, default `http://localhost:3002` | Comma-separated; a prod-only value silently blocks local dev — see `docs/local-development.md` |
@@ -337,6 +443,7 @@ wrong link in Telegram messages.
 | `TELEGRAM_BOT_TOKEN` | yes | |
 | `TELEGRAM_BOT_USERNAME` | yes | Without the `@` |
 | `TELEGRAM_WEBHOOK_SECRET` | yes | Random string, checked with `timingSafeEqual` against Telegram's header |
+| `TELEGRAM_OUTBOUND_ALLOWED_CHAT_IDS` | no, default `''` | Comma-separated chat ids; `sendMessage()` skips (no Telegram API call) anyone else, silently. Blank = unrestricted. Only ever set on a deploy sharing `TELEGRAM_BOT_TOKEN` with another environment — staging, see § "Staging environment" |
 | `DRIVER_JWT_SECRET` | yes, min 16 chars | Also used as the OTP hashing pepper |
 | `ADMIN_JWT_SECRET` | yes, min 16 chars | Deliberately separate from `DRIVER_JWT_SECRET`; also the admin OTP hashing pepper |
 | `ADMIN_TELEGRAM_BOT_TOKEN` | no, default `''` | Separate bot from `TELEGRAM_BOT_TOKEN` — admin 2FA + registration alerts. Blank = feature off, login stays single-factor |

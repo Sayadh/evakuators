@@ -52,6 +52,14 @@ mask_url() { echo "$1" | sed -E 's#(://[^:]+:)[^@]+(@)#\1***\2#'; }
 # string needs here.
 db_name_of() { echo "$1" | sed -E 's#^[a-zA-Z0-9+]+://[^/]+/([^?]+).*#\1#'; }
 
+# `?schema=public` is Prisma's own connection-string extension (it sets
+# search_path), not a real libpq URI parameter — pg_dump/psql/pg_restore all
+# reject it outright with "invalid URI query parameter: schema". Dropping the
+# whole query string is safe here: this project uses exactly one schema
+# ("public", enforced elsewhere), and pg_dump with no --schema flag already
+# dumps every schema in the database regardless.
+strip_query() { echo "$1" | sed -E 's/\?.*$//'; }
+
 read_database_url() {
   local file="$1" label="$2"
   [[ -f "$file" ]] || fail "$label env file not found: $file"
@@ -109,7 +117,7 @@ cleanup() { rm -f "$DUMP_FILE"; }
 trap cleanup EXIT
 
 log "dumping production ($PROD_DB) — read-only, custom format"
-pg_dump --no-owner --no-privileges -Fc "$PROD_URL" -f "$DUMP_FILE"
+pg_dump --no-owner --no-privileges -Fc "$(strip_query "$PROD_URL")" -f "$DUMP_FILE"
 log "dump written: $(du -h "$DUMP_FILE" | cut -f1)"
 
 log "stopping $STAGING_PM2_APP so nothing holds a connection to $STAGING_DB"

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { CONTACT_PHONE, CONTACT_TELEGRAM, SITE_NAME } from '~/constants/site'
-import { getPhoneHref, getTelegramUrl, getWhatsAppUrl } from '~/utils/formatPhone'
+import { CONTACT_PHONE, SITE_NAME } from '~/constants/site'
+import { getPhoneHref, getTelegramPhoneUrl, getWhatsAppUrl } from '~/utils/formatPhone'
 
 useSeoMetaData({
   title: `Կապ մեզ հետ | ${SITE_NAME}`,
@@ -40,7 +40,7 @@ useSeoMetaData({
       </a>
 
       <a
-        :href="getTelegramUrl(CONTACT_TELEGRAM)"
+        :href="getTelegramPhoneUrl(CONTACT_PHONE)"
         target="_blank"
         rel="noopener"
         class="contact-page__card contact-page__card--telegram"
@@ -49,7 +49,7 @@ useSeoMetaData({
           <AppIcon name="telegram" :size="26" />
         </span>
         <span class="contact-page__label">Գրել Telegram-ով</span>
-        <span class="contact-page__value">@{{ CONTACT_TELEGRAM }}</span>
+        <span class="contact-page__value">{{ CONTACT_PHONE }}</span>
       </a>
     </div>
   </div>

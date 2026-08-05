@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { FOOTER_PAGES } from '~/constants/navigation'
-import { CONTACT_PHONE, CONTACT_TELEGRAM, SITE_DESCRIPTION, SOCIAL_LINKS } from '~/constants/site'
+import { CONTACT_PHONE, SITE_DESCRIPTION, SOCIAL_LINKS } from '~/constants/site'
 import { getDistrictRoute, getRegionRoute } from '~/utils/routeHelpers'
-import { getPhoneHref, getTelegramUrl } from '~/utils/formatPhone'
+import { getPhoneHref, getTelegramPhoneUrl } from '~/utils/formatPhone'
 import { getStaticDistricts, getStaticRegions } from '~/utils/geography'
 
 /**
@@ -35,12 +35,12 @@ const currentYear = new Date().getFullYear()
               <AppIcon name="phone" :size="16" /> {{ CONTACT_PHONE }}
             </a>
             <a
-              :href="getTelegramUrl(CONTACT_TELEGRAM)"
+              :href="getTelegramPhoneUrl(CONTACT_PHONE)"
               target="_blank"
               rel="noopener"
               class="footer__contact-link"
             >
-              <AppIcon name="telegram" :size="16" /> @{{ CONTACT_TELEGRAM }}
+              <AppIcon name="telegram" :size="16" /> {{ CONTACT_PHONE }}
             </a>
           </p>
           <ul v-if="SOCIAL_LINKS.length" class="footer__social" aria-label="Սոցիալական ցանցեր">

@@ -5,7 +5,7 @@ export const required =
   (value) =>
     value.trim().length > 0 || message
 
-/** Exact shape only — +374 followed by 8 digits, no spaces/dashes (e.g. +37493632003) */
+/** Exact shape only — +374 followed by 8 digits, no spaces/dashes (e.g. +37491000001) */
 export const isPhone =
   (message = 'Մուտքագրեք հեռախոսահամարը այս ձևաչափով՝ +37491000001'): ValidationRule =>
   (value) => {

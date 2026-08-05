@@ -3,8 +3,13 @@ export const SITE_URL = 'https://evakuators.am'
 export const SITE_DESCRIPTION =
   'Գտեք Հայաստանի ցանկացած մարզում և Երևանի վարչական շրջաններում աշխատող էվակուատորներ։ Դիտեք մեքենաների նկարները, ծառայությունները, գները և անմիջապես զանգահարեք վարորդին։'
 
-export const CONTACT_PHONE = '+374 93 63 20 03'
-export const CONTACT_TELEGRAM = 'sayadharutyunyan'
+/**
+ * The platform's single contact number. Phone, WhatsApp and Telegram are all
+ * derived from it — see `getPhoneHref`, `getWhatsAppUrl` and
+ * `getTelegramPhoneUrl` — so there is exactly one string to change when it
+ * moves, and the three links can never point at different numbers.
+ */
+export const CONTACT_PHONE = '+374 77 13 54 66'
 
 /**
  * Single source of truth for the platform's social profiles — same

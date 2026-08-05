@@ -37,9 +37,23 @@ export function getWhatsAppUrl(phone: string): string {
   return `https://wa.me/${normalizePhone(phone).replace('+', '')}`
 }
 
-/** "username" → "https://t.me/username" */
+/** "username" → "https://t.me/username" — for a driver's own @handle */
 export function getTelegramUrl(username: string): string {
   return `https://t.me/${username.replace(/^@/, '')}`
+}
+
+/**
+ * "+374 77 13 54 66" → "https://t.me/+37477135466"
+ *
+ * Separate from `getTelegramUrl` on purpose. Telegram treats a path starting
+ * with `+` as a phone number and anything else as a username, so the leading
+ * `+` is load-bearing here and must survive — while `getTelegramUrl` strips a
+ * leading `@` for the opposite reason. Drivers give us a handle; the platform
+ * publishes a number. Folding both into one function would mean guessing which
+ * kind of string it was handed.
+ */
+export function getTelegramPhoneUrl(phone: string): string {
+  return `https://t.me/${normalizePhone(phone)}`
 }
 
 /** Groups a raw phone into a readable format if needed */

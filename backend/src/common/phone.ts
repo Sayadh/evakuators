@@ -29,13 +29,13 @@ export const ARMENIAN_PHONE_MESSAGE = 'Հեռախոսահամարը պետք է 
  * registration and both driver-auth endpoints accepted any 8-20 character
  * string. The frontend normalized everything, so real data stayed clean, but
  * nothing in the backend required it: a direct API call could store
- * `"+374 93 632003"`, and login would then never find that driver again,
+ * `"+374 91 000001"`, and login would then never find that driver again,
  * because the string it searches with would not match the string that was
  * stored.
  *
  * That also makes the `@unique` constraint on the column meaningful. A unique
  * index enforces uniqueness of the *string*; without a canonical format,
- * `+37493632003` and `+374 93 632003` are two different strings and the
+ * `+37491000001` and `+374 91 000001` are two different strings and the
  * database would happily hold both — a false guarantee, which is worse than
  * none.
  *

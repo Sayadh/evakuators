@@ -115,7 +115,7 @@ function subtitle(result: LocationSearchResult): string {
 <template>
   <div class="location-autocomplete" @focusout="onFocusOut">
     <label class="location-autocomplete__label" :for="`${listboxId}-input`">
-      Որոնել բնակավայր
+      Որոնել տարածք — հայերեն, latin կամ русский
     </label>
     <div class="location-autocomplete__field">
       <AppIcon name="search" :size="18" class="location-autocomplete__icon" />
@@ -124,7 +124,7 @@ function subtitle(result: LocationSearchResult): string {
         v-model="query"
         type="text"
         class="location-autocomplete__input"
-        placeholder="Օր.՝ Պտղնի, Աբովյան, Գառնի"
+        placeholder="Օր.՝ Պտղնի, Abovyan, Ереван"
         autocomplete="off"
         role="combobox"
         aria-autocomplete="list"

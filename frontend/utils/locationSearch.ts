@@ -3,7 +3,9 @@ import { staticDistricts } from '~/data/districts'
 import { staticRegions } from '~/data/regions'
 import { staticServiceZones } from '~/data/serviceZones'
 import { staticSettlements, type StaticSettlement } from '~/data/settlement'
-import { getCityRoute, getDistrictRoute } from './routeHelpers'
+import { getCityRoute, getDistrictRoute, getRegionRoute, getYerevanRoute } from './routeHelpers'
+import { toSearchKey } from './transliteration'
+import { YEREVAN_REGION_SLUG } from './geography'
 
 /**
  * One search index over every kind of location the site knows about.
@@ -15,6 +17,13 @@ import { getCityRoute, getDistrictRoute } from './routeHelpers'
  * does not know or care that it is a village rather than a town. Four separate
  * lookups would mean four ranking rules to keep in step and four places to
  * forget a case.
+ *
+ * ## Three scripts, one index
+ *
+ * Every term is stored under a transliterated key (see `transliteration.ts`),
+ * so «Երևան», `yerevan` and «Ереван» are one entry rather than three rows of
+ * data somebody has to keep in step. Russian spellings work for all 358
+ * locations without a single Russian alias being written by hand.
  *
  * ## Why it is built once
  *
@@ -30,7 +39,7 @@ import { getCityRoute, getDistrictRoute } from './routeHelpers'
  */
 
 /** Where a result sends the visitor, and what it is */
-export type LocationSearchResultType = 'city' | 'district' | 'zone' | 'settlement'
+export type LocationSearchResultType = 'region' | 'city' | 'district' | 'zone' | 'settlement'
 
 export interface LocationSearchResult {
   /**
@@ -51,6 +60,11 @@ export interface LocationSearchResult {
 
 /** One searchable term pointing at a result */
 interface IndexEntry {
+  /**
+   * Script-agnostic comparison form — «Երևան», `yerevan` and «Ереван» all
+   * become `erevan` here. Matching happens on this, never on the raw term, so
+   * one entry serves all three scripts without three copies in the data.
+   */
   normalized: string
   /** Canonical names rank above aliases — see `rank()` */
   isCanonicalName: boolean
@@ -119,10 +133,14 @@ export function isLandingSettlement(settlement: StaticSettlement): boolean {
 function push(entries: IndexEntry[], terms: string[], canonical: string, result: LocationSearchResult): void {
   const seen = new Set<string>()
   for (const term of terms) {
-    const normalized = normalizeLocationQuery(term)
+    const normalized = toSearchKey(normalizeLocationQuery(term))
     if (!normalized || seen.has(normalized)) continue
     seen.add(normalized)
-    entries.push({ normalized, isCanonicalName: normalized === normalizeLocationQuery(canonical), result })
+    entries.push({
+      normalized,
+      isCanonicalName: normalized === toSearchKey(normalizeLocationQuery(canonical)),
+      result,
+    })
   }
 }
 
@@ -157,6 +175,28 @@ const INDEX: IndexEntry[] = (() => {
       route: getDistrictRoute(district.slug),
     })
   }
+
+  // Marzes, and the Yerevan pseudo-region. Added after cities so that a name
+  // shared by both — «Արարատ» is a marz, a town AND a village — still resolves
+  // to the town, which is what a person with a broken-down car means. Without
+  // this block «Երևան» and «Ереван» matched nothing at all: Yerevan is not a
+  // city row, it is a region whose "cities" are its districts (see CLAUDE.md).
+  for (const region of staticRegions) {
+    push(entries, [region.name, region.slug], region.name, {
+      key: `region:${region.slug}`,
+      type: 'region',
+      name: region.name,
+      regionName: region.name,
+      route: getRegionRoute(region.slug),
+    })
+  }
+  push(entries, ['Երևան', YEREVAN_REGION_SLUG, 'erevan'], 'Երևան', {
+    key: `region:${YEREVAN_REGION_SLUG}`,
+    type: 'region',
+    name: 'Երևան',
+    regionName: 'Երևան',
+    route: getYerevanRoute(),
+  })
 
   for (const zone of staticServiceZones) {
     const region = regionById.get(zone.regionId)
@@ -222,7 +262,7 @@ function rank(entry: IndexEntry, query: string): number {
  * «Արարատ» returns the city and not the village of the same name.
  */
 export function findLocationExact(query: string): LocationSearchResult | null {
-  return EXACT.get(normalizeLocationQuery(query)) ?? null
+  return EXACT.get(toSearchKey(normalizeLocationQuery(query))) ?? null
 }
 
 /**
@@ -233,7 +273,7 @@ export function findLocationExact(query: string): LocationSearchResult | null {
  * the same thing.
  */
 export function searchLocations(query: string, limit = 8): LocationSearchResult[] {
-  const normalized = normalizeLocationQuery(query)
+  const normalized = toSearchKey(normalizeLocationQuery(query))
   if (normalized.length < 2) return []
 
   const best = new Map<string, { score: number; result: LocationSearchResult }>()

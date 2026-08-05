@@ -11,9 +11,11 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const { phoneHref, whatsappUrl, onPhoneClick, onWhatsAppClick } = usePhoneActions(
-  () => props.towTruck,
-)
+// WhatsApp is deliberately NOT offered here — only on the full profile
+// (TowTruckContactActions.vue). The card is a lightweight teaser shown to
+// every visitor at once; a driver's messaging channel is the kind of detail
+// that belongs on their own page, not broadcast on every listing card.
+const { phoneHref, onPhoneClick } = usePhoneActions(() => props.towTruck)
 
 const displayName = computed(() => props.towTruck.companyName ?? props.towTruck.driverName)
 
@@ -91,17 +93,6 @@ const mainAreas = computed(() =>
         >
           <AppIcon name="phone" :size="18" />
           Զանգահարել
-        </a>
-        <a
-          v-if="whatsappUrl"
-          :href="whatsappUrl"
-          target="_blank"
-          rel="noopener"
-          class="truck-card__whatsapp"
-          aria-label="Գրել WhatsApp-ով"
-          @click="onWhatsAppClick"
-        >
-          <AppIcon name="whatsapp" :size="18" />
         </a>
         <AppButton
           :to="getTowTruckRoute(towTruck.slug)"
@@ -197,10 +188,10 @@ const mainAreas = computed(() =>
     color: var(--color-text);
   }
 
-  /* 2 rows: [Զանգահարել | WhatsApp] / [Դիտել մանրամասները] — never overflows narrow cards */
+  /* 2 rows: [Զանգահարել] / [Դիտել մանրամասները] */
   &__actions {
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 1fr;
     gap: var(--space-2);
     margin-top: auto;
   }
@@ -225,21 +216,6 @@ const mainAreas = computed(() =>
     &:hover {
       background: #178a49;
       color: #fff;
-    }
-  }
-
-  &__whatsapp {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: var(--space-3);
-    border-radius: var(--radius-md);
-    background: var(--color-success-bg);
-    color: var(--color-success);
-    transition: background var(--transition);
-
-    &:hover {
-      background: #d3f0e0;
     }
   }
 }

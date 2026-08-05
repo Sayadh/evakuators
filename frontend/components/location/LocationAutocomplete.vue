@@ -174,14 +174,27 @@ function subtitle(result: LocationSearchResult): string {
     margin-bottom: var(--space-2);
   }
 
+  /**
+   * Every white surface below sets its own text colour instead of inheriting.
+   *
+   * This component sits inside the hero, which paints a dark gradient and sets
+   * `color: #fff` on everything under it. A panel with a white background that
+   * inherits that colour renders white text on white — which is exactly what
+   * shipped: the suggestions were there, readable only by selecting them.
+   */
   &__field {
     display: flex;
     align-items: center;
     gap: var(--space-2);
     padding: 0 var(--space-3);
     background: #fff;
+    color: var(--color-text);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
+
+    &:focus-within {
+      border-color: var(--color-primary);
+    }
   }
 
   &__icon {
@@ -195,9 +208,15 @@ function subtitle(result: LocationSearchResult): string {
     border: none;
     outline: none;
     background: transparent;
+    // Not `inherit`: see the note on __field above.
+    color: var(--color-text);
     padding: var(--space-3) 0;
     font-size: 1rem;
     font-family: inherit;
+
+    &::placeholder {
+      color: var(--color-text-muted);
+    }
   }
 
   &__list {
@@ -212,6 +231,7 @@ function subtitle(result: LocationSearchResult): string {
     margin: 0;
     padding: var(--space-1);
     background: #fff;
+    color: var(--color-text);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-md);
@@ -233,11 +253,12 @@ function subtitle(result: LocationSearchResult): string {
   &__name {
     font-weight: 600;
     font-size: 0.95rem;
+    color: var(--color-text);
   }
 
   &__meta {
     font-size: 0.8rem;
-    color: var(--color-text-muted);
+    color: var(--color-text-secondary);
   }
 }
 </style>

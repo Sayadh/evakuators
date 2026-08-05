@@ -145,6 +145,11 @@ cd ../backend && npm install && npx prisma migrate deploy && npm run build
 pm2 restart ecosystem.config.js
 ```
 
+A staging copy of the whole stack (`staging.evakuators.am`, its own database,
+ports `3003`/`4003`) lets a change be deployed and clicked through before it
+reaches production — see `docs/deployment.md` § "Staging environment" for
+setup and the routine deploy-to-staging-first workflow.
+
 ## API overview
 
 All paths are served under the `/api/v1` prefix, e.g. `GET https://api.evakuators.am/api/v1/health`.

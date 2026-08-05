@@ -15,7 +15,9 @@ the relevant doc before touching code in that area.
 `4002`. Never swap them, never "free up" one by reassigning the other.**
 This is asserted in comments at every place a port is configured
 (`nuxt.config.ts`, `backend/.env`, `ecosystem.config.js`) — if you see a port
-number in this codebase, it is not arbitrary.
+number in this codebase, it is not arbitrary. Staging (see
+`docs/deployment.md` § "Staging environment") has its own reserved pair,
+`3003`/`4003` — same rule, one port number over.
 
 ## Monorepo layout
 
@@ -115,6 +117,7 @@ assume one is unused:
 | Find what a specific page/route does | `docs/pages-and-routes.md` |
 | Run the app on a local machine | `docs/local-development.md` |
 | Deploy to the VPS | `docs/deployment.md` |
+| Test a change against a real backend before it reaches production | `docs/deployment.md` § "Staging environment" — separate checkout, ports `3003`/`4003`, `staging.evakuators.am` |
 | Look up an endpoint | `docs/api-reference.md` |
 | Add a field to a tow truck response | `docs/api-reference.md` § "List vs detail" — decide card vs detail first |
 | Run or add a test, either project | `docs/testing.md` |

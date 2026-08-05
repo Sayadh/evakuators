@@ -77,6 +77,99 @@ Both `AdminJwtGuard` and `DriverJwtGuard` enforce auth in the NestJS app
 itself, not via nginx — auth still works correctly even if nginx config
 changes or is bypassed in some edge case.
 
+## Staging environment
+
+A second, full copy of the stack on the same VPS — `staging.evakuators.am` /
+`staging-api.evakuators.am`, ports `3003`/`4003` (one above production's
+`3002`/`4002`) — so a change can be built, deployed and clicked through
+against a real backend and a real (but separate) database before it ever
+reaches `evakuators.am`. Not a second server: no new cost, and everything in
+`docs/local-development.md` about Postgres/PM2/nginx already applies here,
+just against a second checkout.
+
+**Two things staging deliberately does NOT get, by explicit choice, not
+oversight:**
+
+- **Its own Telegram bot.** Telegram gives one bot exactly one webhook,
+  globally (see `docs/local-development.md` § "one webhook, globally"), and
+  that webhook stays pointed at production. Staging's `.env` holds the same
+  bot token as production, but its backend will never actually *receive* a
+  Telegram update — driver OTP login, admin 2FA, and new-registration
+  Telegram notifications are all untestable on staging, exactly like local
+  development already is. If a change specifically touches one of those
+  flows, verify it against production directly, or accept the gap.
+- **Its own Supabase Storage bucket.** Staging uses production's bucket.
+  Test image uploads on staging land in the same place real driver photos
+  do. Acceptable for now — revisit if that ever causes a real problem
+  (stray test images turning up somewhere they shouldn't, storage costs,
+  etc.).
+
+Everything else — the database, both JWT secrets, the analytics pepper — is
+**staging's own**, generated fresh, never copied from production. See the
+comments in `backend/.env.staging.example` for exactly which variables are
+shared on purpose and which must not be.
+
+### One-time setup
+
+```bash
+# Separate checkout, not a subdirectory of production's — building staging
+# must never touch production's .output/dist mid-deploy.
+git clone <repo-url> /var/www/evakuators-staging
+cd /var/www/evakuators-staging
+
+# A separate database on the SAME Postgres instance — full data isolation,
+# no new server.
+psql postgres -c "CREATE DATABASE evakuators_staging OWNER evakuators;"
+
+cp backend/.env.staging.example backend/.env
+# Fill in DATABASE_URL's password, copy SUPABASE_*/TELEGRAM_* from
+# production's backend/.env verbatim, and generate FRESH values for
+# DRIVER_JWT_SECRET / ADMIN_JWT_SECRET / ANALYTICS_VISITOR_PEPPER
+# (openssl rand -hex 32) — see the file's own comments for which is which.
+
+cd frontend && npm install && npm run build
+cd ../backend && npm install && npx prisma generate && npx prisma migrate deploy && npm run build
+
+pm2 start ecosystem.staging.config.js
+pm2 save
+```
+
+Then, on the nginx/DNS side: point `staging.evakuators.am` and
+`staging-api.evakuators.am` at the VPS, install `nginx/staging.evakuators.am.conf`,
+and run
+`certbot --nginx -d staging.evakuators.am -d staging-api.evakuators.am`. See
+that file's own comments for why it deliberately mirrors
+`nginx/evakuators.am.conf`'s structure, and for the `X-Robots-Tag` header
+that keeps the whole staging site out of search results (unlike production,
+where individual pages opt into `noindex` one at a time).
+
+### Routine workflow — staging before production
+
+```bash
+# 1. Deploy to staging first
+cd /var/www/evakuators-staging
+git pull
+cd frontend && npm install && npm run build
+cd ../backend && npm install && npx prisma generate && npx prisma migrate deploy && npm run build
+pm2 restart ecosystem.staging.config.js
+
+# 2. Click through staging.evakuators.am — the exact change, against a real
+#    backend and database, before production sees it.
+
+# 3. Only once staging looks right, deploy the SAME commit to production —
+#    the routine deploy at the top of this doc, unchanged, from
+#    /var/www/evakuators (production's own checkout).
+```
+
+The two checkouts (`/var/www/evakuators-staging` and `/var/www/evakuators`)
+are independent working directories on the same clone of the same repo —
+`git pull` in one never touches the other, and a build failure on staging
+never blocks or affects the running production processes. `pm2 restart
+ecosystem.config.js` still only ever touches the two production processes;
+`pm2 restart ecosystem.staging.config.js` only ever touches staging's — see
+the comment at the top of `ecosystem.staging.config.js` for why that split
+is deliberate rather than one file with four apps in it.
+
 ## Why the API binds loopback, and why `trust proxy` matters
 
 Two settings in `backend/src/main.ts` that only make sense together, and both

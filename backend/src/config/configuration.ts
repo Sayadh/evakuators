@@ -11,11 +11,26 @@ export interface AppConfig {
     url: string
     serviceRoleKey: string
     bucket: string
+    /**
+     * When true, `SupabaseStorageService` refuses every upload/remove call
+     * before it reaches the network — see that class for why. False (the
+     * default) everywhere except a deployment deliberately configured this
+     * way, e.g. staging sharing production's bucket for read-only display
+     * (see docs/deployment.md § "Staging environment").
+     */
+    writesDisabled: boolean
   }
   telegram: {
     botToken: string
     botUsername: string
     webhookSecret: string
+    /**
+     * When non-empty, `TelegramService.sendMessage()` sends only to these
+     * chat ids and silently skips everyone else — see that method for the
+     * full reasoning. Empty (the default everywhere except a deliberately
+     * configured staging deploy) means unrestricted, i.e. today's behaviour.
+     */
+    outboundAllowedChatIds: string[]
   }
   /**
    * A SEPARATE, dedicated Telegram bot used only for admin 2FA login codes
@@ -70,11 +85,18 @@ export default (): AppConfig => ({
     url: process.env.SUPABASE_URL ?? '',
     serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
     bucket: process.env.SUPABASE_STORAGE_BUCKET ?? '',
+    // Literal comparison, not Boolean(...) — see the env.validation.ts comment
+    // on SUPABASE_STORAGE_READ_ONLY for why that distinction matters here.
+    writesDisabled: process.env.SUPABASE_STORAGE_READ_ONLY === 'true',
   },
   telegram: {
     botToken: process.env.TELEGRAM_BOT_TOKEN ?? '',
     botUsername: process.env.TELEGRAM_BOT_USERNAME ?? '',
     webhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET ?? '',
+    outboundAllowedChatIds: (process.env.TELEGRAM_OUTBOUND_ALLOWED_CHAT_IDS ?? '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean),
   },
   adminTelegram: {
     botToken: process.env.ADMIN_TELEGRAM_BOT_TOKEN ?? '',

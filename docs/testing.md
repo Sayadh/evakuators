@@ -128,6 +128,8 @@ the declared route order does.
 | --- | --- |
 | `test/tow-trucks.repository.count.spec.ts` | `TowTrucksRepository.countForAdmin()` — `inactive = total - active` always holds, the total query has no `where` (counts every row, not just active ones), the two counts run concurrently |
 | `test/admin.controller.count-route.spec.ts` | `GET /admin/tow-trucks/count` is mounted correctly, sits behind `AdminJwtGuard`, is declared before any route that could shadow it, and the shadowing detector itself is tested against known true/false cases |
+| `test/telegram.service.outbound-allowlist.spec.ts` | `TELEGRAM_OUTBOUND_ALLOWED_CHAT_IDS` — a chat id not on the list never reaches `fetch()` at all, a listed one does, an empty list is unrestricted (production's real behaviour). See `docs/deployment.md` § "Staging environment" for what this exists to prevent |
+| `test/supabase-storage.service.read-only.spec.ts` | `SUPABASE_STORAGE_READ_ONLY` — `uploadWebp()`/`remove()` refuse before the Supabase client is ever called, an empty `remove([])` stays a no-op regardless, the flag is unrestricted when false |
 
 ### When you touch `AdminController`, `AdminService`, or `TowTrucksRepository`
 

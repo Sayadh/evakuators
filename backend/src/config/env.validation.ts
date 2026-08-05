@@ -5,6 +5,13 @@ const envSchema = z.object({
   SUPABASE_URL: z.string().url('SUPABASE_URL must be a valid URL'),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, 'SUPABASE_SERVICE_ROLE_KEY is required'),
   SUPABASE_STORAGE_BUCKET: z.string().min(1, 'SUPABASE_STORAGE_BUCKET is required'),
+  // Blocks every write (upload, remove) at SupabaseStorageService — see that
+  // class for the full reasoning. String rather than z.coerce.boolean()
+  // deliberately: coerce.boolean() treats the STRING "false" as truthy (any
+  // non-empty string is), which would make "false" mean "true" — the exact
+  // footgun this variable exists to prevent one level up. Compared literally
+  // against 'true' in configuration.ts instead.
+  SUPABASE_STORAGE_READ_ONLY: z.string().optional().default('false'),
   PORT: z.coerce.number().int().positive().default(4002),
   // Loopback by default: nginx is the only intended entry point (see main.ts).
   // Set 0.0.0.0 only if the API must be reachable without nginx.
@@ -15,6 +22,15 @@ const envSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().min(1, 'TELEGRAM_BOT_TOKEN is required'),
   TELEGRAM_BOT_USERNAME: z.string().min(1, 'TELEGRAM_BOT_USERNAME is required'),
   TELEGRAM_WEBHOOK_SECRET: z.string().min(1, 'TELEGRAM_WEBHOOK_SECRET is required'),
+  // Restricts OUTBOUND driver-bot messages (OTP codes, link/contact notices)
+  // to specific chat ids — see TelegramService.sendMessage(). Optional and
+  // empty by default so production is unaffected; exists for an environment
+  // that deliberately shares production's bot token (a staging deploy — see
+  // docs/deployment.md § "Staging environment") but must never actually
+  // message a real driver. Same shape and same "silently ignored" behaviour
+  // as ADMIN_TELEGRAM_ALLOWED_CHAT_IDS below, applied to the driver bot's
+  // sends instead of the admin bot's inbound handling.
+  TELEGRAM_OUTBOUND_ALLOWED_CHAT_IDS: z.string().optional().default(''),
   DRIVER_JWT_SECRET: z.string().min(16, 'DRIVER_JWT_SECRET must be at least 16 characters'),
 
   // Admin panel login (see User model, role ADMIN)

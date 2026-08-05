@@ -120,6 +120,15 @@ log "dumping production ($PROD_DB) — read-only, custom format"
 pg_dump --no-owner --no-privileges -Fc "$(strip_query "$PROD_URL")" -f "$DUMP_FILE"
 log "dump written: $(du -h "$DUMP_FILE" | cut -f1)"
 
+# This script runs as root (see the file header), so the dump above is
+# root-owned at mktemp's default 600 — unreadable by the `postgres` OS user
+# that pg_restore runs as below. Widening to 644 is fine for the few seconds
+# this file exists: it's under /tmp, deleted by the `cleanup` trap the moment
+# this script exits (success OR failure), and this VPS's trust model is
+# already "root is the only real operator" everywhere else in this project's
+# deploy tooling.
+chmod 644 "$DUMP_FILE"
+
 log "stopping $STAGING_PM2_APP so nothing holds a connection to $STAGING_DB"
 pm2 stop "$STAGING_PM2_APP" >/dev/null || log "WARNING: pm2 stop failed or the process wasn't running — continuing"
 

@@ -71,6 +71,12 @@ assume one is unused:
   float — see `docs/taxonomies.md`.
 - Region/city/district slugs used anywhere in `backend/prisma/schema.prisma`
   comments/fields must exist in `frontend/data/{regions,cities,districts}.ts`.
+- `frontend/types/enums.ts` `LocationType` values (`'city' | 'district' |
+  'route'`) ↔ `@IsIn([...])` on `ServiceAreaDto.type` in
+  `backend/src/tow-trucks/dto/service-area.dto.ts`. Both directions of
+  `TowTruck.serviceAreas` compare `type` literally, so a mismatch means a
+  driver's zone/city/district coverage silently matches nothing in filtering.
+  See `docs/locations.md` § "Service zones".
 - `frontend/types/enums.ts` `AnalyticsEventType` values ↔ `enum
   AnalyticsEventType` in `backend/prisma/schema.prisma`. These travel over the
   wire in both directions (sent when tracking an event, used as response object
@@ -102,6 +108,7 @@ assume one is unused:
 | Understand a Prisma model or add a migration | `docs/data-model.md` |
 | Touch admin login, driver login, Telegram OTP/link | `docs/auth-and-security.md` |
 | Touch services/vehicle-types/capacity pickers or filters | `docs/taxonomies.md` |
+| Touch service zones (road corridors), settlements/villages, or location search | `docs/locations.md` |
 | Touch "Ազատ երթուղիներ" (Free Routes) | `docs/free-routes.md` |
 | Touch per-driver statistics / visitor tracking | `docs/analytics.md` |
 | Decide whether a field is driver-editable or admin-only | `backend/src/my-tow-truck/dto/update-my-tow-truck.dto.ts` — the boundary and its two exceptions are argued there |
@@ -110,6 +117,10 @@ assume one is unused:
 | Deploy to the VPS | `docs/deployment.md` |
 | Look up an endpoint | `docs/api-reference.md` |
 | Add a field to a tow truck response | `docs/api-reference.md` § "List vs detail" — decide card vs detail first |
+| Run or add a test, either project | `docs/testing.md` |
+| Add a "how many X exist" total next to a paginated admin list | `docs/api-reference.md` § "Pagination" — follow the `/admin/tow-trucks/count` shape, don't bolt a `total` onto the paginated response |
+| Add a sidebar/content layout gated by `isDesktop` or another client-only check | `docs/architecture.md` § "A CSS grid with a viewport-conditional child is an SSR bug waiting to happen" |
+| Change the platform's own contact number | `frontend/constants/site.ts` — `CONTACT_PHONE` is the only place it's written; phone/WhatsApp/Telegram links are all derived from it in `utils/formatPhone.ts` |
 
 ## Commands
 
@@ -118,19 +129,25 @@ assume one is unused:
 npm run dev      # http://localhost:3002
 npm run build    # → .output
 npm run lint      # ESLint (also fix: lint:fix)
+npm run test      # vitest run — pure-function tests, see docs/testing.md
+npm run test:watch
 
 # backend/
 npm run start:dev   # http://localhost:4002/api/v1, watch mode
 npm run build        # → dist
 npm run lint          # ESLint on src/**/*.ts
+npm run test           # vitest run — unit tests, no real DB, see docs/testing.md
+npm run test:watch
 npm run prisma:migrate   # dev: create + apply a new migration
 npm run prisma:deploy    # prod: apply existing migrations only
 npm run admin:create -- <email> <password>   # create/reset an admin login
 ```
 
-Both apps have independent lint/build — always verify both after a
+Both apps have independent lint/build/test — always verify all three after a
 cross-cutting change (e.g. anything touching `serviceAreas`, `capacityRange`,
-or a Prisma model) even if you only edited one side.
+or a Prisma model) even if you only edited one side. Neither test suite talks
+to a real database, Supabase, or Telegram — see `docs/testing.md` for what
+that does and doesn't prove before you rely on a green run.
 
 ## A listing is not a profile
 

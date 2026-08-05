@@ -1,5 +1,9 @@
 # Taxonomies — the single-source-of-truth constants pattern
 
+Service zones (road corridors) and settlements (villages) follow this same
+static-constants pattern but are documented separately, in `docs/locations.md`
+— they're geography, not a taxonomy of options a driver picks from a list.
+
 This codebase has been refactored more than once to fix the same class of
 bug: the same list of options (services, capacity ranges) got defined
 slightly differently in two or three places (registration form, driver

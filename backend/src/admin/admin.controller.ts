@@ -77,6 +77,19 @@ export class AdminController {
     return this.adminService.listTowTrucks(query)
   }
 
+  /**
+   * Totals for the header of that list. Additive: the list endpoint above
+   * still returns a plain array, so nothing that already consumes it changes.
+   *
+   * Declared before any `tow-trucks/:id` route so `count` can never be read as
+   * an id — there is no such GET route today, and this keeps it that way if
+   * one is ever added.
+   */
+  @Get('tow-trucks/count')
+  countTowTrucks(): Promise<{ total: number; active: number; inactive: number }> {
+    return this.adminService.countTowTrucks()
+  }
+
   /** Deactivate/reactivate — non-destructive, reversible, hides from public listing */
   @Patch('tow-trucks/:id/active')
   setActive(

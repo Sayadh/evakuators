@@ -88,6 +88,13 @@ export interface AdminTowTruck {
   images: { id: number; url: string }[]
 }
 
+/** Mirrors the backend's `GET /admin/tow-trucks/count` — `inactive` is `total - active` */
+export interface AdminTowTruckCounts {
+  total: number
+  active: number
+  inactive: number
+}
+
 /** Every /admin/* route requires a valid admin JWT — attach it here */
 function authHeader(): Record<string, string> {
   return useAdminAuthStore().authHeader
@@ -165,6 +172,16 @@ export const adminRepository = {
   listTowTrucks(params: AdminListParams = {}): Promise<AdminTowTruck[]> {
     return apiFetch<AdminTowTruck[]>('/admin/tow-trucks', {
       query: { limit: params.limit, offset: params.offset },
+      headers: authHeader(),
+    })
+  },
+
+  /**
+   * Totals across every page. `listTowTrucks` is paginated, so the length of
+   * what it returned answers "how many are loaded", never "how many exist".
+   */
+  getTowTruckCounts(): Promise<AdminTowTruckCounts> {
+    return apiFetch<AdminTowTruckCounts>('/admin/tow-trucks/count', {
       headers: authHeader(),
     })
   },

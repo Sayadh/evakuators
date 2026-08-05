@@ -10,6 +10,7 @@ import {
   type AdminRegistrationRequest,
   type AdminReview,
   type AdminTowTruck,
+  type AdminTowTruckCounts,
   type ApproveRegistrationPayload,
 } from '~/repositories'
 import { useAdminAuthStore } from '~/stores/adminAuth'
@@ -167,6 +168,16 @@ const hasMoreReviews = ref(false)
 const hasMoreTowTrucks = ref(false)
 
 /**
+ * Totals across every page, straight from the database.
+ *
+ * `towTrucks.value.length` cannot stand in for this: the list is paginated, so
+ * it only ever says how many rows have been fetched so far — 50 until someone
+ * presses "show more". Null while it has not loaded, or if it failed, in which
+ * case the header simply omits the number instead of showing a wrong one.
+ */
+const towTruckCounts = ref<AdminTowTruckCounts | null>(null)
+
+/**
  * Full-size image viewer shared by both the registration-request cards and
  * the tow-truck cards — an admin approving a request needs to actually see
  * what was uploaded, not just a 84×84 thumbnail. One global overlay rather
@@ -285,7 +296,24 @@ async function loadReviews(append = false): Promise<void> {
   }
 }
 
+/**
+ * Its own request with its own try/catch: the totals are a header decoration,
+ * and a failure here must never surface as "the tow trucks could not be
+ * loaded" over a list that loaded perfectly well.
+ */
+async function loadTowTruckCounts(): Promise<void> {
+  try {
+    towTruckCounts.value = await adminRepository.getTowTruckCounts()
+  } catch {
+    towTruckCounts.value = null
+  }
+}
+
 async function loadTowTrucks(append = false): Promise<void> {
+  // Appending adds a page to a list whose total has not changed — only a fresh
+  // load needs the counts, and it fires alongside rather than before the list.
+  if (!append) void loadTowTruckCounts()
+
   loadingTowTrucks.value = true
   towTrucksError.value = ''
   try {
@@ -310,6 +338,9 @@ async function toggleTowTruckActive(truck: AdminTowTruck): Promise<void> {
   try {
     const updated = await adminRepository.setTowTruckActive(truck.id, nextActive)
     truck.isActive = updated.isActive
+    // The total is unchanged, but the active/inactive split just moved. Refetched
+    // rather than adjusted locally so the header cannot drift from the database.
+    void loadTowTruckCounts()
   } catch (error) {
     towTrucksError.value = extractErrorMessage(error, 'Կարգավիճակը փոխել չհաջողվեց։')
   } finally {
@@ -454,6 +485,7 @@ async function deleteTowTruck(truck: AdminTowTruck): Promise<void> {
   try {
     await adminRepository.deleteTowTruck(truck.id)
     towTrucks.value = towTrucks.value.filter((item) => item.id !== truck.id)
+    void loadTowTruckCounts()
   } catch (error) {
     towTrucksError.value = extractErrorMessage(error, 'Ջնջել չհաջողվեց։')
   } finally {
@@ -584,7 +616,8 @@ async function submitApprove(): Promise<void> {
   try {
     const result = await adminRepository.approveRegistration(approveTarget.value.id, payload)
     approveModalOpen.value = false
-    await loadRegistrations()
+    // Approving is the one action that CREATES a truck, so the totals move.
+    await Promise.all([loadRegistrations(), loadTowTruckCounts()])
 
     telegramLinkUrl.value = result.telegramLinkUrl
     telegramLinkCopied.value = false
@@ -849,7 +882,16 @@ async function rejectReview(review: AdminReview): Promise<void> {
       <!-- ── Tow trucks (active + deactivated) ── -->
       <section class="admin-section">
         <div class="admin-section__header">
-          <h2>Էվակուատորներ</h2>
+          <h2>
+            Էվակուատորներ
+            <span v-if="towTruckCounts" class="admin-section__count">
+              {{ towTruckCounts.total }}
+            </span>
+          </h2>
+          <p v-if="towTruckCounts" class="admin-section__count-split">
+            ակտիվ՝ {{ towTruckCounts.active }} · ապաակտիվացված՝
+            {{ towTruckCounts.inactive }}
+          </p>
         </div>
 
         <p v-if="towTrucksError" class="admin-error">{{ towTrucksError }}</p>
@@ -1136,6 +1178,34 @@ async function rejectReview(review: AdminReview): Promise<void> {
     h2 {
       margin: 0;
     }
+  }
+
+  /**
+   * The headline total, deliberately inside the <h2> rather than off at the
+   * far right of a very wide header — "how many drivers do we have" should be
+   * readable in the same glance as the word it counts.
+   */
+  &__count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2rem;
+    margin-left: var(--space-2);
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-full);
+    background: var(--color-primary);
+    color: #fff;
+    font-size: 0.9rem;
+    font-weight: 700;
+    /* Independent of the h2's line-height, so the pill stays a pill */
+    line-height: 1.7;
+    vertical-align: middle;
+  }
+
+  &__count-split {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: 0.88rem;
   }
 
   &__more {

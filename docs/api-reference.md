@@ -57,6 +57,7 @@ from the server itself (Nuxt SSR over loopback) skip throttling entirely — see
 | `POST` | `/admin/reviews/:id/approve` | |
 | `POST` | `/admin/reviews/:id/reject` | Deletes the review row outright |
 | `GET` | `/admin/tow-trucks` | Every truck, active or not (unlike the public `/tow-trucks` list). Query: `limit` (default 50, max 200), `offset` |
+| `GET` | `/admin/tow-trucks/count` | `{ total, active, inactive }` — totals across the **whole table**, independent of the pagination above. `inactive` is `total - active`, never a third `count()`, so the three numbers can't disagree with each other. Declared before every `tow-trucks/:id` route in `admin.controller.ts` so the literal segment `count` can never be swallowed by an `:id` param — see `backend/test/admin.controller.count-route.spec.ts`, which asserts that ordering as a general rule, not just for today's route list. Powers the total shown next to "Էվակուատորներ" in the admin panel (`pages/admin.vue`) |
 | `PATCH` | `/admin/tow-trucks/:id/active` | Body: `{ isActive: boolean }` — reversible |
 | `PATCH` | `/admin/tow-trucks/:id/featured` | Body: `{ isFeatured: boolean }` — drives the public `GET /tow-trucks/featured` list and the homepage "featured" section |
 | `PATCH` | `/admin/tow-trucks/:id/phone` | Body: `{ phone: string }` (`+374` + 8 digits). Corrects the main login phone — the driver's own dashboard can't touch this field. Rejected with 400 if another **active** truck already uses it (same uniqueness rule as approval) |
@@ -112,6 +113,13 @@ out had it published anyway, one "view source" away.
   button. These are the tables that grow without bound (registration requests are
   kept forever as an audit trail) and nothing about them is filtered
   client-side, so offset paging is both necessary and safe here.
+- **Totals for a paginated admin list** — a separate `.../count` endpoint
+  (see `/admin/tow-trucks/count` above), not a `total` field bolted onto the
+  paginated response. The list is refetched a page at a time and would
+  otherwise recompute a total on every "load more"; the count is one cheap
+  query that only needs to run once per page load and after an action that
+  actually changes it. If another admin list grows a "how many exist"
+  requirement, follow this shape rather than inventing a pagination envelope.
 
 ## Response shape conventions
 

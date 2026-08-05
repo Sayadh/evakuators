@@ -272,6 +272,14 @@ export class AdminService {
     return trucks.map(toAdminTowTruckSummary)
   }
 
+  /**
+   * The totals behind the paginated list above — the admin panel can otherwise
+   * only report how many rows it has fetched so far, never how many exist.
+   */
+  countTowTrucks(): Promise<{ total: number; active: number; inactive: number }> {
+    return this.towTrucksRepository.countForAdmin()
+  }
+
   async approveReview(id: number): Promise<{ id: number; isApproved: boolean }> {
     const review = await this.reviewsRepository.findById(id)
     if (!review) throw new NotFoundException(`Կարծիք #${id}-ը չի գտնվել`)

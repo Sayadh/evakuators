@@ -4,6 +4,7 @@ export type {
   AdminRegistrationRequest,
   AdminReview,
   AdminTowTruck,
+  AdminTowTruckCounts,
   ApproveRegistrationPayload,
 } from './admin.repository'
 export { adminAuthRepository } from './adminAuth.repository'

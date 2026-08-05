@@ -198,6 +198,26 @@ export class TowTrucksRepository {
   }
 
   /**
+   * How many trucks exist in total, and how many of those are active.
+   *
+   * Deliberately separate from `findAllForAdmin` rather than a `total` added
+   * to its result: the list is paginated and refetched on every "show more",
+   * while this is one number that only changes when a truck is created,
+   * deleted or (de)activated. Keeping them apart also leaves the existing
+   * `GET /admin/tow-trucks` response an unchanged array.
+   *
+   * `inactive` is derived rather than counted — a third query could only ever
+   * disagree with the two above.
+   */
+  async countForAdmin(): Promise<{ total: number; active: number; inactive: number }> {
+    const [total, active] = await Promise.all([
+      this.prisma.towTruck.count(),
+      this.prisma.towTruck.count({ where: { isActive: true } }),
+    ])
+    return { total, active, inactive: total - active }
+  }
+
+  /**
    * Matches ONLY the main `phone` column (never `secondaryPhone`) on active
    * trucks. The main phone is the sole driver-login key (see
    * DriverAuthService) — a deactivated truck must never resolve here, login

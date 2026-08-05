@@ -83,6 +83,18 @@ export interface AdminTowTruck {
   vehicleModel?: string
   vehicleYear: number
   locationName: string
+  /**
+   * Base parking coordinates. Both undefined for every driver approved before
+   * this field existed — which is what the panel renders as
+   * «Տեղադիրքը նշված չէ».
+   *
+   * Present here and not on any public shape: this endpoint is behind
+   * `AdminJwtGuard`. See `TowTruckApi.location` on the backend.
+   */
+  latitude?: number
+  longitude?: number
+  /** ISO datetime of the last coordinate write; undefined when never set */
+  locationUpdatedAt?: string
   hasTelegramLinked: boolean
   createdAt: string
   images: { id: number; url: string }[]
@@ -214,6 +226,24 @@ export const adminRepository = {
       body: { phone },
       headers: authHeader(),
     })
+  },
+
+  /**
+   * Sets or corrects a truck's base parking coordinates.
+   *
+   * Unlike `setTowTruckPhone`, this is not an admin-only field — the driver can
+   * edit it from their own dashboard too. This endpoint exists so support can
+   * fix a pair pasted in the wrong order without asking them to log in.
+   */
+  setTowTruckCoordinates(
+    id: number,
+    latitude: number,
+    longitude: number,
+  ): Promise<{ id: number; latitude: number; longitude: number; locationUpdatedAt: string }> {
+    return apiFetch<{ id: number; latitude: number; longitude: number; locationUpdatedAt: string }>(
+      `/admin/tow-trucks/${id}/coordinates`,
+      { method: 'PATCH', body: { latitude, longitude }, headers: authHeader() },
+    )
   },
 
   /** Permanent — deletes the truck, its images (DB + Supabase Storage), reviews and OTPs */

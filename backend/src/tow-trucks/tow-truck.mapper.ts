@@ -1,3 +1,4 @@
+import { decimalToNumber } from '../common/coordinates'
 import type { TowTruckCardRow, TowTruckCoverageRow } from './tow-trucks.repository'
 import type {
   ServiceAreaJson,
@@ -29,8 +30,24 @@ function buildPricing(truck: TowTruckWithImages): TowTruckApi['pricing'] {
   return Object.keys(pricing).length > 0 ? pricing : undefined
 }
 
+/**
+ * Who is allowed to see the exact parking point.
+ *
+ * Default `false`, deliberately: `toTowTruckApi` serves both the public
+ * profile (`GET /tow-trucks/:slug`) and the driver's own
+ * (`GET /my/tow-truck`), so the safe answer has to be the one you get by
+ * forgetting to pass anything. A new caller added later leaks nothing until
+ * someone writes `includeCoordinates: true` and has to justify it.
+ */
+export interface TowTruckApiOptions {
+  includeCoordinates?: boolean
+}
+
 /** DB row → API shape used by the Nuxt frontend */
-export function toTowTruckApi(truck: TowTruckWithImages): TowTruckApi {
+export function toTowTruckApi(
+  truck: TowTruckWithImages,
+  options: TowTruckApiOptions = {},
+): TowTruckApi {
   return {
     id: truck.id,
     slug: truck.slug,
@@ -75,7 +92,19 @@ export function toTowTruckApi(truck: TowTruckWithImages): TowTruckApi {
       citySlug: truck.citySlug ?? undefined,
       districtSlug: truck.districtSlug ?? undefined,
       name: truck.locationName,
+      // Spread, not two keys holding undefined: a public response must not
+      // carry `latitude` at all, and "present but undefined" is a different
+      // thing from absent the moment anyone reads the JSON rather than the type.
+      ...(options.includeCoordinates
+        ? {
+            latitude: decimalToNumber(truck.latitude),
+            longitude: decimalToNumber(truck.longitude),
+          }
+        : {}),
     },
+    ...(options.includeCoordinates && truck.locationUpdatedAt
+      ? { locationUpdatedAt: truck.locationUpdatedAt.toISOString() }
+      : {}),
     pricing: buildPricing(truck),
     images: truck.images
       .slice()

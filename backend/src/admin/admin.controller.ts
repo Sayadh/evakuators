@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common'
 import { RegistrationStatus } from '@prisma/client'
 import { AdminJwtGuard } from '../admin-auth/admin-jwt.guard'
+import { SetCoordinatesDto } from '../common/set-coordinates.dto'
 import type { RegistrationWithImages } from '../registration/registration.repository'
 import type { ReviewWithTruck } from '../reviews/reviews.repository'
 import type { AdminTowTruckSummary } from './admin-tow-truck.mapper'
@@ -120,6 +121,28 @@ export class AdminController {
     @Body() dto: SetTowTruckPhoneDto,
   ): Promise<{ id: number; phone: string }> {
     return this.adminService.setTowTruckPhone(id, dto.phone)
+  }
+
+  /**
+   * Sets or corrects the truck's base parking coordinates — the input for the
+   * "nearest evacuator" distance calculation.
+   *
+   * Unlike `/phone`, this is not an admin-only field: the driver can set it
+   * from their own dashboard too (`PATCH /my/tow-truck/coordinates`, same body,
+   * same rule). This route exists so support can fix a pair pasted in the wrong
+   * order without asking the driver to log in.
+   *
+   * Three segments, so it cannot shadow — or be shadowed by — the two-segment
+   * `tow-trucks/count` above; see admin.controller.count-route.spec.ts, which
+   * asserts that as a general rule over the whole route table rather than for
+   * today's list.
+   */
+  @Patch('tow-trucks/:id/coordinates')
+  setCoordinates(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SetCoordinatesDto,
+  ): Promise<{ id: number; latitude: number; longitude: number; locationUpdatedAt: string }> {
+    return this.adminService.setTowTruckCoordinates(id, dto.latitude, dto.longitude)
   }
 
   /** Permanently deletes the tow truck + its images/reviews/OTPs. Irreversible. */

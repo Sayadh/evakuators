@@ -159,7 +159,27 @@ export interface TowTruckApi {
     citySlug?: string
     districtSlug?: string
     name: string
+    /**
+     * Base parking coordinates — present ONLY on the driver's own
+     * `GET /my/tow-truck`, never on the public `GET /tow-trucks/:slug`, even
+     * though both are served by `toTowTruckApi`. The mapper withholds them
+     * unless explicitly asked, the same way it withholds `plateNumber` from a
+     * driver who opted out.
+     *
+     * They exist to compute "which driver is nearest to this customer" on our
+     * side, not to publish where a driver parks overnight. Nothing on the
+     * public site renders them today, and a field that is in the JSON but not
+     * on the page is published all the same — that is exactly how the whole
+     * contact database used to leak through the listing endpoint (see
+     * TowTruckCardApi). When a distance feature eventually needs them, it needs
+     * a *distance*, which is a number the backend can return without ever
+     * handing out the point it was computed from.
+     */
+    latitude?: number
+    longitude?: number
   }
+  /** ISO datetime of the last coordinate write — same visibility rule as `location.latitude` */
+  locationUpdatedAt?: string
   pricing?: {
     cityCallout?: number
     perKm?: number

@@ -16,6 +16,7 @@ import {
 import { useAdminAuthStore } from '~/stores/adminAuth'
 import { LocationType } from '~/types/enums'
 import type { ServiceType, VehicleType } from '~/types/enums'
+import { formatCoordinates, type Coordinates } from '~/utils/coordinates'
 import { extractErrorMessage } from '~/utils/errors'
 import { armenianPhoneInputValue } from '~/utils/formatPhone'
 import {
@@ -132,6 +133,11 @@ function logout(): void {
   registrations.value = []
   reviews.value = []
   towTrucks.value = []
+  // The dialog holds a reference to a row from the list that was just dropped,
+  // so it has to go with it — otherwise logging out with it open leaves a
+  // driver's name and slug on screen behind the login form.
+  coordinatesDialogOpen.value = false
+  coordinatesTarget.value = null
 }
 
 type StatusFilter = 'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL'
@@ -454,6 +460,70 @@ async function savePhone(truck: AdminTowTruck): Promise<void> {
     phoneEditError.value = extractErrorMessage(error, 'Հեռախոսահամարը փոխել չհաջողվեց։')
   } finally {
     savingPhone.value = false
+  }
+}
+
+/* ── Base parking coordinates ────────────────────────────────────────────────
+ *
+ * The admin's copy of the same dialog the driver gets in /dashboard. It exists
+ * because a driver who pastes the pair in the wrong order (or from the wrong
+ * place entirely) has no way to notice on their own — the value never appears
+ * on their public profile — so support needs to be able to fix it without
+ * asking them to log in.
+ *
+ * Unlike the phone edit above, this is NOT an admin-only field: the driver owns
+ * it too, and both paths go through the same validation and the same message
+ * set (see utils/coordinates.ts).
+ */
+const coordinatesTarget = ref<AdminTowTruck | null>(null)
+const coordinatesDialogOpen = ref(false)
+const savingCoordinates = ref(false)
+const coordinatesError = ref('')
+
+/** The truck whose dialog is open, formatted for the input's initial value */
+const coordinatesInitialValue = computed(() =>
+  formatCoordinates(coordinatesTarget.value?.latitude, coordinatesTarget.value?.longitude),
+)
+
+function truckCoordinates(truck: AdminTowTruck): string {
+  return formatCoordinates(truck.latitude, truck.longitude)
+}
+
+function openCoordinatesDialog(truck: AdminTowTruck): void {
+  coordinatesTarget.value = truck
+  coordinatesError.value = ''
+  coordinatesDialogOpen.value = true
+}
+
+/**
+ * On success the row is patched in place rather than the whole list refetched:
+ * nothing else about it moved, and reloading the page would scroll an admin
+ * away from the truck they were working on. On failure the dialog stays open
+ * holding what was typed, with the backend's own message under the field.
+ */
+async function saveCoordinates(coordinates: Coordinates): Promise<void> {
+  const truck = coordinatesTarget.value
+  if (!truck) return
+
+  savingCoordinates.value = true
+  coordinatesError.value = ''
+  try {
+    const updated = await adminRepository.setTowTruckCoordinates(
+      truck.id,
+      coordinates.latitude,
+      coordinates.longitude,
+    )
+    // From the response, not from what was sent — the column is DECIMAL(9,6),
+    // so this is what actually got stored.
+    truck.latitude = updated.latitude
+    truck.longitude = updated.longitude
+    truck.locationUpdatedAt = updated.locationUpdatedAt
+    coordinatesDialogOpen.value = false
+    coordinatesTarget.value = null
+  } catch (error) {
+    coordinatesError.value = extractErrorMessage(error, 'Կոորդինատները պահպանել չհաջողվեց։')
+  } finally {
+    savingCoordinates.value = false
   }
 }
 
@@ -965,6 +1035,14 @@ async function rejectReview(review: AdminReview): Promise<void> {
                 <dt>Telegram</dt>
                 <dd>{{ truck.hasTelegramLinked ? 'Կապակցված ✓' : 'Կապակցված չէ' }}</dd>
               </div>
+              <div>
+                <dt>Կոորդինատներ</dt>
+                <dd v-if="truckCoordinates(truck)">{{ truckCoordinates(truck) }}</dd>
+                <!-- Muted rather than flagged: every driver approved before
+                     this field existed has none, so this is the normal state
+                     for most of the list, not a problem with the row. -->
+                <dd v-else class="admin-card__muted">Տեղադիրքը նշված չէ</dd>
+              </div>
             </dl>
 
             <div v-if="truck.images.length" class="admin-card__images">
@@ -1013,6 +1091,14 @@ async function rejectReview(review: AdminReview): Promise<void> {
                   @click="resendTelegramLink(truck)"
                 >
                   {{ truck.hasTelegramLinked ? 'Փոխել Telegram-ը' : 'Ուղարկել Telegram link' }}
+                </AppButton>
+                <AppButton
+                  variant="outline"
+                  size="sm"
+                  :disabled="actioningId === truck.id"
+                  @click="openCoordinatesDialog(truck)"
+                >
+                  {{ truckCoordinates(truck) ? 'Փոխել կոորդինատները' : 'Ավելացնել կոորդինատներ' }}
                 </AppButton>
                 <AppButton
                   variant="danger"
@@ -1065,6 +1151,22 @@ async function rejectReview(review: AdminReview): Promise<void> {
         </AppButton>
       </form>
     </AppModal>
+
+    <!-- The very same dialog the driver sees in /dashboard, pointed at this
+         truck's admin endpoint. `show-steps` is off because an admin pasting a
+         correction on someone's behalf does not need the Google Maps tutorial —
+         everything else, including the accepted formats and every error
+         message, is identical by construction. -->
+    <CoordinatesDialog
+      v-model="coordinatesDialogOpen"
+      title="Էվակուատորի տեղադիրքի կոորդինատներ"
+      :subject="coordinatesTarget ? `${coordinatesTarget.driverName} · /tow-trucks/${coordinatesTarget.slug}` : undefined"
+      :initial-value="coordinatesInitialValue"
+      :saving="savingCoordinates"
+      :error="coordinatesError"
+      :show-steps="false"
+      @save="saveCoordinates"
+    />
 
     <AppModal v-model="telegramLinkModalOpen" :title="telegramLinkModalTitle">
       <p>

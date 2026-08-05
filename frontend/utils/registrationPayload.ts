@@ -1,5 +1,6 @@
 import type { RegistrationPayload } from '~/repositories'
 import { ServiceType } from '~/types/enums'
+import type { Coordinates } from './coordinates'
 import { formatWorkingHoursRange } from './workingHours'
 
 /** Raw registration form state (strings come straight from the inputs) */
@@ -31,6 +32,15 @@ export interface RegistrationFormState {
   regionSlugs: string[]
   citySlugs: string[]
   services: string[]
+  /**
+   * Raw text from the single coordinates box, exactly as pasted — e.g.
+   * `"40.1792, 44.4991"`.
+   *
+   * Kept as the typed string here like every other field on this state object,
+   * and never sent in this shape: `buildRegistrationPayload` takes the parsed
+   * pair as its own argument instead (see below).
+   */
+  coordinates: string
   priceCityCallout: string
   pricePerKm: string
   priceWaitingPerHour: string
@@ -59,10 +69,21 @@ export const toOptionalFloat = (value: string): number | undefined => {
   return Number.isFinite(parsed) ? parsed : undefined
 }
 
-/** Maps the validated form state to the backend CreateRegistrationDto shape */
+/**
+ * Maps the validated form state to the backend CreateRegistrationDto shape.
+ *
+ * `coordinates` arrives already parsed rather than as the raw string on
+ * `form.coordinates`, because parsing can fail and this function has nowhere
+ * honest to put a failure: its return type promises a payload with two real
+ * numbers in it. The page's `validate()` has to parse anyway in order to show
+ * the error under the field, so it passes the result it already has — one
+ * parse, one place that can report a problem, and no branch here that could
+ * quietly submit a registration without a location.
+ */
 export function buildRegistrationPayload(
   form: RegistrationFormState,
   imageIds: number[],
+  coordinates: Coordinates,
 ): RegistrationPayload {
   return {
     firstName: form.firstName.trim(),
@@ -95,6 +116,8 @@ export function buildRegistrationPayload(
     regionSlugs: form.regionSlugs,
     citySlugs: form.citySlugs,
     services: form.services,
+    latitude: coordinates.latitude,
+    longitude: coordinates.longitude,
     priceCityCallout: optionalInt(form.priceCityCallout),
     pricePerKm: optionalInt(form.pricePerKm),
     priceWaitingPerHour: optionalInt(form.priceWaitingPerHour),

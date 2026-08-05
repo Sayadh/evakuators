@@ -14,6 +14,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator'
+import { IsLatitudeValue, IsLongitudeValue } from '../../common/coordinates'
 import { IsArmenianPhone } from '../../common/phone'
 
 const CURRENT_YEAR = new Date().getFullYear()
@@ -196,6 +197,29 @@ export class CreateRegistrationDto {
   @IsString({ each: true })
   @MaxLength(40, { each: true })
   services!: string[]
+
+  // Base parking coordinates — required for NEW registrations, even though the
+  // columns themselves are nullable (see TowTruck.latitude in schema.prisma).
+  // The two are not in conflict: the column has to tolerate every driver
+  // approved before this feature existed, while the form has no reason to let a
+  // new one through without the value the "nearest evacuator" feature is built
+  // on. Requiring it here is what stops the gap from growing.
+  //
+  // Two numbers, not a "40.1792, 44.4991" string — the same call the platform
+  // dimensions made when they stopped being free text (see platformLengthM
+  // above). The frontend collects them in one box because that is the shape
+  // Google Maps hands a driver, and splits them before submitting; the wire and
+  // the database only ever see numbers. See docs/taxonomies.md § "ask for the
+  // value, not the format".
+  //
+  // The Armenia bounds check deliberately does NOT live here — see
+  // assertWithinArmenia in common/coordinates.ts for why it belongs in the
+  // service instead.
+  @IsLatitudeValue()
+  latitude!: number
+
+  @IsLongitudeValue()
+  longitude!: number
 
   // Pricing — optional
   @IsOptional()

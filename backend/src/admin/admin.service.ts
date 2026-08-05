@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { Prisma, RegistrationStatus } from '@prisma/client'
 import { randomBytes } from 'node:crypto'
+import { assertWithinArmenia } from '../common/coordinates'
 import { IMAGE_ORDER } from '../images/image-order'
 import { PrismaService } from '../prisma/prisma.service'
 import type { RegistrationWithImages } from '../registration/registration.repository'
@@ -144,6 +145,17 @@ export class AdminService {
             citySlug: dto.citySlug,
             districtSlug: dto.districtSlug,
             locationName: dto.locationName,
+            // Straight copy, like platformLengthM/platformWidthM — the request
+            // stores the same two Decimal columns, already validated at submit
+            // time (CreateRegistrationDto + assertWithinArmenia). The admin
+            // does not re-enter them; if they are wrong, the correction path is
+            // PATCH /admin/tow-trucks/:id/coordinates after approval.
+            latitude: request.latitude,
+            longitude: request.longitude,
+            // Requests submitted before coordinates existed carry none, and a
+            // timestamp for a location that was never set would be a lie —
+            // `locationUpdatedAt` is null exactly when the pair is.
+            locationUpdatedAt: request.latitude !== null ? new Date() : null,
             services: request.services,
             serviceAreas,
             priceCityCallout: request.priceCityCallout,
@@ -357,6 +369,44 @@ export class AdminService {
       this.towTrucksRepository.setPhone(id, phone),
     )
     return { id: updated.id, phone: updated.phone }
+  }
+
+  /**
+   * Admin correction of a truck's base parking coordinates.
+   *
+   * Exists alongside the driver's own `PATCH /my/tow-truck/coordinates` for the
+   * same reason `setTowTruckPhone` exists alongside the dashboard: some drivers
+   * will paste the pair in the wrong order, or in the wrong place entirely, and
+   * support needs a way to fix it without asking them to log in. Unlike the
+   * phone, this is NOT admin-only — the driver owns the value too; this is a
+   * second door to the same field, not the only one.
+   *
+   * Works on deactivated trucks as well. An admin correcting the record of a
+   * profile they have temporarily hidden is a normal thing to want, and
+   * refusing it would only mean deactivating had quietly frozen data an admin
+   * is otherwise free to edit.
+   */
+  async setTowTruckCoordinates(
+    id: number,
+    latitude: number,
+    longitude: number,
+  ): Promise<{ id: number; latitude: number; longitude: number; locationUpdatedAt: string }> {
+    const towTruck = await this.towTrucksRepository.findById(id)
+    if (!towTruck) throw new NotFoundException(`Էվակուատոր #${id}-ը չի գտնվել`)
+
+    assertWithinArmenia(latitude, longitude)
+
+    const updated = await this.towTrucksRepository.setCoordinates(id, latitude, longitude)
+    return {
+      id: updated.id,
+      // Read back from the row rather than echoed from the request: the column
+      // is DECIMAL(9,6), so what was stored is what the panel must display —
+      // otherwise a value that got rounded on the way in would keep showing its
+      // unrounded self until the next full page load.
+      latitude: Number(updated.latitude),
+      longitude: Number(updated.longitude),
+      locationUpdatedAt: (updated.locationUpdatedAt as Date).toISOString(),
+    }
   }
 
   /**

@@ -87,6 +87,12 @@ assume one is unused:
   `AnalyticsPeriod` / `AnalyticsReviewStatus` enums mirror the backend TS enums
   in `backend/src/analytics/analytics.enums.ts` the same way. `SiteEventType`
   (site-wide admin traffic) is a third such pair with the same rule.
+- `ARMENIA_BOUNDS` in `frontend/utils/coordinates.ts` ↔ the same constant in
+  `backend/src/common/coordinates.ts`. The backend is the authority (it rejects
+  the write); the frontend copy exists so a driver sees the problem while
+  typing instead of after a round trip. A drift here is not silent the way the
+  service-slug ones are — the frontend simply accepts a point the backend then
+  refuses, with a message the driver cannot act on.
 - The "pick up to 2 regions" cap lives in `MAX_REGIONS` inside
   `frontend/components/common/ServiceAreaPicker.vue` (the shared picker used by
   BOTH the registration form and the driver dashboard) and in `@ArrayMaxSize(2)`
@@ -114,6 +120,7 @@ assume one is unused:
 | Touch "Ազատ երթուղիներ" (Free Routes) | `docs/free-routes.md` |
 | Touch per-driver statistics / visitor tracking | `docs/analytics.md` |
 | Decide whether a field is driver-editable or admin-only | `backend/src/my-tow-truck/dto/update-my-tow-truck.dto.ts` — the boundary and its two exceptions are argued there |
+| Touch the base parking coordinates (lat/lng) | `backend/src/common/coordinates.ts` + `frontend/utils/coordinates.ts` — one rule each side, mirrored by hand; the UI is `CoordinatesInput.vue` / `CoordinatesDialog.vue`, shared by registration, the driver dashboard and `/admin` |
 | Find what a specific page/route does | `docs/pages-and-routes.md` |
 | Run the app on a local machine | `docs/local-development.md` |
 | Deploy to the VPS | `docs/deployment.md` |

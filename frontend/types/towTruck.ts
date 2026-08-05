@@ -52,6 +52,22 @@ export interface TowTruckLocation {
   /** Yerevan administrative district slug */
   districtSlug?: string
   name: string
+  /**
+   * Base parking coordinates — the input for the future "nearest evacuator to
+   * the customer" calculation.
+   *
+   * **Only ever populated on `GET /my/tow-truck`.** The public
+   * `GET /tow-trucks/:slug` is served by the same backend mapper with
+   * coordinates withheld, and no list or coverage shape carries them at all —
+   * so on a card, a public profile or a coverage record these are always
+   * undefined, by design and not by omission. See `TowTruckApi.location` in
+   * `backend/src/tow-trucks/tow-truck.types.ts` for why they are withheld.
+   *
+   * Also undefined for every driver approved before the field existed
+   * (the columns are nullable — see schema.prisma).
+   */
+  latitude?: number
+  longitude?: number
 }
 
 /**
@@ -143,6 +159,12 @@ export interface TowTruck extends TowTruckCard {
   email?: string
   /** Raw driver-entered value, used by the dashboard edit form */
   workingHoursText?: string
+  /**
+   * ISO datetime of the last coordinate write. Same visibility rule as
+   * `location.latitude` — driver's own profile only, and absent when no
+   * coordinates have ever been set.
+   */
+  locationUpdatedAt?: string
   description: string
   vehicle: TowTruckVehicle
   pricing?: TowTruckPricing

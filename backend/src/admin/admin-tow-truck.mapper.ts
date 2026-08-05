@@ -1,3 +1,4 @@
+import { decimalToNumber } from '../common/coordinates'
 import type { TowTruckWithImages } from '../tow-trucks/tow-truck.types'
 
 /**
@@ -19,6 +20,19 @@ export interface AdminTowTruckSummary {
   vehicleModel?: string
   vehicleYear: number
   locationName: string
+  /**
+   * Base parking coordinates, so the panel can show "already set" vs "not set"
+   * and pre-fill the edit dialog. Both undefined for every driver approved
+   * before the field existed.
+   *
+   * This is an admin-authenticated response, which is the whole reason it may
+   * carry them at all — the public card and coverage shapes deliberately do
+   * not, and neither does the public profile. See TowTruckApi.location.
+   */
+  latitude?: number
+  longitude?: number
+  /** ISO datetime of the last coordinate write; undefined when never set */
+  locationUpdatedAt?: string
   hasTelegramLinked: boolean
   createdAt: string
   images: { id: number; url: string }[]
@@ -37,6 +51,9 @@ export function toAdminTowTruckSummary(truck: TowTruckWithImages): AdminTowTruck
     vehicleModel: truck.vehicleModel ?? undefined,
     vehicleYear: truck.vehicleYear,
     locationName: truck.locationName,
+    latitude: decimalToNumber(truck.latitude),
+    longitude: decimalToNumber(truck.longitude),
+    locationUpdatedAt: truck.locationUpdatedAt?.toISOString(),
     hasTelegramLinked: truck.telegramChatId !== null,
     createdAt: truck.createdAt.toISOString(),
     images: truck.images.map((image) => ({ id: image.id, url: image.url })),

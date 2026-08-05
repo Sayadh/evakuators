@@ -70,6 +70,7 @@ on is the `~` import alias, resolved above without booting Nuxt itself.
 | `tests/transliteration.spec.ts` | `toSearchKey()` — Armenian/Latin/Russian script folding, and the documented cases it deliberately does NOT fix (see `utils/transliteration.ts`'s own doc comment) |
 | `tests/locationSearch.spec.ts` | `searchLocations()` / `findLocationExact()` ranking, settlement → city/zone routing, dedup by destination |
 | `tests/locationData.spec.ts` | `validateLocationData()` — dangling ids, slug collisions, ambiguous names across the static geography datasets |
+| `tests/coordinates.spec.ts` | `parseCoordinates()` — every accepted separator, every rejection class (illegal character, not-two-numbers, out of ±90/±180, outside Armenia), the order those checks fire in, and that `formatCoordinates()` round-trips back through the parser |
 
 Add a new frontend test here only if it is a pure function over data the
 frontend already owns. Anything that needs a browser DOM, a mounted
@@ -130,6 +131,7 @@ the declared route order does.
 | `test/admin.controller.count-route.spec.ts` | `GET /admin/tow-trucks/count` is mounted correctly, sits behind `AdminJwtGuard`, is declared before any route that could shadow it, and the shadowing detector itself is tested against known true/false cases |
 | `test/telegram.service.outbound-allowlist.spec.ts` | `TELEGRAM_OUTBOUND_ALLOWED_CHAT_IDS` — a chat id not on the list never reaches `fetch()` at all, a listed one does, an empty list is unrestricted (production's real behaviour). See `docs/deployment.md` § "Staging environment" for what this exists to prevent |
 | `test/supabase-storage.service.read-only.spec.ts` | `SUPABASE_STORAGE_READ_ONLY` — `uploadWebp()`/`remove()` refuse before the Supabase client is ever called, an empty `remove([])` stays a no-op regardless, the flag is unrestricted when false |
+| `test/coordinates.spec.ts` | `SetCoordinatesDto` (range, `NaN`/`Infinity`, non-numbers), `assertWithinArmenia` (including a swapped pair and the padded box edges), `decimalToNumber` (null → undefined, never 0), and that both coordinate endpoints are mounted behind their auth guard with no tamperable id on the driver's route |
 
 ### When you touch `AdminController`, `AdminService`, or `TowTrucksRepository`
 

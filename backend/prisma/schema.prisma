@@ -57,10 +57,10 @@ enum SiteEventType {
 }
 
 model TowTruck {
-  id             Int     @id @default(autoincrement())
-  slug           String  @unique
-  driverName     String
-  companyName    String?
+  id               Int     @id @default(autoincrement())
+  slug             String  @unique
+  driverName       String
+  companyName      String?
   /// The driver-login key: DriverAuthService finds a truck by this exact
   /// string. @unique covers active AND deactivated rows together, because
   /// handing a deactivated truck's freed-up number to a new one would break
@@ -75,18 +75,18 @@ model TowTruck {
   /// The canonical format (+374 followed by 8 digits) is enforced at every
   /// entry point by IsArmenianPhone (src/common/phone.ts). Without that this
   /// constraint would guarantee uniqueness of the string, not of the number.
-  phone          String  @unique
-  secondaryPhone String?
-  whatsapp       String?
-  telegram       String?
-  email          String?
-  works24Hours   Boolean @default(false)
+  phone            String  @unique
+  secondaryPhone   String?
+  whatsapp         String?
+  telegram         String?
+  email            String?
+  works24Hours     Boolean @default(false)
   /// Free-form hours the driver typed at registration/edit time (e.g. "09:00 – 20:00").
   /// Only meaningful when works24Hours is false — ignored by the API mapper
   /// otherwise. Null means "not specified", in which case the frontend hides
   /// the working-hours line entirely instead of showing a made-up default.
   workingHoursText String?
-  description    String
+  description      String
 
   // Vehicle
   vehicleBrand    String
@@ -113,6 +113,36 @@ model TowTruck {
   districtSlug String?
   locationName String
 
+  /// Where the truck is actually parked, as a point — the input for the
+  /// "nearest evacuator to the customer" distance calculation. This is a base
+  /// location, NOT live tracking: it changes only when a driver or an admin
+  /// edits it.
+  ///
+  /// Deliberately TWO numeric columns and never one string: a "40.1792,
+  /// 44.4991" text column cannot be compared, indexed or fed to a distance
+  /// formula without parsing it back out first — the exact mistake
+  /// `platformDimensions` made (see RegistrationRequest below). The single
+  /// text box on the frontend is a Google-Maps-paste affordance and nothing
+  /// more; it is split before it ever leaves the browser.
+  ///
+  /// Decimal(9,6), not Float: 6 decimal places is ~0.11 m at this latitude,
+  /// far finer than a parking spot needs, and an exact decimal type means a
+  /// coordinate reads back exactly as it was entered. Precision 9 is the
+  /// widest either axis can be (`-180.000000`).
+  ///
+  /// Nullable, and stays nullable: every driver approved before this feature
+  /// existed has none, and a NOT NULL column would have required inventing a
+  /// coordinate for each of them. New registrations do require it (see
+  /// CreateRegistrationDto), so the gap is closed going forward rather than
+  /// backfilled with guesses.
+  latitude          Decimal?  @db.Decimal(9, 6)
+  longitude         Decimal?  @db.Decimal(9, 6)
+  /// When the coordinate pair above was last written (registration approval,
+  /// driver self-edit, or admin correction). Null exactly when both
+  /// coordinates are null. Separate from `updatedAt`, which moves on any edit
+  /// and so cannot answer "how stale is this driver's location".
+  locationUpdatedAt DateTime?
+
   /// ServiceType slugs from frontend constants
   services     String[]
   /// [{ name, slug, type: "city" | "district" | "region" }]
@@ -125,13 +155,13 @@ model TowTruck {
   priceNightSurchargePercent Int?
   priceExtraLoading          Int?
 
-  isActive  Boolean  @default(true)
+  isActive   Boolean  @default(true)
   /// Admin-curated "best tow trucks" homepage pick — see FeaturedTowTrucksSection
   /// on the frontend. Purely editorial, has no effect on public search/filter
   /// results elsewhere.
-  isFeatured Boolean @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isFeatured Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   images     TowTruckImage[]
   reviews    Review[]
@@ -145,9 +175,9 @@ model TowTruck {
   // Driver self-service login (Telegram OTP) — see DriverOtp
   /// Telegram numeric chat id, captured once the driver taps the bot deep-link.
   /// Null until linked; the driver cannot log in before that.
-  telegramChatId BigInt? @unique
+  telegramChatId             BigInt?     @unique
   /// One-time token embedded in the t.me/<bot>?start=<token> link. Cleared once used.
-  telegramLinkToken          String?   @unique
+  telegramLinkToken          String?     @unique
   telegramLinkTokenExpiresAt DateTime?
   otps                       DriverOtp[]
 
@@ -241,23 +271,23 @@ model RegistrationRequest {
   telegram       String?
   email          String?
 
-  vehicleBrand       String
-  vehicleModel       String?
-  vehicleYear        Int
-  vehicleType        String
+  vehicleBrand     String
+  vehicleModel     String?
+  vehicleYear      Int
+  vehicleType      String
   /// CAPACITY_RANGE_OPTIONS value from frontend constants (e.g. "2-3.5") — required
-  capacityRange      String
+  capacityRange    String
   /// Same two typed columns as TowTruck, so approve() is a straight copy.
   /// These replaced a single free-text `platformDimensions` ("5.5 մ × 2.2 մ"):
   /// that asked the driver to produce a format instead of two numbers, and
   /// forced a parse step on the way to the live profile — which for a while
   /// simply wasn't there, silently dropping the answer at approval.
-  platformLengthM    Float?
-  platformWidthM     Float?
-  winch              Boolean @default(false)
-  manipulator        Boolean @default(false)
+  platformLengthM  Float?
+  platformWidthM   Float?
+  winch            Boolean @default(false)
+  manipulator      Boolean @default(false)
   /// See TowTruck.wheelSkates — carried over as-is by AdminService.approve()
-  wheelSkates        Boolean @default(false)
+  wheelSkates      Boolean @default(false)
   // No works24Hours column here — it's just one of the `services` slugs the
   // driver picks (see backend/src/tow-trucks/service-slugs.ts). TowTruck
   // below keeps a real boolean column, but only as a derived sort/filter index.
@@ -274,6 +304,15 @@ model RegistrationRequest {
   regionSlugs String[]
   citySlugs   String[]
   services    String[]
+
+  /// The same two columns TowTruck has, so approve() is a straight copy —
+  /// exactly like platformLengthM/platformWidthM above. See TowTruck.latitude
+  /// for why this is two numbers rather than one string, and why the column
+  /// is nullable even though CreateRegistrationDto requires it: requests
+  /// submitted before this feature existed have none, and they are kept
+  /// forever as an audit trail.
+  latitude  Decimal? @db.Decimal(9, 6)
+  longitude Decimal? @db.Decimal(9, 6)
 
   priceCityCallout           Int?
   pricePerKm                 Int?

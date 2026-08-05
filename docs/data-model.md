@@ -70,6 +70,37 @@ Notable fields beyond the obvious:
   `MyTowTruckService.updateMine()` recompute it whenever `services` changes —
   never trust a stale `works24Hours` if `services` was touched without going
   through one of those two paths.
+- `latitude` / `longitude` (`Decimal(9,6)?`) + `locationUpdatedAt` — where the
+  truck is actually parked, as a point. The input for the future "nearest
+  evacuator to this customer" calculation; **not** live tracking, it changes
+  only when a driver or an admin edits it. Independent of the
+  `regionSlug`/`citySlug`/`districtSlug` placement and of `locationName`, which
+  are a slug and a label respectively and cannot be measured against anything.
+
+  Three things about these columns that are decisions, not defaults:
+
+  - **Two numeric columns, never one string.** A `"40.1792, 44.4991"` text
+    column cannot be compared, indexed or fed to a distance formula without
+    being parsed back apart — exactly what `platformDimensions` cost before it
+    became two floats (see `RegistrationRequest` below). The single text box a
+    driver types into exists only in the browser; `parseCoordinates()`
+    (`frontend/utils/coordinates.ts`) splits it before submit.
+  - **`Decimal`, not `Float`.** Six decimal places is ~0.11 m of resolution, and
+    an exact decimal type means a coordinate reads back exactly as entered.
+    Prisma returns `Prisma.Decimal`, whose `toJSON()` is a **string** — so every
+    mapper converts with `decimalToNumber()` (`backend/src/common/coordinates.ts`)
+    rather than handing the column straight to a response.
+  - **Nullable, and staying that way.** Every driver approved before this
+    feature has none. `CreateRegistrationDto` requires them for *new*
+    registrations, which closes the gap going forward instead of backfilling
+    guesses. `locationUpdatedAt` is null exactly when the pair is.
+
+  **Withheld from every public response.** `toTowTruckApi` serves both
+  `GET /tow-trucks/:slug` and `GET /my/tow-truck`; it takes an
+  `includeCoordinates` option that defaults to **false**, so only the driver's
+  own profile and the admin list carry them. See `docs/api-reference.md`
+  § "List vs detail" — a field that is in the JSON but not on the page is
+  published all the same.
 - `telegramChatId` / `telegramLinkToken` / `telegramLinkTokenExpiresAt` —
   driver login state. See `docs/auth-and-security.md`.
 - `contactNoticeIntroAt` — the atomically-claimed marker that keeps the
@@ -156,6 +187,15 @@ pattern already used for `citySlug`/`districtSlug`/`serviceAreas` names.
 `workingHoursText` is collected here in the same optional/validated format
 described under `TowTruck` above, and copied over as-is by
 `AdminService.approve()` — the admin doesn't re-enter it.
+
+`latitude` / `longitude` are the **same two `Decimal(9,6)?` columns**
+`TowTruck` has, so `approve()` copies them straight across like
+`platformLengthM`/`platformWidthM` and stamps `TowTruck.locationUpdatedAt` at
+that moment. The columns are nullable here too — requests submitted before the
+field existed are kept forever as an audit trail — while
+`CreateRegistrationDto` makes them required for new submissions. The admin does
+not re-enter them at approval; if they are wrong, the correction path is
+`PATCH /admin/tow-trucks/:id/coordinates` afterwards.
 
 ## `TowTruckImage`
 

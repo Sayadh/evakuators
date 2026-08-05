@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common'
 import { AdminNotificationService } from '../admin-auth/admin-notification.service'
+import { assertWithinArmenia } from '../common/coordinates'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
 import type { CreateRegistrationDto } from './dto/create-registration.dto'
 import { RegistrationRepository } from './registration.repository'
@@ -18,6 +19,16 @@ export class RegistrationService {
   ) {}
 
   async submit(dto: CreateRegistrationDto): Promise<RegistrationCreatedDto> {
+    // The DTO already proved these are real numbers inside ±90/±180; this is
+    // the geography half of the rule, kept out of the DTO so the two can never
+    // produce a single joined "must be between -90 and 90, this point is not in
+    // Armenia" message. See common/coordinates.ts.
+    //
+    // Checked before the phone lookup below rather than after: a bad
+    // coordinate is a bad request, and there is no reason to spend a query on
+    // a submission that cannot be stored.
+    assertWithinArmenia(dto.latitude, dto.longitude)
+
     // Catch the duplicate-main-phone conflict right when the driver submits,
     // not only later when admin tries to approve (AdminService.approve has
     // the same check — see its comment for why only the main phone matters,

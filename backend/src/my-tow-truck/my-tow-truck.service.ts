@@ -1,5 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
 import type { Prisma } from '@prisma/client'
+import { assertWithinArmenia } from '../common/coordinates'
+import type { SetCoordinatesDto } from '../common/set-coordinates.dto'
 import { ImagesRepository } from '../images/images.repository'
 import { AVAILABLE_24_7_SLUG } from '../tow-trucks/service-slugs'
 import { toTowTruckApi } from '../tow-trucks/tow-truck.mapper'
@@ -46,7 +48,11 @@ export class MyTowTruckService {
     if (!towTruck.isActive) {
       throw new ForbiddenException('Ձեր պրոֆիլն ապաակտիվացված է, դիմեք admin-ին')
     }
-    return toTowTruckApi(towTruck)
+    // The driver's own profile is the one place the exact coordinates belong in
+    // a response — the dashboard has to show them back before they can be
+    // edited. The public `GET /tow-trucks/:slug` calls the same mapper without
+    // this flag and therefore never carries them; see tow-truck.mapper.ts.
+    return toTowTruckApi(towTruck, { includeCoordinates: true })
   }
 
   async updateMine(towTruckId: number, dto: UpdateMyTowTruckDto): Promise<TowTruckApi> {
@@ -141,6 +147,45 @@ export class MyTowTruckService {
     }
 
     const updated = await this.towTrucksRepository.updateOwnProfile(towTruckId, data)
-    return toTowTruckApi(updated)
+    return toTowTruckApi(updated, { includeCoordinates: true })
+  }
+
+  /**
+   * The driver's own base parking coordinates.
+   *
+   * ## Why a separate endpoint rather than two more fields on updateMine()
+   *
+   * The dashboard edits these in a dialog with its own Save button, separate
+   * from the big profile form — so the request that saves them should be
+   * separate too. Folding them into the profile PATCH would mean the dialog
+   * either resubmits the whole form (and saves whatever half-edited state
+   * happened to be sitting in it) or sends a two-key PATCH to an endpoint whose
+   * DTO accepts thirty other columns. `SetCoordinatesDto` has exactly two
+   * fields, so this request cannot touch anything else even in principle —
+   * which is the mass-assignment guarantee, structurally rather than by review.
+   *
+   * It also keeps the driver and admin paths symmetric: same body, same rule,
+   * same failure messages, differing only in whose truck they resolve to.
+   *
+   * `getMine()` is reused for the lookup, so this inherits the existence and
+   * `isActive` checks unchanged — a deactivated driver holding a still-valid
+   * 30-day token cannot write here either.
+   */
+  async updateCoordinates(towTruckId: number, dto: SetCoordinatesDto): Promise<TowTruckApi> {
+    await this.getMine(towTruckId)
+
+    // The DTO proved these are real numbers in range; this is the geography
+    // half, kept in the service for the reason spelled out in
+    // common/coordinates.ts.
+    assertWithinArmenia(dto.latitude, dto.longitude)
+
+    await this.towTrucksRepository.setCoordinates(towTruckId, dto.latitude, dto.longitude)
+
+    // Re-read rather than map the update's own return value: `setCoordinates`
+    // gives back a bare TowTruck and this endpoint answers with the full
+    // profile shape, which needs the images join. It also means the response
+    // carries the coordinates Postgres actually stored at DECIMAL(9,6), not
+    // the ones that were sent.
+    return this.getMine(towTruckId)
   }
 }

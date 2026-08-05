@@ -308,6 +308,24 @@ export class TowTrucksRepository {
   }
 
   /**
+   * Writes the base parking coordinates, for both the driver's own edit and the
+   * admin correction — one method, so the timestamp cannot be set by one caller
+   * and forgotten by the other.
+   *
+   * `locationUpdatedAt` is stamped here rather than passed in for exactly that
+   * reason: it describes this write, so the write is what should decide it.
+   * Prisma accepts a plain `number` for a `Decimal` column and rounds it to the
+   * declared scale (6 places), which is why callers read the row back instead
+   * of echoing what they sent.
+   */
+  setCoordinates(id: number, latitude: number, longitude: number): Promise<TowTruck> {
+    return this.prisma.towTruck.update({
+      where: { id },
+      data: { latitude, longitude, locationUpdatedAt: new Date() },
+    })
+  }
+
+  /**
    * Admin-only correction of the main login phone (e.g. driver mistyped it at
    * registration). Uniqueness against other active trucks is enforced by the
    * caller (AdminService.setTowTruckPhone) before this runs — same rule as

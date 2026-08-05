@@ -26,6 +26,16 @@ export interface RegistrationPayload {
   regionSlugs: string[]
   citySlugs: string[]
   services: string[]
+  /**
+   * Base parking coordinates — required, unlike most of this payload.
+   *
+   * Two numbers, never the "40.1792, 44.4991" string the driver typed: the
+   * form parses it with `parseCoordinates` before building this payload, the
+   * same way the platform dimensions stopped being a formatted string. See
+   * `utils/coordinates.ts`.
+   */
+  latitude: number
+  longitude: number
   priceCityCallout?: number
   pricePerKm?: number
   priceWaitingPerHour?: number

@@ -11,6 +11,7 @@ import { ServiceType } from '~/types/enums'
 import type { VehicleType } from '~/types/enums'
 import type { SelectOption } from '~/types/common'
 import { trackRegistrationSubmit } from '~/utils/analytics'
+import { parseCoordinates, type Coordinates } from '~/utils/coordinates'
 import { extractErrorMessage } from '~/utils/errors'
 import { armenianPhoneInputValue } from '~/utils/formatPhone'
 import {
@@ -59,6 +60,8 @@ function createInitialFormState() {
     workingHoursEnd: '',
     regionSlugs: [] as string[],
     citySlugs: [] as string[],
+    /** Raw text from the single coordinates box — parsed on submit, never sent as a string */
+    coordinates: '',
     services: [] as ServiceType[],
     priceCityCallout: '',
     pricePerKm: '',
@@ -195,6 +198,16 @@ onBeforeUnmount(() => {
   extraImagePreviews.value.forEach((url) => URL.revokeObjectURL(url))
 })
 
+/**
+ * The parsed pair from the last successful `validate()`.
+ *
+ * Held here rather than re-parsed at submit time so the string is read exactly
+ * once: the same result that decided whether to show an error under the field
+ * is the one that ends up in the payload, and there is no second parse that
+ * could disagree with the first.
+ */
+const parsedCoordinates = ref<Coordinates | null>(null)
+
 function validate(): boolean {
   errors.firstName = validateField(form.firstName, [required()]) ?? ''
   errors.lastName = validateField(form.lastName, [required()]) ?? ''
@@ -218,6 +231,15 @@ function validate(): boolean {
   errors.regionSlugs = form.regionSlugs.length === 0 ? 'Ընտրեք 1-2 մարզ' : ''
   errors.citySlugs = form.citySlugs.length === 0 ? 'Ընտրեք առնվազն մեկ քաղաք կամ շրջան' : ''
   errors.services = form.services.length === 0 ? 'Ընտրեք առնվազն մեկ ծառայություն' : ''
+  // Required for new registrations. The columns behind it are nullable — that
+  // is for the drivers who registered before this field existed, not a licence
+  // to keep adding more of them. `parseCoordinates` produces the message; this
+  // page only decides where it goes.
+  const coordinates = parseCoordinates(form.coordinates)
+  parsedCoordinates.value = coordinates.ok
+    ? { latitude: coordinates.latitude, longitude: coordinates.longitude }
+    : null
+  errors.coordinates = coordinates.ok ? '' : coordinates.error
   // Fully optional — driver may leave both 24/7 unselected and hours unset.
   // Only flag it when exactly one of the two times got filled in, since
   // that combination can't be saved as a valid range either way.
@@ -256,6 +278,10 @@ function resetForm(): void {
   // Those ids now belong to the submitted request — a second registration
   // must upload its own photos, not try to reattach already-attached ones.
   resetUploadedImages()
+  // Same reasoning: the parsed pair belongs to the submission that just went
+  // through, and leaving it behind would let a second submit reuse it if
+  // validate() were ever bypassed.
+  parsedCoordinates.value = null
 
   if (mainImagePreview.value) URL.revokeObjectURL(mainImagePreview.value)
   mainImagePreview.value = null
@@ -276,7 +302,7 @@ function selectedFiles(): File[] {
 }
 
 /** Uploads whatever isn't uploaded yet, then submits the request */
-async function submitToApi(): Promise<void> {
+async function submitToApi(coordinates: Coordinates): Promise<void> {
   // Resumes from where the last attempt stopped — see uploadedImageIds. Each
   // id is committed to the array as soon as its upload returns, so a failure
   // halfway through (or a rejected submit afterwards) never costs the driver
@@ -286,7 +312,7 @@ async function submitToApi(): Promise<void> {
     uploadedImageIds.value = [...uploadedImageIds.value, image.id]
   }
 
-  const payload = buildRegistrationPayload(form, uploadedImageIds.value)
+  const payload = buildRegistrationPayload(form, uploadedImageIds.value, coordinates)
   await registrationRepository.submit(payload)
 }
 
@@ -295,6 +321,11 @@ async function onSubmit(): Promise<void> {
     if (import.meta.client) window.scrollTo({ top: 0, behavior: 'smooth' })
     return
   }
+
+  // `validate()` returning true means it parsed, so this cannot be null — the
+  // guard is here to prove it to the compiler rather than to handle a case.
+  const coordinates = parsedCoordinates.value
+  if (!coordinates) return
 
   submitError.value = ''
 
@@ -308,7 +339,7 @@ async function onSubmit(): Promise<void> {
 
   isSubmitting.value = true
   try {
-    await submitToApi()
+    await submitToApi(coordinates)
     trackRegistrationSubmit()
     isSuccessOpen.value = true
     resetForm()
@@ -456,6 +487,19 @@ async function onSubmit(): Promise<void> {
           v-model:cities="form.citySlugs"
           :regions-error="errors.regionSlugs"
           :cities-error="errors.citySlugs"
+        />
+      </fieldset>
+
+      <!-- Its own section rather than a field inside "Տարածքներ": the areas
+           above are where a driver is willing to GO, this is where they
+           actually ARE, and the two answers get confused when they share a
+           heading. Same component the dashboard and admin dialogs use. -->
+      <fieldset class="register__section">
+        <legend class="register__legend">Տեղադիրք</legend>
+        <CoordinatesInput
+          v-model="form.coordinates"
+          heading="Նշեք Ձեր էվակուատորի հիմնական տեղադիրքի կոորդինատները"
+          :error="errors.coordinates"
         />
       </fieldset>
 

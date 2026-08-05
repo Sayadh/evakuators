@@ -37,6 +37,7 @@ from the server itself (Nuxt SSR over loopback) skip throttling entirely — see
 | --- | --- | --- |
 | `GET` | `/my/tow-truck` | Own profile; throws if `isActive: false` even with a valid token |
 | `PATCH` | `/my/tow-truck` | Partial update covering **everything the registration form asks**, except `slug` and the main `phone` (both admin-only — see `UpdateMyTowTruckDto`). `works24Hours` auto-recomputed if `services` is included. `companyName: ""` **clears** it — the one field where empty differs from omitted. `serviceAreas` must be sent together with `citySlug`/`districtSlug` or the request is rejected. `imageIds` is the **full replacement list** — omit it to leave photos alone; sending it accepts 1-6 ids (never 0: a listing with no photo renders a broken image everywhere it appears) and its order becomes the gallery order |
+| `PATCH` | `/my/tow-truck/coordinates` | Body `{ latitude, longitude }`, both required numbers — the driver's own base parking point. Its own route rather than two more keys on the PATCH above, because the dashboard edits it in a dialog with its own Save: a two-field DTO cannot touch another column even in principle, and the dialog never resubmits half-finished profile-form state. No id in the path (it comes from the JWT), so a driver cannot express a request to move someone else's marker. Returns the full refreshed profile |
 | `GET` | `/my/free-routes` | Own routes, any status |
 | `POST` | `/my/free-routes` | Requires `isActive` profile |
 | `PATCH` | `/my/free-routes/:id` | Ownership-checked; force-reactivates to `ACTIVE` |
@@ -61,6 +62,7 @@ from the server itself (Nuxt SSR over loopback) skip throttling entirely — see
 | `PATCH` | `/admin/tow-trucks/:id/active` | Body: `{ isActive: boolean }` — reversible |
 | `PATCH` | `/admin/tow-trucks/:id/featured` | Body: `{ isFeatured: boolean }` — drives the public `GET /tow-trucks/featured` list and the homepage "featured" section |
 | `PATCH` | `/admin/tow-trucks/:id/phone` | Body: `{ phone: string }` (`+374` + 8 digits). Corrects the main login phone — the driver's own dashboard can't touch this field. Rejected with 400 if another **active** truck already uses it (same uniqueness rule as approval) |
+| `PATCH` | `/admin/tow-trucks/:id/coordinates` | Body `{ latitude, longitude }` — same `SetCoordinatesDto`, same rule and same messages as the driver's route above, deliberately shared so the two audiences can never validate one value differently. Unlike `/phone` this is **not** an admin-only field: it exists so support can fix a pair pasted in the wrong order without asking the driver to log in. Works on deactivated trucks too |
 | `DELETE` | `/admin/tow-trucks/:id` | Irreversible — cascades to images (DB row + Supabase Storage object), reviews, OTPs, free routes |
 | `POST` | `/admin/tow-trucks/:id/telegram-link` | (Re)generates the Telegram link — same underlying call whether the truck has never linked or is switching accounts |
 | `GET` | `/admin/tow-trucks/:id/analytics` | Same four reports as the driver's `/my/analytics*`, for any truck — **including deactivated ones** (an admin usually wants exactly that history). Served by the same `AnalyticsDashboardService`, so admin and driver can never see differently-computed numbers. See `docs/analytics.md` |
@@ -95,6 +97,17 @@ instead of all of them.
 **`plateNumber` is withheld whenever `showPlateNumber` is false**, at the mapper.
 It used to be sent regardless and merely hidden by the UI, so a driver who opted
 out had it published anyway, one "view source" away.
+
+**`location.latitude` / `location.longitude` are withheld from every public
+response**, at the same mapper and for the same reason. `toTowTruckApi` takes an
+`includeCoordinates` option that defaults to **false**, so the public profile
+gets nothing and only `GET /my/tow-truck` (the driver's own) opts in; the card
+and coverage shapes have no such field at all, and the admin list carries them
+only because it is behind `AdminJwtGuard`. The default is `false` rather than
+`true` so a caller added later leaks nothing until someone writes the flag and
+has to justify it. When a distance feature eventually needs these, what it needs
+is a *distance* — a number the backend can return without handing out the point
+it was computed from.
 
 ## Pagination
 

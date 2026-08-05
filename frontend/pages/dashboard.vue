@@ -14,6 +14,7 @@ import { LocationType, ServiceType } from '~/types/enums'
 import type { VehicleType } from '~/types/enums'
 import type { SelectOption } from '~/types/common'
 import type { TowTruck } from '~/types/towTruck'
+import { formatCoordinates, type Coordinates } from '~/utils/coordinates'
 import { extractErrorMessage } from '~/utils/errors'
 import { armenianPhoneInputValue } from '~/utils/formatPhone'
 import {
@@ -436,6 +437,74 @@ async function submit(): Promise<void> {
   }
 }
 
+/* ── Base parking coordinates ────────────────────────────────────────────────
+ *
+ * Deliberately OUTSIDE the big profile form, with its own dialog and its own
+ * request (`PATCH /my/tow-truck/coordinates`).
+ *
+ * Two reasons. The value is a single indivisible pair that a driver sets once
+ * and then rarely touches, so burying it among thirty other fields would mean
+ * scrolling past it forever; and every driver approved before this feature
+ * existed has none, which makes "you have not set this yet" a state the page
+ * has to show and act on, not a blank input among other blank inputs.
+ *
+ * It also keeps the main Save honest: a driver fixing a typo in their price
+ * list should not have their coordinates re-submitted as a side effect, and a
+ * coordinate that fails validation should not block a save that has nothing to
+ * do with it.
+ */
+const coordinatesDialogOpen = ref(false)
+const savingCoordinates = ref(false)
+const coordinatesError = ref('')
+const coordinatesSuccess = ref(false)
+
+/** The stored pair in canonical form — also what pre-fills the dialog */
+const currentCoordinates = computed(() =>
+  formatCoordinates(truck.value?.location.latitude, truck.value?.location.longitude),
+)
+
+const hasCoordinates = computed(() => currentCoordinates.value !== '')
+
+function openCoordinatesDialog(): void {
+  coordinatesError.value = ''
+  coordinatesSuccess.value = false
+  coordinatesDialogOpen.value = true
+}
+
+/**
+ * The dialog has already parsed and range-checked what was typed, so this only
+ * has to deal with the request. On failure the dialog stays open holding the
+ * driver's text and showing the backend's own message — closing it would throw
+ * away what they typed for a problem they might fix in one keystroke.
+ */
+async function saveCoordinates(coordinates: Coordinates): Promise<void> {
+  savingCoordinates.value = true
+  coordinatesError.value = ''
+  try {
+    // The response is the full refreshed profile, so the displayed pair comes
+    // from what Postgres stored rather than from what was sent.
+    //
+    // Deliberately NOT followed by fillFormFromTruck() the way the main save
+    // is: that would overwrite the big edit form with the server's copy, and a
+    // driver who was halfway through rewriting their description when they
+    // stopped to fix their coordinates would silently lose it. Nothing in that
+    // form depends on the coordinates, so there is nothing to re-sync.
+    truck.value = await myTowTruckRepository.updateCoordinates(
+      coordinates.latitude,
+      coordinates.longitude,
+    )
+    coordinatesDialogOpen.value = false
+    coordinatesSuccess.value = true
+  } catch (error) {
+    coordinatesError.value = extractErrorMessage(
+      error,
+      'Կոորդինատները պահպանել չհաջողվեց։ Ստուգեք կապը և փորձեք կրկին։',
+    )
+  } finally {
+    savingCoordinates.value = false
+  }
+}
+
 async function logout(): Promise<void> {
   driverAuth.logout()
   await navigateTo('/login')
@@ -715,6 +784,48 @@ async function logout(): Promise<void> {
         </AppButton>
       </form>
 
+      <!-- Outside the profile <form> on purpose — this pair saves itself
+           through its own endpoint, so it must not ride along with (or be
+           blocked by) the main Save. Same placement reasoning as
+           FreeRoutesManager below. -->
+      <details class="dashboard-section dashboard-section--location" open>
+        <summary class="dashboard-summary">Տեղադիրք</summary>
+        <div class="dashboard-details-content">
+          <p class="dashboard-hint">
+            Կոորդինատներն անհրաժեշտ են, որպեսզի հաճախորդին ցույց տանք իրեն ամենամոտ գտնվող
+            էվակուատորները։
+          </p>
+
+          <div class="dashboard-location">
+            <dl class="dashboard-location__value">
+              <dt>Կոորդինատներ</dt>
+              <dd v-if="hasCoordinates">{{ currentCoordinates }}</dd>
+              <dd v-else class="dashboard-location__empty">Տեղադիրքը նշված չէ</dd>
+            </dl>
+
+            <AppButton variant="outline" size="sm" @click="openCoordinatesDialog">
+              {{ hasCoordinates ? 'Փոխել կոորդինատները' : 'Ավելացնել կոորդինատներ' }}
+            </AppButton>
+          </div>
+
+          <!-- Only the success line lives out here. The failure message stays
+               inside the dialog, next to the field that caused it and the text
+               the driver would have to correct. -->
+          <p v-if="coordinatesSuccess" class="dashboard-success">
+            Կոորդինատները հաջողությամբ պահպանվեցին ✓
+          </p>
+        </div>
+      </details>
+
+      <CoordinatesDialog
+        v-model="coordinatesDialogOpen"
+        title="Էվակուատորի տեղադիրքի կոորդինատներ"
+        :initial-value="currentCoordinates"
+        :saving="savingCoordinates"
+        :error="coordinatesError"
+        @save="saveCoordinates"
+      />
+
       <details class="dashboard-section dashboard-section--routes">
         <summary class="dashboard-summary">Ազատ երթուղիներ</summary>
         <div class="dashboard-details-content">
@@ -867,6 +978,64 @@ details[open] .dashboard-summary::after {
 
   .dashboard-hint {
     margin-bottom: 0;
+  }
+}
+
+/* Base parking coordinates — same column width as the form and the routes
+   block, so the three read as one stack rather than three widths. */
+.dashboard-section--location {
+  margin-top: var(--space-4);
+  max-width: 640px;
+
+  .dashboard-hint {
+    margin-bottom: 0;
+  }
+}
+
+.dashboard-location {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+
+  /* The value and its button sit side by side once there is room; on a phone
+     the button drops below and goes full width rather than being squeezed
+     next to a coordinate pair that already fills the line. */
+  flex-direction: column;
+  align-items: stretch;
+
+  @media (min-width: 480px) {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  &__value {
+    margin: 0;
+    min-width: 0;
+
+    dt {
+      font-size: 0.78rem;
+      color: var(--color-text-secondary);
+      margin-bottom: 2px;
+    }
+
+    dd {
+      margin: 0;
+      font-weight: 600;
+      word-break: break-word;
+
+      /* Muted and lighter, not red: having no coordinates yet is the normal
+         state for every driver approved before this existed, not a mistake
+         they made. */
+      &.dashboard-location__empty {
+        color: var(--color-text-muted);
+        font-weight: 500;
+      }
+    }
   }
 }
 

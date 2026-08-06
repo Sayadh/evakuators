@@ -143,9 +143,12 @@ delivers a real message to a real person. Set it to your own chat id.
 
 ### The one thing that cannot be mirrored
 
-The Telegram **webhook** — see the next section. Outbound messages (OTP codes)
-work locally once the token is copied; inbound account-linking cannot, because
-a bot has exactly one webhook URL globally and it belongs to production.
+The Telegram **webhook** — see the next section. Outbound messages work locally
+once the token is copied; inbound account-linking cannot, because a bot has
+exactly one webhook URL globally and it belongs to production. Since linking is
+also what mints a driver's password, this means a locally-restored driver who
+had no password in the copied database cannot be given one locally either — set
+`passwordHash` by hand in the local database if you need to log in as one.
 
 ## Telegram login/link flow — does NOT work locally by default
 

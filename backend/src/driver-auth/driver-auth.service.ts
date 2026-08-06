@@ -7,167 +7,177 @@ import {
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { JwtService } from '@nestjs/jwt'
-import { Cron, CronExpression } from '@nestjs/schedule'
-import { createHash, randomInt, timingSafeEqual } from 'node:crypto'
-import { AdminOtpRepository } from '../admin-auth/admin-otp.repository'
+import bcrypt from 'bcrypt'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
-import { TelegramService } from '../telegram/telegram.service'
-import { DriverOtpRepository } from './driver-otp.repository'
+import { BCRYPT_ROUNDS, generateTemporaryPassword } from './driver-password'
 
-const CODE_TTL_MINUTES = 5
-const MAX_ATTEMPTS = 5
-const REQUEST_COOLDOWN_MS = 45_000
+const TOKEN_TTL = '30d'
 
 /**
- * How long a login code row is kept before deletion. Far beyond the 5-minute
- * TTL — the point is only to stop the table growing forever, not to expire codes
- * (that's `expiresAt`).
+ * Compared against when no driver matches the phone, so `login()` always pays
+ * the same bcrypt cost. Without it, "unknown number" answers measurably faster
+ * than "wrong password" and the endpoint becomes a way to enumerate which
+ * numbers are registered — which, on a site that publishes drivers' phone
+ * numbers anyway, matters less for privacy than for handing an attacker a
+ * pre-filtered list of accounts worth guessing at. Same constant and same
+ * reasoning as AdminAuthService.
  */
-const OTP_RETENTION_MS = 24 * 60 * 60 * 1000
+const DUMMY_HASH = '$2b$12$CwTycUXWue0Thq9StjUM0uJ8G8Kn8UYwUIQEEcxJp/nDdX7O/HgFa'
 
 export interface DriverSession {
   token: string
   towTruckId: number
   slug: string
+  /**
+   * True while the password just used is still the one we generated. The
+   * dashboard blocks on it; it is returned here rather than read from
+   * `GET /my/tow-truck` so the frontend knows before it renders anything.
+   */
+  mustChangePassword: boolean
 }
 
+/**
+ * Driver login: phone + password.
+ *
+ * ## Why this replaced Telegram OTP
+ *
+ * The old flow made the Telegram bot load-bearing for authentication, and
+ * `telegramChatId` is `@unique` — so one Telegram account could hold the keys
+ * to exactly one driver profile, and a driver who muted or blocked the bot
+ * (which also carries contact notices, with no opt-out) locked themselves out
+ * with nothing on screen to explain why. Both of those are gone: Telegram now
+ * carries notices and one password handover, and nothing that a driver needs
+ * every time they log in.
+ *
+ * ## Where a password comes from
+ *
+ * Never from a registration form, and never chosen by an admin. The first (and
+ * only) time we mint one is when a driver taps their Telegram deep link —
+ * `TelegramWebhookController.handleStart` calls `issueTemporaryPassword()` and
+ * puts the result in the same message that confirms the link. That is the one
+ * channel where we are already talking to a driver we have some reason to
+ * believe is the right one.
+ *
+ * `mustChangePassword` then governs everything downstream: the dashboard will
+ * not let them do anything else until it is cleared, and a later re-link
+ * re-issues a password only while it is still true. Once a driver owns their
+ * password, tapping a fresh Telegram link is no longer a way to reset it —
+ * possession of a link proves possession of a link, not of an identity (see
+ * docs/auth-and-security.md).
+ */
 @Injectable()
 export class DriverAuthService {
   private readonly logger = new Logger(DriverAuthService.name)
-  private readonly pepper: string
-  /**
-   * phone -> last request time, resets on restart — fine for a single-instance
-   * app. Swept in purgeSpentLoginCodes() so it cannot grow without bound: the
-   * cooldown is checked BEFORE the truck is looked up, so an entry is created
-   * for every phone number ever posted to this endpoint, existing or not.
-   */
-  private readonly lastRequestAt = new Map<string, number>()
+  private readonly secret: string
 
   constructor(
     private readonly towTrucksRepository: TowTrucksRepository,
-    private readonly otpRepository: DriverOtpRepository,
-    private readonly adminOtpRepository: AdminOtpRepository,
-    private readonly telegram: TelegramService,
     private readonly jwt: JwtService,
     config: ConfigService,
   ) {
-    this.pepper = config.getOrThrow<string>('driverJwtSecret')
+    this.secret = config.getOrThrow<string>('driverJwtSecret')
   }
 
-  /**
-   * Deletes spent login codes for both drivers and admins.
-   *
-   * One cron for both tables rather than one per auth module: they are the same
-   * mechanism with the same retention rule, and a single scheduled job that
-   * cannot get out of sync beats two that can. It lives here (rather than in a
-   * "maintenance" grab-bag module) because driver OTPs are by far the higher
-   * volume of the two.
-   *
-   * A row is dead the moment it expires or is consumed — the hash is one-way, so
-   * keeping it has no audit value either.
-   */
-  @Cron(CronExpression.EVERY_DAY_AT_4AM)
-  async purgeSpentLoginCodes(): Promise<void> {
-    const cutoff = new Date(Date.now() - OTP_RETENTION_MS)
-    const [drivers, admins] = await Promise.all([
-      this.otpRepository.deleteExpiredBefore(cutoff),
-      this.adminOtpRepository.deleteExpiredBefore(cutoff),
-    ])
-
-    if (drivers > 0 || admins > 0) {
-      this.logger.log(`Login-code purge: removed ${drivers} driver and ${admins} admin codes`)
-    }
-
-    this.sweepCooldowns()
-  }
-
-  /**
-   * Drops cooldown entries that can no longer block anything. An entry older
-   * than REQUEST_COOLDOWN_MS is already inert — keeping it only costs memory,
-   * and this map is fed by a public endpoint that does not require the phone
-   * number to exist.
-   */
-  private sweepCooldowns(): void {
-    const cutoff = Date.now() - REQUEST_COOLDOWN_MS
-    for (const [phone, at] of this.lastRequestAt) {
-      if (at < cutoff) this.lastRequestAt.delete(phone)
-    }
-  }
-
-  async requestCode(phone: string): Promise<void> {
-    const lastAt = this.lastRequestAt.get(phone)
-    if (lastAt && Date.now() - lastAt < REQUEST_COOLDOWN_MS) {
-      throw new BadRequestException('Խնդրում ենք սպասել մի քանի վայրկյան նոր կոդ խնդրելուց առաջ')
-    }
-
+  async login(phone: string, password: string): Promise<DriverSession> {
     const towTruck = await this.towTrucksRepository.findActiveByMainPhone(phone)
-    if (!towTruck) {
-      throw new NotFoundException('Այս հեռախոսահամարով պրոֆիլ չի գտնվել')
-    }
-    if (!towTruck.telegramChatId) {
-      throw new BadRequestException(
-        'Ձեր Telegram-ը դեռ կապակցված չէ։ Դիմեք admin-ին անձնական link ստանալու համար։',
+
+    // Always runs, even with no match and even when the row has no hash yet —
+    // see DUMMY_HASH. `bcrypt.compare` against the dummy can only ever be
+    // false, so this cannot accidentally authenticate anyone.
+    const isValid = await bcrypt.compare(password, towTruck?.passwordHash ?? DUMMY_HASH)
+
+    if (!towTruck || !towTruck.passwordHash || !isValid) {
+      // One message for all three failures. Splitting them would tell an
+      // unauthenticated caller which numbers exist and which of those have
+      // finished setting up — and a driver who genuinely mistyped either field
+      // is helped by the hint below, not by knowing which half was wrong.
+      throw new UnauthorizedException(
+        'Սխալ հեռախոսահամար կամ գաղտնաբառ։ Եթե դեռ գաղտնաբառ չեք ստացել, դիմեք ադմինիստրատորին։',
       )
     }
 
-    this.lastRequestAt.set(phone, Date.now())
+    return {
+      token: await this.jwt.signAsync(
+        { sub: towTruck.id },
+        { secret: this.secret, expiresIn: TOKEN_TTL },
+      ),
+      towTruckId: towTruck.id,
+      slug: towTruck.slug,
+      mustChangePassword: towTruck.mustChangePassword,
+    }
+  }
 
-    // Only the code we're about to send should ever be valid — otherwise a
-    // driver who scrolls back to an older Telegram message (or double-taps
-    // "send code") could enter a still-technically-unexpired older code and
-    // land in a confusing "wrong code" / mismatched state.
-    await this.otpRepository.invalidateActive(towTruck.id)
+  /**
+   * Mints a temporary password for a driver who does not have one of their own,
+   * and returns it in plaintext — the only moment it exists in readable form,
+   * for exactly as long as it takes the caller to put it in a Telegram message.
+   *
+   * Returns `null` when the driver has already set their own password, and that
+   * return value is the security boundary of the whole Telegram re-link path:
+   * the caller cannot tell the difference between "we chose not to reset it"
+   * and "there was nothing to send", which is what stops a re-link from being
+   * a password reset. See handleStart().
+   *
+   * A driver still holding OUR password gets a fresh one rather than the same
+   * one again. That costs nothing (they have not memorised it) and it means the
+   * old value — which has been sitting readable in a Telegram chat, possibly one
+   * they have since lost access to — stops working the moment a new link is
+   * tapped.
+   */
+  async issueTemporaryPassword(towTruckId: number): Promise<string | null> {
+    const towTruck = await this.towTrucksRepository.findById(towTruckId)
+    if (!towTruck) throw new NotFoundException(`Էվակուատոր #${towTruckId}-ը չի գտնվել`)
 
-    const code = randomInt(100_000, 1_000_000).toString()
-    const expiresAt = new Date(Date.now() + CODE_TTL_MINUTES * 60_000)
-    await this.otpRepository.create(towTruck.id, this.hashCode(code), expiresAt)
+    // Two conditions, and the first is not redundant: a row with no hash has
+    // `mustChangePassword: false` (the column's default, and correct — it holds
+    // no temporary password because it holds none at all), so testing the flag
+    // alone would refuse to ever issue a first password.
+    const ownsTheirPassword = towTruck.passwordHash !== null && !towTruck.mustChangePassword
+    if (ownsTheirPassword) return null
 
-    await this.telegram.sendMessage(
-      towTruck.telegramChatId,
-      `Ձեր մուտքի կոդն է՝ ${code}\n\nԿոդը վավեր է ${CODE_TTL_MINUTES} րոպե։ Եթե դուք չեք խնդրել այս կոդը, անտեսեք այս հաղորդագրությունը։`,
-      { text: 'Մուտք գործել', url: this.telegram.loginUrl },
+    const password = generateTemporaryPassword()
+    await this.towTrucksRepository.setPassword(towTruckId, await bcrypt.hash(password, BCRYPT_ROUNDS), true)
+
+    this.logger.log(`Issued a temporary password for TowTruck #${towTruckId}`)
+    return password
+  }
+
+  /**
+   * The driver replaces the password they were given (or an older one of their
+   * own) with a new one. Clearing `mustChangePassword` is what ends the forced
+   * dialog on the dashboard and, from here on, what stops a Telegram re-link
+   * from touching this account's password again.
+   *
+   * Deliberately does NOT invalidate the caller's own session, nor any other:
+   * there are no refresh tokens and no session table to revoke against (see
+   * docs/auth-and-security.md § "Things that are NOT implemented"), so a logout
+   * here would only sign the driver out of the tab they are standing in while
+   * changing nothing about a token someone else might hold. Fixing that means
+   * session invalidation as a feature, not a line in this method.
+   */
+  async changePassword(
+    towTruckId: number,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    const towTruck = await this.towTrucksRepository.findById(towTruckId)
+    if (!towTruck) throw new NotFoundException('Ձեր պրոֆիլը չի գտնվել')
+
+    const isValid = await bcrypt.compare(currentPassword, towTruck.passwordHash ?? DUMMY_HASH)
+    if (!towTruck.passwordHash || !isValid) {
+      // 400, not 401, and the distinction matters beyond taste: the frontend
+      // treats ANY 401 on a `/my/*` path as an expired session and logs the
+      // driver out (see apiClient.ts). The session here is perfectly valid —
+      // it is the confirmation field in the body that is wrong — so answering
+      // 401 would throw a driver back to the login page for a typo, with no
+      // message surviving the redirect to tell them what happened.
+      throw new BadRequestException('Ընթացիկ գաղտնաբառը սխալ է')
+    }
+
+    await this.towTrucksRepository.setPassword(
+      towTruckId,
+      await bcrypt.hash(newPassword, BCRYPT_ROUNDS),
+      false,
     )
-  }
-
-  async verifyCode(phone: string, code: string): Promise<DriverSession> {
-    const towTruck = await this.towTrucksRepository.findActiveByMainPhone(phone)
-    if (!towTruck) {
-      throw new NotFoundException('Այս հեռախոսահամարով պրոֆիլ չի գտնվել')
-    }
-
-    const otp = await this.otpRepository.findActive(towTruck.id)
-    if (!otp) {
-      throw new BadRequestException('Կոդը ժամկետանց է կամ գոյություն չունի, խնդրեք նոր կոդ')
-    }
-
-    if (otp.attempts >= MAX_ATTEMPTS) {
-      await this.otpRepository.consume(otp.id)
-      throw new BadRequestException('Չափազանց շատ սխալ փորձեր, խնդրեք նոր կոդ')
-    }
-
-    if (!this.hashesMatch(otp.codeHash, this.hashCode(code))) {
-      await this.otpRepository.incrementAttempts(otp.id)
-      throw new UnauthorizedException('Սխալ կոդ')
-    }
-
-    await this.otpRepository.consume(otp.id)
-
-    const token = await this.jwt.signAsync(
-      { sub: towTruck.id },
-      { secret: this.pepper, expiresIn: '30d' },
-    )
-
-    return { token, towTruckId: towTruck.id, slug: towTruck.slug }
-  }
-
-  private hashCode(code: string): string {
-    return createHash('sha256').update(`${code}:${this.pepper}`).digest('hex')
-  }
-
-  /** Constant-time compare — plain `!==` on secrets leaks timing info */
-  private hashesMatch(a: string, b: string): boolean {
-    const bufA = Buffer.from(a)
-    const bufB = Buffer.from(b)
-    return bufA.length === bufB.length && timingSafeEqual(bufA, bufB)
   }
 }

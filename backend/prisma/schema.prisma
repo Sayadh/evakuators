@@ -192,14 +192,39 @@ model TowTruck {
   analyticsDailyStats  AnalyticsDailyStat[]
   analyticsVisitorDays AnalyticsVisitorDay[]
 
-  // Driver self-service login (Telegram OTP) — see DriverOtp
+  /// bcrypt hash of the driver's login password. Paired with `phone`, which
+  /// is the lookup key — see DriverAuthService.login().
+  ///
+  /// Nullable, and it means something specific: a driver who has never tapped
+  /// their Telegram link has no password at all and cannot log in. The first
+  /// tap is what mints one (TelegramWebhookController.handleStart), which is
+  /// also the only channel we have for delivering it — so "no hash" and "never
+  /// linked" are two views of the same state rather than two states to
+  /// reconcile.
+  passwordHash               String?
+  /// True while `passwordHash` still holds a password WE generated, false once
+  /// the driver has replaced it with their own.
+  ///
+  /// This is the flag the whole flow turns on, in two places that must agree:
+  /// the dashboard refuses to do anything else until it is cleared, and a
+  /// Telegram re-link re-issues a password only while it is true. That second
+  /// rule is the point — once a driver owns their password, re-linking a
+  /// Telegram account (which proves possession of a link, not of an identity —
+  /// see docs/auth-and-security.md) must not be a way to reset it.
+  ///
+  /// Defaults false so every row that existed before this column did reads as
+  /// "not holding a temporary password", which is true: they held no password
+  /// at all.
+  mustChangePassword         Boolean     @default(false)
+
+  // Telegram — login-code delivery until password login replaced it, now the
+  // channel for contact notices and for the one-time password handover.
   /// Telegram numeric chat id, captured once the driver taps the bot deep-link.
-  /// Null until linked; the driver cannot log in before that.
+  /// Null until linked; until then there is no way to hand them a password.
   telegramChatId             BigInt?     @unique
   /// One-time token embedded in the t.me/<bot>?start=<token> link. Cleared once used.
   telegramLinkToken          String?     @unique
   telegramLinkTokenExpiresAt DateTime?
-  otps                       DriverOtp[]
 
   /// When the one-time "here is why you get these" explanation was delivered
   /// with the driver's first contact notice (see DriverNotificationService).
@@ -224,22 +249,6 @@ model TowTruck {
   /// `jsonb_ops`) because we only ever use the `@>` containment operator, and
   /// it produces a substantially smaller, faster index for exactly that.
   @@index([serviceAreas(ops: JsonbPathOps)], type: Gin)
-}
-
-/// Short-lived login codes sent to the driver's linked Telegram chat.
-model DriverOtp {
-  id         Int       @id @default(autoincrement())
-  towTruckId Int
-  towTruck   TowTruck  @relation(fields: [towTruckId], references: [id], onDelete: Cascade)
-  /// SHA-256 hash of the 6-digit code — the raw code is never stored
-  codeHash   String
-  expiresAt  DateTime
-  /// Failed verify attempts against this code — locked out after 5
-  attempts   Int       @default(0)
-  consumedAt DateTime?
-  createdAt  DateTime  @default(now())
-
-  @@index([towTruckId])
 }
 
 model TowTruckImage {
@@ -508,7 +517,10 @@ model User {
 }
 
 /// Short-lived 2FA login codes sent to an admin's linked Telegram chat.
-/// Mirrors DriverOtp exactly, just keyed to User instead of TowTruck.
+///
+/// The only OTP table left. `DriverOtp` was its twin until drivers moved to
+/// password login; admins keep codes because for them the code is a SECOND
+/// factor on top of a password, not the password's replacement.
 model AdminOtp {
   id         Int       @id @default(autoincrement())
   userId     Int

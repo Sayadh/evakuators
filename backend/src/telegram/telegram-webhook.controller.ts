@@ -10,6 +10,7 @@ import {
 import { ConfigService } from '@nestjs/config'
 import { timingSafeEqual } from 'node:crypto'
 import type { AppConfig } from '../config/configuration'
+import { DriverAuthService } from '../driver-auth/driver-auth.service'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
 import { TelegramService } from './telegram.service'
 import { telegramTokenFingerprint } from './token-fingerprint'
@@ -31,6 +32,7 @@ export class TelegramWebhookController {
     config: ConfigService,
     private readonly towTrucksRepository: TowTrucksRepository,
     private readonly telegram: TelegramService,
+    private readonly driverAuth: DriverAuthService,
   ) {
     this.webhookSecret = config.getOrThrow<AppConfig['telegram']>('telegram').webhookSecret
   }
@@ -118,19 +120,51 @@ export class TelegramWebhookController {
 
     await this.towTrucksRepository.linkTelegramChat(towTruck.id, BigInt(chatId))
 
+    // The one channel we have for handing a driver their first password, which
+    // is why it happens here and not at approval time: until this moment there
+    // is no way to reach them that does not go through an admin's own phone.
+    //
+    // Returns null when the driver has already chosen a password of their own,
+    // and that is the security rule of this whole path — a Telegram link proves
+    // possession of a link, not of an identity (see docs/auth-and-security.md),
+    // so re-linking must never be a password reset. A driver who forgets their
+    // own password needs an admin, deliberately.
+    const temporaryPassword = await this.driverAuth.issueTemporaryPassword(towTruck.id)
+
     // Names BOTH kinds of message this bot sends, so a driver who later gets a
-    // contact notice isn't surprised by it — and, more importantly, knows the
-    // same bot carries their login codes. Since contact notices have no
-    // opt-out, that warning is the only thing standing between an annoyed
-    // driver and a self-inflicted login outage (see DriverNotificationService).
-    await this.telegram.sendMessage(
-      chatId,
-      `Բարև, ${towTruck.driverName}։ Ձեր Telegram-ը հաջողությամբ կապակցվեց Evakuators.am-ի հետ։ ` +
-        'Այսուհետ մուտքի կոդերը կստանաք այստեղ։\n\n' +
-        'Այստեղ կստանաք նաև ծանուցում, երբ որևէ մեկը կայքում սեղմում է ձեզ հետ կապվելու ' +
-        'կոճակը։ Bot-ը մի՛ արգելափակեք — հակառակ դեպքում մուտքի կոդերն էլ չեն գա։',
-      { text: 'Մուտք գործել', url: this.telegram.loginUrl },
+    // contact notice isn't surprised by it. Since contact notices have no
+    // opt-out, that warning is what stands between an annoyed driver and a bot
+    // they have muted (see DriverNotificationService) — less costly than it was
+    // when login codes came through here too, but still the channel we would
+    // use to reach them about their account.
+    const intro =
+      `Բարև, ${towTruck.driverName}։ Ձեր Telegram-ը հաջողությամբ կապակցվեց Evakuators.am-ի հետ։\n\n` +
+      'Այստեղ կստանաք ծանուցում, երբ որևէ մեկը կայքում սեղմում է Ձեզ հետ կապվելու կոճակը։ ' +
+      'Bot-ը մի՛ արգելափակեք։'
+
+    // Sent as a separate message, not appended to the one above: a driver has to
+    // be able to forward, screenshot or delete the credential without losing the
+    // explanation, and vice versa. Also keeps the password out of the message
+    // that a driver who already has one still receives.
+    await this.telegram.sendMessage(chatId, intro, { text: 'Մուտք գործել', url: this.telegram.loginUrl })
+
+    if (temporaryPassword) {
+      await this.telegram.sendMessage(
+        chatId,
+        'Ձեր մուտքի տվյալներն են՝\n\n' +
+          `Հեռախոսահամար՝ ${towTruck.phone}\n` +
+          `Ժամանակավոր գաղտնաբառ՝ ${temporaryPassword}\n\n` +
+          'Առաջին մուտքից հետո համակարգը կխնդրի փոխել գաղտնաբառը՝ Ձեր նախընտրածով։ ' +
+          'Այս գաղտնաբառը ոչ ոքի մի՛ փոխանցեք։',
+        { text: 'Մուտք գործել', url: this.telegram.loginUrl },
+      )
+    }
+
+    // Says whether a credential went out, never what it was. This line lands in
+    // `pm2 logs` and stays on disk long after the password has been changed.
+    this.logger.log(
+      `Linked Telegram chat ${chatId} to TowTruck #${towTruck.id} ` +
+        `(temporary password ${temporaryPassword ? 'issued' : 'not needed'})`,
     )
-    this.logger.log(`Linked Telegram chat ${chatId} to TowTruck #${towTruck.id}`)
   }
 }

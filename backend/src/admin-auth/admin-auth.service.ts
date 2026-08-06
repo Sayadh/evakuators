@@ -1,6 +1,7 @@
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common'
+import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { JwtService } from '@nestjs/jwt'
+import { Cron, CronExpression } from '@nestjs/schedule'
 import { UserRole } from '@prisma/client'
 import bcrypt from 'bcrypt'
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto'
@@ -23,6 +24,13 @@ const DUMMY_HASH = '$2b$12$CwTycUXWue0Thq9StjUM0uJ8G8Kn8UYwUIQEEcxJp/nDdX7O/HgFa
  * TTL — there is nothing to prove once the code it points at has expired.
  */
 const PENDING_TOKEN_TTL_SECONDS = CODE_TTL_MINUTES * 60
+
+/**
+ * How long a login code row is kept before deletion. Far beyond the 5-minute
+ * TTL — the point is only to stop the table growing forever, not to expire
+ * codes (that is `expiresAt`).
+ */
+const OTP_RETENTION_MS = 24 * 60 * 60 * 1000
 
 export interface AdminSession {
   token: string
@@ -52,6 +60,7 @@ export type AdminLoginResult =
 
 @Injectable()
 export class AdminAuthService {
+  private readonly logger = new Logger(AdminAuthService.name)
   private readonly secret: string
 
   constructor(
@@ -62,6 +71,25 @@ export class AdminAuthService {
     config: ConfigService,
   ) {
     this.secret = config.getOrThrow<string>('adminJwtSecret')
+  }
+
+  /**
+   * Deletes spent 2FA codes.
+   *
+   * Lived in DriverAuthService while there were two OTP tables to sweep — one
+   * cron for both beat two that could drift apart. Drivers use passwords now,
+   * `DriverOtp` is gone, and this is left next to the only table it still has
+   * to clean.
+   *
+   * A row is dead the moment it expires or is consumed: the hash is one-way, so
+   * keeping it has no audit value either.
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_4AM)
+  async purgeSpentLoginCodes(): Promise<void> {
+    const removed = await this.otpRepository.deleteExpiredBefore(
+      new Date(Date.now() - OTP_RETENTION_MS),
+    )
+    if (removed > 0) this.logger.log(`Login-code purge: removed ${removed} admin codes`)
   }
 
   async login(email: string, password: string): Promise<AdminLoginResult> {

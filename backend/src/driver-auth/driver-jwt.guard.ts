@@ -12,7 +12,7 @@ export interface AuthenticatedDriverRequest extends Request {
   towTruckId: number
 }
 
-/** Protects driver-only endpoints (/my/tow-truck) with the JWT from verify-code */
+/** Protects driver-only endpoints (/my/tow-truck) with the JWT from POST /driver-auth/login */
 @Injectable()
 export class DriverJwtGuard implements CanActivate {
   constructor(

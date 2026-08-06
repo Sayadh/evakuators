@@ -62,7 +62,7 @@ export class TelegramService {
    * Setting `TELEGRAM_OUTBOUND_ALLOWED_CHAT_IDS` makes that structurally
    * impossible instead of merely discouraged: any chat id not on the list is
    * silently skipped, no HTTP call to Telegram is made at all, and the caller
-   * (e.g. `DriverAuthService.requestCode`) sees this resolve normally — it
+   * (e.g. `TelegramWebhookController.handleStart`) sees this resolve normally — it
    * still can't tell a skipped send from a real one, same as
    * `ADMIN_TELEGRAM_ALLOWED_CHAT_IDS` already behaves for the admin bot's
    * inbound side. Empty (production's default) means unrestricted, i.e. this
@@ -86,11 +86,11 @@ export class TelegramService {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       // Node's fetch has NO default timeout. Without this, a hanging Telegram
-      // API call hangs the caller with it — and one caller is
-      // DriverAuthService.requestCode, which awaits this before responding, so
-      // a slow Telegram would leave a driver's login request open indefinitely
-      // with no error to show. Fire-and-forget callers (contact notices) would
-      // meanwhile accumulate pending promises.
+      // API call hangs the caller with it — and one caller is the webhook that
+      // hands a driver their password, which awaits this before acking
+      // Telegram, so a slow Telegram would hold that request open indefinitely
+      // and be recorded as a failed delivery. Fire-and-forget callers (contact
+      // notices) would meanwhile accumulate pending promises.
       signal: AbortSignal.timeout(TELEGRAM_REQUEST_TIMEOUT_MS),
       body: JSON.stringify({
         chat_id: chatId.toString(),

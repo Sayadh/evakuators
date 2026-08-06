@@ -149,22 +149,22 @@ otherwise affect where Telegram delivers incoming messages: those keep going
 to production, and only production, exactly as before.
 
 What sharing the token DOES enable: staging's backend can make *outbound*
-`sendMessage` calls through the real bot — real OTP codes, real link
-confirmations — because sending a message needs only the token, not the
-webhook. That is genuinely useful (a real end-to-end login test), and
-genuinely risky on its own: staging's database is a full copy of
+`sendMessage` calls through the real bot — real link confirmations, real
+password handovers, real contact notices — because sending a message needs only
+the token, not the webhook. That is genuinely useful (a real end-to-end test),
+and genuinely risky on its own: staging's database is a full copy of
 production's, so it contains **other real drivers' real, already-linked
-`telegramChatId` values**. Requesting a login code for a phone number that
-isn't your own test account during staging testing would deliver a real
-"here is your login code" message to that real person.
+`telegramChatId` values**. Triggering a contact notice against a truck that
+isn't your own test account during staging testing would deliver a real message
+to that real person.
 
 `TELEGRAM_OUTBOUND_ALLOWED_CHAT_IDS` closes that gap structurally, not just
 by operator care: set on staging to your own Telegram chat id (message
 `@userinfobot` to get it), `TelegramService.sendMessage()` sends only to
 chat ids on that list and silently skips every other one — no HTTP call to
-Telegram happens at all for a skipped send, and the caller (e.g. driver OTP
-request) sees it resolve exactly as if it had sent, so nothing about the
-staging login flow itself needs to change or behaves differently. Leave this
+Telegram happens at all for a skipped send, and the caller (e.g. the webhook
+handing out a password) sees it resolve exactly as if it had sent, so nothing
+about the staging flow itself needs to change or behaves differently. Leave this
 variable **blank on production** — blank means unrestricted, today's real
 behaviour. See `backend/test/telegram.service.outbound-allowlist.spec.ts`
 for this pinned in a test, and the doc comment on `sendMessage()` itself for
@@ -493,7 +493,7 @@ wrong link in Telegram messages.
 | `TELEGRAM_BOT_USERNAME` | yes | Without the `@` |
 | `TELEGRAM_WEBHOOK_SECRET` | yes | Random string, checked with `timingSafeEqual` against Telegram's header |
 | `TELEGRAM_OUTBOUND_ALLOWED_CHAT_IDS` | no, default `''` | Comma-separated chat ids; `sendMessage()` skips (no Telegram API call) anyone else, silently. Blank = unrestricted. Only ever set on a deploy sharing `TELEGRAM_BOT_TOKEN` with another environment — staging, see § "Staging environment" |
-| `DRIVER_JWT_SECRET` | yes, min 16 chars | Also used as the OTP hashing pepper |
+| `DRIVER_JWT_SECRET` | yes, min 16 chars | Signs driver session tokens; also the default pepper for analytics visitor hashes. Driver passwords are bcrypt-hashed and do **not** depend on it — rotating this logs everyone out, it does not invalidate passwords |
 | `ADMIN_JWT_SECRET` | yes, min 16 chars | Deliberately separate from `DRIVER_JWT_SECRET`; also the admin OTP hashing pepper |
 | `ADMIN_TELEGRAM_BOT_TOKEN` | no, default `''` | Separate bot from `TELEGRAM_BOT_TOKEN` — admin 2FA + registration alerts. Blank = feature off, login stays single-factor |
 | `ADMIN_TELEGRAM_BOT_USERNAME` | no, default `''` | Without the `@` |

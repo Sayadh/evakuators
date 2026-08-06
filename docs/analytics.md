@@ -164,8 +164,9 @@ vigil.
   122-bit random UUID, not a guessable human secret, so a slow KDF would buy
   nothing.
 - Pepper comes from `ANALYTICS_VISITOR_PEPPER`, falling back to
-  `DRIVER_JWT_SECRET` (which already peppers driver OTP hashes — same
-  convention). **Rotating it makes every returning visitor look new from that
+  `DRIVER_JWT_SECRET` (the same secret that signs driver session tokens — one
+  convention for "the driver-side secret"). **Rotating it makes every returning
+  visitor look new from that
   moment on**; historical aggregates are unaffected because they hold no keys.
 
 ## Index design, and why there are only three
@@ -267,15 +268,17 @@ only thing that suppresses a notice is having no `telegramChatId` yet. This is
 a deliberate product decision — the notices exist so drivers attribute their
 work to the platform, and a driver who silences them stops attributing.
 
-The cost of that decision is real and worth stating plainly: these notices ride
-the **same bot as login OTP codes**, so a driver who finds them noisy and
-mutes or blocks the bot loses the ability to sign in, with nothing on screen to
-explain why. The only mitigation is the warning in the Telegram
-link-confirmation message («Bot-ը մի՛ արգելափակեք — հակառակ դեպքում մուտքի
-կոդերն էլ չեն գա»). If support ever starts seeing "I can't log in, the code
-never arrives" reports, check `getWebhookInfo` / the bot's send failures for
-that chat before debugging the OTP code path — a blocked bot looks exactly like
-a broken login.
+The cost of that decision used to be severe: these notices rode the **same bot
+as the login codes**, so a driver who found them noisy and muted or blocked the
+bot lost the ability to sign in at all. Password login removed that
+(`docs/auth-and-security.md`) — blocking the bot now costs notices, not access.
+
+What remains is narrower. The bot still carries the one-time password handover,
+so a driver who blocks it **before** tapping their link can never be given a
+password, and from their side that is indistinguishable from a wrong one. The
+mitigation is still the warning in the link-confirmation message. If support
+sees "I can't log in", check the bot's send failures for that chat before
+debugging the login path.
 
 **One column on `TowTruck`:** `contactNoticeIntroAt` — when the one-time
 "here's why you get these" explanation was appended. Claimed atomically via

@@ -361,8 +361,24 @@ export class TowTrucksRepository {
   }
 
   /**
-   * Hard delete. `TowTruckImage`, `Review` and `DriverOtp` all cascade at the
-   * DB level (see schema.prisma onDelete: Cascade) — this only removes the
+   * The one write path for both password columns, which is the point: they
+   * describe a single fact together ("whose password is this"), and a method
+   * that could set the hash without saying whether it is ours would make
+   * `mustChangePassword` a value someone has to remember to update.
+   *
+   * Takes a hash, never a password — bcrypt lives in DriverAuthService, so
+   * there is no call site from which a plaintext could reach the column.
+   */
+  setPassword(id: number, passwordHash: string, mustChangePassword: boolean): Promise<TowTruck> {
+    return this.prisma.towTruck.update({
+      where: { id },
+      data: { passwordHash, mustChangePassword },
+    })
+  }
+
+  /**
+   * Hard delete. `TowTruckImage` and `Review` cascade at the DB level (see
+   * schema.prisma onDelete: Cascade) — this only removes the
    * TowTruck row and everything FK-linked to it. Supabase Storage objects are
    * NOT covered by that cascade (they live outside Postgres) — the caller
    * (AdminService) is responsible for removing those first.

@@ -142,8 +142,15 @@ Notable fields beyond the obvious:
   public query (`TowTrucksRepository.findMany`/`findBySlug` filter on it) and
   makes the driver's still-valid JWT stop working (`MyTowTruckService.getMine`
   throws `ForbiddenException` even with a technically-valid token) and blocks
-  new OTP requests (`DriverAuthService.requestCode` checks it via
-  `findByPhone`, which itself filters `isActive: true`).
+  new logins (`DriverAuthService.login` looks the truck up via
+  `findActiveByMainPhone`, which itself filters `isActive: true`).
+- `passwordHash: String?` / `mustChangePassword: Boolean` — driver login
+  credentials. NULL hash means "never tapped their Telegram link", which is the
+  same thing as "cannot log in yet": the link is the only channel that mints a
+  password. `mustChangePassword` is true exactly while the hash holds a
+  generated password, and it is what stops a Telegram re-link from being a
+  password reset once a driver has chosen their own. See
+  `docs/auth-and-security.md` for the full table of states.
 
 ### Read shapes
 
@@ -291,20 +298,26 @@ outright (no "rejected" status kept around).
 See `docs/free-routes.md` for the full feature — this is the newest model
 and has the most interesting lifecycle (cron-driven state machine).
 
-## `DriverOtp`
+## `AdminOtp`
 
-One row per requested login code, never reused. `codeHash` is
+One row per requested admin 2FA code, never reused. `codeHash` is
 `sha256(code + pepper)`, never the raw code. `attempts` counts failed
-`verifyCode()` calls against *this specific* OTP row (locks out at 5).
-`consumedAt` is set both on successful verification and when a newer OTP is
-requested (`DriverOtpRepository.invalidateActive()`), so a driver can never
-have two "active" codes at once. See `docs/auth-and-security.md`.
+`verifyCode()` calls against *this specific* row (locks out at 5). `consumedAt`
+is set both on successful verification and when a newer code is requested, so an
+admin can never have two "active" codes at once. See
+`docs/auth-and-security.md`.
 
-Rows older than 24h are deleted daily by `DriverAuthService.purgeSpentLoginCodes`,
-which cleans `AdminOtp` in the same job (identical mechanism, identical retention
-rule — one cron that can't get out of sync beats two that can). Nothing was
-deleting them before, so the tables grew by one row per login attempt forever. A
-spent code has no audit value: the hash is one-way.
+Rows older than 24h are deleted daily by
+`AdminAuthService.purgeSpentLoginCodes`. Nothing was deleting them before, so
+the table grew by one row per login attempt forever. A spent code has no audit
+value: the hash is one-way.
+
+There used to be a `DriverOtp` twin, and the cron lived in `DriverAuthService`
+so one job could sweep both. Drivers moved to password login (see
+`docs/auth-and-security.md`), the table was dropped in
+`20260806120000_driver_password_login`, and the cron moved here next to the only
+table it still has to clean. Admins keep codes because for them a code is a
+**second** factor on top of a password, not the password's replacement.
 
 ## `AnalyticsDailyStat` / `AnalyticsVisitorDay`
 

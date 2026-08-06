@@ -63,13 +63,18 @@ Frontend (set in `ecosystem.config.js` or the shell):
 | `PORT` | Frontend port — **reserved: `3002`**, never `4002` (that's the backend) |
 | `NUXT_PUBLIC_API_BASE_URL` | Full backend URL **including** `/api/v1`, e.g. `https://api.evakuators.am/api/v1` (prod) or `http://localhost:4002/api/v1` (dev). Empty = mock mode |
 
-## 3. Driver login (Telegram OTP)
+## 3. Driver login (phone + password) and the Telegram bot
 
-Drivers log into `/dashboard` with their phone number; the login code is delivered
-through a Telegram bot (Telegram has no way to message a user who hasn't first
-started a chat with the bot, so admin sends each approved driver a one-time
-`t.me/<bot>?start=<token>` link — shown automatically in `/admin` right after
-approving a registration).
+Drivers log into `/dashboard` with their phone number and a password. They never
+choose that password up front: it is generated and delivered once, over Telegram,
+the moment they tap their one-time `t.me/<bot>?start=<token>` link (shown
+automatically in `/admin` right after approving a registration). At first login
+the dashboard makes them replace it. After that, a re-link never touches their
+password again — see `docs/auth-and-security.md`.
+
+So the bot is still required to onboard a driver, but it is no longer in the path
+of every login. Beyond the handover it carries the "someone took your number"
+contact notices.
 
 1. In Telegram, message **@BotFather** → `/newbot` → follow the prompts → copy the token.
 2. Fill in `backend/.env`:
@@ -176,12 +181,12 @@ the table below is a summary.
 | `POST` | `/api/v1/admin/tow-trucks/:id/telegram-link` | (Re)generate a driver's Telegram-login link |
 | `GET` | `/api/v1/admin/tow-trucks` | List every tow truck, active or not |
 | `PATCH` | `/api/v1/admin/tow-trucks/:id/active` | Deactivate/reactivate — reversible, hides from public listing |
-| `DELETE` | `/api/v1/admin/tow-trucks/:id` | Permanently delete a tow truck + images/reviews/OTPs — irreversible |
+| `DELETE` | `/api/v1/admin/tow-trucks/:id` | Permanently delete a tow truck + images/reviews — irreversible |
 | `POST` | `/api/v1/admin-auth/login` | Admin login — returns a JWT |
-| `POST` | `/api/v1/driver-auth/request-code` | Driver login step 1 — sends an OTP via Telegram |
-| `POST` | `/api/v1/driver-auth/verify-code` | Driver login step 2 — returns a JWT |
+| `POST` | `/api/v1/driver-auth/login` | Driver login — phone + password, returns a JWT |
 | `GET` | `/api/v1/my/tow-truck` | Driver-only — read own profile (Bearer JWT) |
 | `PATCH` | `/api/v1/my/tow-truck` | Driver-only — edit own profile (Bearer JWT) |
+| `PATCH` | `/api/v1/my/tow-truck/password` | Driver-only — change own password |
 | `POST` | `/api/v1/telegram/webhook` | Telegram bot webhook (internal, secret-token protected) |
 | `POST` | `/api/v1/analytics/events` | Record a visitor interaction (page view / contact click) — public, deduplicated to once per visitor per calendar day |
 | `GET` | `/api/v1/my/analytics` | Driver-only — own statistics (`/charts`, `/reviews`, `/ratings` too) |
@@ -190,8 +195,9 @@ the table below is a summary.
 ## Admin panel
 
 `/admin` (frontend) and every `/api/v1/admin/*` route (backend) are protected by a
-real JWT issued at login — the same pattern as driver auth, just email/password
-instead of Telegram OTP. `AdminJwtGuard` checks the token on the backend itself
+real JWT issued at login — the same pattern as driver auth, just an email
+instead of a phone number, plus an optional Telegram 2FA step drivers don't
+have. `AdminJwtGuard` checks the token on the backend itself
 (not nginx), so it works the same whether nginx is in front or not.
 
 1. Add to `backend/.env`: `ADMIN_JWT_SECRET` (generate with `openssl rand -hex 32`).

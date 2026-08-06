@@ -518,7 +518,17 @@ async function logout(): Promise<void> {
       <AppButton variant="outline" size="sm" @click="logout">Դուրս գալ</AppButton>
     </header>
 
-    <LoadingSkeleton v-if="loading" variant="text" :count="5" />
+    <!-- Before the loading state, and before anything else on the page: a
+         driver still holding the password we generated has one thing to do
+         here, and the rest of the dashboard is not it. Rendered INSTEAD of the
+         page rather than over it, so there is nothing behind to tab into and
+         no dialog to dismiss — the block is structural, not a z-index. -->
+    <section v-if="driverAuth.mustChangePassword" class="dashboard-password-gate">
+      <h2>Սահմանեք Ձեր գաղտնաբառը</h2>
+      <ChangePasswordForm forced />
+    </section>
+
+    <LoadingSkeleton v-else-if="loading" variant="text" :count="5" />
 
     <p v-else-if="loadError" class="dashboard-error">{{ loadError }}</p>
 
@@ -836,6 +846,17 @@ async function logout(): Promise<void> {
           <FreeRoutesManager :vehicle-type="truck.vehicle.type" />
         </div>
       </details>
+
+      <!-- Collapsed and last: changing a password is rare, and this is the one
+           section a driver comes to the dashboard for by name rather than by
+           scrolling. Same component as the forced gate above — see
+           ChangePasswordForm for why it is not two implementations. -->
+      <details class="dashboard-section dashboard-section--password">
+        <summary class="dashboard-summary">Գաղտնաբառ</summary>
+        <div class="dashboard-details-content">
+          <ChangePasswordForm />
+        </div>
+      </details>
     </template>
   </div>
 </template>
@@ -978,6 +999,31 @@ details[open] .dashboard-summary::after {
 
   .dashboard-hint {
     margin-bottom: 0;
+  }
+}
+
+/* Same column as the form, the routes block and the location block, so the
+   stack reads as one width rather than four. */
+.dashboard-section--password {
+  margin-top: var(--space-4);
+  max-width: 640px;
+}
+
+/* The forced first password change. Narrower than the dashboard it replaces —
+   at this point the page holds one form and nothing else, and the full 960px
+   column would leave three short fields adrift in it. */
+.dashboard-password-gate {
+  max-width: 480px;
+  margin-top: var(--space-5);
+  padding: var(--space-6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+
+  h2 {
+    margin: 0 0 var(--space-4);
+    font-size: 1.2rem;
   }
 }
 

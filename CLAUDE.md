@@ -87,6 +87,12 @@ assume one is unused:
   `AnalyticsPeriod` / `AnalyticsReviewStatus` enums mirror the backend TS enums
   in `backend/src/analytics/analytics.enums.ts` the same way. `SiteEventType`
   (site-wide admin traffic) is a third such pair with the same rule.
+- `PASSWORD_MIN_LENGTH` in `backend/src/driver-auth/driver-password.ts` ↔ the
+  `8` inside `isPassword()` in `frontend/utils/validators.ts`. Raising it on the
+  backend only means the change-password form accepts a value the API then
+  rejects; raising it on the frontend only means the rule is advisory. Note
+  neither rule applies to the LOGIN form on either side, deliberately — see
+  `DriverLoginDto`.
 - `ARMENIA_BOUNDS` in `frontend/utils/coordinates.ts` ↔ the same constant in
   `backend/src/common/coordinates.ts`. The backend is the authority (it rejects
   the write); the frontend copy exists so a driver sees the problem while
@@ -114,7 +120,7 @@ assume one is unused:
 | Understand request/response flow, mock vs real API | `docs/architecture.md` |
 | Show a region/city/district name, or a truck count | `docs/architecture.md` § "Geography: name vs count" |
 | Understand a Prisma model or add a migration | `docs/data-model.md` |
-| Touch admin login, driver login, Telegram OTP/link | `docs/auth-and-security.md` |
+| Touch admin login, driver login/passwords, Telegram link | `docs/auth-and-security.md` — in particular the table of `passwordHash`/`mustChangePassword` states: whether a Telegram re-link may overwrite a password is the security boundary of the whole handover, and nothing else in the system would notice if it inverted |
 | Touch services/vehicle-types/capacity pickers or filters | `docs/taxonomies.md` |
 | Touch service zones (road corridors), settlements/villages, or location search | `docs/locations.md` |
 | Touch "Ազատ երթուղիներ" (Free Routes) | `docs/free-routes.md` |

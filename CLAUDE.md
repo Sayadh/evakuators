@@ -127,7 +127,7 @@ assume one is unused:
 | Touch per-driver statistics / visitor tracking | `docs/analytics.md` |
 | Decide whether a field is driver-editable or admin-only | `backend/src/my-tow-truck/dto/update-my-tow-truck.dto.ts` — the boundary and its two exceptions are argued there |
 | Touch the base parking coordinates (lat/lng) | `backend/src/common/coordinates.ts` + `frontend/utils/coordinates.ts` — one rule each side, mirrored by hand; the UI is `CoordinatesInput.vue` / `CoordinatesDialog.vue`, shared by registration, the driver dashboard and `/admin` |
-| Touch `/evakuator`, PostGIS, or the route-matrix provider | `docs/nearest-search.md` — the two-step design, why the results reuse `TowTruckCard` untouched, the rule that a straight-line distance never gets a time next to it, and `NEAREST_SEARCH_ENABLED` (currently **off**), the one boolean that hides the page's search, the nav link, every CTA banner and the sitemap entry together |
+| Touch `/evakuator`, PostGIS, or the route-matrix provider | `docs/nearest-search.md` — the two-step design, why the results reuse `TowTruckCard` untouched, the rule that a straight-line distance never gets a time next to it, and `NEAREST_SEARCH_ENABLED` (currently **off**), which pauses the search itself and nothing else — the nav link, the CTA banners and the sitemap entry stay up on purpose, so the page acts as an announcement |
 | Find what a specific page/route does | `docs/pages-and-routes.md` |
 | Run the app on a local machine | `docs/local-development.md` |
 | Make local behave exactly like staging | `docs/local-development.md` § "Mirroring staging locally" — `scripts/refresh-local-db.sh` copies staging (never production), `backend/.env.local.example` lists the four variables that must differ and why |

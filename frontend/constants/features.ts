@@ -1,11 +1,6 @@
 /**
  * Feature switches that have to be read from more than one place.
  *
- * A switch belongs here — rather than as a `const` inside the page it guards —
- * as soon as turning the feature off means hiding something ELSE: a nav link, a
- * banner, a sitemap entry. Keeping it local is how a feature ends up disabled
- * on its own page while the rest of the site still advertises it.
- *
  * Build-time constants, not runtime config, deliberately. These decide what
  * renders during SSR, so a runtime value would have to be identical on the
  * server and in the browser or hydration would mismatch — and an env var that
@@ -16,23 +11,29 @@
 /**
  * «Գտնել մոտակա էվակուատորները» — the geolocation search at `/evakuator`.
  *
- * When `false`, four things go together and must stay together:
+ * Scope is narrow on purpose: this switches off **the search itself**, and
+ * nothing else. The header nav link, the CTA banners on the seven pages that
+ * place them, and the sitemap entry all stay exactly where they are.
  *
- * 1. `/evakuator` still exists and still renders, but the button reports that
- *    the feature is being worked on and no permission prompt is ever raised.
- * 2. The header nav link is not rendered (`NAV_LINKS`).
- * 3. The in-content CTA banners are not rendered (`NearestTowTrucksCta`), which
- *    covers the homepage, the region/city/district listings and every driver
- *    profile in one place.
- * 4. `/evakuator` is dropped from `sitemap.xml`.
+ * That is a product decision, not an oversight. The banners are how visitors
+ * find out the feature is coming: someone presses, reads that it is being
+ * worked on, and leaves knowing the site will do this. Hiding the entry points
+ * until launch day would mean launching to an audience that has never heard of
+ * it. So while this is `false`, the page is an announcement rather than a dead
+ * end — which is why `pages/evakuator.vue` still renders its full explanation,
+ * and still offers the region/city search underneath.
  *
- * The page itself is kept alive rather than removed so that any link already
- * shared, indexed or bookmarked lands on an explanation instead of a 404 — and
- * so that turning the feature back on is one boolean, not a re-wiring.
+ * What `false` actually changes, in one place only: `findNearest()` returns the
+ * "coming soon" message instead of asking for a position. The check sits before
+ * `locate()` so no permission prompt is ever raised — a browser that is refused
+ * once remembers it, and spending that permission on something we cannot yet
+ * deliver would cost us the prompt we want at launch.
  *
- * Turning it on additionally requires `ROUTE_MATRIX_API_KEY` on the backend.
- * Without it the search still works and still returns drivers, but every
- * distance is straight-line and no arrival times are shown — see
- * `docs/nearest-search.md`.
+ * Nothing on the backend is aware of this flag. The endpoint, the PostGIS
+ * column and the migration stay live, so turning the feature on is this boolean
+ * plus a frontend rebuild — no redeploy of the API, no migration to re-run.
+ * It does additionally want `ROUTE_MATRIX_API_KEY` set on the backend: without
+ * it the search still returns drivers, but every distance is straight-line and
+ * no arrival times are shown. See `docs/nearest-search.md`.
  */
 export const NEAREST_SEARCH_ENABLED = false

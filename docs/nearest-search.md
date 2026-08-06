@@ -5,32 +5,35 @@ the page shows the drivers nearest to them with a road distance and a driving
 estimate. Read `docs/data-model.md` § `TowTruck` first for where a driver's
 coordinates come from — this document is only about what is done with them.
 
-## The switch that turns all of this off
+## The switch — and what it deliberately does NOT switch
 
 `NEAREST_SEARCH_ENABLED` in `frontend/constants/features.ts`. **It is currently
 `false`.**
 
-One boolean, four consequences that have to move together — which is exactly
-why it lives in `constants/` rather than inside `evakuator.vue`:
+It turns off **one thing**: `findNearest()` answers with «Այս պահին աշխատում ենք
+այս գործառույթի վրա» instead of asking the browser for a position. The check
+sits before `locate()`, so no permission prompt is ever raised — a browser that
+is refused once remembers it, and spending that prompt on something we cannot
+yet deliver would cost us the one we want at launch.
 
-| When `false` | Where |
+Everything else stays exactly where it is, and this is the part to not
+"tidy up":
+
+| Stays visible while `false` | Why |
 | --- | --- |
-| The button reports "շուտով հասանելի" and never raises a permission prompt | `pages/evakuator.vue` |
-| The header nav link is not rendered | `constants/navigation.ts` |
-| Every in-content CTA banner renders nothing | `components/nearest/NearestTowTrucksCta.vue` |
-| `/evakuator` is dropped from `sitemap.xml` | `server/routes/sitemap.xml.ts` |
+| The header nav link | It is how visitors learn the feature is coming |
+| All seven in-content CTA banners | Same — the banners are the announcement |
+| `/evakuator` in `sitemap.xml` | The page is real content either way, and the URL keeps its history instead of appearing for the first time on launch day |
 
-The page itself stays alive on purpose: a link already shared or indexed lands
-on an explanation rather than a 404, and turning the feature back on is one
-boolean rather than a re-wiring. The backend module, its endpoint, the PostGIS
-column and the migration are all untouched by this flag — nothing on the server
-knows the feature is paused, so nothing has to be re-deployed to resume it
-beyond flipping this and rebuilding the frontend.
+The intent is that someone presses, reads that it is being worked on, and
+leaves knowing the site will do this. Hiding the entry points until launch day
+would mean launching to an audience that has never heard of it. So the page is
+written as an **announcement, not an error**: the full explanation renders, and
+the region/city search is offered underneath.
 
-The seven pages that place the CTA are deliberately NOT aware of the flag. They
-render `<NearestTowTrucksCta />` unconditionally and the component decides — so
-enabling the feature needs no edit to any of them, and none of them can be
-forgotten.
+Nothing on the backend is aware of this flag. The module, its endpoint, the
+PostGIS column and the migration all stay live, so resuming the feature is this
+boolean plus a frontend rebuild — no API redeploy, no migration to re-run.
 
 ## The one sentence the whole feature has to keep saying
 

@@ -1,5 +1,3 @@
-import { NEAREST_SEARCH_ENABLED } from './features'
-
 export interface NavLink {
   label: string
   to: string
@@ -30,13 +28,10 @@ export const NAV_LINKS: NavLink[] = [
   // (NearestTowTrucksCta) — a nav item is only discoverable to someone already
   // scanning the nav.
   //
-  // Dropped entirely while the feature is off, rather than left pointing at the
-  // "coming soon" page. A nav is a promise about what the site can do; the most
-  // prominent item on it leading to an apology is worse than one fewer item.
-  // Same flag hides the CTA banners, for the same reason — see constants/features.ts.
-  ...(NEAREST_SEARCH_ENABLED
-    ? [{ label: 'Մոտակա էվակուատորներ', to: '/evakuator' }]
-    : []),
+  // Stays here even while NEAREST_SEARCH_ENABLED is false. The link is how
+  // visitors learn the feature is coming, and the page it leads to is written
+  // as an announcement rather than an error — see constants/features.ts.
+  { label: 'Մոտակա էվակուատորներ', to: '/evakuator' },
   { label: 'Մարզեր', to: '/regions' },
   { label: 'Երևան', to: '/yerevan' },
   { label: 'Ազատ երթուղիներ', to: '/free-routes' },

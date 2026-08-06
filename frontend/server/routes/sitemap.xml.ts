@@ -1,5 +1,4 @@
 import type { H3Event } from 'h3'
-import { NEAREST_SEARCH_ENABLED } from '~/constants/features'
 import { staticCities } from '~/data/cities'
 import { staticDistricts } from '~/data/districts'
 import { staticRegions } from '~/data/regions'
@@ -142,12 +141,12 @@ function buildEntries(
     // come back for. Claiming `daily` on a page whose HTML never changes is the
     // signal-poisoning this file already avoids for <lastmod>.
     //
-    // Omitted while the feature is off. The page still resolves (so an already
-    // indexed URL does not 404), but actively submitting a "coming soon" page
-    // for high-intent queries earns exactly the impression we do not want.
-    ...(NEAREST_SEARCH_ENABLED
-      ? [{ path: '/evakuator', priority: '0.9', changefreq: 'monthly' as const }]
-      : []),
+    // Listed even while NEAREST_SEARCH_ENABLED is false. The page is a real
+    // page either way — it explains the feature and offers the region/city
+    // search underneath — so there is something here worth indexing, and the
+    // URL keeps its history instead of appearing for the first time on launch
+    // day. See constants/features.ts.
+    { path: '/evakuator', priority: '0.9', changefreq: 'monthly' },
     { path: '/yerevan', priority: '0.9', changefreq: 'daily' },
     // `daily` is not a guess here: free routes are posted and auto-expire
     // continuously (see docs/free-routes.md), so this page's content genuinely

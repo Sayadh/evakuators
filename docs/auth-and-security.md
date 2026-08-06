@@ -130,16 +130,24 @@ No backfill and no shared transitional secret — every pre-existing row has
 populations, two different amounts of friction:
 
 - **Already linked Telegram** (`telegramChatId` set — anyone who ever
-  successfully used the old OTP login): `POST /admin/tow-trucks/issue-passwords`
-  (`AdminService.issuePasswordsForLinkedDrivers`, one button in `/admin`, "Ուղարկել
-  գաղտնաբառեր կապակցված վարորդներին") mints and sends a password to every one of
-  them directly, over the chat already on file — **no re-link, no new tap
+  successfully used the old OTP login): the "Ուղարկել գաղտնաբառեր" button in
+  `/admin` opens a picker listing exactly those drivers
+  (`GET /admin/tow-trucks/password-candidates`), and sends only to the ones
+  ticked (`POST /admin/tow-trucks/issue-passwords`, `{ towTruckIds }`). The
+  password goes over the chat already on file — **no re-link, no new tap
   required**. Each driver is independent (one failed send, e.g. a blocked bot,
-  does not stop the rest), and it is safe to press again later: a driver already
-  migrated or who has since chosen their own password is silently skipped
-  (`issueTemporaryPassword()` returning `null`). There is deliberately no
-  per-driver version of this action — the point is to clear a backlog once, not
-  to become a routine control next to "Փոխել Telegram-ը".
+  does not stop the rest), and repeating it is safe: an already-migrated driver
+  is simply no longer a candidate.
+
+  **The selection is not a convenience, it is the safety mechanism.** This was
+  a single "send to everyone" button first. That is the wrong shape for the one
+  action on the panel whose effect leaves the system — a Telegram message
+  cannot be unsent, and a staging database is a copy of production's, real chat
+  ids and all, so one press there would have delivered real messages to real
+  drivers carrying a password that only works on staging. Nothing is pre-ticked
+  for the same reason. On the API side `towTruckIds` is required and non-empty
+  (there is no "omit to mean everyone") and is intersected with the live
+  candidate list, so it can only ever narrow the set, never widen it.
 - **Never linked Telegram** (`telegramChatId` still null): no digital channel
   exists yet, so the ordinary onboarding path is the only one — admin re-issues
   their link from `/admin` ("Ուղարկել Telegram link"), sends it out-of-band, and

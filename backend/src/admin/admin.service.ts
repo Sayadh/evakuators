@@ -256,37 +256,84 @@ export class AdminService {
   }
 
   /**
-   * One-time migration action: hands a password to every driver who linked
-   * Telegram before password login existed, without making any of them tap a
-   * new link.
+   * Who could be handed a password right now: linked Telegram, no password yet.
    *
-   * `issueTemporaryPassword()` already refuses (returns `null`) for anyone who
-   * has since chosen their own password, so calling this again later — after
-   * some of the population has already changed theirs — is safe and just does
-   * less work each time. There is no per-driver endpoint for this because there
-   * is no reason to run it once: the whole point is to clear a backlog, not to
-   * become a routine action.
+   * Read-only and side-effect free, which is the point — an admin sees the
+   * exact list before anything is sent, and can send to some of it. A Telegram
+   * message cannot be unsent, so the panel never asks anyone to press a button
+   * whose blast radius they have not been shown.
+   *
+   * `telegramChatId` is dropped here: it is a BigInt (which `JSON.stringify`
+   * throws on outright) and the panel has no use for it — "linked" is already
+   * implied by being on this list at all. Same reasoning as
+   * `AdminTowTruckSummary.hasTelegramLinked`.
+   */
+  async listPasswordCandidates(): Promise<
+    Array<{ id: number; slug: string; driverName: string; phone: string }>
+  > {
+    const candidates = await this.towTrucksRepository.findLinkedWithoutPassword()
+    return candidates.map(({ id, slug, driverName, phone }) => ({ id, slug, driverName, phone }))
+  }
+
+  /**
+   * Hands a temporary password to the drivers an admin explicitly selected.
+   *
+   * ## Why this takes ids rather than doing "everyone"
+   *
+   * It used to send to the whole candidate list on one press. That is the wrong
+   * shape for an action whose effect leaves the system: on staging — whose
+   * database is a copy of production's, with real drivers' real chat ids — a
+   * misfire means dozens of real people receive a real message containing a
+   * password that only works on staging. Naming the recipients makes the blast
+   * radius a decision instead of a default.
+   *
+   * ## The requested list is a filter, never a source of truth
+   *
+   * `towTruckIds` is intersected with the freshly-read candidate list, so an id
+   * that is not genuinely eligible — already has a password, no Telegram
+   * linked, does not exist — is skipped rather than acted on. That matters
+   * beyond tidiness: without it, this endpoint would be a way to reset an
+   * arbitrary driver's password by id. (`issueTemporaryPassword` refuses a
+   * driver who owns their password anyway, so this is the second of two locks,
+   * not the only one.)
    *
    * Each driver is independent — one failed Telegram send (a chat the driver
-   * has since blocked) must not stop the rest of the batch, so failures are
-   * caught per-row and reported back rather than thrown.
+   * has since blocked) must not stop the rest, so failures are caught per-row
+   * and reported back rather than thrown.
    */
-  async issuePasswordsForLinkedDrivers(): Promise<{
+  async issuePasswordsForLinkedDrivers(towTruckIds: number[]): Promise<{
     issued: number
     failed: Array<{ id: number; slug: string }>
+    /** Requested but no longer eligible — the list an admin saw can go stale between load and send */
+    skipped: number
   }> {
     const candidates = await this.towTrucksRepository.findLinkedWithoutPassword()
+    const eligible = new Map(candidates.map((truck) => [truck.id, truck]))
+
     const failed: Array<{ id: number; slug: string }> = []
     let issued = 0
+    let skipped = 0
 
-    for (const truck of candidates) {
+    // Iterating the REQUESTED ids, not the candidate list — so the loop can
+    // only ever touch someone the admin named, and the intersection is what
+    // decides eligibility.
+    for (const id of towTruckIds) {
+      const truck = eligible.get(id)
+      if (!truck) {
+        skipped += 1
+        continue
+      }
+
       try {
         const password = await this.driverAuth.issueTemporaryPassword(truck.id)
-        // Cannot actually be null here — every candidate came from a query
-        // that already filtered on `passwordHash: null` — but the check is
-        // cheap and the alternative (a non-null assertion) hides the one
-        // invariant this whole method leans on.
-        if (!password) continue
+        // Cannot be null here — the id came from a query that filtered on
+        // `passwordHash: null` moments ago — but a driver who set their own
+        // password in that gap is exactly the race this guards, and skipping
+        // is the correct outcome for it.
+        if (!password) {
+          skipped += 1
+          continue
+        }
 
         await this.telegram.sendMessage(
           truck.telegramChatId,
@@ -309,9 +356,10 @@ export class AdminService {
     }
 
     this.logger.log(
-      `issuePasswordsForLinkedDrivers: issued ${issued}, failed ${failed.length} of ${candidates.length}`,
+      `issuePasswordsForLinkedDrivers: requested ${towTruckIds.length}, ` +
+        `issued ${issued}, failed ${failed.length}, skipped ${skipped}`,
     )
-    return { issued, failed }
+    return { issued, failed, skipped }
   }
 
   async reject(id: number): Promise<{ id: number; status: RegistrationStatus }> {

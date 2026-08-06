@@ -12,6 +12,7 @@ import {
   type AdminTowTruck,
   type AdminTowTruckCounts,
   type ApproveRegistrationPayload,
+  type PasswordCandidate,
 } from '~/repositories'
 import { useAdminAuthStore } from '~/stores/adminAuth'
 import { LocationType } from '~/types/enums'
@@ -183,26 +184,82 @@ const hasMoreTowTrucks = ref(false)
  */
 const towTruckCounts = ref<AdminTowTruckCounts | null>(null)
 
+/**
+ * Sending temporary passwords over Telegram.
+ *
+ * ## Why this is a picker and not a button
+ *
+ * It was one button that sent to every eligible driver at once. That is the
+ * wrong shape for the only action on this page whose effect leaves the system —
+ * a Telegram message cannot be unsent, and staging's database is a copy of
+ * production's, real chat ids and all. So the panel loads the candidates,
+ * shows exactly who is on the list, and sends to the ones an admin ticked.
+ *
+ * Nothing is fetched until the modal is opened: this list is only interesting
+ * during a migration, and every other visit to /admin should not pay for it.
+ */
+const passwordModalOpen = ref(false)
+const passwordCandidates = ref<PasswordCandidate[]>([])
+const loadingCandidates = ref(false)
+const candidatesError = ref('')
+/** Ids ticked in the modal. A Set, so the per-row toggle is O(1) and order is irrelevant. */
+const selectedForPassword = ref<Set<number>>(new Set())
 const issuingPasswords = ref(false)
 const issuePasswordsResult = ref('')
 
+const allCandidatesSelected = computed(
+  () =>
+    passwordCandidates.value.length > 0 &&
+    selectedForPassword.value.size === passwordCandidates.value.length,
+)
+
+async function openPasswordModal(): Promise<void> {
+  passwordModalOpen.value = true
+  candidatesError.value = ''
+  issuePasswordsResult.value = ''
+  // Nothing pre-ticked. The default for an irreversible outbound action has to
+  // be "send to nobody" — a pre-filled list turns one stray click into dozens
+  // of real messages.
+  selectedForPassword.value = new Set()
+  loadingCandidates.value = true
+  try {
+    passwordCandidates.value = await adminRepository.listPasswordCandidates()
+  } catch (err) {
+    candidatesError.value = extractErrorMessage(err, 'Ցուցակը բեռնել չհաջողվեց։')
+    passwordCandidates.value = []
+  } finally {
+    loadingCandidates.value = false
+  }
+}
+
+function toggleCandidate(id: number, checked: boolean): void {
+  // Replaced, not mutated: Vue does not track Set mutations, so `.add()` alone
+  // would update the data and never re-render the checkbox that caused it.
+  const next = new Set(selectedForPassword.value)
+  if (checked) next.add(id)
+  else next.delete(id)
+  selectedForPassword.value = next
+}
+
+function toggleAllCandidates(checked: boolean): void {
+  selectedForPassword.value = checked
+    ? new Set(passwordCandidates.value.map((candidate) => candidate.id))
+    : new Set()
+}
+
 /**
- * The one-time migration button: hands a password to every driver who linked
- * Telegram before password login existed. See
- * `AdminService.issuePasswordsForLinkedDrivers` for why this is safe to press
- * more than once and why it is a batch action rather than a per-truck one.
- *
- * Confirmed first, unlike the other bulk-ish actions here, because this one is
- * the only irreversible one that reaches OUTSIDE the system: a Telegram message
- * cannot be unsent. Everything else on this page (activate, reject, even
- * delete) is a database change an admin could talk their way out of.
+ * Confirmed by name and count before sending, unlike the other actions here:
+ * this is the one that cannot be undone from inside the system. Everything else
+ * on this page (activate, reject, even delete) is a database change.
  */
-async function issuePasswords(): Promise<void> {
+async function sendPasswords(): Promise<void> {
+  const ids = [...selectedForPassword.value]
+  if (ids.length === 0) return
+
   if (
     !confirm(
-      'Ուղարկե՞լ ժամանակավոր գաղտնաբառեր բոլոր այն վարորդներին, ովքեր Telegram են կապակցել, ' +
-        'բայց դեռ գաղտնաբառ չունեն։ Յուրաքանչյուրը կստանա Telegram հաղորդագրություն։ ' +
-        'Ովքեր արդեն ունեն իրենց գաղտնաբառը, չեն ազդվի։',
+      `Ուղարկե՞լ ժամանակավոր գաղտնաբառ ${ids.length} վարորդի։ ` +
+        'Յուրաքանչյուրը կստանա Telegram հաղորդագրություն, որը հետ կանչել հնարավոր չէ։',
     )
   ) {
     return
@@ -211,12 +268,22 @@ async function issuePasswords(): Promise<void> {
   issuePasswordsResult.value = ''
   issuingPasswords.value = true
   try {
-    const result = await adminRepository.issuePasswordsForLinkedDrivers()
-    issuePasswordsResult.value =
-      result.failed.length === 0
-        ? `Ուղարկվեց ${result.issued} վարորդի։`
-        : `Ուղարկվեց ${result.issued} վարորդի, ${result.failed.length}-ի մոտ ձախողվեց ` +
-          `(${result.failed.map((f) => f.slug).join(', ')})։`
+    const result = await adminRepository.issuePasswords(ids)
+
+    const parts = [`Ուղարկվեց ${result.issued} վարորդի։`]
+    if (result.failed.length > 0) {
+      parts.push(`Ձախողվեց ${result.failed.length}՝ ${result.failed.map((f) => f.slug).join(', ')}։`)
+    }
+    // Worth surfacing rather than hiding: it means the list was stale, which
+    // tells an admin the reload below is not optional.
+    if (result.skipped > 0) parts.push(`${result.skipped}-ն այլևս ցուցակում չէր։`)
+    issuePasswordsResult.value = parts.join(' ')
+
+    // Re-read rather than filter locally: everyone just sent now has a
+    // password, so they are no longer candidates, and the server is the only
+    // thing that knows which of them actually went through.
+    selectedForPassword.value = new Set()
+    passwordCandidates.value = await adminRepository.listPasswordCandidates()
   } catch (err) {
     issuePasswordsResult.value = extractErrorMessage(err, 'Չհաջողվեց ուղարկել գաղտնաբառերը')
   } finally {
@@ -1014,18 +1081,10 @@ async function rejectReview(review: AdminReview): Promise<void> {
             </p>
           </div>
 
-          <!-- One-time migration button — see issuePasswordsForLinkedDrivers.
-               Lives here rather than per-truck: the whole point is to clear a
-               backlog in one press, not to become a row action someone reaches
-               for routinely. Safe to press again later (already-migrated and
-               self-changed drivers are silently skipped), so it just stays. -->
-          <AppButton
-            variant="outline"
-            size="sm"
-            :disabled="issuingPasswords"
-            @click="issuePasswords"
-          >
-            {{ issuingPasswords ? 'Ուղարկվում է…' : 'Ուղարկել գաղտնաբառեր կապակցված վարորդներին' }}
+          <!-- Opens the picker; sends nothing on its own. See
+               openPasswordModal() for why nothing is fetched until then. -->
+          <AppButton variant="outline" size="sm" @click="openPasswordModal">
+            Ուղարկել գաղտնաբառեր
           </AppButton>
         </div>
 
@@ -1251,6 +1310,69 @@ async function rejectReview(review: AdminReview): Promise<void> {
       </AppButton>
     </AppModal>
 
+    <AppModal v-model="passwordModalOpen" title="Ուղարկել ժամանակավոր գաղտնաբառեր">
+      <p class="password-picker__intro">
+        Ցուցակում են այն վարորդները, ովքեր Telegram են կապակցել, բայց դեռ գաղտնաբառ չունեն։
+        Նշիր, ում ուղարկել — միայն նշվածները կստանան հաղորդագրություն։
+      </p>
+
+      <LoadingSkeleton v-if="loadingCandidates" variant="text" :count="3" />
+
+      <p v-else-if="candidatesError" class="admin-error">{{ candidatesError }}</p>
+
+      <!-- Distinct from an error: nothing went wrong, everyone eligible already
+           has a password. During a migration this is the finish line. -->
+      <EmptyState
+        v-else-if="passwordCandidates.length === 0"
+        title="Ուղարկելու վարորդ չկա"
+        description="Բոլոր կապակցված վարորդներն արդեն ունեն գաղտնաբառ։"
+        icon="info"
+      />
+
+      <template v-else>
+        <div class="password-picker__all">
+          <AppCheckbox
+            :model-value="allCandidatesSelected"
+            :label="`Նշել բոլորը (${passwordCandidates.length})`"
+            @update:model-value="toggleAllCandidates"
+          />
+        </div>
+
+        <ul class="password-picker__list">
+          <li v-for="candidate in passwordCandidates" :key="candidate.id">
+            <AppCheckbox
+              :model-value="selectedForPassword.has(candidate.id)"
+              :label="candidate.driverName"
+              @update:model-value="(checked) => toggleCandidate(candidate.id, checked)"
+            />
+            <!-- The phone, not the slug: it is the value the driver will type
+                 into the login form, so it is what an admin needs to recognise
+                 the right person and to read back over the phone if asked. -->
+            <span class="password-picker__phone">{{ candidate.phone }}</span>
+          </li>
+        </ul>
+
+        <AppButton
+          variant="success"
+          block
+          :disabled="issuingPasswords || selectedForPassword.size === 0"
+          @click="sendPasswords"
+        >
+          {{
+            issuingPasswords
+              ? 'Ուղարկվում է…'
+              : selectedForPassword.size === 0
+                ? 'Նշիր առնվազն մեկ վարորդ'
+                : `Ուղարկել ${selectedForPassword.size} վարորդի`
+          }}
+        </AppButton>
+      </template>
+
+      <p v-if="issuePasswordsResult" class="admin-hint password-picker__result">
+        {{ issuePasswordsResult }}
+      </p>
+    </AppModal>
+
     <Teleport to="body">
       <div
         v-if="lightboxOpen"
@@ -1400,6 +1522,49 @@ async function rejectReview(review: AdminReview): Promise<void> {
   color: var(--color-text-secondary);
   font-size: 0.9rem;
   margin: 0 0 var(--space-3);
+}
+
+.password-picker {
+  &__intro {
+    margin: 0 0 var(--space-4);
+    font-size: 0.9rem;
+    line-height: 1.55;
+    color: var(--color-text-secondary);
+  }
+
+  &__all {
+    padding-bottom: var(--space-2);
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: var(--space-2);
+  }
+
+  &__list {
+    list-style: none;
+    margin: 0 0 var(--space-4);
+    padding: 0;
+    /* Scrolls inside the modal rather than growing it: the list is as long as
+       the migration backlog, and the send button has to stay reachable without
+       scrolling past every driver on the platform. */
+    max-height: 45vh;
+    overflow-y: auto;
+
+    li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-3);
+    }
+  }
+
+  &__phone {
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+    white-space: nowrap;
+  }
+
+  &__result {
+    margin: var(--space-4) 0 0;
+  }
 }
 
 .admin-cards {

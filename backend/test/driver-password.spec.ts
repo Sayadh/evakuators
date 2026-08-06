@@ -5,6 +5,7 @@ import { validateSync } from 'class-validator'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import bcrypt from 'bcrypt'
 import { AdminService } from '../src/admin/admin.service'
+import { IssuePasswordsDto } from '../src/admin/dto/issue-passwords.dto'
 import { DriverAuthService } from '../src/driver-auth/driver-auth.service'
 import { DriverJwtGuard } from '../src/driver-auth/driver-jwt.guard'
 import { ChangePasswordDto } from '../src/driver-auth/dto/change-password.dto'
@@ -42,6 +43,7 @@ function buildChangeDto(currentPassword: unknown, newPassword: unknown): ChangeP
   return dto
 }
 
+/** Which property names failed validation, so a test can name the field it means */
 function failedProperties(dto: object): string[] {
   return validateSync(dto).map((error) => error.property)
 }
@@ -386,25 +388,46 @@ describe('AdminService.issuePasswordsForLinkedDrivers', () => {
   }
 
   it(
-    'issues and sends a password to every candidate',
+    'sends only to the drivers named in the request',
     async () => {
       const issueTemporaryPassword = vi.fn().mockResolvedValue('GENPASS1')
       const sendMessage = vi.fn().mockResolvedValue(undefined)
       const service = buildAdminService({ issueTemporaryPassword, sendMessage })
 
-      const result = await service.issuePasswordsForLinkedDrivers()
+      // Three are eligible; two are selected. The third must not be touched at
+      // all — this is the whole reason the endpoint takes ids.
+      const result = await service.issuePasswordsForLinkedDrivers([1, 3])
 
-      expect(result).toEqual({ issued: 3, failed: [] })
-      expect(issueTemporaryPassword).toHaveBeenCalledTimes(3)
-      expect(sendMessage).toHaveBeenCalledTimes(3)
-      // Sent to the chat id already on file — no re-link involved.
-      expect(sendMessage.mock.calls.map((call) => call[0])).toEqual([111n, 222n, 333n])
+      expect(result).toEqual({ issued: 2, failed: [], skipped: 0 })
+      expect(issueTemporaryPassword).toHaveBeenCalledTimes(2)
+      expect(issueTemporaryPassword.mock.calls.map((call) => call[0])).toEqual([1, 3])
+      // Sent to the chat ids already on file — no re-link involved.
+      expect(sendMessage.mock.calls.map((call) => call[0])).toEqual([111n, 333n])
     },
     TEST_TIMEOUT_MS,
   )
 
   it(
-    'keeps going after one candidate fails to send, and reports it',
+    'refuses an id that is not a genuine candidate',
+    async () => {
+      const issueTemporaryPassword = vi.fn().mockResolvedValue('GENPASS1')
+      const sendMessage = vi.fn().mockResolvedValue(undefined)
+      const service = buildAdminService({ issueTemporaryPassword, sendMessage })
+
+      // 99 is not on the candidate list — it may not exist, may have no
+      // Telegram, or may already own a password. Without this intersection the
+      // endpoint would be a way to reset an arbitrary driver's password by id.
+      const result = await service.issuePasswordsForLinkedDrivers([1, 99])
+
+      expect(result).toEqual({ issued: 1, failed: [], skipped: 1 })
+      expect(issueTemporaryPassword).toHaveBeenCalledTimes(1)
+      expect(issueTemporaryPassword).toHaveBeenCalledWith(1)
+    },
+    TEST_TIMEOUT_MS,
+  )
+
+  it(
+    'keeps going after one selected driver fails to send, and reports it',
     async () => {
       const issueTemporaryPassword = vi.fn().mockResolvedValue('GENPASS1')
       const sendMessage = vi
@@ -414,7 +437,7 @@ describe('AdminService.issuePasswordsForLinkedDrivers', () => {
         .mockResolvedValueOnce(undefined)
       const service = buildAdminService({ issueTemporaryPassword, sendMessage })
 
-      const result = await service.issuePasswordsForLinkedDrivers()
+      const result = await service.issuePasswordsForLinkedDrivers([1, 2, 3])
 
       // One failure must not take down the batch — the other two still go out.
       expect(result.issued).toBe(2)
@@ -425,10 +448,11 @@ describe('AdminService.issuePasswordsForLinkedDrivers', () => {
   )
 
   it(
-    'skips a candidate that already changed their own password since the query ran',
+    'skips a driver who set their own password between the list load and the send',
     async () => {
       // Returns null exactly when the driver owns their password — the same
-      // race this method has to tolerate as the webhook does.
+      // race this method has to tolerate as the webhook does. The list an admin
+      // is looking at can always be a few minutes stale.
       const issueTemporaryPassword = vi
         .fn()
         .mockResolvedValueOnce('GENPASS1')
@@ -437,11 +461,59 @@ describe('AdminService.issuePasswordsForLinkedDrivers', () => {
       const sendMessage = vi.fn().mockResolvedValue(undefined)
       const service = buildAdminService({ issueTemporaryPassword, sendMessage })
 
-      const result = await service.issuePasswordsForLinkedDrivers()
+      const result = await service.issuePasswordsForLinkedDrivers([1, 2, 3])
 
-      expect(result).toEqual({ issued: 2, failed: [] })
+      expect(result).toEqual({ issued: 2, failed: [], skipped: 1 })
       expect(sendMessage).toHaveBeenCalledTimes(2)
     },
     TEST_TIMEOUT_MS,
   )
+
+  it(
+    'sends nothing at all for an empty selection',
+    async () => {
+      const issueTemporaryPassword = vi.fn().mockResolvedValue('GENPASS1')
+      const sendMessage = vi.fn().mockResolvedValue(undefined)
+      const service = buildAdminService({ issueTemporaryPassword, sendMessage })
+
+      // The DTO rejects this before the service is reached, but the service
+      // must not treat "no ids" as "everyone" if it is ever called directly —
+      // that inversion is exactly the accident this redesign exists to prevent.
+      const result = await service.issuePasswordsForLinkedDrivers([])
+
+      expect(result).toEqual({ issued: 0, failed: [], skipped: 0 })
+      expect(sendMessage).not.toHaveBeenCalled()
+    },
+    TEST_TIMEOUT_MS,
+  )
+})
+
+describe('IssuePasswordsDto', () => {
+  function buildDto(towTruckIds: unknown): IssuePasswordsDto {
+    const dto = new IssuePasswordsDto()
+    Object.assign(dto, { towTruckIds })
+    return dto
+  }
+
+  it('accepts a list of ids', () => {
+    expect(failedProperties(buildDto([1, 2, 3]))).toEqual([])
+  })
+
+  it('rejects an empty list — there is no "omit to mean everyone"', () => {
+    expect(failedProperties(buildDto([]))).toContain('towTruckIds')
+  })
+
+  it('rejects a missing list', () => {
+    expect(failedProperties(buildDto(undefined))).toContain('towTruckIds')
+  })
+
+  it('rejects duplicates', () => {
+    // A repeat would issue two passwords in a row and send two messages, the
+    // second silently invalidating the first.
+    expect(failedProperties(buildDto([1, 1]))).toContain('towTruckIds')
+  })
+
+  it('rejects non-integer ids', () => {
+    expect(failedProperties(buildDto(['1']))).toContain('towTruckIds')
+  })
 })

@@ -6,6 +6,8 @@ export type {
   AdminTowTruck,
   AdminTowTruckCounts,
   ApproveRegistrationPayload,
+  IssuePasswordsResult,
+  PasswordCandidate,
 } from './admin.repository'
 export { adminAuthRepository } from './adminAuth.repository'
 export type { AdminSession } from './adminAuth.repository'

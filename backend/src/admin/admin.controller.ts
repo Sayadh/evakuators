@@ -19,6 +19,7 @@ import type { AdminTowTruckSummary } from './admin-tow-truck.mapper'
 import { AdminService } from './admin.service'
 import { AdminListQuery, AdminRegistrationsQuery } from './dto/admin-list.query'
 import { ApproveRegistrationDto } from './dto/approve-registration.dto'
+import { IssuePasswordsDto } from './dto/issue-passwords.dto'
 import { SetTowTruckActiveDto } from './dto/set-tow-truck-active.dto'
 import { SetTowTruckFeaturedDto } from './dto/set-tow-truck-featured.dto'
 import { SetTowTruckPhoneDto } from './dto/set-tow-truck-phone.dto'
@@ -51,15 +52,37 @@ export class AdminController {
   }
 
   /**
-   * One-time migration button: hands a password to everyone who linked
-   * Telegram before password login existed, without asking any of them to tap
-   * a link again. Idempotent — already-migrated and self-changed drivers are
-   * silently skipped, so this is safe to press more than once (e.g. to sweep
-   * up anyone who was offline the first time).
+   * The drivers who could be handed a password right now — linked Telegram, no
+   * password yet. Read-only; the panel shows this list with checkboxes so an
+   * admin picks recipients before anything is sent.
+   *
+   * Declared before any `tow-trucks/:id` route for the same reason
+   * `tow-trucks/count` is (see its comment and
+   * admin.controller.count-route.spec.ts).
+   */
+  @Get('tow-trucks/password-candidates')
+  passwordCandidates(): Promise<
+    Array<{ id: number; slug: string; driverName: string; phone: string }>
+  > {
+    return this.adminService.listPasswordCandidates()
+  }
+
+  /**
+   * Sends a temporary password to the drivers named in the body, and only
+   * them. Takes an explicit id list rather than acting on everyone, because a
+   * Telegram message cannot be unsent and staging's database holds real
+   * drivers' real chat ids — see AdminService.issuePasswordsForLinkedDrivers.
+   *
+   * Ids that are no longer eligible are counted as `skipped`, never acted on,
+   * so this is safe to repeat and safe against a stale list.
    */
   @Post('tow-trucks/issue-passwords')
-  issuePasswords(): Promise<{ issued: number; failed: Array<{ id: number; slug: string }> }> {
-    return this.adminService.issuePasswordsForLinkedDrivers()
+  issuePasswords(@Body() dto: IssuePasswordsDto): Promise<{
+    issued: number
+    failed: Array<{ id: number; slug: string }>
+    skipped: number
+  }> {
+    return this.adminService.issuePasswordsForLinkedDrivers(dto.towTruckIds)
   }
 
   @Post('registration-requests/:id/reject')

@@ -107,6 +107,25 @@ export interface AdminTowTruckCounts {
   inactive: number
 }
 
+/**
+ * One driver who could be handed a password right now: Telegram linked, no
+ * password of their own yet. No `telegramChatId` — it is a BigInt the API
+ * cannot serialise, and being on this list already means "linked".
+ */
+export interface PasswordCandidate {
+  id: number
+  slug: string
+  driverName: string
+  phone: string
+}
+
+export interface IssuePasswordsResult {
+  issued: number
+  failed: Array<{ id: number; slug: string }>
+  /** Named in the request but no longer eligible — the list can go stale between load and send */
+  skipped: number
+}
+
 /** Every /admin/* route requires a valid admin JWT — attach it here */
 function authHeader(): Record<string, string> {
   return useAdminAuthStore().authHeader
@@ -154,16 +173,29 @@ export const adminRepository = {
   },
 
   /**
-   * One-time migration button: hands a password to every driver who linked
-   * Telegram before password login existed, without asking any of them to tap
-   * a link again. Safe to press more than once — already-migrated and
-   * self-changed drivers are silently skipped server-side.
+   * The drivers who could be handed a password right now — linked Telegram, no
+   * password yet. Read-only: the panel lists these with checkboxes so an admin
+   * chooses recipients before anything leaves the system.
    */
-  issuePasswordsForLinkedDrivers(): Promise<{
-    issued: number
-    failed: Array<{ id: number; slug: string }>
-  }> {
-    return apiFetch('/admin/tow-trucks/issue-passwords', { method: 'POST', headers: authHeader() })
+  listPasswordCandidates(): Promise<PasswordCandidate[]> {
+    return apiFetch<PasswordCandidate[]>('/admin/tow-trucks/password-candidates', {
+      headers: authHeader(),
+    })
+  },
+
+  /**
+   * Sends a temporary password to exactly the drivers named, over Telegram.
+   *
+   * Always takes an explicit id list — there is no "send to everyone" call,
+   * deliberately, because a Telegram message cannot be unsent. The backend
+   * re-checks eligibility and counts anything stale as `skipped`.
+   */
+  issuePasswords(towTruckIds: number[]): Promise<IssuePasswordsResult> {
+    return apiFetch<IssuePasswordsResult>('/admin/tow-trucks/issue-passwords', {
+      method: 'POST',
+      body: { towTruckIds },
+      headers: authHeader(),
+    })
   },
 
   rejectRegistration(id: number): Promise<{ id: number; status: string }> {

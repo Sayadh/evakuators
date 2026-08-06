@@ -2,7 +2,14 @@ import type { BreadcrumbItem, FaqItem } from '~/types/common'
 import type { Review } from '~/types/review'
 import type { TowTruck } from '~/types/towTruck'
 import { SERVICE_LABELS } from '~/constants/services'
-import { SITE_NAME, SITE_URL, SOCIAL_LINKS } from '~/constants/site'
+import {
+  SITE_ALTERNATE_NAME,
+  SITE_NAME,
+  SITE_ORGANIZATION_DESCRIPTION,
+  SITE_URL,
+  SITE_URL_ROOT,
+  SOCIAL_LINKS,
+} from '~/constants/site'
 import { getTowTruckRoute } from './routeHelpers'
 
 type JsonLd = Record<string, unknown>
@@ -108,46 +115,82 @@ export function buildTowTruckBusinessSchema(truck: TowTruck, reviews: Review[] =
 }
 
 /**
- * Stable node ids so the two homepage schemas reference each other instead of
+ * Stable node ids, so the two identity nodes reference each other instead of
  * repeating themselves. Google treats `@id` as the entity's identity, so the
  * Organization is one thing mentioned twice, not two competing organizations.
+ *
+ * Built from `SITE_URL`, which is the canonical origin — the same string every
+ * canonical tag and sitemap entry uses. An `@id` on a different host or scheme
+ * would describe a different entity.
  */
 const ORGANIZATION_ID = `${SITE_URL}/#organization`
 const WEBSITE_ID = `${SITE_URL}/#website`
 
 /**
- * The platform itself as an entity — this is where `sameAs` belongs (not on
- * `WebSite`), because the social profiles identify the *company*.
+ * Who this site is, as one `@graph`.
  *
- * Emit this ONLY on pages that are actually about Evakuators.am (homepage,
- * /about, /contact). Never on `/tow-trucks/[slug]`, where the page's subject
- * is the driver's own business (`buildTowTruckBusinessSchema`) — two
- * business-shaped entities on one page is how reviews and phone numbers get
- * attributed to the wrong one.
+ * ## Why a single graph and not two scripts
+ *
+ * These were two separate `<script type="application/ld+json">` blocks. Both
+ * were valid and they already cross-referenced by `@id`, but a consumer that
+ * reads only the first block — which several do, including some AI crawlers —
+ * saw an Organization with no site, or a WebSite with no publisher. A `@graph`
+ * makes the pair indivisible: one script, one `@context`, two nodes that
+ * arrive together or not at all.
+ *
+ * ## Why this matters more than usual here
+ *
+ * A domain one letter away from ours belongs to somebody else. Structured data
+ * is the strongest machine-readable statement we can make that this entity is
+ * `Evakuators.am`, with these social profiles, this logo and this URL — which
+ * is what stops the two being merged or confused. The brand is written from
+ * `SITE_NAME` for the same reason it is everywhere else: one string to be
+ * right about.
+ *
+ * ## Where it may be emitted
+ *
+ * ONLY on pages that are actually about the platform — today, the homepage.
+ * Never on `/tow-trucks/[slug]`, where the page's subject is the driver's own
+ * business (`buildTowTruckBusinessSchema`): two business-shaped entities on one
+ * page is how reviews and phone numbers get attributed to the wrong one.
  */
-export function buildOrganizationSchema(): JsonLd {
+export function buildSiteIdentitySchema(): JsonLd {
   return {
     '@context': 'https://schema.org',
-    '@type': 'Organization',
-    '@id': ORGANIZATION_ID,
-    name: SITE_NAME,
-    url: SITE_URL,
-    // Raster on purpose: Google's logo guidelines want a real image file, and
-    // SVG support there is unreliable.
-    logo: `${SITE_URL}/evakuators-logo.png`,
-    // Same list the footer renders — one constant, so a new network shows up
-    // in both places at once.
-    ...(SOCIAL_LINKS.length ? { sameAs: SOCIAL_LINKS.map((social) => social.url) } : {}),
-  }
-}
-
-export function buildWebsiteSchema(): JsonLd {
-  return {
-    '@context': 'https://schema.org',
-    '@type': 'WebSite',
-    '@id': WEBSITE_ID,
-    name: SITE_NAME,
-    url: SITE_URL,
-    publisher: { '@id': ORGANIZATION_ID },
+    '@graph': [
+      {
+        '@type': 'Organization',
+        '@id': ORGANIZATION_ID,
+        name: SITE_NAME,
+        url: SITE_URL_ROOT,
+        description: SITE_ORGANIZATION_DESCRIPTION,
+        // ImageObject rather than a bare URL string: both are valid, but the
+        // object form is what Google's logo documentation shows, and it leaves
+        // room for width/height later without changing the shape.
+        //
+        // Raster on purpose — Google's logo guidelines want a real image file
+        // and its SVG support is unreliable.
+        logo: {
+          '@type': 'ImageObject',
+          url: `${SITE_URL}/evakuators-logo.png`,
+        },
+        // The same list the footer renders, so a network added in one place
+        // appears in both. Never hand-written here: an invented or dead profile
+        // URL is worse than none, because `sameAs` is read as a claim of
+        // identity and a wrong one points the entity at somebody else.
+        ...(SOCIAL_LINKS.length ? { sameAs: SOCIAL_LINKS.map((social) => social.url) } : {}),
+      },
+      {
+        '@type': 'WebSite',
+        '@id': WEBSITE_ID,
+        url: SITE_URL_ROOT,
+        name: SITE_NAME,
+        // A translation of what the site is, not a second brand — see
+        // SITE_ALTERNATE_NAME.
+        alternateName: SITE_ALTERNATE_NAME,
+        publisher: { '@id': ORGANIZATION_ID },
+        inLanguage: 'hy-AM',
+      },
+    ],
   }
 }

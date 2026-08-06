@@ -28,6 +28,19 @@ export default defineNuxtConfig({
       meta: [
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
         { name: 'theme-color', content: '#122a43' },
+        /**
+         * The brand, for consumers that read a name from the document rather
+         * than from a title or from structured data — Windows tiles, some
+         * bookmark and reader tools, and several crawlers.
+         *
+         * Hard-coded rather than imported from `constants/site.ts`: this file
+         * is Nuxt's build-time config and is evaluated outside the app's module
+         * graph, so the `~` alias is not available here. The literal is
+         * asserted against SITE_NAME by tests/brandIdentity.spec.ts, which is
+         * what keeps the two from drifting.
+         */
+        { name: 'application-name', content: 'Evakuators.am' },
+        { name: 'apple-mobile-web-app-title', content: 'Evakuators.am' },
       ],
       /**
        * Favicon set. Every entry carries an explicit `sizes` (except the
@@ -57,6 +70,11 @@ export default defineNuxtConfig({
         // ICO is for, and a browser picking the tab size gets a purpose-rendered
         // 16px instead of a squashed 32px.
         { rel: 'icon', type: 'image/x-icon', sizes: '16x16 32x32 48x48', href: '/favicon.ico' },
+        // Declares the brand name to Android Chrome, which otherwise derives an
+        // app name from <title> — i.e. from whichever page happened to be open.
+        // See public/site.webmanifest for why it deliberately does NOT turn the
+        // site into an installable standalone app.
+        { rel: 'manifest', href: '/site.webmanifest' },
       ],
     },
   },

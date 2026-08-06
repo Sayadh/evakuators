@@ -2,7 +2,19 @@
   <section class="hero">
     <div class="container">
       <div class="hero__content">
-        <h1 class="hero__title">Գտեք մոտակա էվակուատորը Հայաստանում</h1>
+        <!-- The brand is IN the H1, not only in the header logo, because this
+             is the site's single most authoritative line of text about itself —
+             what a crawler, a knowledge panel or an AI assistant reads to
+             answer "what is this". A generic H1 («Գտեք մոտակա էվակուատորը»)
+             described the service perfectly and named nobody, which is exactly
+             the gap a similarly-named competitor gets merged into.
+
+             The service keyword stays in the same sentence on purpose: brand
+             first for identity, «էվակուատոր» second for what people search. -->
+        <h1 class="hero__title">
+          <span class="hero__brand">Evakuators.am</span
+          >՝ էվակուատոր գտնելու հարթակ ամբողջ Հայաստանում
+        </h1>
         <p class="hero__subtitle">
           Ընտրեք մարզը կամ քաղաքը, տեսեք հասանելի մեքենաները և անմիջապես զանգահարեք վարորդին։
         </p>
@@ -36,6 +48,13 @@
   &__title {
     color: #fff;
     margin-bottom: var(--space-3);
+  }
+
+  /* The brand reads as the subject of the sentence rather than as the first
+     two words of it. No colour change — on this gradient the accent gold is
+     the CTA's job, and a second gold thing competes with it. */
+  &__brand {
+    white-space: nowrap;
   }
 
   &__subtitle {

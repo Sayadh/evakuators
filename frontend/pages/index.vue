@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { buildHomeFaq } from '~/utils/faqContent'
-import { buildOrganizationSchema, buildWebsiteSchema } from '~/utils/schemaOrg'
+import { buildSiteIdentitySchema } from '~/utils/schemaOrg'
 import { buildHomeParagraphs, buildHomeSeo } from '~/utils/seoContent'
 
 useSeoMetaData({
@@ -8,7 +8,10 @@ useSeoMetaData({
   path: '/',
 })
 
-useJsonLd([buildOrganizationSchema(), buildWebsiteSchema()])
+// One graph, one script — Organization and WebSite were two separate blocks
+// and a consumer reading only the first saw half the identity. See
+// buildSiteIdentitySchema. This is the only page that may emit it.
+useJsonLd([buildSiteIdentitySchema()])
 
 const faqItems = buildHomeFaq()
 const seoParagraphs = buildHomeParagraphs()

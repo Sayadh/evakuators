@@ -111,3 +111,51 @@ canonical set, `BreadcrumbList` + `FAQPage` JSON-LD emitted by
 `AppBreadcrumbs.vue` / `FaqSection.vue`, linked from `NAV_LINKS` on every page,
 SSR-rendered content) and still never announced to crawlers. If you add a page
 under `pages/`, add it here too.
+
+## Brand identity surfaces
+
+The site's name is `Evakuators.am`, spelled that way everywhere. A singular
+`.am` domain one letter away belongs to somebody else, and the failure mode of
+getting this wrong is silent — nothing breaks, a search engine or an AI
+assistant simply attributes the wrong entity.
+
+`SITE_NAME` in `frontend/constants/site.ts` is the only place the string is
+written; every surface below derives from it, and
+`frontend/tests/brandIdentity.spec.ts` asserts both the derivation and that the
+singular spelling appears **nowhere** in the project — including in a comment
+explaining why it must not appear. That absolute rule is what makes the check
+trustworthy; an exception list would be the first thing a future edit slips
+through.
+
+| Surface | Where |
+| --- | --- |
+| `<title>`, `og:site_name`, canonical | `composables/useSeoMetaData.ts` (every page) |
+| `application-name`, `apple-mobile-web-app-title` | `nuxt.config.ts` — hard-coded, since the config is evaluated outside the app's module graph and cannot import `~`; the test pins it against `SITE_NAME` |
+| PWA manifest `name` / `short_name` | `public/site.webmanifest` |
+| `Organization` + `WebSite` JSON-LD | `utils/schemaOrg.ts` → `buildSiteIdentitySchema()` |
+| Logo `alt` | `AppHeader.vue`, `AppFooter.vue` |
+| Footer copyright | `AppFooter.vue` |
+
+Three decisions worth not undoing:
+
+- **The homepage title and `<h1>` lead with the brand; every other page leads
+  with the service keyword.** The homepage is what a crawler reads to answer
+  "what is this site", so it answers in the exact words we want quoted back
+  (`SITE_TAGLINE`). Location pages exist to match «էվակուատոր <city>» and are
+  built the other way round. Brand is `Evakuators.am`; service is «էվակուատոր»;
+  neither replaces the other.
+- **One `@graph`, not two scripts.** `Organization` and `WebSite` were separate
+  `<script>` blocks that cross-referenced by `@id`. Both were valid, but a
+  consumer reading only the first — several do — saw half the identity. They
+  now arrive together or not at all, and only the homepage emits them (never
+  `/tow-trucks/[slug]`, where the subject is the driver's own business).
+- **`display: "browser"` in the manifest.** The manifest exists to declare a
+  name to Android Chrome, which otherwise derives one from whichever `<title>`
+  happened to be open. It deliberately does not make the site an installable
+  standalone app — that would change how it opens for anyone who added it to a
+  home screen, which is a product decision, not a metadata one.
+
+Host canonicalisation is nginx's half of the same job: `nginx/evakuators.am.conf`
+301s http-apex, http-www and https-www to `https://evakuators.am`, so the
+canonical tags the app emits describe an address that is actually the only one
+serving content.

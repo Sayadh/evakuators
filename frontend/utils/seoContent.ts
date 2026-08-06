@@ -1,4 +1,4 @@
-import { SITE_NAME } from '~/constants/site'
+import { SITE_NAME, SITE_TAGLINE } from '~/constants/site'
 
 /**
  * SEO keyword strategy.
@@ -67,11 +67,29 @@ export function buildRegionSeo(regionNameHy: string, slug: string): LocationSeo 
   }
 }
 
+/**
+ * The homepage is the one page whose title leads with the BRAND rather than
+ * with the service keyword.
+ *
+ * Every other page here is a landing page for a query («էվակուատոր
+ * Աբովյանում»), and its title is built to match that query. The homepage is
+ * what a search engine, a knowledge panel or an AI assistant reads to answer
+ * "what is this site" — so it answers that question in its own words, in the
+ * exact form we want quoted back, and the brand comes first because the risk
+ * being managed is confusion with a similarly-named site.
+ *
+ * The service keyword is not lost: «էվակուատորների» is in the tagline, and the
+ * description below still carries the full keyword set the previous title
+ * shared with it.
+ */
 export function buildHomeSeo(): LocationSeo {
   return {
-    title: `Էվակուատոր · Evakuator 24/7 ամբողջ Հայաստանում | ${SITE_NAME}`,
+    title: SITE_TAGLINE,
     description:
-      'Էվակուատոր (evakuator) Երևանում և Հայաստանի բոլոր մարզերում՝ 24/7։ Էժան էվակուատոր (ejan evakuator), գիշերային ծառայություն (gisherayin evakuator), մանիպուլյատորով էվակուատոր, նոր ու ստուգված վարորդներ, վթարված մեքենաների տեղափոխում։ Զանգահարեք վարորդին ուղիղ։',
+      `${SITE_TAGLINE}։ Էվակուատոր (evakuator) Երևանում և Հայաստանի բոլոր մարզերում՝ 24/7։ ` +
+      'Էժան էվակուատոր (ejan evakuator), գիշերային ծառայություն (gisherayin evakuator), ' +
+      'մանիպուլյատորով էվակուատոր, նոր ու ստուգված վարորդներ, վթարված մեքենաների տեղափոխում։ ' +
+      'Զանգահարեք վարորդին ուղիղ։',
     keywords: [
       ...BASE_KEYWORDS,
       'էվակուատոր երևան',

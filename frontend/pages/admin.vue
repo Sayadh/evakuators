@@ -373,13 +373,31 @@ function statusBadgeVariant(status: AdminRegistrationRequest['status']): 'accent
 }
 
 /**
+ * The "Ցույց տալ ավելին" buttons below bind `:disabled="loading*"`, which
+ * turns true the instant their own click handler starts — disabling the
+ * exact button that still has focus from the click. Several browsers respond
+ * to a focused element becoming disabled by moving focus to `<body>`, which
+ * resets the page's scroll position to the very top — the opposite of what
+ * "load more" should feel like, since the driver was reading the bottom of
+ * the list. Capturing the offset right before the disable and restoring it
+ * one tick later (after Vue patches the DOM, before the next paint) cancels
+ * that jump without changing how the button itself behaves.
+ */
+async function preserveScrollAfterDisable(scrollY: number): Promise<void> {
+  await nextTick()
+  window.scrollTo({ top: scrollY })
+}
+
+/**
  * `append: false` reloads from the top (first visit, filter change, after an
  * approve/reject); `append: true` is the "load more" button. A full page back
  * means there is probably more — that is what enables the button.
  */
 async function loadRegistrations(append = false): Promise<void> {
+  const scrollY = window.scrollY
   loadingRegistrations.value = true
   registrationsError.value = ''
+  void preserveScrollAfterDisable(scrollY)
   try {
     const offset = append ? registrations.value.length : 0
     const page = await adminRepository.listRegistrations(
@@ -396,8 +414,10 @@ async function loadRegistrations(append = false): Promise<void> {
 }
 
 async function loadReviews(append = false): Promise<void> {
+  const scrollY = window.scrollY
   loadingReviews.value = true
   reviewsError.value = ''
+  void preserveScrollAfterDisable(scrollY)
   try {
     const offset = append ? reviews.value.length : 0
     const page = await adminRepository.listPendingReviews({ limit: ADMIN_PAGE_SIZE, offset })
@@ -428,8 +448,10 @@ async function loadTowTrucks(append = false): Promise<void> {
   // load needs the counts, and it fires alongside rather than before the list.
   if (!append) void loadTowTruckCounts()
 
+  const scrollY = window.scrollY
   loadingTowTrucks.value = true
   towTrucksError.value = ''
+  void preserveScrollAfterDisable(scrollY)
   try {
     const offset = append ? towTrucks.value.length : 0
     const page = await adminRepository.listTowTrucks({ limit: ADMIN_PAGE_SIZE, offset })

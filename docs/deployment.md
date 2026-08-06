@@ -98,12 +98,24 @@ pm2 save && pm2 startup   # survive a server reboot
 ## nginx
 
 `nginx/evakuators.am.conf` is the reference config — routes by hostname:
-`evakuators.am` (+ `www`) → frontend on `127.0.0.1:3002`,
-`api.evakuators.am` → backend on `127.0.0.1:4002`. TLS via certbot
+`evakuators.am` → frontend on `127.0.0.1:3002`, `api.evakuators.am` → backend
+on `127.0.0.1:4002`. TLS via certbot
 (`certbot --nginx -d evakuators.am -d www.evakuators.am -d api.evakuators.am`).
 Both `AdminJwtGuard` and `DriverJwtGuard` enforce auth in the NestJS app
 itself, not via nginx — auth still works correctly even if nginx config
 changes or is bypassed in some edge case.
+
+**Exactly one address is canonical: `https://evakuators.am`.** The other three
+forms that resolve — `http://evakuators.am`, `http://www.evakuators.am`,
+`https://www.evakuators.am` — all 301 to it, so the canonical tags the app
+emits (`SITE_URL` in `frontend/constants/site.ts`) describe the address a
+visitor is actually on. The http→https redirect excludes
+`/.well-known/acme-challenge/` or certbot renewal breaks the moment it starts
+redirecting everything. This is a real edit to the server's live config, not a
+one-time setup step — **never overwrite the server's nginx file with the repo's
+example wholesale**, it would delete certbot's actual `ssl_certificate`
+directives; add the missing redirect block by hand, then `nginx -t` before
+reloading.
 
 ## Staging environment
 

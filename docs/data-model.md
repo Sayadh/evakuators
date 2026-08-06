@@ -374,10 +374,9 @@ far — the enum is a placeholder for a future role, not evidence multiple
 roles are handled anywhere in the code today). No self-registration —
 created exclusively via `backend/scripts/create-admin-user.js`
 (`npm run admin:create -- <email> <password>`), which upserts by email so
-re-running it is how you reset a forgotten password. The Prisma schema
-comment on this model still says "auth is not implemented yet" — that's
-stale; admin auth has been implemented since (`admin-auth` module,
-`AdminJwtGuard`). Don't take schema comments as gospel over the actual code.
+re-running it is how you reset a forgotten password. Auth is
+`admin-auth`/`AdminJwtGuard`, plus the Telegram-based 2FA described in
+`docs/auth-and-security.md`.
 
 ## Migrations
 

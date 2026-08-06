@@ -218,7 +218,11 @@ from Supabase's own Postgres offering if you happened to provision one.
 Nuxt 3 SSR (not static generation) — `frontend/server/routes/sitemap.xml.ts`
 builds a dynamic sitemap. `useSeoMetaData` composable centralizes
 title/description/canonical/og-image per page. `frontend/utils/schemaOrg.ts`
-builds JSON-LD structured data for tow truck profiles.
+builds all JSON-LD structured data: `buildSiteIdentitySchema()` (single
+`Organization` + `WebSite` `@graph`, homepage only — see
+`docs/pages-and-routes.md` § "Brand identity surfaces") and
+`buildTowTruckBusinessSchema()` for individual tow truck profiles, plus
+`BreadcrumbList`/`FAQPage` builders used across several pages.
 
 ## A CSS grid with a viewport-conditional child is an SSR bug waiting to happen
 

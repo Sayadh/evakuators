@@ -92,9 +92,10 @@ render with Lanczos — the direct render is crisper, which is why the pipeline
 does that.
 
 Structured
-data (JSON-LD) is added via `useJsonLd()` on the homepage (`WebSite` schema)
-and tow truck profile pages (`LocalBusiness`-style schema via
-`buildTowTruckBusinessSchema()`). `frontend/utils/faqContent.ts` builds FAQ
+data (JSON-LD) is added via `useJsonLd()` on the homepage (single `Organization`
++ `WebSite` `@graph`, see "Brand identity surfaces" below) and tow truck profile
+pages (`AutomotiveBusiness`-style schema via `buildTowTruckBusinessSchema()`).
+`frontend/utils/faqContent.ts` builds FAQ
 Q&As (rendered via `FaqSection.vue`, with matching `FAQPage` JSON-LD) for the
 homepage, `/regions`, and `/free-routes` — `buildHomeFaq()` /
 `buildAllRegionsFaq()` / `buildFreeRoutesFaq()`. `frontend/server/routes/

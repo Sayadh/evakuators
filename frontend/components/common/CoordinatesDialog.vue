@@ -47,8 +47,8 @@ interface Props {
   saving?: boolean
   /** Message from the parent's failed request; shown under the field like a validation error */
   error?: string
-  /** Passed through to CoordinatesInput — see its `showSteps` prop */
-  showSteps?: boolean
+  /** Passed through to CoordinatesInput — see its `showGuidance` prop */
+  showGuidance?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -56,7 +56,7 @@ const props = withDefaults(defineProps<Props>(), {
   initialValue: '',
   saving: false,
   error: '',
-  showSteps: true,
+  showGuidance: true,
 })
 
 const emit = defineEmits<{
@@ -134,7 +134,7 @@ function save(): void {
 
     <CoordinatesInput
       :model-value="value"
-      :show-steps="showSteps"
+      :show-guidance="showGuidance"
       :error="shownError"
       @update:model-value="onInput"
     />

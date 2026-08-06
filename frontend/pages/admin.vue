@@ -1153,10 +1153,12 @@ async function rejectReview(review: AdminReview): Promise<void> {
     </AppModal>
 
     <!-- The very same dialog the driver sees in /dashboard, pointed at this
-         truck's admin endpoint. `show-steps` is off because an admin pasting a
-         correction on someone's behalf does not need the Google Maps tutorial —
-         everything else, including the accepted formats and every error
-         message, is identical by construction. -->
+         truck's admin endpoint. `show-guidance` is off because the Google Maps
+         tutorial and the "an administrator will help you" note are both aimed
+         at a driver doing this for the first time — and the second one is
+         nonsense when you ARE the administrator. Everything else, including the
+         accepted formats and every error message, is identical by
+         construction. -->
     <CoordinatesDialog
       v-model="coordinatesDialogOpen"
       title="Էվակուատորի տեղադիրքի կոորդինատներ"
@@ -1164,7 +1166,7 @@ async function rejectReview(review: AdminReview): Promise<void> {
       :initial-value="coordinatesInitialValue"
       :saving="savingCoordinates"
       :error="coordinatesError"
-      :show-steps="false"
+      :show-guidance="false"
       @save="saveCoordinates"
     />
 

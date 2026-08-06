@@ -24,6 +24,18 @@ import { useGeolocation } from '~/composables/useGeolocation'
  * database. The backend keeps them only as a five-minute cache key rounded to
  * ~110 m. See `docs/nearest-search.md`.
  */
+
+/**
+ * Temporary kill switch — the search itself is paused, but the page, the CTA
+ * banners and the nav link all stay up so nothing 404s and nothing has to be
+ * unwired to flip this back. Set to `true` to re-enable.
+ *
+ * Checked before `locate()`, not after: the point is that a visitor never
+ * sees the permission prompt while this is off, not that the prompt appears
+ * and then fails.
+ */
+const NEAREST_SEARCH_ENABLED = false
+
 useSeoMetaData({
   title: `Գտնել մոտակա էվակուատորը | ${SITE_NAME}`,
   description:
@@ -47,6 +59,11 @@ const hasEmptyResult = computed(() => result.value !== null && result.value.resu
 async function findNearest(): Promise<void> {
   searchError.value = ''
   result.value = null
+
+  if (!NEAREST_SEARCH_ENABLED) {
+    searchError.value = 'Այս պահին աշխատում ենք այս գործառույթի վրա։ Այն շուտով հասանելի կլինի։'
+    return
+  }
 
   // Mock mode has no backend to search, and the geolocation prompt would be a
   // real permission ask in exchange for nothing. Told plainly rather than
@@ -186,8 +203,16 @@ async function findNearest(): Promise<void> {
     // point, and it is being pressed by someone standing next to a broken car.
     width: 100%;
 
+    // Same override, same reason as NearestTowTrucksCta: AppButton is
+    // `white-space: nowrap`, and «Որոշվում է տեղադրությունը…» is long enough to
+    // overflow a 320px screen. Scoped here so no other button changes.
+    white-space: normal;
+    line-height: 1.35;
+    text-align: center;
+
     @media (min-width: 640px) {
       width: auto;
+      white-space: nowrap;
     }
   }
 

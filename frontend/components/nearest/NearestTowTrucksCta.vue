@@ -48,6 +48,23 @@ withDefaults(defineProps<Props>(), { variant: 'banner' })
 
 <style scoped lang="scss">
 .nearest-cta {
+  /**
+   * «Գտնել մոտակա էվակուատորները» is the longest button label on the site, and
+   * `AppButton` is `white-space: nowrap` — correct for the short labels
+   * everywhere else, wrong here: on a narrow card the text runs straight past
+   * the edge instead of wrapping.
+   *
+   * Overridden at this component rather than in `AppButton`, so no other button
+   * on the site changes. `line-height` has to come with it: AppButton sets `1`,
+   * which is fine on one line and unreadable on two.
+   */
+  :deep(.app-button) {
+    width: 100%;
+    white-space: normal;
+    line-height: 1.35;
+    text-align: center;
+  }
+
   &--banner {
     display: flex;
     flex-direction: column;
@@ -67,6 +84,16 @@ withDefaults(defineProps<Props>(), { variant: 'banner' })
       align-items: center;
       justify-content: space-between;
       gap: var(--space-5);
+
+      // Side by side now, so the button goes back to its natural width and one
+      // line. It is `__text` that gives way when the row gets tight — it has
+      // `min-width: 0` for exactly that, and shrinking a paragraph is better
+      // than shrinking the thing being clicked.
+      :deep(.app-button) {
+        width: auto;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
     }
   }
 

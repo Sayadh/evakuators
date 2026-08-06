@@ -39,19 +39,24 @@ interface Props {
    */
   heading?: string
   /**
-   * The five numbered steps. Shown wherever a driver is meeting this field for
-   * the first time — registration and their own dashboard. The admin panel
-   * turns them off: an admin pasting a correction on someone's behalf does not
-   * need to be taught how to use Google Maps, and the dialog stays short enough
-   * to read at a glance.
+   * Driver-facing guidance: the five numbered steps and the "if you cannot
+   * manage it" note at the bottom. Shown wherever a driver meets this field —
+   * registration and their own dashboard.
+   *
+   * The admin panel turns it off. Both halves are aimed at someone doing this
+   * for the first time on their own phone: an admin pasting a correction on a
+   * driver's behalf does not need to be taught how to use Google Maps, and
+   * being told "an administrator will help you" when you *are* the
+   * administrator reads as a bug. They travel together because they are one
+   * audience, not two features.
    */
-  showSteps?: boolean
+  showGuidance?: boolean
   error?: string
 }
 
 withDefaults(defineProps<Props>(), {
   heading: undefined,
-  showSteps: true,
+  showGuidance: true,
   error: '',
 })
 
@@ -77,7 +82,7 @@ const GOOGLE_MAPS_URL = 'https://maps.google.com/'
       էվակուատորները։
     </p>
 
-    <ol v-if="showSteps" class="coordinates__steps">
+    <ol v-if="showGuidance" class="coordinates__steps">
       <li>Բացեք Google Maps-ը։</li>
       <li>Գտեք Ձեր էվակուատորի հիմնական կայանման վայրը։</li>
       <li>Սեղմած պահեք քարտեզի համապատասխան կետի վրա։</li>
@@ -119,6 +124,17 @@ const GOOGLE_MAPS_URL = 'https://maps.google.com/'
          appears, and the error appears here. -->
     <p class="coordinates__hint">
       Նախ գրեք լայնությունը, ապա՝ երկայնությունը։ Թվերը բաժանեք ստորակետով կամ բացատով։
+    </p>
+
+    <!-- The escape hatch, and the last thing on the block on purpose: a driver
+         only needs it after everything above has failed them.
+         The field is required, so without this a driver who cannot work out how
+         to copy a coordinate simply cannot finish registering — and we lose them
+         entirely rather than losing one field. Better an imprecise location we
+         know to fix than no driver at all. -->
+    <p v-if="showGuidance" class="coordinates__fallback">
+      Եթե չի ստացվում լրացնել, գրեք օրինակի թիվը՝ <strong>40.1792, 44.4991</strong>։
+      Ադմինիստրատորը կկապվի Ձեզ հետ և կօգնի ճշտել Ձեր տեղադիրքը։
     </p>
   </div>
 </template>
@@ -171,6 +187,28 @@ const GOOGLE_MAPS_URL = 'https://maps.google.com/'
     font-size: 0.8rem;
     line-height: 1.5;
     color: var(--color-text-muted);
+  }
+
+  /* Boxed rather than a fourth line of muted grey text: it is a different KIND
+     of instruction — what to do when the rest did not work — and a driver who
+     is stuck is scanning for a way out, not reading paragraphs in order. */
+  &__fallback {
+    margin: 0;
+    padding: var(--space-3);
+    border: 1px dashed var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-bg);
+    font-size: 0.82rem;
+    line-height: 1.55;
+    color: var(--color-text-secondary);
+
+    strong {
+      /* The number has to be copyable-looking, since copying it is the
+         instruction. Monospace keeps the digits from being mistaken for prose. */
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: var(--color-text);
+      white-space: nowrap;
+    }
   }
 }
 </style>

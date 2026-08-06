@@ -369,15 +369,24 @@ async function onSubmit(): Promise<void> {
           <AppInput v-model="form.firstName" label="Անուն" required :error="errors.firstName" />
           <AppInput v-model="form.lastName" label="Ազգանուն" required :error="errors.lastName" />
           <AppInput v-model="form.companyName" label="Կազմակերպության անուն (եթե կա)" />
-          <AppInput
-            v-model="phoneModel"
-            label="Հիմնական հեռախոսահամար"
-            type="tel"
-            placeholder="+37491000001"
-            required
-            :maxlength="12"
-            :error="errors.phone"
-          />
+          <div class="register__phone-field">
+            <AppInput
+              v-model="phoneModel"
+              label="Հիմնական հեռախոսահամար"
+              type="tel"
+              placeholder="+37491000001"
+              required
+              :maxlength="12"
+              :error="errors.phone"
+            />
+            <!-- Wrapped with the field rather than dropped straight into
+                 register__grid: a bare <p> there would become its own grid
+                 cell and push every field after it into the wrong column. -->
+            <p class="register__phone-hint">
+              Այս հեռախոսահամարով գրանցվել հնարավոր է միայն մեկ անգամ։ Կրկնակի հայտը
+              ադմինիստրատորի կողմից կմերժվի։
+            </p>
+          </div>
           <AppInput
             v-model="secondaryPhoneModel"
             label="Երկրորդ հեռախոսահամար (ոչ պարտադիր)"
@@ -700,6 +709,19 @@ async function onSubmit(): Promise<void> {
     @media (min-width: 640px) {
       grid-template-columns: 1fr 1fr;
     }
+  }
+
+  &__phone-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  &__phone-hint {
+    margin: 0;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: var(--color-text-muted);
   }
 
   &__checks {

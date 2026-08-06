@@ -198,12 +198,25 @@ export class CreateRegistrationDto {
   @MaxLength(40, { each: true })
   services!: string[]
 
-  // Base parking coordinates — required for NEW registrations, even though the
-  // columns themselves are nullable (see TowTruck.latitude in schema.prisma).
-  // The two are not in conflict: the column has to tolerate every driver
-  // approved before this feature existed, while the form has no reason to let a
-  // new one through without the value the "nearest evacuator" feature is built
-  // on. Requiring it here is what stops the gap from growing.
+  // Base parking coordinates — OPTIONAL, like every other field a driver might
+  // not have to hand at sign-up.
+  //
+  // They were required at first, on the reasoning that the "nearest evacuator"
+  // feature is built on them and a mandatory field stops the gap from growing.
+  // That reasoning had the cost backwards. This form is the only way onto the
+  // platform, and the field asks a driver to copy a coordinate out of Google
+  // Maps on a phone — the step most likely to defeat someone. A registration
+  // abandoned there costs a whole driver; a missing coordinate costs one row in
+  // one feature, and it is editable from the dashboard the moment they are
+  // approved. Better an incomplete profile we can finish than no profile.
+  //
+  // It also removed a worse outcome: while this was mandatory, the form told a
+  // stuck driver to paste the EXAMPLE coordinate so they could finish, which
+  // silently parked them in the centre of Yerevan and ranked them against
+  // customers nowhere near. A blank is honest; a plausible wrong number is not.
+  //
+  // Both or neither — enforced in RegistrationService, not here, because it is
+  // a rule ABOUT the pair and a per-property decorator cannot see its sibling.
   //
   // Two numbers, not a "40.1792, 44.4991" string — the same call the platform
   // dimensions made when they stopped being free text (see platformLengthM
@@ -215,11 +228,13 @@ export class CreateRegistrationDto {
   // The Armenia bounds check deliberately does NOT live here — see
   // assertWithinArmenia in common/coordinates.ts for why it belongs in the
   // service instead.
+  @IsOptional()
   @IsLatitudeValue()
-  latitude!: number
+  latitude?: number
 
+  @IsOptional()
   @IsLongitudeValue()
-  longitude!: number
+  longitude?: number
 
   // Pricing — optional
   @IsOptional()

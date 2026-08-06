@@ -91,9 +91,25 @@ Notable fields beyond the obvious:
     mapper converts with `decimalToNumber()` (`backend/src/common/coordinates.ts`)
     rather than handing the column straight to a response.
   - **Nullable, and staying that way.** Every driver approved before this
-    feature has none. `CreateRegistrationDto` requires them for *new*
-    registrations, which closes the gap going forward instead of backfilling
-    guesses. `locationUpdatedAt` is null exactly when the pair is.
+    feature has none, and **registration does not require them either**.
+    `locationUpdatedAt` is null exactly when the pair is.
+
+    That last part was the other way round at first, and the reversal is worth
+    knowing before anyone re-tightens it. Requiring the field looked like it
+    closed the gap; what it actually did was put the form's hardest step —
+    copying a coordinate out of Google Maps on a phone — in front of the only
+    route onto the platform, so a driver defeated by it was lost entirely
+    rather than arriving with one field to fill in later. And because the field
+    could not be skipped, the form told a stuck driver to paste the *example*
+    coordinate, which parked them in the centre of Yerevan and ranked them
+    against customers nowhere near — a wrong value nothing downstream can tell
+    from a real one. A NULL is visibly missing and fixable from the driver's own
+    dashboard; a plausible wrong number is neither.
+  - **Written and cleared as a pair.** One axis alone describes no place, and a
+    row holding half a coordinate is neither "has a location" nor "has none" for
+    every reader downstream. Enforced at each entry point (`RegistrationService`
+    rejects a lone axis; `SetCoordinatesDto` has both fields required), never by
+    the columns.
 
   A third column, `location` (`geography(Point, 4326)`), is the PostGIS
   projection of the two above — `GENERATED ALWAYS ... STORED`, so Postgres
@@ -207,11 +223,12 @@ described under `TowTruck` above, and copied over as-is by
 `latitude` / `longitude` are the **same two `Decimal(9,6)?` columns**
 `TowTruck` has, so `approve()` copies them straight across like
 `platformLengthM`/`platformWidthM` and stamps `TowTruck.locationUpdatedAt` at
-that moment. The columns are nullable here too — requests submitted before the
-field existed are kept forever as an audit trail — while
-`CreateRegistrationDto` makes them required for new submissions. The admin does
-not re-enter them at approval; if they are wrong, the correction path is
-`PATCH /admin/tow-trucks/:id/coordinates` afterwards.
+that moment. The columns are nullable here too, and stay empty whenever the
+driver skipped the field — it is optional at sign-up (see `TowTruck` above for
+why). The admin does not re-enter them at approval, so a truck approved from a
+request with no coordinates simply starts without them; the paths to fill them
+in afterwards are the driver's own dashboard or
+`PATCH /admin/tow-trucks/:id/coordinates`.
 
 ## `TowTruckImage`
 

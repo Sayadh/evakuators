@@ -74,16 +74,20 @@ export const toOptionalFloat = (value: string): number | undefined => {
  *
  * `coordinates` arrives already parsed rather than as the raw string on
  * `form.coordinates`, because parsing can fail and this function has nowhere
- * honest to put a failure: its return type promises a payload with two real
- * numbers in it. The page's `validate()` has to parse anyway in order to show
- * the error under the field, so it passes the result it already has — one
- * parse, one place that can report a problem, and no branch here that could
- * quietly submit a registration without a location.
+ * honest to put a failure. The page's `validate()` has to parse anyway in order
+ * to show the error under the field, so it passes the result it already has —
+ * one parse, one place that can report a problem.
+ *
+ * `null` means the driver left the box empty, which is allowed: both keys are
+ * then omitted from the payload entirely rather than sent as null, so the
+ * request says "no location given" the same way every other optional field
+ * does. Never null-because-unparseable — that case fails validation and never
+ * reaches here.
  */
 export function buildRegistrationPayload(
   form: RegistrationFormState,
   imageIds: number[],
-  coordinates: Coordinates,
+  coordinates: Coordinates | null,
 ): RegistrationPayload {
   return {
     firstName: form.firstName.trim(),
@@ -116,8 +120,14 @@ export function buildRegistrationPayload(
     regionSlugs: form.regionSlugs,
     citySlugs: form.citySlugs,
     services: form.services,
-    latitude: coordinates.latitude,
-    longitude: coordinates.longitude,
+    // Spread, not `latitude: coordinates?.latitude` — an explicit `undefined`
+    // key still serialises differently from an absent one through some clients,
+    // and the backend's `forbidNonWhitelisted` DTO is happiest with the key
+    // simply not being there. Both or neither, which is also the rule the API
+    // enforces (see RegistrationService).
+    ...(coordinates
+      ? { latitude: coordinates.latitude, longitude: coordinates.longitude }
+      : {}),
     priceCityCallout: optionalInt(form.priceCityCallout),
     pricePerKm: optionalInt(form.pricePerKm),
     priceWaitingPerHour: optionalInt(form.priceWaitingPerHour),

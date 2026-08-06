@@ -132,9 +132,19 @@ model TowTruck {
   ///
   /// Nullable, and stays nullable: every driver approved before this feature
   /// existed has none, and a NOT NULL column would have required inventing a
-  /// coordinate for each of them. New registrations do require it (see
-  /// CreateRegistrationDto), so the gap is closed going forward rather than
-  /// backfilled with guesses.
+  /// coordinate for each of them.
+  ///
+  /// Registration does not require it either (see CreateRegistrationDto). It
+  /// briefly did, and the cost ran the wrong way: the form is the only route
+  /// onto the platform and this is its hardest step, so a driver defeated by it
+  /// was lost entirely rather than arriving with one field to fill in later.
+  /// Worse, the mandatory version told a stuck driver to paste the example
+  /// coordinate, which silently parked them in the centre of Yerevan — a wrong
+  /// value nothing downstream can distinguish from a real one. A NULL here is
+  /// honest and fixable from the driver's own dashboard.
+  ///
+  /// Always written and cleared as a PAIR — one axis alone describes no place.
+  /// Enforced at every entry point, never by the column.
   latitude          Decimal?  @db.Decimal(9, 6)
   longitude         Decimal?  @db.Decimal(9, 6)
   /// When the coordinate pair above was last written (registration approval,

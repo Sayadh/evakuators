@@ -231,15 +231,24 @@ function validate(): boolean {
   errors.regionSlugs = form.regionSlugs.length === 0 ? 'Ընտրեք 1-2 մարզ' : ''
   errors.citySlugs = form.citySlugs.length === 0 ? 'Ընտրեք առնվազն մեկ քաղաք կամ շրջան' : ''
   errors.services = form.services.length === 0 ? 'Ընտրեք առնվազն մեկ ծառայություն' : ''
-  // Required for new registrations. The columns behind it are nullable — that
-  // is for the drivers who registered before this field existed, not a licence
-  // to keep adding more of them. `parseCoordinates` produces the message; this
-  // page only decides where it goes.
-  const coordinates = parseCoordinates(form.coordinates)
-  parsedCoordinates.value = coordinates.ok
-    ? { latitude: coordinates.latitude, longitude: coordinates.longitude }
-    : null
-  errors.coordinates = coordinates.ok ? '' : coordinates.error
+  // Optional: an empty box submits, and the driver adds it later from their
+  // dashboard. Anything actually typed still has to parse — "half a
+  // coordinate" is a mistake worth catching, "no coordinate" is a choice.
+  //
+  // This is the one field whose difficulty could cost the whole registration
+  // (copying a value out of Google Maps, on a phone), which is why it gives way
+  // rather than blocking. See CreateRegistrationDto for the same argument on
+  // the API side.
+  if (form.coordinates.trim()) {
+    const coordinates = parseCoordinates(form.coordinates)
+    parsedCoordinates.value = coordinates.ok
+      ? { latitude: coordinates.latitude, longitude: coordinates.longitude }
+      : null
+    errors.coordinates = coordinates.ok ? '' : coordinates.error
+  } else {
+    parsedCoordinates.value = null
+    errors.coordinates = ''
+  }
   // Fully optional — driver may leave both 24/7 unselected and hours unset.
   // Only flag it when exactly one of the two times got filled in, since
   // that combination can't be saved as a valid range either way.
@@ -302,7 +311,7 @@ function selectedFiles(): File[] {
 }
 
 /** Uploads whatever isn't uploaded yet, then submits the request */
-async function submitToApi(coordinates: Coordinates): Promise<void> {
+async function submitToApi(coordinates: Coordinates | null): Promise<void> {
   // Resumes from where the last attempt stopped — see uploadedImageIds. Each
   // id is committed to the array as soon as its upload returns, so a failure
   // halfway through (or a rejected submit afterwards) never costs the driver
@@ -322,10 +331,11 @@ async function onSubmit(): Promise<void> {
     return
   }
 
-  // `validate()` returning true means it parsed, so this cannot be null — the
-  // guard is here to prove it to the compiler rather than to handle a case.
+  // Null is a legitimate outcome now: the driver left the box empty, and
+  // `validate()` passed anyway. It is only ever null-because-unparseable when
+  // validate() already returned false, so reaching here with null means
+  // "no coordinates", never "bad coordinates".
   const coordinates = parsedCoordinates.value
-  if (!coordinates) return
 
   submitError.value = ''
 
@@ -505,9 +515,17 @@ async function onSubmit(): Promise<void> {
            heading. Same component the dashboard and admin dialogs use. -->
       <fieldset class="register__section">
         <legend class="register__legend">Տեղադիրք</legend>
+        <!-- The one section a driver may skip. It asks them to copy a value out
+             of Google Maps on a phone, which is the step most likely to end a
+             registration — and the value is editable from their dashboard the
+             moment they are approved, so blocking on it trades a whole driver
+             for one field. `required: false` also switches the note at the
+             bottom of the block from "paste the example number" to "leave it
+             blank", which is the only honest advice once it is optional. -->
         <CoordinatesInput
           v-model="form.coordinates"
-          heading="Նշեք Ձեր էվակուատորի հիմնական տեղադիրքի կոորդինատները"
+          heading="Նշեք Ձեր էվակուատորի հիմնական տեղադիրքի կոորդինատները (ոչ պարտադիր)"
+          :required="false"
           :error="errors.coordinates"
         />
       </fieldset>

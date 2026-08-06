@@ -19,6 +19,22 @@ export class RegistrationService {
   ) {}
 
   async submit(dto: CreateRegistrationDto): Promise<RegistrationCreatedDto> {
+    // Coordinates are optional (see CreateRegistrationDto), but they are a
+    // PAIR: one axis on its own describes no place at all, and a row holding
+    // half of one would be neither "has a location" nor "has none" for every
+    // reader downstream. Rejected outright rather than silently dropping the
+    // stray half, which would hide a broken client instead of reporting it.
+    //
+    // This lives here and not on the DTO because class-validator decorates one
+    // property at a time and cannot express a rule about two.
+    const hasLatitude = dto.latitude !== undefined
+    const hasLongitude = dto.longitude !== undefined
+    if (hasLatitude !== hasLongitude) {
+      throw new BadRequestException(
+        'Կոորդինատները պետք է լրացվեն ամբողջությամբ՝ և՛ լայնությունը, և՛ երկայնությունը, կամ թողնվեն դատարկ։',
+      )
+    }
+
     // The DTO already proved these are real numbers inside ±90/±180; this is
     // the geography half of the rule, kept out of the DTO so the two can never
     // produce a single joined "must be between -90 and 90, this point is not in
@@ -27,7 +43,9 @@ export class RegistrationService {
     // Checked before the phone lookup below rather than after: a bad
     // coordinate is a bad request, and there is no reason to spend a query on
     // a submission that cannot be stored.
-    assertWithinArmenia(dto.latitude, dto.longitude)
+    if (hasLatitude && hasLongitude) {
+      assertWithinArmenia(dto.latitude as number, dto.longitude as number)
+    }
 
     // Catch the duplicate-main-phone conflict right when the driver submits,
     // not only later when admin tries to approve (AdminService.approve has

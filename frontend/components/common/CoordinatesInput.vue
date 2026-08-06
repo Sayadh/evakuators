@@ -51,12 +51,24 @@ interface Props {
    * audience, not two features.
    */
   showGuidance?: boolean
+  /**
+   * Whether a value must be given. Defaults to `true` because both dialogs
+   * exist for no other purpose than to set one, and neither can save an empty
+   * box.
+   *
+   * Registration passes `false`: the field is optional there, and a driver who
+   * cannot manage it is better off submitting without it than not submitting.
+   * That also decides the "leave it blank" note below, which would be a
+   * contradiction anywhere the value is mandatory.
+   */
+  required?: boolean
   error?: string
 }
 
 withDefaults(defineProps<Props>(), {
   heading: undefined,
   showGuidance: true,
+  required: true,
   error: '',
 })
 
@@ -106,16 +118,17 @@ const GOOGLE_MAPS_URL = 'https://maps.google.com/'
       Բացել Google Maps-ը
     </AppButton>
 
-    <!-- Marked required everywhere this appears, because it is: registration
-         will not submit without it, and neither dialog will save without it.
+    <!-- `required` is the caller's call, because the answer differs by screen:
+         registration accepts a blank (see the note below), while both dialogs
+         exist only to set a value and will not save an empty one.
          (The registration <form> is `novalidate`, and the dialogs are not
          forms at all, so the attribute is purely the visual asterisk the rest
-         of the registration form already uses for its required fields.) -->
+         of the registration form uses for its required fields.) -->
     <AppInput
       :model-value="modelValue"
       label="Կոորդինատներ"
       placeholder="40.1792, 44.4991"
-      required
+      :required="required"
       :error="error"
       @update:model-value="$emit('update:modelValue', $event)"
     />
@@ -128,13 +141,16 @@ const GOOGLE_MAPS_URL = 'https://maps.google.com/'
 
     <!-- The escape hatch, and the last thing on the block on purpose: a driver
          only needs it after everything above has failed them.
-         The field is required, so without this a driver who cannot work out how
-         to copy a coordinate simply cannot finish registering — and we lose them
-         entirely rather than losing one field. Better an imprecise location we
-         know to fix than no driver at all. -->
-    <p v-if="showGuidance" class="coordinates__fallback">
-      Եթե չի ստացվում լրացնել, գրեք օրինակի թիվը՝ <strong>40.1792, 44.4991</strong>։
-      Ադմինիստրատորը կկապվի Ձեզ հետ և կօգնի ճշտել Ձեր տեղադիրքը։
+         This used to tell them to paste the EXAMPLE coordinate so the form
+         would submit, because the field was mandatory. That instruction was
+         worse than the problem — it parked them in the centre of Yerevan and
+         ranked them against customers nowhere near, and nothing downstream
+         could tell that number from a real one. The field is optional now, so
+         the honest advice is the empty box: a blank is visibly missing, a
+         plausible wrong number is not. -->
+    <p v-if="showGuidance && !required" class="coordinates__fallback">
+      Եթե չի ստացվում լրացնել, թողեք դաշտը դատարկ։ Կարող եք ավելացնել այն ավելի ուշ՝ Ձեր
+      անձնական էջից, կամ խնդրել ադմինիստրատորին օգնել։
     </p>
   </div>
 </template>

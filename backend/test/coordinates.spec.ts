@@ -15,6 +15,8 @@ import {
 import { SetCoordinatesDto } from '../src/common/set-coordinates.dto'
 import { DriverJwtGuard } from '../src/driver-auth/driver-jwt.guard'
 import { MyTowTruckController } from '../src/my-tow-truck/my-tow-truck.controller'
+import { CreateRegistrationDto } from '../src/registration/dto/create-registration.dto'
+import { RegistrationService } from '../src/registration/registration.service'
 
 /**
  * The backend half of coordinate validation.
@@ -142,6 +144,87 @@ describe('decimalToNumber', () => {
     // every other numeric field publishes a number.
     const decimal = { toNumber: () => 40.1792 } as unknown as Parameters<typeof decimalToNumber>[0]
     expect(decimalToNumber(decimal)).toBe(40.1792)
+  })
+})
+
+describe('CreateRegistrationDto coordinates', () => {
+  /**
+   * Optional at sign-up, and the reason is worth restating where it can fail:
+   * this field asks a driver to copy a value out of Google Maps on a phone, and
+   * the registration form is the only way onto the platform. Blocking on it
+   * trades a whole driver for one editable field.
+   *
+   * Only the two coordinate keys are asserted, so this stays a test about the
+   * rule rather than about the twenty other fields the DTO happens to require.
+   */
+  function coordinateErrors(latitude: unknown, longitude: unknown): string[] {
+    const dto = new CreateRegistrationDto()
+    Object.assign(dto, { latitude, longitude })
+    return validateSync(dto)
+      .map((error) => error.property)
+      .filter((property) => property === 'latitude' || property === 'longitude')
+  }
+
+  it('accepts a submission with no coordinates at all', () => {
+    expect(coordinateErrors(undefined, undefined)).toEqual([])
+  })
+
+  it('still accepts a real pair', () => {
+    expect(coordinateErrors(40.1792, 44.4991)).toEqual([])
+  })
+
+  it('still rejects a value that is not a coordinate', () => {
+    // Optional means "may be absent", never "may be anything". A driver who
+    // types something has to have typed something usable.
+    expect(coordinateErrors(91, 44.4991)).toContain('latitude')
+    expect(coordinateErrors(40.1792, '44.4991')).toContain('longitude')
+    expect(coordinateErrors(Number.NaN, 44.4991)).toContain('latitude')
+  })
+
+  /**
+   * The pair rule lives in RegistrationService, not here — class-validator
+   * decorates one property at a time and cannot see a sibling. Asserted as an
+   * absence so that moving the check into the DTO later does not go unnoticed:
+   * if this ever starts failing, the rule has two homes.
+   */
+  it('leaves the both-or-neither rule to the service', () => {
+    expect(coordinateErrors(40.1792, undefined)).toEqual([])
+    expect(coordinateErrors(undefined, 44.4991)).toEqual([])
+  })
+})
+
+describe('RegistrationService coordinate pairing', () => {
+  function submitWith(latitude?: number, longitude?: number): Promise<unknown> {
+    const service = new RegistrationService(
+      { countUnattachedImages: async () => 0, create: async () => ({}) } as never,
+      { notifyNewRegistration: async () => undefined } as never,
+      { findByMainPhoneAnyStatus: async () => null } as never,
+    )
+    return service.submit({ phone: '+37491000001', imageIds: [], latitude, longitude } as never)
+  }
+
+  it.each([
+    ['a latitude with no longitude', 40.1792, undefined],
+    ['a longitude with no latitude', undefined, 44.4991],
+  ])('rejects %s', async (_label, latitude, longitude) => {
+    // Half a coordinate describes no place at all, and a row holding one would
+    // be neither "has a location" nor "has none" for every reader downstream.
+    // Rejected rather than silently dropped, so a broken client is reported
+    // instead of hidden.
+    await expect(submitWith(latitude, longitude)).rejects.toBeInstanceOf(BadRequestException)
+  })
+
+  it('rejects a complete pair outside Armenia', async () => {
+    await expect(submitWith(51.5074, -0.1278)).rejects.toThrow(OUTSIDE_ARMENIA_MESSAGE)
+  })
+
+  it('accepts a submission with no coordinates at all', async () => {
+    // The headline behaviour of this change, asserted end to end through the
+    // service rather than only on the DTO: a driver who could not manage the
+    // Google Maps step still gets onto the platform. If the geography check
+    // ever stops being guarded, `undefined` reaches assertWithinArmenia and
+    // this throws instead of resolving.
+    await expect(submitWith(undefined, undefined)).resolves.toBeDefined()
   })
 })
 

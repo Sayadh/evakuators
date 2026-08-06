@@ -125,12 +125,25 @@ that has been sitting readable in a Telegram chat they may since have lost.
 
 ### Migration path for drivers approved before passwords existed
 
-There is none, by design — no backfill, no shared transitional secret. Those
-rows have `passwordHash` NULL, which correctly means "cannot log in yet". An
-admin re-issues their Telegram link from `/admin` ("Փոխել Telegram"), the driver
-taps it, and the password arrives in the same exchange as everyone else's. A
-driver who never linked Telegram at all has no digital channel and has to be
-reached by phone.
+No backfill and no shared transitional secret — every pre-existing row has
+`passwordHash` NULL, which correctly means "cannot log in yet". Two
+populations, two different amounts of friction:
+
+- **Already linked Telegram** (`telegramChatId` set — anyone who ever
+  successfully used the old OTP login): `POST /admin/tow-trucks/issue-passwords`
+  (`AdminService.issuePasswordsForLinkedDrivers`, one button in `/admin`, "Ուղարկել
+  գաղտնաբառեր կապակցված վարորդներին") mints and sends a password to every one of
+  them directly, over the chat already on file — **no re-link, no new tap
+  required**. Each driver is independent (one failed send, e.g. a blocked bot,
+  does not stop the rest), and it is safe to press again later: a driver already
+  migrated or who has since chosen their own password is silently skipped
+  (`issueTemporaryPassword()` returning `null`). There is deliberately no
+  per-driver version of this action — the point is to clear a backlog once, not
+  to become a routine control next to "Փոխել Telegram-ը".
+- **Never linked Telegram** (`telegramChatId` still null): no digital channel
+  exists yet, so the ordinary onboarding path is the only one — admin re-issues
+  their link from `/admin` ("Ուղարկել Telegram link"), sends it out-of-band, and
+  the password arrives the moment they tap it, same as `Step 0` below.
 
 ### Changing a password
 

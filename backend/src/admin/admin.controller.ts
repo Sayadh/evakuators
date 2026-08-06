@@ -50,6 +50,18 @@ export class AdminController {
       .then((telegramLinkUrl) => ({ telegramLinkUrl }))
   }
 
+  /**
+   * One-time migration button: hands a password to everyone who linked
+   * Telegram before password login existed, without asking any of them to tap
+   * a link again. Idempotent — already-migrated and self-changed drivers are
+   * silently skipped, so this is safe to press more than once (e.g. to sweep
+   * up anyone who was offline the first time).
+   */
+  @Post('tow-trucks/issue-passwords')
+  issuePasswords(): Promise<{ issued: number; failed: Array<{ id: number; slug: string }> }> {
+    return this.adminService.issuePasswordsForLinkedDrivers()
+  }
+
   @Post('registration-requests/:id/reject')
   reject(
     @Param('id', ParseIntPipe) id: number,
@@ -145,7 +157,7 @@ export class AdminController {
     return this.adminService.setTowTruckCoordinates(id, dto.latitude, dto.longitude)
   }
 
-  /** Permanently deletes the tow truck + its images/reviews/OTPs. Irreversible. */
+  /** Permanently deletes the tow truck + its images/reviews. Irreversible. */
   @Delete('tow-trucks/:id')
   deleteTowTruck(@Param('id', ParseIntPipe) id: number): Promise<{ id: number }> {
     return this.adminService.deleteTowTruck(id)

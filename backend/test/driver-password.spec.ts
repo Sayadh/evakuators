@@ -4,6 +4,7 @@ import { GUARDS_METADATA, PATH_METADATA } from '@nestjs/common/constants'
 import { validateSync } from 'class-validator'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import bcrypt from 'bcrypt'
+import { AdminService } from '../src/admin/admin.service'
 import { DriverAuthService } from '../src/driver-auth/driver-auth.service'
 import { DriverJwtGuard } from '../src/driver-auth/driver-jwt.guard'
 import { ChangePasswordDto } from '../src/driver-auth/dto/change-password.dto'
@@ -355,4 +356,92 @@ describe('DriverAuthService', () => {
       TEST_TIMEOUT_MS,
     )
   })
+})
+
+describe('AdminService.issuePasswordsForLinkedDrivers', () => {
+  const CANDIDATES = [
+    { id: 1, slug: 'truck-one', driverName: 'Driver One', phone: '+37491000001', telegramChatId: 111n },
+    { id: 2, slug: 'truck-two', driverName: 'Driver Two', phone: '+37491000002', telegramChatId: 222n },
+    { id: 3, slug: 'truck-three', driverName: 'Driver Three', phone: '+37491000003', telegramChatId: 333n },
+  ]
+
+  function buildAdminService(overrides: {
+    issueTemporaryPassword: ReturnType<typeof vi.fn>
+    sendMessage: ReturnType<typeof vi.fn>
+  }): AdminService {
+    const towTrucksRepository = {
+      findLinkedWithoutPassword: vi.fn().mockResolvedValue(CANDIDATES),
+    }
+    const driverAuth = { issueTemporaryPassword: overrides.issueTemporaryPassword }
+    const telegram = { sendMessage: overrides.sendMessage, loginUrl: 'https://example.test/login' }
+
+    return new AdminService(
+      {} as never, // PrismaService — unused by this method
+      {} as never, // ReviewsRepository
+      towTrucksRepository as never,
+      telegram as never,
+      {} as never, // SupabaseStorageService
+      driverAuth as never,
+    )
+  }
+
+  it(
+    'issues and sends a password to every candidate',
+    async () => {
+      const issueTemporaryPassword = vi.fn().mockResolvedValue('GENPASS1')
+      const sendMessage = vi.fn().mockResolvedValue(undefined)
+      const service = buildAdminService({ issueTemporaryPassword, sendMessage })
+
+      const result = await service.issuePasswordsForLinkedDrivers()
+
+      expect(result).toEqual({ issued: 3, failed: [] })
+      expect(issueTemporaryPassword).toHaveBeenCalledTimes(3)
+      expect(sendMessage).toHaveBeenCalledTimes(3)
+      // Sent to the chat id already on file — no re-link involved.
+      expect(sendMessage.mock.calls.map((call) => call[0])).toEqual([111n, 222n, 333n])
+    },
+    TEST_TIMEOUT_MS,
+  )
+
+  it(
+    'keeps going after one candidate fails to send, and reports it',
+    async () => {
+      const issueTemporaryPassword = vi.fn().mockResolvedValue('GENPASS1')
+      const sendMessage = vi
+        .fn()
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error('bot was blocked'))
+        .mockResolvedValueOnce(undefined)
+      const service = buildAdminService({ issueTemporaryPassword, sendMessage })
+
+      const result = await service.issuePasswordsForLinkedDrivers()
+
+      // One failure must not take down the batch — the other two still go out.
+      expect(result.issued).toBe(2)
+      expect(result.failed).toEqual([{ id: 2, slug: 'truck-two' }])
+      expect(sendMessage).toHaveBeenCalledTimes(3)
+    },
+    TEST_TIMEOUT_MS,
+  )
+
+  it(
+    'skips a candidate that already changed their own password since the query ran',
+    async () => {
+      // Returns null exactly when the driver owns their password — the same
+      // race this method has to tolerate as the webhook does.
+      const issueTemporaryPassword = vi
+        .fn()
+        .mockResolvedValueOnce('GENPASS1')
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce('GENPASS3')
+      const sendMessage = vi.fn().mockResolvedValue(undefined)
+      const service = buildAdminService({ issueTemporaryPassword, sendMessage })
+
+      const result = await service.issuePasswordsForLinkedDrivers()
+
+      expect(result).toEqual({ issued: 2, failed: [] })
+      expect(sendMessage).toHaveBeenCalledTimes(2)
+    },
+    TEST_TIMEOUT_MS,
+  )
 })

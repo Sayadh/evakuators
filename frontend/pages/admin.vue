@@ -183,6 +183,32 @@ const hasMoreTowTrucks = ref(false)
  */
 const towTruckCounts = ref<AdminTowTruckCounts | null>(null)
 
+const issuingPasswords = ref(false)
+const issuePasswordsResult = ref('')
+
+/**
+ * The one-time migration button: hands a password to every driver who linked
+ * Telegram before password login existed. See
+ * `AdminService.issuePasswordsForLinkedDrivers` for why this is safe to press
+ * more than once and why it is a batch action rather than a per-truck one.
+ */
+async function issuePasswords(): Promise<void> {
+  issuePasswordsResult.value = ''
+  issuingPasswords.value = true
+  try {
+    const result = await adminRepository.issuePasswordsForLinkedDrivers()
+    issuePasswordsResult.value =
+      result.failed.length === 0
+        ? `Ուղարկվեց ${result.issued} վարորդի։`
+        : `Ուղարկվեց ${result.issued} վարորդի, ${result.failed.length}-ի մոտ ձախողվեց ` +
+          `(${result.failed.map((f) => f.slug).join(', ')})։`
+  } catch (err) {
+    issuePasswordsResult.value = extractErrorMessage(err, 'Չհաջողվեց ուղարկել գաղտնաբառերը')
+  } finally {
+    issuingPasswords.value = false
+  }
+}
+
 /**
  * Full-size image viewer shared by both the registration-request cards and
  * the tow-truck cards — an admin approving a request needs to actually see
@@ -952,17 +978,35 @@ async function rejectReview(review: AdminReview): Promise<void> {
       <!-- ── Tow trucks (active + deactivated) ── -->
       <section class="admin-section">
         <div class="admin-section__header">
-          <h2>
-            Էվակուատորներ
-            <span v-if="towTruckCounts" class="admin-section__count">
-              {{ towTruckCounts.total }}
-            </span>
-          </h2>
-          <p v-if="towTruckCounts" class="admin-section__count-split">
-            ակտիվ՝ {{ towTruckCounts.active }} · ապաակտիվացված՝
-            {{ towTruckCounts.inactive }}
-          </p>
+          <div>
+            <h2>
+              Էվակուատորներ
+              <span v-if="towTruckCounts" class="admin-section__count">
+                {{ towTruckCounts.total }}
+              </span>
+            </h2>
+            <p v-if="towTruckCounts" class="admin-section__count-split">
+              ակտիվ՝ {{ towTruckCounts.active }} · ապաակտիվացված՝
+              {{ towTruckCounts.inactive }}
+            </p>
+          </div>
+
+          <!-- One-time migration button — see issuePasswordsForLinkedDrivers.
+               Lives here rather than per-truck: the whole point is to clear a
+               backlog in one press, not to become a row action someone reaches
+               for routinely. Safe to press again later (already-migrated and
+               self-changed drivers are silently skipped), so it just stays. -->
+          <AppButton
+            variant="outline"
+            size="sm"
+            :disabled="issuingPasswords"
+            @click="issuePasswords"
+          >
+            {{ issuingPasswords ? 'Ուղարկվում է…' : 'Ուղարկել գաղտնաբառեր կապակցված վարորդներին' }}
+          </AppButton>
         </div>
+
+        <p v-if="issuePasswordsResult" class="admin-hint">{{ issuePasswordsResult }}</p>
 
         <p v-if="towTrucksError" class="admin-error">{{ towTrucksError }}</p>
 
@@ -1326,6 +1370,12 @@ async function rejectReview(review: AdminReview): Promise<void> {
 .admin-error {
   color: var(--color-danger);
   margin-bottom: var(--space-3);
+}
+
+.admin-hint {
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+  margin: 0 0 var(--space-3);
 }
 
 .admin-cards {

@@ -209,6 +209,35 @@ export class TowTrucksRepository {
   }
 
   /**
+   * Every truck that can be handed a password without a Telegram re-link — it
+   * already has a `telegramChatId` from the OTP era, and just never got one.
+   *
+   * One-time migration query (see `AdminService.issuePasswordsForLinkedDrivers`)
+   * for the population passwords replaced: everyone who linked Telegram before
+   * this feature existed. Everyone else (`telegramChatId` still null) has no
+   * digital channel and can only be reached by re-issuing their link, which
+   * mints a password the normal way — see `TelegramWebhookController.handleStart`.
+   *
+   * Not filtered on `isActive`: a deactivated truck holding no password would
+   * simply be unable to log in the moment it is reactivated, for a reason
+   * nobody would think to check. Handing it one now costs nothing.
+   */
+  async findLinkedWithoutPassword(): Promise<
+    Array<{ id: number; slug: string; driverName: string; phone: string; telegramChatId: bigint }>
+  > {
+    const rows = await this.prisma.towTruck.findMany({
+      where: { telegramChatId: { not: null }, passwordHash: null },
+      select: { id: true, slug: true, driverName: true, phone: true, telegramChatId: true },
+    })
+    // The WHERE clause already guarantees this at the database level; the
+    // filter+assertion here is only to give Prisma's generated type (which
+    // cannot express "not null" from a WHERE) an honest non-null field instead
+    // of forcing every caller to null-check a value that can never be null.
+    return rows
+      .filter((row): row is typeof row & { telegramChatId: bigint } => row.telegramChatId !== null)
+  }
+
+  /**
    * Admin-only — unlike the public listing, this intentionally includes
    * inactive trucks, and it is paginated: the admin table is the one listing
    * that grows monotonically and is never filtered down by geography.

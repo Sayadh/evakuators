@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { Prisma, RegistrationStatus } from '@prisma/client'
 import { randomBytes } from 'node:crypto'
 import { assertWithinArmenia } from '../common/coordinates'
+import { DriverAuthService } from '../driver-auth/driver-auth.service'
 import { IMAGE_ORDER } from '../images/image-order'
 import { PrismaService } from '../prisma/prisma.service'
 import type { RegistrationWithImages } from '../registration/registration.repository'
@@ -36,6 +37,7 @@ export class AdminService {
     private readonly towTrucksRepository: TowTrucksRepository,
     private readonly telegram: TelegramService,
     private readonly storage: SupabaseStorageService,
+    private readonly driverAuth: DriverAuthService,
   ) {}
 
   listRegistrations(query: AdminRegistrationsQuery): Promise<RegistrationWithImages[]> {
@@ -232,8 +234,10 @@ export class AdminService {
 
   /**
    * (Re)generates the one-time t.me deep-link a driver taps to connect their
-   * Telegram for OTP login. Safe to call again later if the original link
-   * expired (7 days) or was lost before the driver used it.
+   * Telegram. Tapping it links `telegramChatId` and, if the driver has no
+   * password of their own yet, mints and sends one in the same exchange (see
+   * `TelegramWebhookController.handleStart`). Safe to call again later if the
+   * original link expired (7 days) or was lost before the driver used it.
    */
   async generateTelegramLink(towTruckId: number): Promise<string> {
     const token = randomBytes(24).toString('hex')
@@ -249,6 +253,65 @@ export class AdminService {
         `fp=${telegramTokenFingerprint(token)} (expires ${expiresAt.toISOString()})`,
     )
     return this.telegram.buildLinkUrl(token)
+  }
+
+  /**
+   * One-time migration action: hands a password to every driver who linked
+   * Telegram before password login existed, without making any of them tap a
+   * new link.
+   *
+   * `issueTemporaryPassword()` already refuses (returns `null`) for anyone who
+   * has since chosen their own password, so calling this again later — after
+   * some of the population has already changed theirs — is safe and just does
+   * less work each time. There is no per-driver endpoint for this because there
+   * is no reason to run it once: the whole point is to clear a backlog, not to
+   * become a routine action.
+   *
+   * Each driver is independent — one failed Telegram send (a chat the driver
+   * has since blocked) must not stop the rest of the batch, so failures are
+   * caught per-row and reported back rather than thrown.
+   */
+  async issuePasswordsForLinkedDrivers(): Promise<{
+    issued: number
+    failed: Array<{ id: number; slug: string }>
+  }> {
+    const candidates = await this.towTrucksRepository.findLinkedWithoutPassword()
+    const failed: Array<{ id: number; slug: string }> = []
+    let issued = 0
+
+    for (const truck of candidates) {
+      try {
+        const password = await this.driverAuth.issueTemporaryPassword(truck.id)
+        // Cannot actually be null here — every candidate came from a query
+        // that already filtered on `passwordHash: null` — but the check is
+        // cheap and the alternative (a non-null assertion) hides the one
+        // invariant this whole method leans on.
+        if (!password) continue
+
+        await this.telegram.sendMessage(
+          truck.telegramChatId,
+          `Բարև, ${truck.driverName}։ Evakuators.am-ի մուտքի եղանակը փոխվեց. այսուհետ մուտք ` +
+            'եք գործում հեռախոսահամարով և գաղտնաբառով, Telegram-ի կոդի փոխարեն։\n\n' +
+            `Հեռախոսահամար՝ ${truck.phone}\n` +
+            `Ժամանակավոր գաղտնաբառ՝ ${password}\n\n` +
+            'Մուտք գործելուց հետո համակարգը կխնդրի փոխել գաղտնաբառը՝ Ձեր նախընտրածով։ ' +
+            'Այս գաղտնաբառը ոչ ոքի մի՛ փոխանցեք։',
+          { text: 'Մուտք գործել', url: this.telegram.loginUrl },
+        )
+        issued += 1
+      } catch (error) {
+        const err = error as Error
+        this.logger.error(
+          `issuePasswordsForLinkedDrivers: failed for TowTruck #${truck.id}: ${err.message}`,
+        )
+        failed.push({ id: truck.id, slug: truck.slug })
+      }
+    }
+
+    this.logger.log(
+      `issuePasswordsForLinkedDrivers: issued ${issued}, failed ${failed.length} of ${candidates.length}`,
+    )
+    return { issued, failed }
   }
 
   async reject(id: number): Promise<{ id: number; status: RegistrationStatus }> {

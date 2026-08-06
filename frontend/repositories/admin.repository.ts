@@ -153,6 +153,19 @@ export const adminRepository = {
     })
   },
 
+  /**
+   * One-time migration button: hands a password to every driver who linked
+   * Telegram before password login existed, without asking any of them to tap
+   * a link again. Safe to press more than once — already-migrated and
+   * self-changed drivers are silently skipped server-side.
+   */
+  issuePasswordsForLinkedDrivers(): Promise<{
+    issued: number
+    failed: Array<{ id: number; slug: string }>
+  }> {
+    return apiFetch('/admin/tow-trucks/issue-passwords', { method: 'POST', headers: authHeader() })
+  },
+
   rejectRegistration(id: number): Promise<{ id: number; status: string }> {
     return apiFetch<{ id: number; status: string }>(
       `/admin/registration-requests/${id}/reject`,

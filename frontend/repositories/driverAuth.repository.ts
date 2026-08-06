@@ -1,4 +1,5 @@
 import { apiFetch } from './apiClient'
+import { useDriverAuthStore } from '~/stores/driverAuth'
 
 export interface DriverSession {
   token: string
@@ -33,6 +34,17 @@ export const driverAuthRepository = {
    * authenticated action on the caller's own profile — the backend takes the
    * truck from the session token, so there is nothing to identify here.
    *
+   * ## The auth header is not optional, and forgetting it fails confusingly
+   *
+   * `/my/*` is behind `DriverJwtGuard`, so a request without the header is a
+   * 401 — and `apiFetch` treats any 401 on that prefix as an expired session,
+   * clearing the store and redirecting to `/login`. Shipped once without it,
+   * and the symptom was not "unauthorised": a driver typed a new password,
+   * pressed save, and was silently bounced back to the login page where their
+   * OLD password still worked, because the change had never reached the
+   * server. This method sits in `driverAuth.repository.ts` next to `login()`,
+   * which needs no header — which is exactly how it came to be missed.
+   *
    * Answers 204 with no body — hence `apiFetch<null>` and a `void` return: the
    * generic describes what comes back on the wire (nothing), the signature
    * describes what a caller should do with it (also nothing).
@@ -41,6 +53,7 @@ export const driverAuthRepository = {
     await apiFetch<null>('/my/tow-truck/password', {
       method: 'PATCH',
       body: { currentPassword, newPassword },
+      headers: useDriverAuthStore().authHeader,
     })
   },
 }

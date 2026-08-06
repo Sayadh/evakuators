@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { NEAREST_SEARCH_ENABLED } from '~/constants/features'
+
 /**
  * The «Գտնել մոտակա էվակուատորները» call to action.
  *
@@ -30,7 +32,11 @@ withDefaults(defineProps<Props>(), { variant: 'banner' })
 </script>
 
 <template>
-  <div class="nearest-cta" :class="`nearest-cta--${variant}`">
+  <!-- Renders nothing at all while the feature is off, which is what lets the
+       seven pages that place this block stay untouched: each one drops the
+       banner and closes the gap on its own, with no per-page condition to add
+       now and remove later. See constants/features.ts. -->
+  <div v-if="NEAREST_SEARCH_ENABLED" class="nearest-cta" :class="`nearest-cta--${variant}`">
     <div v-if="variant === 'banner'" class="nearest-cta__text">
       <p class="nearest-cta__title">Չգիտե՞ք որ էվակուատորն է Ձեզ ամենամոտը</p>
       <p class="nearest-cta__subtitle">

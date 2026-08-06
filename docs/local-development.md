@@ -138,8 +138,10 @@ working, not a bug.
 
 `TELEGRAM_OUTBOUND_ALLOWED_CHAT_IDS` is not optional either, for the same reason
 it is not on staging: the copied rows carry real drivers' real linked chat ids,
-so requesting a login code for a number that is not your own test account
-delivers a real message to a real person. Set it to your own chat id.
+so triggering a contact notice — or pressing the admin panel's bulk
+"issue passwords" button — would deliver real messages to real people, and in
+that second case would also overwrite their real passwords. Set it to your own
+chat id.
 
 ### The one thing that cannot be mirrored
 

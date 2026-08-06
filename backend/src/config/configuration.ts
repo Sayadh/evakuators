@@ -58,9 +58,10 @@ export interface AppConfig {
    * Pepper for hashing visitor ids in the analytics module
    * (see AnalyticsVisitorKeyService). Optional in the environment: when unset
    * it falls back to `driverJwtSecret`, which is already required and
-   * length-validated. Same pattern as DriverAuthService using that secret to
-   * hash OTP codes — so analytics works on an existing deployment with no new
-   * env var, while still allowing a dedicated one.
+   * length-validated — so analytics works on an existing deployment with no new
+   * env var, while still allowing a dedicated one. Note the fallback is only a
+   * convenience: nothing about driver auth depends on this value, and driver
+   * passwords are bcrypt-hashed with no pepper at all.
    *
    * Rotating it is a deliberate, destructive act: every stored visitorKey
    * becomes unmatchable, so every returning visitor is counted as new from that

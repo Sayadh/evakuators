@@ -1,4 +1,5 @@
 import type { H3Event } from 'h3'
+import { NEAREST_SEARCH_ENABLED } from '~/constants/features'
 import { staticCities } from '~/data/cities'
 import { staticDistricts } from '~/data/districts'
 import { staticRegions } from '~/data/regions'
@@ -140,7 +141,13 @@ function buildEntries(
     // client-side and per-visitor, so there is nothing here for a crawler to
     // come back for. Claiming `daily` on a page whose HTML never changes is the
     // signal-poisoning this file already avoids for <lastmod>.
-    { path: '/evakuator', priority: '0.9', changefreq: 'monthly' },
+    //
+    // Omitted while the feature is off. The page still resolves (so an already
+    // indexed URL does not 404), but actively submitting a "coming soon" page
+    // for high-intent queries earns exactly the impression we do not want.
+    ...(NEAREST_SEARCH_ENABLED
+      ? [{ path: '/evakuator', priority: '0.9', changefreq: 'monthly' as const }]
+      : []),
     { path: '/yerevan', priority: '0.9', changefreq: 'daily' },
     // `daily` is not a guess here: free routes are posted and auto-expire
     // continuously (see docs/free-routes.md), so this page's content genuinely

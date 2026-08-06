@@ -20,8 +20,10 @@ import { ConfigService } from '@nestjs/config'
  * 122-bit random UUID, not a guessable human secret — there is no dictionary to
  * attack, so a deliberately slow KDF would buy nothing and cost throughput.
  *
- * Same construction as DriverAuthService's OTP hashing (`sha256(code + secret)`),
- * so the codebase has one convention for "hash a short-lived opaque token".
+ * Same construction as the admin 2FA code hashing in AdminAuthService
+ * (`sha256(code + secret)`), so the codebase has one convention for "hash a
+ * short-lived opaque token". Driver passwords are deliberately NOT in that
+ * family — they are a guessable human secret, so they get bcrypt.
  */
 @Injectable()
 export class AnalyticsVisitorKeyService {

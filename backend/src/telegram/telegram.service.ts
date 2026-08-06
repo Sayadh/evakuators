@@ -6,9 +6,10 @@ import type { AppConfig } from '../config/configuration'
 const TELEGRAM_REQUEST_TIMEOUT_MS = 10_000
 
 /**
- * Thin wrapper around the Telegram Bot API. This is the ONLY place that
- * talks to Telegram — everything else (webhook parsing, OTP logic) lives
- * in the driver-auth module.
+ * Thin wrapper around the Telegram Bot API. This is the ONLY place that talks
+ * to Telegram — webhook parsing lives in TelegramWebhookController, and what a
+ * given message is FOR (linking, a password handover, a contact notice) lives
+ * with the feature that sends it.
  */
 @Injectable()
 export class TelegramService {
@@ -40,8 +41,9 @@ export class TelegramService {
   }
 
   /**
-   * Every driver-facing OTP code, link-confirmation and contact notice goes
-   * through here — this is THE outbound choke point for the driver bot (see
+   * Every driver-facing message — link confirmations, the one-time password
+   * handover, contact notices — goes through here. This is THE outbound choke
+   * point for the driver bot (see
    * the class-level comment), which is exactly why the allowlist check below
    * lives here and not in each individual caller.
    *

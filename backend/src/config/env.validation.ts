@@ -18,11 +18,12 @@ const envSchema = z.object({
   HOST: z.string().default('127.0.0.1'),
   CORS_ORIGIN: z.string().default('http://localhost:3002'),
 
-  // Driver self-service login (Telegram OTP)
+  // Driver-facing bot — account linking, the one-time password handover, and
+  // contact notices. Not part of logging in (that is phone + password).
   TELEGRAM_BOT_TOKEN: z.string().min(1, 'TELEGRAM_BOT_TOKEN is required'),
   TELEGRAM_BOT_USERNAME: z.string().min(1, 'TELEGRAM_BOT_USERNAME is required'),
   TELEGRAM_WEBHOOK_SECRET: z.string().min(1, 'TELEGRAM_WEBHOOK_SECRET is required'),
-  // Restricts OUTBOUND driver-bot messages (OTP codes, link/contact notices)
+  // Restricts OUTBOUND driver-bot messages (passwords, link/contact notices)
   // to specific chat ids — see TelegramService.sendMessage(). Optional and
   // empty by default so production is unaffected; exists for an environment
   // that deliberately shares production's bot token (a staging deploy — see

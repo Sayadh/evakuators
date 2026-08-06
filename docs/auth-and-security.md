@@ -339,6 +339,14 @@ Browser-originated requests are unaffected and still throttled per client IP.
   `mustChangePassword` forces exactly one change, at first login, and is never
   set again except by a Telegram re-link on an account that still holds a
   generated password.
+- **The forced password change is enforced in the UI only.** The dashboard
+  refuses to render anything else while `mustChangePassword` is set, but the
+  API does not: a token issued to a driver still holding a generated password
+  is accepted by every `/my/*` route. It is a nudge to retire a credential that
+  travelled through Telegram in plaintext, not an authorisation boundary. Making
+  it one means gating `DriverJwtGuard` on the flag and exempting the
+  change-password route — worth doing if the generated password ever gets a
+  longer life than "until first login".
 - Changing a password does not invalidate sessions — there is nothing to
   invalidate against. A driver who believes their token was stolen cannot
   currently do anything about it; that needs session invalidation as a feature.

@@ -74,9 +74,11 @@ export const ANALYTICS_TRACK_RATE_LIMIT = { limit: 60, ttl: 60_000 } as const
  * 60 messages a minute aimed at one driver.
  *
  * The consequence is worse than noise. These notices ride the SAME bot that
- * delivers login OTP codes (docs/auth-and-security.md), so a flood risks
- * Telegram throttling or flagging the bot — which takes driver logins down
- * with it. That is the project's own stated top operational risk.
+ * onboards drivers and hands them their password (docs/auth-and-security.md),
+ * so a flood risks Telegram throttling or flagging the bot — which would leave
+ * newly approved drivers with no way to receive credentials at all. Logging in
+ * no longer depends on the bot, so this is narrower than it once was, but it
+ * still takes out the only channel we have for reaching a driver.
  *
  * 20 is chosen to sit far above a real day's interested callers and far below
  * the volume at which the bot is at risk. It bounds ONLY the Telegram

@@ -191,8 +191,23 @@ const issuePasswordsResult = ref('')
  * Telegram before password login existed. See
  * `AdminService.issuePasswordsForLinkedDrivers` for why this is safe to press
  * more than once and why it is a batch action rather than a per-truck one.
+ *
+ * Confirmed first, unlike the other bulk-ish actions here, because this one is
+ * the only irreversible one that reaches OUTSIDE the system: a Telegram message
+ * cannot be unsent. Everything else on this page (activate, reject, even
+ * delete) is a database change an admin could talk their way out of.
  */
 async function issuePasswords(): Promise<void> {
+  if (
+    !confirm(
+      'Ուղարկե՞լ ժամանակավոր գաղտնաբառեր բոլոր այն վարորդներին, ովքեր Telegram են կապակցել, ' +
+        'բայց դեռ գաղտնաբառ չունեն։ Յուրաքանչյուրը կստանա Telegram հաղորդագրություն։ ' +
+        'Ովքեր արդեն ունեն իրենց գաղտնաբառը, չեն ազդվի։',
+    )
+  ) {
+    return
+  }
+
   issuePasswordsResult.value = ''
   issuingPasswords.value = true
   try {
@@ -399,15 +414,23 @@ async function toggleTowTruckFeatured(truck: AdminTowTruck): Promise<void> {
  * Also doubles as "change Telegram account": generateTelegramLink() always
  * overwrites telegramLinkToken, and once the driver taps the fresh link,
  * linkTelegramChat() unconditionally overwrites telegramChatId too — so the
- * old Telegram account is silently replaced (it stops receiving OTP codes)
- * the moment the new one is linked. No separate "unlink" step needed.
+ * old Telegram account is silently replaced (it stops receiving notices) the
+ * moment the new one is linked. No separate "unlink" step needed.
+ *
+ * Tapping the link may also mint a NEW password — but only for a driver who
+ * has not yet set one of their own. That asymmetry is the security rule of the
+ * whole handover (see docs/auth-and-security.md), so the confirm below states
+ * it rather than promising either outcome: an admin pressing this cannot tell
+ * from the panel which of the two applies, and guessing wrong in the copy is
+ * how a driver gets told their password changed when it did not.
  */
 async function resendTelegramLink(truck: AdminTowTruck): Promise<void> {
   if (
     truck.hasTelegramLinked &&
     !confirm(
-      `Փոխե՞լ ${truck.driverName}-ի Telegram-ը։ Նոր link ուղարկելուց և driver-ի կողմից ` +
-        'սեղմելուց հետո հին Telegram-ը կդադարի աշխատել, մուտքի կոդերն այլևս այնտեղ չեն գա։',
+      `Փոխե՞լ ${truck.driverName}-ի Telegram-ը։ Նոր link-ը սեղմելուց հետո հին Telegram-ը ` +
+        'կդադարի աշխատել՝ ծանուցումներն այլևս այնտեղ չեն գա։ Եթե վարորդը դեռ չի փոխել ' +
+        'իր ժամանակավոր գաղտնաբառը, կստանա նորը։',
     )
   ) {
     return
@@ -568,7 +591,7 @@ function toggleAnalytics(truck: AdminTowTruck): void {
   analyticsTruckId.value = analyticsTruckId.value === truck.id ? null : truck.id
 }
 
-/** Irreversible — deletes the truck, its images (DB + Supabase Storage), reviews and OTPs */
+/** Irreversible — deletes the truck, its images (DB + Supabase Storage) and reviews */
 async function deleteTowTruck(truck: AdminTowTruck): Promise<void> {
   const confirmed = confirm(
     `Ջնջե՞լ ${truck.driverName}-ի («${truck.slug}») ամբողջ պրոֆիլը։ Այս գործողությունը ՉԻ ՀԵՏԱՐԿՎՈՒՄ. ` +
@@ -1217,7 +1240,8 @@ async function rejectReview(review: AdminReview): Promise<void> {
     <AppModal v-model="telegramLinkModalOpen" :title="telegramLinkModalTitle">
       <p>
         Ուղարկիր այս link-ը վարորդին (Telegram/WhatsApp-ով) — մեկ սեղմումով նրա Telegram-ը
-        կապակցվում է, հետո login-ի կոդերը կստանա այնտեղ։ Link-ը վավեր է 7 օր։
+        կապակցվում է, և նույն պահին այնտեղ կստանա իր մուտքի գաղտնաբառը (եթե դեռ չունի իրենը)։
+        Link-ը վավեր է 7 օր։
       </p>
       <div class="telegram-link-box">
         <code>{{ telegramLinkUrl }}</code>

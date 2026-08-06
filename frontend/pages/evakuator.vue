@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { isApiEnabled, nearestRepository } from '~/repositories'
+import { NEAREST_SEARCH_ENABLED } from '~/constants/features'
 import { SITE_NAME } from '~/constants/site'
 import type { NearestSearchResult } from '~/types/nearest'
 import { extractErrorMessage } from '~/utils/errors'
@@ -25,17 +26,6 @@ import { useGeolocation } from '~/composables/useGeolocation'
  * ~110 m. See `docs/nearest-search.md`.
  */
 
-/**
- * Temporary kill switch — the search itself is paused, but the page, the CTA
- * banners and the nav link all stay up so nothing 404s and nothing has to be
- * unwired to flip this back. Set to `true` to re-enable.
- *
- * Checked before `locate()`, not after: the point is that a visitor never
- * sees the permission prompt while this is off, not that the prompt appears
- * and then fails.
- */
-const NEAREST_SEARCH_ENABLED = false
-
 useSeoMetaData({
   title: `Գտնել մոտակա էվակուատորը | ${SITE_NAME}`,
   description:
@@ -60,6 +50,10 @@ async function findNearest(): Promise<void> {
   searchError.value = ''
   result.value = null
 
+  // Checked before locate(), not after: while the feature is off a visitor must
+  // never see a permission prompt at all — a browser that is refused once
+  // remembers it, so prompting for something we then cannot deliver spends a
+  // permission we will want later.
   if (!NEAREST_SEARCH_ENABLED) {
     searchError.value = 'Այս պահին աշխատում ենք այս գործառույթի վրա։ Այն շուտով հասանելի կլինի։'
     return

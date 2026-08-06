@@ -5,6 +5,33 @@ the page shows the drivers nearest to them with a road distance and a driving
 estimate. Read `docs/data-model.md` § `TowTruck` first for where a driver's
 coordinates come from — this document is only about what is done with them.
 
+## The switch that turns all of this off
+
+`NEAREST_SEARCH_ENABLED` in `frontend/constants/features.ts`. **It is currently
+`false`.**
+
+One boolean, four consequences that have to move together — which is exactly
+why it lives in `constants/` rather than inside `evakuator.vue`:
+
+| When `false` | Where |
+| --- | --- |
+| The button reports "շուտով հասանելի" and never raises a permission prompt | `pages/evakuator.vue` |
+| The header nav link is not rendered | `constants/navigation.ts` |
+| Every in-content CTA banner renders nothing | `components/nearest/NearestTowTrucksCta.vue` |
+| `/evakuator` is dropped from `sitemap.xml` | `server/routes/sitemap.xml.ts` |
+
+The page itself stays alive on purpose: a link already shared or indexed lands
+on an explanation rather than a 404, and turning the feature back on is one
+boolean rather than a re-wiring. The backend module, its endpoint, the PostGIS
+column and the migration are all untouched by this flag — nothing on the server
+knows the feature is paused, so nothing has to be re-deployed to resume it
+beyond flipping this and rebuilding the frontend.
+
+The seven pages that place the CTA are deliberately NOT aware of the flag. They
+render `<NearestTowTrucksCta />` unconditionally and the component decides — so
+enabling the feature needs no edit to any of them, and none of them can be
+forgotten.
+
 ## The one sentence the whole feature has to keep saying
 
 > **Every distance here is measured from the parking spot the driver typed into

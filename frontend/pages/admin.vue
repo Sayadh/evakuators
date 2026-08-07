@@ -803,6 +803,9 @@ async function submitApprove(): Promise<void> {
         ? { citySlug: primarySlug }
         : {}),
     regionSlug: primaryRegionSlug,
+    // Not stored — it lets the backend's coverage cap tell one marz from two,
+    // which the typed serviceAreas below cannot express on their own.
+    regionSlugs: approveTarget.value.regionSlugs,
     // Resolve each slug to its real Armenian name here — the backend has no
     // geography data of its own (see schema.prisma), so if we sent raw
     // slugs it would just store them as-is and the public profile would

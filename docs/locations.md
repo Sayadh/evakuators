@@ -241,16 +241,19 @@ added — see `frontend/tests/locationData.spec.ts` for how it's exercised.
 
 A listing that claims everywhere is worth nothing to the person searching, so
 coverage is capped. The rule is one sentence: **Yerevan's districts never count;
-everything else costs one, and the budget for those is 2 when Yerevan is among
-the chosen regions and 5 when it is not** — counted across the whole selection,
-not per region.
+everything else costs one, and the budget for those depends on how many marzes
+were chosen** — counted across the whole selection, not per region.
 
 | Chosen regions | Districts | Cities + corridors |
 | --- | --- | --- |
 | Yerevan only | all 12, unlimited | — none available |
 | Yerevan + one marz | all 12, unlimited | 2 |
-| one marz | — | 5 |
+| one marz | — | 3 |
 | two marzes | — | **5 in total**, not 5 each |
+
+A second marz raises the budget from 3 to 5 rather than doubling it: covering
+two marzes genuinely needs more places than covering one, but not twice as many
+— the extra two are for the border between them, not for a second territory.
 
 Picking two marzes is still allowed (`MAX_REGIONS` is unchanged) — the cap is on
 places, not on regions.
@@ -265,12 +268,21 @@ cap exists to close.
 | --- | --- | --- |
 | `PATCH /my/tow-truck` | typed `ServiceAreaDto[]` | exact rule |
 | `POST /admin/registration-requests/:id/approve` | typed `ServiceAreaDto[]` | exact rule |
-| `POST /registrations` | flat `citySlugs: string[]`, **no types** | provable bound |
+| `POST /registrations` | flat `citySlugs: string[]` + `regionSlugs` | exact outside Yerevan, bound within it |
 
 The backend has no geography and must not grow any (CLAUDE.md), so "is this
 Yerevan?" is answered from the payload itself: `type: 'district'` can only mean
 Yerevan, because nowhere else in the country has districts. That works wherever
 `ServiceAreaDto` is used.
+
+**"One marz or two" is a different question, and the payload cannot answer it.**
+Five cities in Lori and five spread over Lori + Armavir are the same typed list;
+telling them apart would mean resolving a city to its marz. So the two typed
+endpoints also carry a `regionSlugs` array used *only* for this check and never
+stored — distinct from the singular `regionSlug`, which is the stored browsing
+region. It is optional: a caller that omits it falls back to the two-marz
+budget, which is still a correct bound, so a forgotten field degrades to "too
+permissive" rather than to "rejects valid selections".
 
 Registration is the exception, and deliberately so: `RegistrationRequest.citySlugs`
 has always been a plain `String[]`, and giving it types would rewrite the shape

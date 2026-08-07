@@ -29,8 +29,11 @@
 import { BadRequestException } from '@nestjs/common'
 import type { ServiceAreaDto } from './dto/service-area.dto'
 
-/** Budget for cities and road corridors when Yerevan is NOT among the regions */
-export const MAX_AREAS_WITHOUT_YEREVAN = 5
+/** Budget when exactly one marz is chosen and Yerevan is not among them */
+export const MAX_AREAS_ONE_REGION = 3
+
+/** Budget when two marzes are chosen and Yerevan is not among them — shared between both */
+export const MAX_AREAS_TWO_REGIONS = 5
 
 /** Budget when Yerevan IS among the regions — see the frontend twin for why it is lower */
 export const MAX_AREAS_WITH_YEREVAN = 2
@@ -65,10 +68,35 @@ function tooManyMessage(max: number): string {
  * is to refuse the write, and a returned flag is a thing a future caller can
  * forget to read.
  */
-export function assertServiceAreasWithinLimit(areas: readonly ServiceAreaDto[]): void {
-  const yerevanSelected = areas.some((area) => area.type === 'district')
-  const max = yerevanSelected ? MAX_AREAS_WITH_YEREVAN : MAX_AREAS_WITHOUT_YEREVAN
+export function assertServiceAreasWithinLimit(
+  areas: readonly ServiceAreaDto[],
+  regionSlugs?: readonly string[],
+): void {
   const counted = areas.filter((area) => area.type !== 'district').length
+
+  // Yerevan is readable from the payload alone: only Yerevan has districts.
+  if (areas.some((area) => area.type === 'district')) {
+    if (counted > MAX_AREAS_WITH_YEREVAN) {
+      throw new BadRequestException(tooManyMessage(MAX_AREAS_WITH_YEREVAN))
+    }
+    return
+  }
+
+  // One marz or two is NOT readable from the payload — five cities in Lori and
+  // five spread over Lori + Armavir are the same list of typed areas here, and
+  // resolving a city to its marz would mean putting geography in the backend,
+  // which is the one thing this codebase does not do (CLAUDE.md).
+  //
+  // So the caller passes the region list when it has one. When it does not, the
+  // loosest legitimate budget applies: still a correct bound (no valid
+  // selection is ever rejected), just not the tighter one-marz rule. Every
+  // caller in this repo does pass it — the parameter is optional so that an
+  // older client, or a future one that forgets, degrades to "too permissive"
+  // rather than to "rejects everything".
+  const max =
+    regionSlugs === undefined || regionSlugs.length >= 2
+      ? MAX_AREAS_TWO_REGIONS
+      : MAX_AREAS_ONE_REGION
 
   if (counted > max) {
     throw new BadRequestException(tooManyMessage(max))
@@ -89,7 +117,8 @@ export function assertServiceAreasWithinLimit(areas: readonly ServiceAreaDto[]):
  * | --- | --- |
  * | Yerevan only | 12 districts |
  * | Yerevan + a marz | 12 districts + 2 = 14 |
- * | one or two marzes | 5 |
+ * | one marz | 3 — exact, the region list is right here |
+ * | two marzes | 5 — likewise exact |
  *
  * A crafted request could still slip 14 marz cities through this. That request
  * does not become a listing: it lands in the moderation queue, and the admin's
@@ -106,8 +135,11 @@ export function assertRegistrationAreasWithinLimit(
   const otherRegions = regionSlugs.filter((slug) => slug !== YEREVAN_REGION_SLUG).length
 
   if (!yerevanSelected) {
-    if (citySlugs.length > MAX_AREAS_WITHOUT_YEREVAN) {
-      throw new BadRequestException(tooManyMessage(MAX_AREAS_WITHOUT_YEREVAN))
+    // Registration is the one endpoint that receives the region list outright,
+    // so the exact one-marz rule applies here with no inference at all.
+    const max = regionSlugs.length >= 2 ? MAX_AREAS_TWO_REGIONS : MAX_AREAS_ONE_REGION
+    if (citySlugs.length > max) {
+      throw new BadRequestException(tooManyMessage(max))
     }
     return
   }

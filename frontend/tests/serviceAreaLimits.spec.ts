@@ -3,8 +3,9 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   countLimitedAreas,
+  MAX_AREAS_ONE_REGION,
+  MAX_AREAS_TWO_REGIONS,
   MAX_AREAS_WITH_YEREVAN,
-  MAX_AREAS_WITHOUT_YEREVAN,
   MAX_REGIONS,
   maxAreasFor,
   validateServiceAreaSelection,
@@ -34,17 +35,29 @@ const kotaykCities = getRegionCities('kotayk').map((city) => city.slug)
 const loriCities = getRegionCities('lori').map((city) => city.slug)
 
 describe('the budget', () => {
-  it('is 5 without Yerevan and 2 with it', () => {
-    expect(maxAreasFor(['lori'])).toBe(MAX_AREAS_WITHOUT_YEREVAN)
-    expect(maxAreasFor(['lori', 'armavir'])).toBe(MAX_AREAS_WITHOUT_YEREVAN)
+  it('is 3 for one marz, 5 for two, and 2 whenever Yerevan is in', () => {
+    expect(maxAreasFor(['lori'])).toBe(MAX_AREAS_ONE_REGION)
+    expect(maxAreasFor(['lori', 'armavir'])).toBe(MAX_AREAS_TWO_REGIONS)
     expect(maxAreasFor(['yerevan'])).toBe(MAX_AREAS_WITH_YEREVAN)
     expect(maxAreasFor(['yerevan', 'kotayk'])).toBe(MAX_AREAS_WITH_YEREVAN)
   })
 
-  it('is 5 again the moment Yerevan is removed', () => {
-    // Rule 8: dropping Yerevan restores the ordinary cap, with no other action.
+  it('grows when a second marz is added, and shrinks when it is removed', () => {
+    expect(maxAreasFor(['lori'])).toBe(3)
+    expect(maxAreasFor(['lori', 'armavir'])).toBe(5)
+    expect(maxAreasFor(['lori'])).toBe(3)
+  })
+
+  it('returns the one-marz budget before any marz is chosen', () => {
+    // The counter reads "0 of 3" on an empty form rather than "0 of 5"
+    // followed by a drop the moment the first marz is ticked.
+    expect(maxAreasFor([])).toBe(MAX_AREAS_ONE_REGION)
+  })
+
+  it('restores the ordinary cap the moment Yerevan is removed', () => {
+    // Rule 8: dropping Yerevan needs no other action.
     expect(maxAreasFor(['yerevan', 'kotayk'])).toBe(MAX_AREAS_WITH_YEREVAN)
-    expect(maxAreasFor(['kotayk'])).toBe(MAX_AREAS_WITHOUT_YEREVAN)
+    expect(maxAreasFor(['kotayk'])).toBe(MAX_AREAS_ONE_REGION)
   })
 
   it('still allows two regions', () => {
@@ -88,9 +101,9 @@ describe('validateServiceAreaSelection — the four product cases', () => {
     ).not.toBe('')
   })
 
-  it('3. one marz: five places', () => {
-    expect(validateServiceAreaSelection(['lori'], loriCities.slice(0, 5))).toBe('')
-    expect(validateServiceAreaSelection(['lori'], loriCities.slice(0, 6))).not.toBe('')
+  it('3. one marz: three places', () => {
+    expect(validateServiceAreaSelection(['lori'], loriCities.slice(0, 3))).toBe('')
+    expect(validateServiceAreaSelection(['lori'], loriCities.slice(0, 4))).not.toBe('')
   })
 
   it('4. two marzes: five in total, not five each', () => {
@@ -100,6 +113,12 @@ describe('validateServiceAreaSelection — the four product cases', () => {
       validateServiceAreaSelection(['lori', 'kotayk'], [...mixed, kotaykCities[2]!]),
     ).not.toBe('')
   })
+
+  it('the same four places pass for two marzes and fail for one', () => {
+    const four = loriCities.slice(0, 4)
+    expect(validateServiceAreaSelection(['lori', 'kotayk'], four)).toBe('')
+    expect(validateServiceAreaSelection(['lori'], four)).not.toBe('')
+  })
 })
 
 describe('validateServiceAreaSelection — messages', () => {
@@ -108,9 +127,12 @@ describe('validateServiceAreaSelection — messages', () => {
   })
 
   it('names the number the driver is allowed', () => {
-    expect(validateServiceAreaSelection(['lori'], loriCities.slice(0, 6))).toContain(
-      String(MAX_AREAS_WITHOUT_YEREVAN),
+    expect(validateServiceAreaSelection(['lori'], loriCities.slice(0, 4))).toContain(
+      String(MAX_AREAS_ONE_REGION),
     )
+    expect(
+      validateServiceAreaSelection(['lori', 'kotayk'], [...loriCities.slice(0, 6)]),
+    ).toContain(String(MAX_AREAS_TWO_REGIONS))
     expect(
       validateServiceAreaSelection(['yerevan', 'kotayk'], kotaykCities.slice(0, 3)),
     ).toContain(String(MAX_AREAS_WITH_YEREVAN))
@@ -127,7 +149,8 @@ describe('the two copies of the rule', () => {
   const backend = readFileSync(`${ROOT}../backend/src/tow-trucks/service-area-limits.ts`, 'utf8')
 
   it('agree on both budgets and on the region cap', () => {
-    expect(backend).toContain(`MAX_AREAS_WITHOUT_YEREVAN = ${MAX_AREAS_WITHOUT_YEREVAN}`)
+    expect(backend).toContain(`MAX_AREAS_ONE_REGION = ${MAX_AREAS_ONE_REGION}`)
+    expect(backend).toContain(`MAX_AREAS_TWO_REGIONS = ${MAX_AREAS_TWO_REGIONS}`)
     expect(backend).toContain(`MAX_AREAS_WITH_YEREVAN = ${MAX_AREAS_WITH_YEREVAN}`)
     expect(backend).toContain(`MAX_REGIONS = ${MAX_REGIONS}`)
   })

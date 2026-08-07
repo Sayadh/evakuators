@@ -404,6 +404,9 @@ async function submit(): Promise<void> {
 
       locationName: form.locationName.trim(),
       serviceAreas,
+      // Not stored — it tells the backend's cap whether this is one marz or
+      // two, which `serviceAreas` cannot say on its own.
+      regionSlugs: form.regionSlugs,
       ...(primaryType === LocationType.District
         ? { districtSlug: primarySlug }
         : primaryType === LocationType.City

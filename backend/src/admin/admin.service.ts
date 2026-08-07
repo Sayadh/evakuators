@@ -98,7 +98,11 @@ export class AdminService {
     // could only apply a bound (its payload has no types), so a crafted
     // submission that slipped past it is stopped here instead — before anything
     // is published, and with a message the admin can act on.
-    assertServiceAreasWithinLimit(dto.serviceAreas)
+    // `regionSlugs` is passed for the cap only — it tells 3-for-one-marz from
+    // 5-for-two, which the typed areas alone cannot. Falls back to the request's
+    // own stored list when the admin client did not send one, so an older panel
+    // still gets the exact rule rather than the loose bound.
+    assertServiceAreasWithinLimit(dto.serviceAreas, dto.regionSlugs ?? request.regionSlugs)
 
     // Resolved to real Armenian names by the admin frontend (no geography
     // data lives in the backend) — see ServiceAreaDto in approve-registration.dto.ts

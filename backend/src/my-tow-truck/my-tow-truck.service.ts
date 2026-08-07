@@ -95,8 +95,21 @@ export class MyTowTruckService {
       await this.imagesRepository.applyGallery(imageIds, towTruckId)
     }
 
-    const { serviceAreas, companyName, secondaryPhone, whatsapp, telegram, email, ...rest } =
-      updateData
+    // `regionSlugs` is pulled out here on purpose: `rest` is spread straight
+    // into Prisma's update input, and TowTruck has no such column — leaving it
+    // in would turn every dashboard save into an unknown-argument error. It
+    // exists only to tell the coverage cap one marz from two, and is never
+    // stored (see UpdateMyTowTruckDto).
+    const {
+      serviceAreas,
+      regionSlugs,
+      companyName,
+      secondaryPhone,
+      whatsapp,
+      telegram,
+      email,
+      ...rest
+    } = updateData
 
     // Coverage is one decision, not four independent fields: the JSON list the
     // public profile renders and the citySlug/districtSlug/regionSlug the
@@ -114,7 +127,7 @@ export class MyTowTruckService {
     // a driver approved before the cap existed keeps their coverage and is
     // asked to trim it the first time they touch it, not retroactively.
     if (serviceAreas !== undefined) {
-      assertServiceAreasWithinLimit(serviceAreas)
+      assertServiceAreasWithinLimit(serviceAreas, regionSlugs)
     }
 
     const data: Prisma.TowTruckUpdateInput = {

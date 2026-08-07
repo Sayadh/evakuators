@@ -107,8 +107,11 @@ assume one is unused:
 - The coverage cap lives twice: `frontend/constants/serviceAreaLimits.ts` and
   `backend/src/tow-trucks/service-area-limits.ts`. Yerevan's districts are
   exempt; everything else costs one, with a budget of **2 when Yerevan is one of
-  the chosen regions and 5 when it is not**, counted across the whole selection
-  rather than per region. The frontend copy decides what a driver is *offered*
+  the chosen regions, 3 for a single marz and 5 for two**, counted across the
+  whole selection rather than per region. The "one marz or two" half cannot be
+  read from `ServiceAreaDto` alone, so those endpoints also carry a
+  validation-only `regionSlugs` array that is never stored.
+  The frontend copy decides what a driver is *offered*
   (it greys out checkboxes); the backend copy decides what is *accepted* and is
   the only real boundary. `frontend/tests/serviceAreaLimits.spec.ts` reads the
   backend file as text so the two sets of numbers cannot silently disagree —

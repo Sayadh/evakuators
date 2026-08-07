@@ -71,4 +71,21 @@ export class ApproveRegistrationDto {
   @ValidateNested({ each: true })
   @Type(() => ServiceAreaDto)
   serviceAreas!: ServiceAreaDto[]
+
+  /**
+   * The marzes from the original request — **for validating the coverage cap,
+   * not for storage.** The single stored browsing region is `regionSlug` above.
+   *
+   * Needed because the cap allows 3 places for one marz and 5 for two, and
+   * `serviceAreas` cannot express which case it is without geography the
+   * backend does not have. Optional: omitting it falls back to the two-marz
+   * budget, which is still a correct bound. See
+   * `tow-trucks/service-area-limits.ts`.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(2)
+  @IsString({ each: true })
+  @MaxLength(40, { each: true })
+  regionSlugs?: string[]
 }

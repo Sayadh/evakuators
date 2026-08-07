@@ -38,7 +38,14 @@ export interface UpdateMyTowTruckPayload {
 
   locationName?: string
   /** Full replacement list, with Armenian names already resolved by the client */
-  serviceAreas?: { slug: string; name: string; type: 'city' | 'district' }[]
+  serviceAreas?: { slug: string; name: string; type: 'city' | 'district' | 'route' }[]
+  /**
+   * The marzes the driver ticked — sent for the coverage cap only, never
+   * stored. It is what lets the backend apply 3-for-one-marz instead of the
+   * looser 5, which typed areas alone cannot express (see
+   * `constants/serviceAreaLimits.ts`).
+   */
+  regionSlugs?: string[]
   /** Structural placement derived from the first service area — sent together with it */
   regionSlug?: string
   citySlug?: string

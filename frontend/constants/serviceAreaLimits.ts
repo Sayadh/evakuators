@@ -17,12 +17,17 @@ import { resolveAreaType, YEREVAN_REGION_SLUG } from '~/utils/geography'
  * | --- | --- | --- |
  * | Yerevan only | all 12, unlimited | — (none available) |
  * | Yerevan + one marz | all 12, unlimited | 2 |
- * | one marz | — | 5 |
+ * | one marz | — | 3 |
  * | two marzes | — | 5 **in total**, not 5 each |
  *
  * The two-marz row is why the budget is counted across the whole selection
  * rather than per region: a driver picking Lori + Armavir gets five places to
  * spread between them however they like.
+ *
+ * A second marz raises the budget from 3 to 5 rather than doubling it. Covering
+ * two marzes genuinely takes more places than covering one, but not twice as
+ * many — the extra two are for the border between them, not for a second full
+ * territory.
  *
  * ## Why a corridor costs the same as a city
  *
@@ -40,8 +45,11 @@ import { resolveAreaType, YEREVAN_REGION_SLUG } from '~/utils/geography'
  * *accepted*, and only the second one is a real boundary.
  */
 
-/** Budget for cities and road corridors when Yerevan is NOT among the regions */
-export const MAX_AREAS_WITHOUT_YEREVAN = 5
+/** Budget when exactly one marz is chosen and Yerevan is not among them */
+export const MAX_AREAS_ONE_REGION = 3
+
+/** Budget when two marzes are chosen and Yerevan is not among them — shared between both */
+export const MAX_AREAS_TWO_REGIONS = 5
 
 /**
  * Budget when Yerevan IS among the regions.
@@ -68,9 +76,20 @@ export function isYerevanSelected(regionSlugs: readonly string[]): boolean {
   return regionSlugs.includes(YEREVAN_REGION_SLUG)
 }
 
-/** The budget for the currently chosen regions */
+/**
+ * The budget for the currently chosen regions.
+ *
+ * Yerevan short-circuits everything: a driver covering all of Yerevan plus a
+ * marz gets 2 there regardless of how the rest is counted, because Yerevan
+ * itself is already most of a working day.
+ *
+ * With no region chosen there is nothing to select yet, so the one-region
+ * budget is returned as the honest starting value — the counter reads
+ * "0 of 3" before the first marz is ticked, not "0 of 5" followed by a drop.
+ */
 export function maxAreasFor(regionSlugs: readonly string[]): number {
-  return isYerevanSelected(regionSlugs) ? MAX_AREAS_WITH_YEREVAN : MAX_AREAS_WITHOUT_YEREVAN
+  if (isYerevanSelected(regionSlugs)) return MAX_AREAS_WITH_YEREVAN
+  return regionSlugs.length >= 2 ? MAX_AREAS_TWO_REGIONS : MAX_AREAS_ONE_REGION
 }
 
 /**

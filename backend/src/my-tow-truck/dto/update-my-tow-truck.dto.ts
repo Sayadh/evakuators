@@ -244,6 +244,29 @@ export class UpdateMyTowTruckDto {
   serviceAreas?: ServiceAreaDto[]
 
   /**
+   * The marzes the driver ticked — **for validating the coverage cap, not for
+   * storage.** Nothing here is written to any column.
+   *
+   * The cap allows 3 places for one marz and 5 for two, and that distinction is
+   * invisible in `serviceAreas` alone: five cities in Lori and five spread over
+   * Lori + Armavir are the same typed list, and telling them apart would mean
+   * resolving a city to its marz — geography the backend deliberately does not
+   * have (CLAUDE.md). Yerevan needs no such help, because only Yerevan has
+   * districts.
+   *
+   * Optional so that a client which omits it degrades to the two-marz budget —
+   * still a correct bound, never rejecting a valid selection — rather than to a
+   * hard failure. `regionSlug` above is a different thing entirely: that one is
+   * the single stored browsing region.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(2, { message: 'Կարող եք ընտրել առավելագույնը 2 մարզ' })
+  @IsString({ each: true })
+  @MaxLength(40, { each: true })
+  regionSlugs?: string[]
+
+  /**
    * Best-effort structural placement, derived by the frontend from the first
    * service area (exactly as the admin approval flow derives it). Only one of
    * citySlug/districtSlug is ever set — a Yerevan district truck has no city,

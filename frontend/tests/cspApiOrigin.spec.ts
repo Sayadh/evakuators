@@ -95,16 +95,33 @@ describe('the configuration itself', () => {
     expect(connectSrc).not.toMatch(/api\.evakuators\.am|staging-api/)
   })
 
-  it('allows the Google Ads host as both a fetch and an image source', () => {
-    // Remarketing delivers some beacons as fetches and others as image
-    // requests, so the host has to appear in both directives — listing it in
-    // only one blocks half the calls, which is how it was first reported.
+  const directive = (name: string): string => {
     const config = read('nuxt.config.ts')
-    const directive = (name: string): string =>
-      config.slice(config.indexOf(`'${name}'`), config.indexOf('],', config.indexOf(`'${name}'`)))
+    const start = config.indexOf(`'${name}'`)
+    return config.slice(start, config.indexOf('],', start))
+  }
 
-    expect(directive('connect-src')).toContain('https://www.google.com')
-    expect(directive('img-src')).toContain('https://www.google.com')
+  it('allows the Google Ads hosts as both fetch and image sources', () => {
+    // Remarketing delivers some beacons as fetches and others as image
+    // requests, so each host has to appear in both directives — listing one in
+    // only one directive blocks half the calls, which is how this was reported.
+    for (const host of ['https://www.google.com', 'https://www.google.am']) {
+      expect(directive('connect-src'), `${host} missing from connect-src`).toContain(host)
+      expect(directive('img-src'), `${host} missing from img-src`).toContain(host)
+    }
+  })
+
+  it('allows analytics.google.com itself, not only its subdomains', () => {
+    /**
+     * The subtle one. A CSP wildcard must match at least one label, so
+     * `*.analytics.google.com` does NOT cover `analytics.google.com` — GA's
+     * own `/g/collect` calls were refused while the policy read as if Google
+     * Analytics were fully allowed.
+     */
+    const connectSrc = directive('connect-src')
+    expect(connectSrc).toContain("'https://analytics.google.com'")
+    // The wildcard stays too: regional endpoints live under it.
+    expect(connectSrc).toContain("'https://*.analytics.google.com'")
   })
 
   it('resolves the origin from the public base URL, not the internal one', () => {

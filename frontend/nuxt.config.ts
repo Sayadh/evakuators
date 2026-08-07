@@ -214,10 +214,11 @@ export default defineNuxtConfig({
          * is ever uploaded (`URL.createObjectURL`) — without it a driver picks
          * a photo and sees a broken image.
          *
-         * `www.google.com` is Google Ads remarketing, which delivers its
-         * conversion pixels as *images* (`/pagead/1p-user-list/`,
-         * `/rmkt/collect`, `/ccm/collect`) rather than as fetches — so it needs
-         * listing here as well as in `connect-src`.
+         * The two Google hosts are Ads remarketing, which delivers some
+         * beacons as *images* (`/pagead/1p-user-list/`, `/rmkt/collect`,
+         * `/ccm/collect`, `/ads/ga-audiences`) rather than as fetches — so they
+         * need listing here as well as in `connect-src`. `.am` because Google
+         * issues those calls from the visitor's own country domain.
          */
         'img-src': [
           "'self'",
@@ -225,6 +226,7 @@ export default defineNuxtConfig({
           'blob:',
           'https://xmdgvutudwciacyfnzat.supabase.co',
           'https://www.google.com',
+          'https://www.google.am',
         ],
 
         'font-src': ["'self'", 'data:'],
@@ -242,11 +244,22 @@ export default defineNuxtConfig({
           "'self'",
           'https://www.google-analytics.com',
           'https://*.google-analytics.com',
+          // Both the apex AND the wildcard, deliberately. A CSP wildcard
+          // requires at least one label to match, so `*.analytics.google.com`
+          // does NOT cover `analytics.google.com` itself — with only the
+          // wildcard listed, GA's own `/g/collect` measurement calls were
+          // refused while the policy looked correct at a glance. The wildcard
+          // stays for the regional endpoints (`region1.analytics.google.com`).
+          'https://analytics.google.com',
           'https://*.analytics.google.com',
           // Google Ads / remarketing beacons (`/g/collect`, `/ccm/collect`,
           // `/rmkt/collect`). A separate host from the analytics ones above,
-          // and not covered by any of their wildcards.
+          // and not covered by any of their wildcards. `.am` is there because
+          // Google issues remarketing calls from the visitor's own country
+          // domain — for this site's traffic that is almost always google.am,
+          // not google.com.
           'https://www.google.com',
+          'https://www.google.am',
         ],
 
         'object-src': ["'none'"],

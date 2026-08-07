@@ -51,12 +51,9 @@ export interface ApproveRegistrationPayload {
    * Yerevan, same as before.
    */
   regionSlug?: string
-  /**
-   * The marzes from the original request — sent for the coverage cap only,
-   * never stored. Distinct from `regionSlug` above, which is the single stored
-   * browsing region. See `constants/serviceAreaLimits.ts`.
-   */
-  regionSlugs?: string[]
+  // No `regionSlugs`: the coverage cap reads the marzes from the stored
+  // registration request on the backend, not from this payload — see
+  // ApproveRegistrationDto.
   description?: string
   /** Resolved Armenian names — the backend has no geography data of its own */
   serviceAreas: { slug: string; name: string; type: 'city' | 'district' | 'route' }[]

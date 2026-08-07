@@ -277,12 +277,27 @@ Yerevan, because nowhere else in the country has districts. That works wherever
 
 **"One marz or two" is a different question, and the payload cannot answer it.**
 Five cities in Lori and five spread over Lori + Armavir are the same typed list;
-telling them apart would mean resolving a city to its marz. So the two typed
-endpoints also carry a `regionSlugs` array used *only* for this check and never
-stored — distinct from the singular `regionSlug`, which is the stored browsing
-region. It is optional: a caller that omits it falls back to the two-marz
-budget, which is still a correct bound, so a forgotten field degrades to "too
-permissive" rather than to "rejects valid selections".
+telling them apart would mean resolving a city to its marz. So the region list has to
+reach the check some other way, and the two typed endpoints get it from
+different places on purpose:
+
+- **Approval** reads it from the **stored registration request** — the driver's
+  own answer is already on disk, so nothing is taken from the request body. An
+  `ApproveRegistrationDto.regionSlugs` would have been a way to assert two
+  marzes and unlock the looser budget for a selection that is really one.
+- **The driver's dashboard** has no stored equivalent to read (the truck keeps a
+  single `regionSlug`, not the pair), so `UpdateMyTowTruckDto.regionSlugs`
+  carries it — **client-asserted, and knowingly unverifiable**. A driver could
+  claim two marzes to get 5 places for one marz. The hard limits still hold
+  regardless (2 whenever Yerevan is present, 5 in absolute terms); the 3-vs-5
+  difference is a listing-quality rule, not a security boundary, and closing it
+  would mean teaching the backend which marz every city belongs to.
+
+Either way the field is validation-only and never stored, and it is optional: a
+caller that omits it falls back to the two-marz budget, which is still a correct
+bound, so a forgotten field degrades to "too permissive" rather than to "rejects
+valid selections". Requests predating `regionSlugs` carry an empty array, which
+is read as "unknown" rather than "zero marzes" for the same reason.
 
 Registration is the exception, and deliberately so: `RegistrationRequest.citySlugs`
 has always been a plain `String[]`, and giving it types would rewrite the shape
@@ -293,6 +308,26 @@ cities past it, and that request **does not become a listing**: it lands in
 moderation, and the admin's approval sends the same areas back typed, where the
 exact rule rejects them. The exact rule therefore always runs before anything is
 published.
+
+### The dashboard rebuilds the region list, and must not lose a corridor
+
+Nothing stores which marzes a driver ticked — the dashboard derives them back
+from the areas it loaded (`pages/dashboard.vue`). Each area type needs its own
+lookup: districts map to the Yerevan pseudo-region, cities via
+`findCityLocation`, and **corridors via `findServiceZoneLocation`**.
+
+That last branch is easy to omit and fails silently, because `findCityLocation`
+returns `null` for a zone slug and the `.filter(Boolean)` after it drops the
+entry. The result was a driver whose coverage included a corridor loading with
+that marz missing: its group never rendered, so the corridor was invisible and
+could not be removed — and a driver covering *only* a corridor derived zero
+regions and could not save at all, blocked by "Ընտրեք 1-2 մարզ" on a form that
+gave them no way to satisfy it. Since the region list now also decides the
+coverage budget and is sent to the backend, the same gap would hand them the
+wrong limit too. `frontend/tests/serviceAreaLimits.spec.ts` asserts every
+corridor in the dataset resolves to its marz, and asserts the premise
+(`findCityLocation` really does return null for a zone) so the check cannot
+become vacuous.
 
 ### Drivers approved before the cap existed
 

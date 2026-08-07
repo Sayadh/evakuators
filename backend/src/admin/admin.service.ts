@@ -98,11 +98,20 @@ export class AdminService {
     // could only apply a bound (its payload has no types), so a crafted
     // submission that slipped past it is stopped here instead — before anything
     // is published, and with a message the admin can act on.
-    // `regionSlugs` is passed for the cap only — it tells 3-for-one-marz from
-    // 5-for-two, which the typed areas alone cannot. Falls back to the request's
-    // own stored list when the admin client did not send one, so an older panel
-    // still gets the exact rule rather than the loose bound.
-    assertServiceAreasWithinLimit(dto.serviceAreas, dto.regionSlugs ?? request.regionSlugs)
+    // The region list comes from the **stored request**, never from the request
+    // body. It tells 3-for-one-marz from 5-for-two, which the typed areas alone
+    // cannot — and taking it from the DTO would let a caller assert two marzes
+    // to unlock the looser budget for a selection that is really one. The
+    // driver's own submission is already on disk here; there is no reason to ask
+    // the client to repeat it.
+    //
+    // Requests predating `regionSlugs` carry an empty array. That is "unknown",
+    // not "zero regions", so it degrades to the loose bound rather than being
+    // read as one marz and rejecting a perfectly valid old submission.
+    assertServiceAreasWithinLimit(
+      dto.serviceAreas,
+      request.regionSlugs.length > 0 ? request.regionSlugs : undefined,
+    )
 
     // Resolved to real Armenian names by the admin frontend (no geography
     // data lives in the backend) — see ServiceAreaDto in approve-registration.dto.ts

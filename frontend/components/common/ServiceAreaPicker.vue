@@ -71,8 +71,19 @@ const isYerevanChosen = computed(() => props.regions.includes(YEREVAN_REGION_SLU
 
 const isOverLimit = computed(() => usedAreas.value > maxAreas.value)
 
-/** So the pages can block their own submit with the same rule the picker draws */
-defineExpose({ isOverLimit })
+/**
+ * Whether there is anything the budget can actually be spent on.
+ *
+ * Yerevan has districts and no road corridors, and districts are exempt — so a
+ * driver who picked Yerevan and nothing else can never move the counter. Showing
+ * "0 of 2" to them states a budget against an empty shelf and reads as "you
+ * still have two picks left", which is the opposite of true. The counter is
+ * therefore hidden until a marz is chosen, which is exactly when the number
+ * starts meaning something.
+ */
+const hasChargeableRegion = computed(() =>
+  props.regions.some((slug) => slug !== YEREVAN_REGION_SLUG),
+)
 
 /**
  * A slug that is already ticked is never disabled, whatever the count says —
@@ -224,7 +235,7 @@ function toggleAll(group: CityGroup): void {
          districts are exempt, which the hint says plainly so an all-Yerevan
          driver does not go looking for the counter to move. -->
     <p
-      v-if="cityGroups.length > 0"
+      v-if="hasChargeableRegion"
       class="area-picker__counter"
       :class="{ 'area-picker__counter--over': isOverLimit }"
       aria-live="polite"

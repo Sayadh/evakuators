@@ -11,6 +11,8 @@ import {
   validateServiceAreaSelection,
 } from '~/constants/serviceAreaLimits'
 import {
+  findCityLocation,
+  findServiceZoneLocation,
   getRegionCities,
   getRegionServiceZones,
   getStaticDistricts,
@@ -136,6 +138,50 @@ describe('validateServiceAreaSelection — messages', () => {
     expect(
       validateServiceAreaSelection(['yerevan', 'kotayk'], kotaykCities.slice(0, 3)),
     ).toContain(String(MAX_AREAS_WITH_YEREVAN))
+  })
+})
+
+describe('deriving the regions back from stored coverage', () => {
+  /**
+   * The dashboard has no stored region list — it rebuilds one from the areas it
+   * loaded. Every area type must map to a marz, and the corridor branch is the
+   * one that was missing: `findCityLocation` returns null for a zone slug, the
+   * filter dropped it, and a driver whose coverage was a corridor loaded with
+   * that marz absent — invisible, unremovable, and (once the budget started
+   * depending on the list) mis-capped as well.
+   */
+  const regionOf = (slug: string): string | undefined => {
+    const type = resolveAreaType(slug)
+    if (type === 'district') return 'yerevan'
+    if (type === 'route') return findServiceZoneLocation(slug)?.regionSlug
+    return findCityLocation(slug)?.regionSlug
+  }
+
+  it('resolves a road corridor to its marz, not to nothing', () => {
+    const zones = getRegionServiceZones('kotayk')
+    if (zones.length === 0) return
+    const zoneSlug = zones[0]!.slug
+
+    // The premise, asserted so this test cannot quietly become vacuous: the
+    // city lookup genuinely does not know a corridor, which is why the branch
+    // above it has to exist.
+    expect(findCityLocation(zoneSlug)).toBeNull()
+    expect(regionOf(zoneSlug)).toBe('kotayk')
+  })
+
+  it('resolves every corridor in the dataset', () => {
+    // A corridor that resolved to undefined would silently cost its owner the
+    // whole marz on their next dashboard visit.
+    for (const region of ['kotayk', 'lori', 'syunik', 'ararat', 'gegharkunik']) {
+      for (const zone of getRegionServiceZones(region)) {
+        expect(regionOf(zone.slug), `${zone.slug} lost its marz`).toBe(region)
+      }
+    }
+  })
+
+  it('still resolves cities and districts', () => {
+    expect(regionOf(kotaykCities[0]!)).toBe('kotayk')
+    expect(regionOf(firstDistrict!)).toBe('yerevan')
   })
 })
 

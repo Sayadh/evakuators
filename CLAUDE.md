@@ -100,8 +100,8 @@ assume one is unused:
   service-slug ones are — the frontend simply accepts a point the backend then
   refuses, with a message the driver cannot act on.
 - The "pick up to 2 regions" cap lives in `MAX_REGIONS` inside
-  `frontend/components/common/ServiceAreaPicker.vue` (the shared picker used by
-  BOTH the registration form and the driver dashboard) and in `@ArrayMaxSize(2)`
+  `frontend/constants/serviceAreaLimits.ts` (read by the shared picker, which
+  BOTH the registration form and the driver dashboard use) and in `@ArrayMaxSize(2)`
   on `CreateRegistrationDto.regionSlugs`. Raising the cap means changing both,
   or the API will reject what the form happily lets a driver submit.
 - The coverage cap lives twice: `frontend/constants/serviceAreaLimits.ts` and

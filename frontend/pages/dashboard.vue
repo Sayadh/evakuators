@@ -21,6 +21,7 @@ import { armenianPhoneInputValue } from '~/utils/formatPhone'
 import {
   cityOrDistrictLabel,
   findCityLocation,
+  findServiceZoneLocation,
   resolveAreaType,
   YEREVAN_REGION_SLUG,
 } from '~/utils/geography'
@@ -247,16 +248,28 @@ function fillFormFromTruck(data: TowTruck): void {
   form.locationName = data.location.name
   form.citySlugs = data.serviceAreas.map((area) => area.slug)
   // Regions aren't stored — they're implied by the areas. Yerevan districts map
-  // to the pseudo-region, real cities to their own marz (static lookup, no
-  // request). Deduped because two cities of one marz must not tick it twice.
+  // to the pseudo-region, real cities to their own marz, and road corridors to
+  // theirs (static lookups, no request). Deduped because two cities of one marz
+  // must not tick it twice.
+  //
+  // The corridor branch is not optional. `findCityLocation` returns null for a
+  // zone slug, and the `.filter(Boolean)` below then drops it silently — so a
+  // driver whose coverage was a corridor used to load with that marz missing:
+  // its group never rendered, the corridor was invisible and unremovable, and a
+  // driver covering ONLY a corridor got zero regions and could not save at all
+  // ("Ընտրեք 1-2 մարզ" against a form they had no way to satisfy). Now that
+  // `regionSlugs` also decides the coverage budget and is sent to the backend,
+  // the same gap would have handed them the wrong limit as well.
   form.regionSlugs = [
     ...new Set(
       data.serviceAreas
-        .map((area) =>
-          area.type === LocationType.District
-            ? YEREVAN_REGION_SLUG
-            : findCityLocation(area.slug)?.regionSlug,
-        )
+        .map((area) => {
+          if (area.type === LocationType.District) return YEREVAN_REGION_SLUG
+          if (area.type === LocationType.Route) {
+            return findServiceZoneLocation(area.slug)?.regionSlug
+          }
+          return findCityLocation(area.slug)?.regionSlug
+        })
         .filter((slug): slug is string => Boolean(slug)),
     ),
   ]

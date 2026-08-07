@@ -258,6 +258,16 @@ export class UpdateMyTowTruckDto {
    * still a correct bound, never rejecting a valid selection — rather than to a
    * hard failure. `regionSlug` above is a different thing entirely: that one is
    * the single stored browsing region.
+   *
+   * **This one value is asserted by the client and cannot be verified here**,
+   * unlike the approval flow, which reads the marzes off the stored
+   * registration request. A driver could claim two marzes to unlock 5 places
+   * for a selection that is really one marz. That is accepted knowingly: the
+   * hard limits still hold no matter what is claimed (2 whenever Yerevan is
+   * present, 5 in absolute terms), the difference between 3 and 5 is a
+   * listing-quality rule rather than a security boundary, and closing it would
+   * mean teaching the backend which marz every city belongs to — the geography
+   * this codebase deliberately keeps out (CLAUDE.md).
    */
   @IsOptional()
   @IsArray()

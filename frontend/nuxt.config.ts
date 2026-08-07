@@ -218,10 +218,17 @@ export default defineNuxtConfig({
 
         'font-src': ["'self'", 'data:'],
 
-        /** The API, plus where Google Analytics actually posts its beacons. */
+        /**
+         * Where Google Analytics posts its beacons. **The API origin is
+         * deliberately absent here** — it differs per environment
+         * (`api.evakuators.am` vs `staging-api.evakuators.am`) while all
+         * environments run the same build, so it is appended at boot from
+         * `runtimeConfig.public.apiBaseUrl` by
+         * `server/plugins/csp-api-origin.ts`. Hardcoding production's hostname
+         * here is what made staging block every request it sent.
+         */
         'connect-src': [
           "'self'",
-          'https://api.evakuators.am',
           'https://www.google-analytics.com',
           'https://*.google-analytics.com',
           'https://*.analytics.google.com',

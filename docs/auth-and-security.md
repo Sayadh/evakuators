@@ -311,6 +311,27 @@ script's children inherit that trust. The bare hosts in `script-src` are there
 only for older browsers, which ignore `strict-dynamic` and fall back to the
 allowlist.
 
+### `connect-src` is resolved at runtime, and must stay that way
+
+The API hostname differs per environment — `api.evakuators.am` on production,
+`staging-api.evakuators.am` on staging, `localhost:4002` locally — while all
+three run **the same build artifact**. It was originally hardcoded to
+production's hostname, which meant staging's own policy refused every request
+staging made: the pages rendered and then stayed empty.
+
+It is now appended at boot by `server/plugins/csp-api-origin.ts`, from
+`runtimeConfig.public.apiBaseUrl`, through nuxt-security's own
+`nuxt-security:routeRules` hook — so the header is *generated* correctly rather
+than string-patched afterwards.
+
+**Do not "simplify" this by reading `process.env.NUXT_PUBLIC_API_BASE_URL` in
+`nuxt.config.ts`.** That file is evaluated during `npm run build`, and the
+variable is not set then; PM2 supplies it when the process starts (see
+`ecosystem.config.js`). A build-time read yields an empty origin in every
+environment and looks like it worked. `frontend/tests/cspApiOrigin.spec.ts`
+asserts both deployed environments resolve to their own origin, and that no API
+hostname reappears in the static policy.
+
 Three values are deliberately *looser* than the module's defaults, and undoing
 them will break the site:
 

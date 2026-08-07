@@ -95,6 +95,18 @@ describe('the configuration itself', () => {
     expect(connectSrc).not.toMatch(/api\.evakuators\.am|staging-api/)
   })
 
+  it('allows the Google Ads host as both a fetch and an image source', () => {
+    // Remarketing delivers some beacons as fetches and others as image
+    // requests, so the host has to appear in both directives — listing it in
+    // only one blocks half the calls, which is how it was first reported.
+    const config = read('nuxt.config.ts')
+    const directive = (name: string): string =>
+      config.slice(config.indexOf(`'${name}'`), config.indexOf('],', config.indexOf(`'${name}'`)))
+
+    expect(directive('connect-src')).toContain('https://www.google.com')
+    expect(directive('img-src')).toContain('https://www.google.com')
+  })
+
   it('resolves the origin from the public base URL, not the internal one', () => {
     // internalApiBaseUrl is SSR's loopback address. It is never a browser
     // connection, and publishing it in a response header would leak an

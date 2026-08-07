@@ -213,8 +213,19 @@ export default defineNuxtConfig({
          * registration and dashboard forms create from a chosen file before it
          * is ever uploaded (`URL.createObjectURL`) — without it a driver picks
          * a photo and sees a broken image.
+         *
+         * `www.google.com` is Google Ads remarketing, which delivers its
+         * conversion pixels as *images* (`/pagead/1p-user-list/`,
+         * `/rmkt/collect`, `/ccm/collect`) rather than as fetches — so it needs
+         * listing here as well as in `connect-src`.
          */
-        'img-src': ["'self'", 'data:', 'blob:', 'https://xmdgvutudwciacyfnzat.supabase.co'],
+        'img-src': [
+          "'self'",
+          'data:',
+          'blob:',
+          'https://xmdgvutudwciacyfnzat.supabase.co',
+          'https://www.google.com',
+        ],
 
         'font-src': ["'self'", 'data:'],
 
@@ -232,6 +243,10 @@ export default defineNuxtConfig({
           'https://www.google-analytics.com',
           'https://*.google-analytics.com',
           'https://*.analytics.google.com',
+          // Google Ads / remarketing beacons (`/g/collect`, `/ccm/collect`,
+          // `/rmkt/collect`). A separate host from the analytics ones above,
+          // and not covered by any of their wildcards.
+          'https://www.google.com',
         ],
 
         'object-src': ["'none'"],

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { AnalyticsReviews } from '~/types/analytics'
-import { formatCount } from '~/utils/formatters'
+import { formatCount, formatDateNumeric as formatDate } from '~/utils/formatters'
 
 /**
  * The driver's own reviews, including ones an admin hasn't published yet.
@@ -16,14 +16,6 @@ interface Props {
 const props = defineProps<Props>()
 
 const counters = computed(() => props.reviews.counters)
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('hy-AM', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
-}
 </script>
 
 <template>

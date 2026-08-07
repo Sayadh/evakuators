@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Review } from '~/types/review'
+import { formatDateLong as formatDate } from '~/utils/formatters'
 
 interface Props {
   reviews: Review[]
@@ -12,10 +13,6 @@ const averageRating = computed(() => {
   if (props.reviews.length === 0) return 0
   return props.reviews.reduce((sum, review) => sum + review.rating, 0) / props.reviews.length
 })
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('hy-AM', { year: 'numeric', month: 'long', day: 'numeric' })
-}
 </script>
 
 <template>

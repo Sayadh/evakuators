@@ -19,6 +19,7 @@ import { LocationType } from '~/types/enums'
 import type { ServiceType, VehicleType } from '~/types/enums'
 import { formatCoordinates, type Coordinates } from '~/utils/coordinates'
 import { extractErrorMessage } from '~/utils/errors'
+import { formatDateNumeric } from '~/utils/formatters'
 import { armenianPhoneInputValue } from '~/utils/formatPhone'
 import {
   cityOrDistrictLabel,
@@ -358,13 +359,7 @@ function regionLabel(slug: string): string {
   return findStaticRegion(slug)?.name ?? slug
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('hy-AM', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
-}
+const formatDate = formatDateNumeric
 
 function statusBadgeVariant(status: AdminRegistrationRequest['status']): 'accent' | 'success' | 'neutral' {
   if (status === 'PENDING') return 'accent'

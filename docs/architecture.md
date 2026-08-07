@@ -224,6 +224,47 @@ builds all JSON-LD structured data: `buildSiteIdentitySchema()` (single
 `buildTowTruckBusinessSchema()` for individual tow truck profiles, plus
 `BreadcrumbList`/`FAQPage` builders used across several pages.
 
+## Never ask the runtime to localise a string
+
+**`toLocaleDateString`, `toLocaleString` and `Intl.NumberFormat` are banned for
+anything that reaches the page.** Format through `frontend/utils/formatters.ts`
+(dates, counts) and `frontend/utils/formatPrice.ts` (prices) instead.
+
+SSR means two JavaScript runtimes render the same component: Node on the VPS,
+and the visitor's browser. They have different ICU builds and different
+defaults, and ECMA-402 says a runtime that lacks the requested locale silently
+falls back to **its own**. So the same call produced different output on each
+side, and Vue reported `Hydration completed but contains mismatches`:
+
+| | Server | A browser set to Russian |
+| --- | --- | --- |
+| `toLocaleString('hy-AM', …)` | `օգոստոսի 7, 20:15` | `7 августа в 20:15` |
+| `Intl.NumberFormat('hy-AM')` | `15 000` | `15 000` — but `15,000` under `en-US` |
+
+Three things make this worse than it looks:
+
+- **The server row is also wrong.** `օգոստոսի 7` is English word order; Armenian
+  is `7 օգոստոսի`. There was no locale string that would have fixed it — asking
+  ICU was the mistake, not the argument passed to it.
+- **It was a factual error, not a cosmetic one.** Without a pinned `timeZone`,
+  a departure time rendered in the *reader's* zone: one route read `20:15` in
+  Yerevan, `16:15` in London and `01:15 on the 8th` in Tokyo. Only one of those
+  is when the driver actually leaves.
+- **Prices reached the homepage.** `TowTruckCard` renders there, so the
+  most-visited page mismatched for anyone whose browser grouped with a comma.
+
+The replacements build every string from an explicit Armenian month table and
+plain digits, and read wall-clock fields through one formatter pinned to
+`timeZone: 'Asia/Yerevan'`, `hourCycle: 'h23'` and `numberingSystem: 'latn'`.
+Output is then identical in every runtime by construction rather than by hoping
+two CLDR versions agree. `frontend/tests/formatters.spec.ts` asserts both the
+values and — since the failure only shows on a machine configured unlike the
+developer's — that the banned calls do not reappear in the source.
+
+Armenian labels living in the frontend as constants is the same rule the rest
+of this project already follows (see CLAUDE.md); dates and prices were simply
+the last place still delegating it to a library.
+
 ## A CSS grid with a viewport-conditional child is an SSR bug waiting to happen
 
 `useResponsiveFilters()` (`frontend/composables/useResponsiveFilters.ts`)

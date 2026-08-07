@@ -5,7 +5,7 @@ export default defineNuxtConfig({
   // Production also honors PORT/HOST env vars directly (nitro node-server preset).
   devServer: { port: 3002 },
 
-  modules: ['@pinia/nuxt', '@vueuse/nuxt', '@nuxt/image', '@nuxt/eslint', 'nuxt-gtag'],
+  modules: ['@pinia/nuxt', '@vueuse/nuxt', '@nuxt/image', '@nuxt/eslint', 'nuxt-gtag', 'nuxt-security'],
 
   css: ['~/assets/styles/main.scss'],
 
@@ -84,6 +84,167 @@ export default defineNuxtConfig({
     // Supabase project's storage host (from backend/.env SUPABASE_URL) — without
     // it listed here, @nuxt/image's IPX provider won't optimize production photos.
     domains: ['picsum.photos', 'xmdgvutudwciacyfnzat.supabase.co'],
+  },
+
+  /**
+   * Security response headers for the FRONTEND.
+   *
+   * The backend already sends its own full set (Helmet, in `backend/src/main.ts`)
+   * — `api.evakuators.am` was never the gap. `evakuators.am` sent none at all,
+   * because nothing had ever been configured to send them: not nginx, not the
+   * app. They live here rather than in nginx deliberately. The server's nginx
+   * config has already drifted from `nginx/evakuators.am.conf` once (the
+   * port-80 redirect block was missing in production for months), and
+   * `add_header` does not inherit into a `location` block that declares its own
+   * — so a header added at server level silently disappears from `/_nuxt/` and
+   * `/admin`. Configured here, they ship with the app, apply to every route,
+   * and are reviewed in the same diff as the code they protect.
+   *
+   * This module is opinionated and ships far more than headers — a rate
+   * limiter, an XSS request validator, a CORS handler and a request size limit,
+   * all ON by default. Every one of them is disabled below: those concerns
+   * belong to the backend, which already implements them against the real
+   * threat model (see docs/auth-and-security.md § Throttling). Leaving them on
+   * would mean two systems enforcing different limits on the same request, with
+   * the frontend's copy having no idea what a driver JWT is.
+   */
+  security: {
+    headers: {
+      /**
+       * Tells browsers to refuse plain HTTP for this host for a year. Only safe
+       * now that all four non-canonical forms actually redirect — see
+       * docs/deployment.md § nginx. `includeSubDomains` covers
+       * staging/api/staging-api, which all serve HTTPS today.
+       *
+       * Deliberately NOT `preload`: that ships the domain in a browser-baked
+       * list, and getting removed from it takes months. Worth doing later, on
+       * purpose, not as a side effect of adding headers.
+       */
+      strictTransportSecurity: {
+        maxAge: 31536000,
+        includeSubdomains: true,
+        preload: false,
+      },
+
+      /** No one embeds this site in a frame; clickjacking has no legitimate use here. */
+      xFrameOptions: 'DENY',
+      xContentTypeOptions: 'nosniff',
+
+      /**
+       * Send the full URL within the site, only the origin when leaving it. A
+       * driver's profile URL should not travel to Facebook as a referrer, but
+       * internal navigation analytics still work.
+       */
+      referrerPolicy: 'strict-origin-when-cross-origin',
+
+      /**
+       * Everything off except what the site actually asks for. `geolocation`
+       * stays enabled for `/evakuator` (the nearest-search page asks for the
+       * visitor's position — see docs/nearest-search.md); switching it off here
+       * would break that feature the moment `NEAREST_SEARCH_ENABLED` is turned
+       * back on, in a way that looks like a permissions bug in the browser.
+       */
+      permissionsPolicy: {
+        geolocation: ['self'],
+        camera: [],
+        microphone: [],
+        payment: [],
+        usb: [],
+        magnetometer: [],
+        accelerometer: [],
+        gyroscope: [],
+        'interest-cohort': [],
+      },
+
+      /**
+       * `require-corp` is the module's default and it would break every photo
+       * on the site: Supabase Storage does not send `Cross-Origin-Resource-
+       * Policy`, so a cross-origin image without CORP is refused under COEP.
+       * Nothing here needs cross-origin isolation (no SharedArrayBuffer, no
+       * high-resolution timers), so the correct value is off.
+       */
+      crossOriginEmbedderPolicy: 'unsafe-none',
+
+      /**
+       * Also relaxed from the module default (`same-origin`): tow truck photos
+       * are served from Supabase and are meant to be embeddable by us.
+       */
+      crossOriginResourcePolicy: 'cross-origin',
+
+      contentSecurityPolicy: {
+        'default-src': ["'self'"],
+
+        /**
+         * Nonce plus `strict-dynamic`, not `'unsafe-inline'`.
+         *
+         * The page carries exactly one executable inline script — Nuxt's
+         * `window.__NUXT__.config` — and blocking it breaks the whole app, so
+         * something has to allow it. `'unsafe-inline'` would allow it *and*
+         * anything an attacker manages to inject, which is the XSS vector CSP
+         * exists to close. A per-response nonce allows only the script we
+         * emitted.
+         *
+         * `'strict-dynamic'` is what makes Google Analytics work: nuxt-gtag
+         * injects its loader at runtime from a nonced script, and under
+         * strict-dynamic a trusted script's own children inherit that trust.
+         * Without it the host allowlist below would have to grow every time
+         * Google changes a domain — and modern browsers ignore host allowlists
+         * entirely once strict-dynamic is present.
+         *
+         * The bare hosts remain for older browsers, which ignore
+         * strict-dynamic and fall back to the list.
+         */
+        'script-src': [
+          "'self'",
+          "'nonce-{{nonce}}'",
+          "'strict-dynamic'",
+          'https://www.googletagmanager.com',
+        ],
+
+        /**
+         * `'unsafe-inline'` here is not the same risk as it is for scripts —
+         * an injected style cannot execute. It is required because Vue writes
+         * inline `style` attributes for transitions and dynamic values.
+         */
+        'style-src': ["'self'", "'unsafe-inline'"],
+
+        /**
+         * `data:` for inlined SVG icons, `blob:` for the local previews the
+         * registration and dashboard forms create from a chosen file before it
+         * is ever uploaded (`URL.createObjectURL`) — without it a driver picks
+         * a photo and sees a broken image.
+         */
+        'img-src': ["'self'", 'data:', 'blob:', 'https://xmdgvutudwciacyfnzat.supabase.co'],
+
+        'font-src': ["'self'", 'data:'],
+
+        /** The API, plus where Google Analytics actually posts its beacons. */
+        'connect-src': [
+          "'self'",
+          'https://api.evakuators.am',
+          'https://www.google-analytics.com',
+          'https://*.google-analytics.com',
+          'https://*.analytics.google.com',
+        ],
+
+        'object-src': ["'none'"],
+        'base-uri': ["'self'"],
+        'form-action': ["'self'"],
+        'frame-ancestors': ["'none'"],
+        'upgrade-insecure-requests': true,
+      },
+    },
+
+    /**
+     * Everything below is the backend's job, and it already does it properly.
+     * See docs/auth-and-security.md — the throttle is per-IP with an SSR
+     * exemption and stricter limits on the endpoints that guard a password,
+     * none of which this module can know about.
+     */
+    rateLimiter: false,
+    requestSizeLimiter: false,
+    xssValidator: false,
+    corsHandler: false,
   },
 
   runtimeConfig: {

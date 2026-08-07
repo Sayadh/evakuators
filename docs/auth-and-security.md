@@ -278,6 +278,80 @@ locally) → "link is invalid or expired," even though the link was just
 generated correctly. This is not a token bug — see
 `docs/local-development.md` for the actual fix (a second test bot + tunnel).
 
+## Security response headers
+
+Two independent sets, because the two apps are deployed independently:
+
+- **Backend** — Helmet, in `backend/src/main.ts`. This was always in place.
+- **Frontend** — `nuxt-security`, configured in `frontend/nuxt.config.ts`. This
+  was **missing entirely** until it was added: `evakuators.am` sent no HSTS, no
+  CSP, no frame options, nothing, while `api.evakuators.am` sent a full set. The
+  asymmetry made it look like a misconfigured nginx block; it wasn't, the
+  frontend simply had nothing configured anywhere.
+
+**Why the frontend's live in the app and not in nginx.** `add_header` does not
+inherit into a `location` block that declares its own, so a header set at server
+level silently vanishes from `/_nuxt/` and `/admin`. And the server's nginx
+config has already drifted from the repo's example once — the port-80 redirect
+block was absent in production for months (see `docs/deployment.md` § nginx).
+Configured in `nuxt.config.ts`, the headers ship with the app, cover every
+route, and are reviewed in the same diff as the code they protect.
+
+### The CSP is nonce-based, and that is the whole point
+
+Every page carries one executable inline script — Nuxt's
+`window.__NUXT__.config`. Blocking it breaks the app, so something must allow
+it. `'unsafe-inline'` would allow it **and** anything an attacker injects, which
+is exactly the class of attack CSP exists to stop. Instead each response gets a
+fresh nonce, and only the script we emitted carries it.
+
+`'strict-dynamic'` is what keeps Google Analytics working: `nuxt-gtag` injects
+its loader at runtime from a nonced script, and under `strict-dynamic` a trusted
+script's children inherit that trust. The bare hosts in `script-src` are there
+only for older browsers, which ignore `strict-dynamic` and fall back to the
+allowlist.
+
+Three values are deliberately *looser* than the module's defaults, and undoing
+them will break the site:
+
+| Setting | Why not the default |
+| --- | --- |
+| `crossOriginEmbedderPolicy: 'unsafe-none'` | The default `require-corp` refuses any cross-origin resource that doesn't send CORP. Supabase Storage doesn't, so **every photo on the site** disappears. Nothing here needs cross-origin isolation. |
+| `crossOriginResourcePolicy: 'cross-origin'` | Same reason — the photos are served from Supabase on purpose. |
+| `style-src: 'unsafe-inline'` | Vue writes inline `style` attributes for transitions and dynamic values. An injected style cannot execute, so this is not the risk the script-side `'unsafe-inline'` would have been. |
+
+`img-src` includes `blob:` for a non-obvious reason: the registration and
+dashboard forms preview a chosen photo via `URL.createObjectURL` **before** it is
+uploaded. Drop it and a driver picks a file and sees a broken image.
+
+`permissionsPolicy` disables everything except `geolocation`, which `/evakuator`
+needs (see `docs/nearest-search.md`). Turning it off here would break the nearest
+search the moment `NEAREST_SEARCH_ENABLED` is switched on, and would look like a
+browser permissions bug rather than a header.
+
+### What is deliberately switched off
+
+`nuxt-security` also ships a rate limiter, an XSS request validator, a CORS
+handler and a request size limiter, all **on by default**. All four are disabled.
+Those concerns belong to the backend, which already implements them against the
+real threat model — per-IP throttling with an SSR exemption and stricter limits
+on the endpoints guarding a password (see Throttling below), DTO validation with
+`forbidNonWhitelisted`, and `CORS_ORIGIN`. Leaving them on would mean two
+systems enforcing different limits on the same request, with the frontend's copy
+having no idea what a driver JWT is.
+
+### Two things to know before touching this
+
+- **HSTS is set with `includeSubDomains` and a one-year max-age.** Once a browser
+  has seen it, that browser refuses plain HTTP for `evakuators.am` *and every
+  subdomain* until it expires. `api`, `staging` and `staging-api` all serve HTTPS
+  today, which is what makes it safe. Adding a subdomain that doesn't would make
+  it unreachable, not merely insecure. `preload` is deliberately **off** —
+  getting removed from the browser-baked preload list takes months.
+- **`nuxt-security` 2.5.1 requires Node ≥ 20**, and 2.6.0 requires Node ≥ 24.
+  Check `node -v` on the VPS before deploying an upgrade; the pinned 2.5.1 is the
+  newest release that runs on the production Node.
+
 ## Throttling
 
 Global default (`ThrottlerModule.forRoot`, `app.module.ts`): 60 requests /

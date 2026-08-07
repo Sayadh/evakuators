@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { Prisma, RegistrationStatus } from '@prisma/client'
 import { randomBytes } from 'node:crypto'
 import { assertWithinArmenia } from '../common/coordinates'
+import { assertServiceAreasWithinLimit } from '../tow-trucks/service-area-limits'
 import { DriverAuthService } from '../driver-auth/driver-auth.service'
 import { IMAGE_ORDER } from '../images/image-order'
 import { PrismaService } from '../prisma/prisma.service'
@@ -91,6 +92,13 @@ export class AdminService {
         `Այս slug-ն (${dto.slug}) արդեն օգտագործվում է մեկ այլ էվակուատորի կողմից (${slugConflict.isActive ? 'ակտիվ' : 'ապաակտիվացված'})։ Ընտրիր այլ slug։`,
       )
     }
+
+    // The exact coverage rule, applied at the one moment a request turns into
+    // a public listing. This is the real boundary: the registration endpoint
+    // could only apply a bound (its payload has no types), so a crafted
+    // submission that slipped past it is stopped here instead — before anything
+    // is published, and with a message the admin can act on.
+    assertServiceAreasWithinLimit(dto.serviceAreas)
 
     // Resolved to real Armenian names by the admin frontend (no geography
     // data lives in the backend) — see ServiceAreaDto in approve-registration.dto.ts

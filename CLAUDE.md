@@ -104,6 +104,15 @@ assume one is unused:
   BOTH the registration form and the driver dashboard) and in `@ArrayMaxSize(2)`
   on `CreateRegistrationDto.regionSlugs`. Raising the cap means changing both,
   or the API will reject what the form happily lets a driver submit.
+- The coverage cap lives twice: `frontend/constants/serviceAreaLimits.ts` and
+  `backend/src/tow-trucks/service-area-limits.ts`. Yerevan's districts are
+  exempt; everything else costs one, with a budget of **2 when Yerevan is one of
+  the chosen regions and 5 when it is not**, counted across the whole selection
+  rather than per region. The frontend copy decides what a driver is *offered*
+  (it greys out checkboxes); the backend copy decides what is *accepted* and is
+  the only real boundary. `frontend/tests/serviceAreaLimits.spec.ts` reads the
+  backend file as text so the two sets of numbers cannot silently disagree —
+  see `docs/locations.md` § "How many places a driver may claim".
 - **Registration and the driver dashboard must offer the same fields.** Anything
   asked at sign-up has to be editable afterwards, or the only way to fix a typo
   is to register again — which is exactly what happened before

@@ -2,6 +2,7 @@
 import { imageRepository, isApiEnabled, registrationRepository } from '~/repositories'
 import { SITE_NAME } from '~/constants/site'
 import { SERVICE_CATEGORIES } from '~/constants/services'
+import { validateServiceAreaSelection } from '~/constants/serviceAreaLimits'
 import {
   CAPACITY_RANGE_OPTIONS,
   VEHICLE_TYPE_DESCRIPTIONS,
@@ -229,7 +230,7 @@ function validate(): boolean {
       ? 'Լրացրեք և՛ երկարությունը, և՛ լայնությունը, կամ թողեք երկուսն էլ դատարկ'
       : '')
   errors.regionSlugs = form.regionSlugs.length === 0 ? 'Ընտրեք 1-2 մարզ' : ''
-  errors.citySlugs = form.citySlugs.length === 0 ? 'Ընտրեք առնվազն մեկ քաղաք կամ շրջան' : ''
+  errors.citySlugs = validateServiceAreaSelection(form.regionSlugs, form.citySlugs)
   errors.services = form.services.length === 0 ? 'Ընտրեք առնվազն մեկ ծառայություն' : ''
   // Optional: an empty box submits, and the driver adds it later from their
   // dashboard. Anything actually typed still has to parse — "half a

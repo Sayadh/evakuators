@@ -1,10 +1,17 @@
 <script setup lang="ts">
 import type { SelectOption } from '~/types/common'
 import {
+  countLimitedAreas,
+  MAX_REGIONS,
+  maxAreasFor,
+} from '~/constants/serviceAreaLimits'
+import { LocationType } from '~/types/enums'
+import {
   buildRegionOptions,
   getRegionCities,
   getRegionServiceZones,
   getStaticDistricts,
+  resolveAreaType,
   YEREVAN_REGION_SLUG,
 } from '~/utils/geography'
 
@@ -44,10 +51,39 @@ const emit = defineEmits<{
   'update:cities': [value: string[]]
 }>()
 
-/** A driver can cover at most this many marzes — e.g. Yerevan + Kotayk, or Lori + Armavir */
-const MAX_REGIONS = 2
-
 const regionOptions = computed<SelectOption[]>(() => buildRegionOptions())
+
+/**
+ * The budget and how much of it is spent.
+ *
+ * Yerevan's districts are exempt — see `constants/serviceAreaLimits.ts` for the
+ * rule and why a road corridor costs the same as a city. Counted from resolved
+ * types rather than by asking which region a slug belongs to, so the counter
+ * and the validator can never disagree about a given tick.
+ */
+const maxAreas = computed(() => maxAreasFor(props.regions))
+
+const usedAreas = computed(() => countLimitedAreas(props.cities.map(resolveAreaType)))
+
+const limitReached = computed(() => usedAreas.value >= maxAreas.value)
+
+const isYerevanChosen = computed(() => props.regions.includes(YEREVAN_REGION_SLUG))
+
+const isOverLimit = computed(() => usedAreas.value > maxAreas.value)
+
+/** So the pages can block their own submit with the same rule the picker draws */
+defineExpose({ isOverLimit })
+
+/**
+ * A slug that is already ticked is never disabled, whatever the count says —
+ * otherwise reaching the cap would trap a driver with no way to change their
+ * mind, which is the one thing a cap must not do.
+ */
+function isAreaDisabled(slug: string): boolean {
+  if (props.cities.includes(slug)) return false
+  if (resolveAreaType(slug) === LocationType.District) return false
+  return limitReached.value
+}
 
 interface CityGroup {
   regionSlug: string
@@ -129,12 +165,18 @@ function toggleRegion(slug: string): void {
 }
 
 function toggleCity(slug: string): void {
-  emit(
-    'update:cities',
-    props.cities.includes(slug)
-      ? props.cities.filter((item) => item !== slug)
-      : [...props.cities, slug],
-  )
+  if (props.cities.includes(slug)) {
+    emit(
+      'update:cities',
+      props.cities.filter((item) => item !== slug),
+    )
+    return
+  }
+  // Guard the emit as well as the checkbox. `disabled` is markup; this is the
+  // rule. A keyboard event or a programmatic call must not be able to spend
+  // budget the driver does not have.
+  if (isAreaDisabled(slug)) return
+  emit('update:cities', [...props.cities, slug])
 }
 
 function isAllSelected(group: CityGroup): boolean {
@@ -142,7 +184,17 @@ function isAllSelected(group: CityGroup): boolean {
   return slugs.length > 0 && slugs.every((slug) => props.cities.includes(slug))
 }
 
+/**
+ * "Whole region" survives only for Yerevan.
+ *
+ * For a marz it used to tick every city at once, which is now the one thing the
+ * budget forbids — a shortcut that can only ever produce an invalid selection
+ * is worse than no shortcut, because the driver has to undo it before they can
+ * save. Yerevan keeps it because its districts are exempt, so "all of Yerevan"
+ * is both meaningful and always valid.
+ */
 function toggleAll(group: CityGroup): void {
+  if (!group.isYerevan) return
   const slugs = groupSlugs(group)
   const without = props.cities.filter((item) => !slugs.includes(item))
   emit('update:cities', isAllSelected(group) ? without : [...without, ...slugs])
@@ -166,6 +218,31 @@ function toggleAll(group: CityGroup): void {
       />
     </div>
 
+    <!-- The budget, stated before the lists rather than after them: a driver
+         who reads it first understands why options grey out, instead of
+         discovering it by clicking a checkbox that does nothing. Yerevan's own
+         districts are exempt, which the hint says plainly so an all-Yerevan
+         driver does not go looking for the counter to move. -->
+    <p
+      v-if="cityGroups.length > 0"
+      class="area-picker__counter"
+      :class="{ 'area-picker__counter--over': isOverLimit }"
+      aria-live="polite"
+    >
+      Ընտրված է {{ usedAreas }}-ը՝ հասանելի {{ maxAreas }}-ից
+      <span v-if="isYerevanChosen" class="area-picker__hint">
+        — Երևանի շրջանները չեն հաշվվում
+      </span>
+      <!-- Reachable without cheating: pick two marzes and five cities, drop one
+           marz, then add Yerevan — the budget falls to 2 while the ticks
+           survive. Nothing is removed automatically; a driver's own choices are
+           not ours to delete silently. The counter turns red, saving is blocked
+           with the same message, and they decide which ticks to keep. -->
+      <span v-if="isOverLimit" class="area-picker__over">
+        — հեռացրեք {{ usedAreas - maxAreas }}-ը շարունակելու համար
+      </span>
+    </p>
+
     <div v-for="group in cityGroups" :key="group.regionSlug" class="area-picker__group">
       <p class="area-picker__label">
         {{ group.regionLabel }} — Սպասարկվող տարածքներ<span
@@ -176,8 +253,9 @@ function toggleAll(group: CityGroup): void {
         >
       </p>
       <AppCheckbox
+        v-if="group.isYerevan"
         :model-value="isAllSelected(group)"
-        :label="group.isYerevan ? 'Ամբողջ Երևանը' : 'Ամբողջ մարզը'"
+        label="Ամբողջ Երևանը"
         class="area-picker__all"
         @update:model-value="toggleAll(group)"
       />
@@ -187,6 +265,7 @@ function toggleAll(group: CityGroup): void {
           :key="option.value"
           :model-value="cities.includes(option.value)"
           :label="option.label"
+          :disabled="isAreaDisabled(option.value)"
           @update:model-value="toggleCity(option.value)"
         />
       </div>
@@ -210,6 +289,7 @@ function toggleAll(group: CityGroup): void {
             :key="zone.value"
             :model-value="cities.includes(zone.value)"
             :label="zone.label"
+            :disabled="isAreaDisabled(zone.value)"
             @update:model-value="toggleCity(zone.value)"
           />
         </div>
@@ -249,6 +329,20 @@ function toggleAll(group: CityGroup): void {
   &__hint {
     font-weight: 400;
     color: var(--color-text-muted);
+  }
+
+  &__counter {
+    margin: var(--space-3) 0 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+
+    &--over {
+      color: var(--color-danger);
+    }
+  }
+
+  &__over {
+    font-weight: 400;
   }
 
   &__group {

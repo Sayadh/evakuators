@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common'
 import { AdminNotificationService } from '../admin-auth/admin-notification.service'
 import { assertWithinArmenia } from '../common/coordinates'
+import { assertRegistrationAreasWithinLimit } from '../tow-trucks/service-area-limits'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
 import type { CreateRegistrationDto } from './dto/create-registration.dto'
 import { RegistrationRepository } from './registration.repository'
@@ -34,6 +35,13 @@ export class RegistrationService {
         'Կոորդինատները պետք է լրացվեն ամբողջությամբ՝ և՛ լայնությունը, և՛ երկայնությունը, կամ թողնվեն դատարկ։',
       )
     }
+
+    // How many places a driver may claim. Also a cross-field rule, so also here
+    // rather than on the DTO. This payload carries flat slugs with no types, so
+    // what is applied is a provable upper bound rather than the exact rule —
+    // see service-area-limits.ts for why that is sound, and where the exact
+    // rule runs before anything reaches the public site.
+    assertRegistrationAreasWithinLimit(dto.regionSlugs, dto.citySlugs)
 
     // The DTO already proved these are real numbers inside ±90/±180; this is
     // the geography half of the rule, kept out of the DTO so the two can never

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { SERVICE_CATEGORIES } from '~/constants/services'
+import { validateServiceAreaSelection } from '~/constants/serviceAreaLimits'
 import { SITE_NAME } from '~/constants/site'
 import {
   CAPACITY_RANGE_OPTIONS,
@@ -325,7 +326,12 @@ function validate(): boolean {
       : '')
   errors.locationName = validateField(form.locationName, [required('Լրացրեք հիմնական վայրը')]) ?? ''
   errors.regionSlugs = form.regionSlugs.length === 0 ? 'Ընտրեք 1-2 մարզ' : ''
-  errors.citySlugs = form.citySlugs.length === 0 ? 'Ընտրեք առնվազն մեկ քաղաք կամ շրջան' : ''
+  // Same rule and same message as registration — a driver must be able to fix
+  // afterwards exactly what they were allowed to choose at sign-up. This is
+  // also the check a driver approved before the cap existed meets on their next
+  // save: their stored coverage is left alone, but changing anything means
+  // bringing it within the limit first.
+  errors.citySlugs = validateServiceAreaSelection(form.regionSlugs, form.citySlugs)
 
   return Object.values(errors).every((error) => !error)
 }

@@ -237,6 +237,69 @@ its settlement, and slug collisions across cities/districts/zones/settlements
 within a marz. Run it (or extend it) whenever a settlement/zone entry is
 added — see `frontend/tests/locationData.spec.ts` for how it's exercised.
 
+## How many places a driver may claim
+
+A listing that claims everywhere is worth nothing to the person searching, so
+coverage is capped. The rule is one sentence: **Yerevan's districts never count;
+everything else costs one, and the budget for those is 2 when Yerevan is among
+the chosen regions and 5 when it is not** — counted across the whole selection,
+not per region.
+
+| Chosen regions | Districts | Cities + corridors |
+| --- | --- | --- |
+| Yerevan only | all 12, unlimited | — none available |
+| Yerevan + one marz | all 12, unlimited | 2 |
+| one marz | — | 5 |
+| two marzes | — | **5 in total**, not 5 each |
+
+Picking two marzes is still allowed (`MAX_REGIONS` is unchanged) — the cap is on
+places, not on regions.
+
+**A road corridor costs exactly what a city costs.** «Գառնի–Գեղարդ» is one
+answer to "where do you work", and making it cheaper would reopen the hole the
+cap exists to close.
+
+### Where it is enforced, and why in three different ways
+
+| Write path | Payload | Check |
+| --- | --- | --- |
+| `PATCH /my/tow-truck` | typed `ServiceAreaDto[]` | exact rule |
+| `POST /admin/registration-requests/:id/approve` | typed `ServiceAreaDto[]` | exact rule |
+| `POST /registrations` | flat `citySlugs: string[]`, **no types** | provable bound |
+
+The backend has no geography and must not grow any (CLAUDE.md), so "is this
+Yerevan?" is answered from the payload itself: `type: 'district'` can only mean
+Yerevan, because nowhere else in the country has districts. That works wherever
+`ServiceAreaDto` is used.
+
+Registration is the exception, and deliberately so: `RegistrationRequest.citySlugs`
+has always been a plain `String[]`, and giving it types would rewrite the shape
+of every pending row in the moderation queue. So that endpoint applies the
+tightest bound its payload can prove — 12 districts, plus 2 if a second region
+is present, or 5 with no Yerevan. A crafted request could still slip 14 marz
+cities past it, and that request **does not become a listing**: it lands in
+moderation, and the admin's approval sends the same areas back typed, where the
+exact rule rejects them. The exact rule therefore always runs before anything is
+published.
+
+### Drivers approved before the cap existed
+
+Their stored coverage is left exactly as it is — nothing was migrated, and no
+row was rewritten. The check runs only when `serviceAreas` is actually present
+in an update, so an over-cap driver keeps their listing until the first time
+they edit their areas, at which point they are asked to trim. Silently deleting
+a driver's own choices would be worse than asking.
+
+The picker shows the same state rather than fixing it for them: the counter
+turns red («Ընտրված է 7-ը՝ հասանելի 5-ից — հեռացրեք 2-ը շարունակելու համար») and
+already-ticked options stay untickable-off. **A selected area is never
+disabled**, whatever the count says — reaching the cap must not trap someone
+with no way to change their mind.
+
+That same over-budget state is reachable without any old data: pick two marzes
+and five cities, drop one marz, then add Yerevan, and the budget falls from 5 to
+2 while the ticks survive.
+
 ## Adding a new zone or settlement
 
 **New service zone**: append to `staticServiceZones` with a fresh `id` and a

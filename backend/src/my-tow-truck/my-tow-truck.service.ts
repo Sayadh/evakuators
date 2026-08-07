@@ -8,6 +8,7 @@ import { toTowTruckApi } from '../tow-trucks/tow-truck.mapper'
 import type { TowTruckApi } from '../tow-trucks/tow-truck.types'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
 import type { UpdateMyTowTruckDto } from './dto/update-my-tow-truck.dto'
+import { assertServiceAreasWithinLimit } from '../tow-trucks/service-area-limits'
 
 /**
  * Note there is no SupabaseStorageService here any more. This service used to
@@ -106,6 +107,14 @@ export class MyTowTruckService {
       throw new BadRequestException(
         'Սպասարկվող տարածքները փոխելիս պետք է նշվի նաև հիմնական քաղաքը կամ շրջանը։',
       )
+    }
+
+    // The exact coverage rule. Applied only when the driver is actually
+    // changing their areas — omitting the key leaves the stored list alone, so
+    // a driver approved before the cap existed keeps their coverage and is
+    // asked to trim it the first time they touch it, not retroactively.
+    if (serviceAreas !== undefined) {
+      assertServiceAreasWithinLimit(serviceAreas)
     }
 
     const data: Prisma.TowTruckUpdateInput = {

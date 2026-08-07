@@ -200,7 +200,20 @@ describe('RegistrationService coordinate pairing', () => {
       { notifyNewRegistration: async () => undefined } as never,
       { findByMainPhoneAnyStatus: async () => null } as never,
     )
-    return service.submit({ phone: '+37491000001', imageIds: [], latitude, longitude } as never)
+    // `regionSlugs`/`citySlugs` are not decoration: `submit()` now also
+    // enforces the coverage cap, and the service is entitled to assume the
+    // ValidationPipe already proved these are non-empty arrays. A fixture
+    // without them is a DTO the real pipeline would never produce, so it is
+    // filled in here rather than the service being made defensive about a
+    // contract that is already guaranteed upstream.
+    return service.submit({
+      phone: '+37491000001',
+      imageIds: [],
+      regionSlugs: ['kotayk'],
+      citySlugs: ['abovyan'],
+      latitude,
+      longitude,
+    } as never)
   }
 
   it.each([

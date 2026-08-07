@@ -20,7 +20,7 @@
     "@pinia/nuxt": "^0.5.5",
     "@vueuse/core": "^11.3.0",
     "@vueuse/nuxt": "^11.3.0",
-    "nuxt": "^3.14.1592",
+    "nuxt": "3.21.11",
     "nuxt-gtag": "^4.1.0",
     "nuxt-security": "^2.5.1",
     "pinia": "^2.2.8",

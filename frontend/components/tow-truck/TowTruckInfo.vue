@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { TowTruckVehicle } from '~/types/towTruck'
-import { VEHICLE_TYPE_DESCRIPTIONS, VEHICLE_TYPE_LABELS } from '~/constants/vehicles'
+import { hasManipulator, VEHICLE_TYPE_DESCRIPTIONS, VEHICLE_TYPE_LABELS } from '~/constants/vehicles'
 import { formatCapacity } from '~/utils/formatters'
 import { formatPlatformDimensions } from '~/utils/platformDimensions'
 
@@ -37,7 +37,10 @@ const rows = computed<InfoRow[]>(() => {
 
   result.push(
     { label: 'Ճախարակ (winch, лебедка)', value: vehicle.winch ? 'Այո' : 'Ոչ' },
-    { label: 'Մանիպուլյատոր', value: vehicle.manipulator ? 'Այո' : 'Ոչ' },
+    // The same predicate the filter uses, deliberately. Reading the raw boolean
+    // here is what let a truck be returned by «Մանիպուլյատոր» and then say
+    // «Ոչ» on its own page — one contradiction, two sources.
+    { label: 'Մանիպուլյատոր', value: hasManipulator(vehicle) ? 'Այո' : 'Ոչ' },
     {
       label: 'Անիվային ռոլիկներ',
       value: vehicle.wheelSkates ? 'Այո' : 'Ոչ',

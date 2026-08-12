@@ -8,8 +8,10 @@ import {
   VEHICLE_TYPE_DESCRIPTIONS,
   VEHICLE_TYPE_OPTIONS,
 } from '~/constants/vehicles'
-import { ServiceType } from '~/types/enums'
-import type { VehicleType } from '~/types/enums'
+// VehicleType is a value import, not `import type`: the manipulator rule below
+// compares against the enum MEMBER, which does not exist at runtime under a
+// type-only import.
+import { ServiceType, VehicleType } from '~/types/enums'
 import type { SelectOption } from '~/types/common'
 import { trackRegistrationSubmit } from '~/utils/analytics'
 import { parseCoordinates, type Coordinates } from '~/utils/coordinates'
@@ -90,6 +92,26 @@ watch(is247, (value) => {
     form.workingHoursStart = ''
     form.workingHoursEnd = ''
   }
+})
+
+/**
+ * «Մանիպուլյատորով էվակուատոր» as a vehicle type already answers «Ունի
+ * մանիպուլյատոր», so the checkbox is ticked and locked instead of being asked
+ * again.
+ *
+ * Before this, the two could disagree — and they did: a driver picked the type,
+ * left the redundant box alone, and became invisible to the «Մանիպուլյատոր»
+ * filter, which is precisely the customer looking for them. `hasManipulator`
+ * covers the rows already stored that way; this stops new ones being created.
+ *
+ * Only forced in one direction. Unticking is not re-enabled when the type
+ * changes away, because a flatbed that also carries a crane is a real vehicle:
+ * the driver's own `true` stays theirs to keep or clear.
+ */
+const isManipulatorType = computed(() => form.vehicleType === VehicleType.Manipulator)
+
+watch(isManipulatorType, (value) => {
+  if (value) form.manipulator = true
 })
 
 const vehicleTypeOptions: SelectOption[] = VEHICLE_TYPE_OPTIONS.map((option) => ({
@@ -477,7 +499,14 @@ async function onSubmit(): Promise<void> {
         </div>
         <div class="register__checks">
           <AppCheckbox v-model="form.winch" label="Ունի ճախարակ (winch, лебедка)" />
-          <AppCheckbox v-model="form.manipulator" label="Ունի մանիպուլյատոր" />
+          <!-- Locked, not hidden: a driver who picked the manipulator type
+               should still SEE that the answer is yes, rather than wonder
+               where the question went. -->
+          <AppCheckbox
+            v-model="form.manipulator"
+            label="Ունի մանիպուլյատոր"
+            :disabled="isManipulatorType"
+          />
           <AppCheckbox v-model="form.wheelSkates" label="Առկա են անիվային ռոլիկներ">
             <template #label-suffix>
               <AppTooltip label="Անիվային ռոլիկների բացատրություն">

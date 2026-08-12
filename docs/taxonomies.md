@@ -111,8 +111,49 @@ that shape. The separator, the unit and the punctuation are the UI's job.
 
 `VehicleType` enum (`flatbed`, `sliding-platform`, `manipulator`,
 `heavy-duty`) with `VEHICLE_TYPE_LABELS` and `VEHICLE_TYPE_DESCRIPTIONS`.
-Simpler than the above two — no band/exact split, no backend cross-reference,
-just a flat labeled enum used for the vehicle-type picker and display.
+Simpler than the above two — no band/exact split, just a flat labeled enum used
+for the picker and for display. One member is not opaque to the backend, below.
+
+### «Մանիպուլյատոր» is asked twice, and either answer counts
+
+The registration form asks the same question in two shapes, and both are
+legitimate on their own:
+
+- **`type: 'manipulator'`** — «Մանիպուլյատորով էվակուատոր», one option of the
+  required single-choice select. The natural answer when the whole truck *is* a
+  manipulator, and for that driver the checkbox is a redundant second ask.
+- **`manipulator: true`** — «Ունի մանիպուլյատոր», an optional equipment
+  checkbox. The only way to say "my flatbed also carries a crane", which is a
+  real vehicle and not a data error.
+
+The filter read only the boolean, so a driver who answered with the type alone
+was **invisible to the «Մանիպուլյատոր» filter** — exactly the customer looking
+for them never saw them. The visible half of the same bug was the reverse: the
+filter did return flatbeds that had ticked the box, whose cards then read
+«Հարթակով էվակուատոր» and whose profile row said «Մանիպուլյատոր՝ Ոչ», because
+the row read the raw boolean while the filter read… also the raw boolean, but
+the card's type label came from elsewhere. Two fields, one question.
+
+Now:
+
+| Layer | What it does |
+| --- | --- |
+| `hasManipulator()` — `frontend/constants/vehicles.ts` | The union. Used by BOTH `matchesFilters` and the profile's «Մանիպուլյատոր» row, so those two can never disagree again |
+| `register.vue` / `dashboard.vue` | Picking the manipulator type ticks the checkbox and **disables** it — the driver sees the answer instead of being asked twice |
+| `derivesManipulator()` — `backend/src/tow-trucks/vehicle-types.ts` | The same union applied on every write (approval and dashboard save), exactly as `works24Hours` is derived from `AVAILABLE_24_7_SLUG`. A disabled checkbox is a hint; this is the boundary |
+
+The frontend union is **not** redundant once the backend derives the column:
+rows written before this existed still hold the inconsistent pair and nothing
+migrated them.
+
+Only ever widening. Changing the type away from `manipulator` does not untick
+the box, because that `true` may be the driver's own answer about a flatbed
+with a crane.
+
+`MANIPULATOR_VEHICLE_TYPE` is a **manual sync point** with
+`VehicleType.Manipulator`; `frontend/tests/manipulator.spec.ts` reads the
+backend file as text and asserts both the slug and that both sides are a union
+rather than an intersection.
 
 ## Geography — `frontend/data/{regions,cities,districts}.ts`
 

@@ -1,5 +1,5 @@
 import { RATING_PRIOR, RATING_PRIOR_WEIGHT } from '~/constants/rating'
-import { matchesCapacityRange } from '~/constants/vehicles'
+import { hasManipulator, matchesCapacityRange } from '~/constants/vehicles'
 import { SortOption } from '~/types/enums'
 import type { TowTruckCard } from '~/types/towTruck'
 import type { TowTruckFilterState } from '~/types/filters'
@@ -16,7 +16,10 @@ export function createDefaultFilterState(): TowTruckFilterState {
 
 export function matchesFilters(truck: TowTruckCard, filters: TowTruckFilterState): boolean {
   if (filters.works24Hours && !truck.works24Hours) return false
-  if (filters.manipulator && !truck.vehicle.manipulator) return false
+  // Not `!truck.vehicle.manipulator`: a driver who answered by picking the
+  // «Մանիպուլյատորով էվակուատոր» vehicle type and left the redundant checkbox
+  // alone was invisible here. See hasManipulator.
+  if (filters.manipulator && !hasManipulator(truck.vehicle)) return false
   if (filters.capacity !== null && !matchesCapacityRange(truck.vehicle.capacityTons, filters.capacity))
     return false
   if (filters.services.length > 0) {

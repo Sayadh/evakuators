@@ -4,6 +4,7 @@ import { assertWithinArmenia } from '../common/coordinates'
 import type { SetCoordinatesDto } from '../common/set-coordinates.dto'
 import { ImagesRepository } from '../images/images.repository'
 import { AVAILABLE_24_7_SLUG } from '../tow-trucks/service-slugs'
+import { derivesManipulator } from '../tow-trucks/vehicle-types'
 import { toTowTruckApi } from '../tow-trucks/tow-truck.mapper'
 import type { TowTruckApi } from '../tow-trucks/tow-truck.types'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
@@ -57,7 +58,11 @@ export class MyTowTruckService {
   }
 
   async updateMine(towTruckId: number, dto: UpdateMyTowTruckDto): Promise<TowTruckApi> {
-    await this.getMine(towTruckId) // reuses the isActive + existence check above
+    // Also the isActive + existence check. Kept rather than discarded because
+    // the manipulator rule below is a cross-field derivation and this is a
+    // PATCH: an update that changes only the vehicle type still has to be
+    // judged against the checkbox already stored, and vice versa.
+    const current = await this.getMine(towTruckId)
 
     const { imageIds, ...updateData } = dto
 
@@ -166,6 +171,24 @@ export class MyTowTruckService {
       // works24Hours is derived, not directly editable — see service-slugs.ts.
       // Only touch it when services are actually part of this update.
       ...(rest.services ? { works24Hours: rest.services.includes(AVAILABLE_24_7_SLUG) } : {}),
+
+      // `manipulator` is derived the same way, from the pair (vehicleType,
+      // checkbox) — see vehicle-types.ts. The dashboard ticks and locks the box
+      // when the manipulator type is chosen, but a disabled input is a hint and
+      // this is the boundary.
+      //
+      // Resolved against the STORED values for whichever half this PATCH does
+      // not mention: switching the type to «Մանիպուլյատորով էվակուատոր» without
+      // touching the checkbox has to set it, and that is exactly the update a
+      // driver fixing their vehicle type sends.
+      ...(rest.vehicleType !== undefined || rest.manipulator !== undefined
+        ? {
+            manipulator: derivesManipulator(
+              rest.vehicleType ?? current.vehicle.type,
+              rest.manipulator ?? current.vehicle.manipulator,
+            ),
+          }
+        : {}),
     }
 
     const updated = await this.towTrucksRepository.updateOwnProfile(towTruckId, data)

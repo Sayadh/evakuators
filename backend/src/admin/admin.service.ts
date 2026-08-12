@@ -13,6 +13,7 @@ import { TelegramService } from '../telegram/telegram.service'
 import { assertPlacementIsServed } from '../tow-trucks/placement'
 import { AVAILABLE_24_7_SLUG } from '../tow-trucks/service-slugs'
 import type { ServiceAreaJson } from '../tow-trucks/tow-truck.types'
+import { derivesManipulator } from '../tow-trucks/vehicle-types'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
 import {
   AdminRegistrationSummary,
@@ -226,7 +227,11 @@ export class AdminService {
             platformLengthM: request.platformLengthM,
             platformWidthM: request.platformWidthM,
             winch: request.winch,
-            manipulator: request.manipulator,
+            // Derived, not copied — see vehicle-types.ts. Picking the
+            // «Մանիպուլյատորով էվակուատոր» type already answers this, and a
+            // driver who answered only that way used to be invisible to the
+            // «Մանիպուլյատոր» filter. Same treatment works24Hours gets above.
+            manipulator: derivesManipulator(request.vehicleType, request.manipulator),
             wheelSkates: request.wheelSkates,
             // Resolved by the admin frontend from the chosen citySlug/districtSlug
             // (see ApproveRegistrationDto.regionSlug) — the backend has no

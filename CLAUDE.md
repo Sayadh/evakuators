@@ -67,6 +67,12 @@ assume one is unused:
 
 - `frontend/types/enums.ts` `ServiceType.Available247` value (`'available-24-7'`)
   ↔ `backend/src/tow-trucks/service-slugs.ts` `AVAILABLE_24_7_SLUG`.
+- `frontend/types/enums.ts` `VehicleType.Manipulator` value (`'manipulator'`)
+  ↔ `backend/src/tow-trucks/vehicle-types.ts` `MANIPULATOR_VEHICLE_TYPE`. The
+  `manipulator` boolean is **derived** from `(vehicleType, checkbox)` on both
+  sides — either answer is enough — so a mismatch means the filter and the
+  stored column disagree for every driver who answered one way. See
+  `docs/taxonomies.md` § "«Մանիպուլյատոր» is asked twice".
 - `frontend/constants/vehicles.ts` `CAPACITY_RANGE_OPTIONS` slugs ↔ nothing
   stored on the backend directly, but `representativeCapacityTons()` in the
   same file is the only place a range slug becomes a real `capacityTons`
@@ -138,7 +144,7 @@ assume one is unused:
 | Show a region/city/district name, or a truck count | `docs/architecture.md` § "Geography: name vs count" |
 | Understand a Prisma model or add a migration | `docs/data-model.md` |
 | Touch admin login, driver login/passwords, Telegram link | `docs/auth-and-security.md` — in particular the table of `passwordHash`/`mustChangePassword` states: whether a Telegram re-link may overwrite a password is the security boundary of the whole handover, and nothing else in the system would notice if it inverted |
-| Touch services/vehicle-types/capacity pickers or filters | `docs/taxonomies.md` |
+| Touch services/vehicle-types/capacity pickers or filters | `docs/taxonomies.md` — and note that «Մանիպուլյատոր» is asked twice (vehicle type + equipment checkbox) and that every reader must go through `hasManipulator()`/`derivesManipulator()`, never the raw boolean |
 | Touch service zones (road corridors), settlements/villages, or location search | `docs/locations.md` |
 | Touch "Ազատ երթուղիներ" (Free Routes) | `docs/free-routes.md` |
 | Touch per-driver statistics / visitor tracking | `docs/analytics.md` |

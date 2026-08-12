@@ -11,8 +11,9 @@ import {
 } from '~/constants/vehicles'
 import { imageRepository, myTowTruckRepository, type UpdateMyTowTruckPayload } from '~/repositories'
 import { useDriverAuthStore } from '~/stores/driverAuth'
-import { LocationType, ServiceType } from '~/types/enums'
-import type { VehicleType } from '~/types/enums'
+// VehicleType is a value import, not `import type` — see the manipulator rule
+// below, which compares against the enum member itself.
+import { LocationType, ServiceType, VehicleType } from '~/types/enums'
 import type { SelectOption } from '~/types/common'
 import type { TowTruck } from '~/types/towTruck'
 import { formatCoordinates, type Coordinates } from '~/utils/coordinates'
@@ -86,6 +87,27 @@ const form = reactive({
   priceWaitingPerHour: '',
   priceNightSurchargePercent: '',
   priceExtraLoading: '',
+})
+
+/**
+ * Same rule as registration, and shared with it by intent rather than by code:
+ * picking «Մանիպուլյատորով էվակուատոր» already answers «Ունի մանիպուլյատոր», so
+ * the checkbox is ticked and locked instead of asked twice.
+ *
+ * CLAUDE.md's "registration and the dashboard must offer the same fields" cuts
+ * both ways — a field that behaves differently on the two forms is the same
+ * problem as a field missing from one of them. The backend derives it too
+ * (`MyTowTruckService.updateMine`), which is the actual boundary; this is the
+ * part the driver can see.
+ *
+ * One direction only: changing the type away does not untick it, because a
+ * flatbed carrying a crane is a real vehicle and that `true` may be the
+ * driver's own answer.
+ */
+const isManipulatorType = computed(() => form.vehicleType === VehicleType.Manipulator)
+
+watch(isManipulatorType, (value) => {
+  if (value) form.manipulator = true
 })
 
 const vehicleTypeOptions: SelectOption[] = VEHICLE_TYPE_OPTIONS.map((option) => ({
@@ -679,7 +701,14 @@ async function logout(): Promise<void> {
 
             <div class="dashboard-checks">
               <AppCheckbox v-model="form.winch" label="Ունի ճախարակ (winch, лебедка)" />
-              <AppCheckbox v-model="form.manipulator" label="Ունի մանիպուլյատոր" />
+              <!-- Locked rather than hidden, same as registration: the driver
+                   should see that the answer is yes, not wonder where the
+                   question went. -->
+              <AppCheckbox
+                v-model="form.manipulator"
+                label="Ունի մանիպուլյատոր"
+                :disabled="isManipulatorType"
+              />
               <AppCheckbox v-model="form.wheelSkates" label="Առկա են անիվային ռոլիկներ">
                 <template #label-suffix>
                   <AppTooltip label="Անիվային ռոլիկների բացատրություն">

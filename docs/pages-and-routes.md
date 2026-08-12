@@ -14,8 +14,8 @@ and what auth (if any) gates it.
 | `/yerevan/[district]` | `pages/yerevan/[district].vue` | Tow trucks serving one district | Mock or API | Public |
 | `/tow-trucks/[slug]` | `pages/tow-trucks/[slug].vue` | Single tow truck profile — gallery (click-to-open lightbox with swipe/arrow-key navigation between photos, see `TowTruckGallery.vue`), pricing, service areas, reviews (list + submission form), similar trucks, JSON-LD business schema. Also the only page that records analytics: a `PAGE_VIEW` in `onMounted` and contact clicks via `usePhoneActions` (see `docs/analytics.md`) | Mock or API; 404s (fatal `createError`) if slug not found | Public |
 | `/evakuator` | `pages/evakuator.vue` | "Գտնել մոտակա էվակուատորները" — one-shot browser geolocation, then the nearest drivers with a road distance and a driving estimate. **Nothing happens until the button is pressed**: no geolocation on mount, no SSR fetch, no `useAsyncData`, because a permission prompt that appears because a page loaded is one the visitor did not ask for. Results render through the ordinary `TowTruckCard`, so the call button and its analytics are unchanged. The search is gated by `NEAREST_SEARCH_ENABLED` (`constants/features.ts`), currently off — the button then reports that the feature is being worked on and never prompts for a position. The nav link, the CTA banners and the sitemap entry deliberately stay up regardless: they are how visitors learn it is coming, so the page reads as an announcement rather than an error. See `docs/nearest-search.md` | Real API only (mock mode says so instead of prompting) | Public |
-| `/manipulator` | `pages/manipulator.vue` | Every «Մանիպուլյատորով էվակուատոր» in the country. Both vehicle-type pages are thin files rendering `VehicleTypeListing` from a `VEHICLE_TYPE_PAGES` entry — see § "Vehicle-type landing pages" | Mock or API | Public |
-| `/tsanr-tehnika` | `pages/tsanr-tehnika.vue` | Every «Ծանր տեխնիկայի էվակուատոր» in the country | Mock or API | Public |
+| `/manipulator` | `pages/manipulator.vue` | Every «Մանիպուլյատորով էվակուատոր» in the country — heading, cards, "show more", and deliberately nothing else. Both vehicle-type pages are thin files rendering `VehicleTypeListing` from a `VEHICLE_TYPE_PAGES` entry — see § "Vehicle-type landing pages" | Mock or API | Public |
+| `/tsanr-tehnika` | `pages/tsanr-tehnika.vue` | Every «Ծանր տեխնիկայի էվակուատոր» in the country, same shape | Mock or API | Public |
 | `/free-routes` | `pages/free-routes/index.vue` | Public "Ազատ երթուղիներ" listing | Mock or API; only `ACTIVE` routes | Public |
 | `/register` | `pages/register.vue` | Driver registration form (multi-section: identity, vehicle, capacity range, services by category, **base parking coordinates**, pricing, image upload). The coordinates section is its own fieldset rather than part of "Տարածքներ" — service areas are where a driver is willing to *go*, the coordinates are where they *are*, and the two answers get confused under one heading. It is also the only **optional** section: copying a coordinate out of Google Maps on a phone is the step most likely to end a registration, and the value is editable from the dashboard the moment the driver is approved. A typed value must still parse; an empty box submits | Submits to `registrationRepository` (needs a real backend to actually persist — meaningless in pure mock mode beyond UI preview) | Public |
 | `/login` | `pages/login.vue` | Driver login — phone + password in one form → JWT. No self-service reset, deliberately (the only channel is Telegram, which proves possession of a link rather than identity — see `docs/auth-and-security.md`), so the footnote points a locked-out driver at an admin instead. Redirects to `/dashboard` if already logged in (`driver-guest` route middleware, client-only) | Real API only (mock mode has no accounts) | Public (self-redirects once authenticated) |
@@ -63,10 +63,25 @@ answer either, and they are what someone with an unusual vehicle arrives
 searching for — so they took the header slots that `/regions` and `/yerevan`
 used to hold.
 
+**They show the drivers and nothing else.** No filter sidebar, no sort control,
+no active-filter chips, no "find the nearest" banner, no prose, no FAQ — a
+breadcrumb, an `<h1>`, the cards and a "show more" button. Someone who lands
+here has already said what they need: the URL *is* the filter, and every
+control on top of it is one more thing between them and a phone number. The
+city pages keep all of it because "everyone who covers this town" is a set
+worth narrowing; "every manipulator in the country" is already the answer.
+
+Two consequences worth knowing. The meta description is the whole of what a
+search result shows under the title, since there is no on-page prose to fall
+back on — so it has to stand alone. And with no `v-if="isDesktop"` child and no
+grid, these pages sidestep the SSR auto-placement trap the city pages pin
+around (`docs/architecture.md`); if a sidebar ever returns here, that rule
+returns with it. `frontend/tests/vehicleTypePages.spec.ts` asserts the page
+stays bare, because the way this regresses is someone copying the city page.
+
 **Everything about both pages is one object.** `frontend/constants/vehicleTypePages.ts`
-holds the slug, the `VehicleType`, the nav label, the heading, the metadata,
-the intro copy and the FAQ; the header nav, the sitemap and the breadcrumb all
-read that same list. A page that is in the nav but missing from the sitemap is
+holds the slug, the `VehicleType`, the nav label, the heading and the metadata;
+the header nav, the sitemap and the breadcrumb all read that same list. A page that is in the nav but missing from the sitemap is
 the failure this shape prevents — `/free-routes` was exactly that once.
 `frontend/tests/vehicleTypePages.spec.ts` asserts the derivation holds, that
 each slug has a page file, and that both geography hubs kept a link.

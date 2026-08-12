@@ -2,11 +2,9 @@
 interface Props {
   modelValue: boolean
   resultsCount: number
-  /** Forwarded to TowTruckFilters — see there for why /manipulator hides it */
-  hideManipulator?: boolean
 }
 
-withDefaults(defineProps<Props>(), { hideManipulator: false })
+defineProps<Props>()
 
 const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
 </script>
@@ -18,7 +16,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
     side="bottom"
     @update:model-value="emit('update:modelValue', $event)"
   >
-    <TowTruckFilters :hide-manipulator="hideManipulator" />
+    <TowTruckFilters />
 
     <template #footer>
       <AppButton variant="primary" block @click="emit('update:modelValue', false)">

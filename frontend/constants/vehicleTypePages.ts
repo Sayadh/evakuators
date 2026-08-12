@@ -36,13 +36,19 @@ export interface VehicleTypePage {
   vehicleType: VehicleType
   /** Header/footer nav — short, because it sits next to three other items */
   navLabel: string
-  /** `<h1>` and the breadcrumb leaf — the full name, since it is read alone */
+  /** `<h1>`, the breadcrumb leaf and the JSON-LD list name */
   heading: string
   title: string
+  /**
+   * `<meta name="description">` only — these pages carry no on-page prose.
+   *
+   * They deliberately show the drivers and nothing else: someone who lands here
+   * has already said what they need, the URL IS the filter, and anything above
+   * the cards is one more thing between them and a phone number. That makes
+   * this string the whole of what a search result shows under the title, so it
+   * has to stand on its own.
+   */
   description: string
-  /** Two paragraphs under the listing, for people and for search engines alike */
-  intro: string[]
-  faq: { question: string; answer: string }[]
 }
 
 const MANIPULATOR: VehicleTypePage = {
@@ -54,33 +60,6 @@ const MANIPULATOR: VehicleTypePage = {
   description:
     'Կռունկով (մանիպուլյատորով) էվակուատորներ Հայաստանում՝ դժվար հասանելի վայրերից մեքենա ' +
     'բարձրացնելու համար։ Տեսեք հասանելի վարորդներին, գները և զանգահարեք ուղիղ։',
-  intro: [
-    'Մանիպուլյատորով էվակուատորն ունի կռունկ, որով մեքենան կարելի է բարձրացնել ուղղահայաց՝ ' +
-      'առանց քարշակելու։ Դա միակ լուծումն է, երբ մեքենան ընկել է ձորը, կանգնած է նեղ բակում, ' +
-      'ստորգետնյա ավտոկայանատեղիում կամ այնպիսի տեղում, ուր սովորական հարթակը պարզապես չի մոտենա։',
-    'Այս էջում հավաքված են բոլոր այն վարորդները, ովքեր նշել են, որ ունեն մանիպուլյատոր՝ ' +
-      'անկախ նրանից, թե որ մարզում են աշխատում։ Ընտրեք ձեզ հարմարը, ստուգեք բեռնատարողությունը ' +
-      'և զանգահարեք ուղիղ վարորդին՝ առանց միջնորդների։',
-  ],
-  faq: [
-    {
-      question: 'Ե՞րբ է պետք մանիպուլյատորով էվակուատոր',
-      answer:
-        'Երբ մեքենան հնարավոր չէ քաշել հարթակի վրա՝ ընկել է ձորը կամ փոսը, կանգնած է նեղ բակում ' +
-        'կամ ստորգետնյա ավտոկայանատեղիում, կամ երբ պետք է բարձրացնել ծանր առարկա։',
-    },
-    {
-      question: 'Որքա՞ն է արժե մանիպուլյատորով էվակուատորը',
-      answer:
-        'Գինը կախված է հեռավորությունից, աշխատանքի բարդությունից և ժամից։ Յուրաքանչյուր վարորդի ' +
-        'քարտին նշված է մեկնարկային գինը. ճշգրիտ արժեքը ճշտեք զանգահարելիս։',
-    },
-    {
-      question: 'Աշխատու՞մ են գիշերը',
-      answer:
-        'Վարորդների մի մասն աշխատում է 24/7։ Օգտագործեք «Աշխատում է 24/7» ֆիլտրը՝ միայն նրանց տեսնելու համար։',
-    },
-  ],
 }
 
 const HEAVY_DUTY: VehicleTypePage = {
@@ -92,25 +71,6 @@ const HEAVY_DUTY: VehicleTypePage = {
   description:
     'Բեռնատարների, ավտոբուսների և ծանր տեխնիկայի էվակուացում Հայաստանում։ ' +
     'Տեսեք համապատասխան բեռնատարողությամբ վարորդներին և զանգահարեք ուղիղ։',
-  intro: [
-    'Ծանր տեխնիկայի էվակուատորը նախատեսված է բեռնատարների, ավտոբուսների, միկրոավտոբուսների և ' +
-      'շինարարական տեխնիկայի տեղափոխման համար։ Սովորական մարդատար էվակուատորի բեռնատարողությունը ' +
-      'նման աշխատանքի համար բավարար չէ։',
-  ],
-  faq: [
-    {
-      question: 'Ի՞նչ քաշի տեխնիկա են տեղափոխում',
-      answer:
-        'Յուրաքանչյուր վարորդի քարտին նշված է առավելագույն բեռնատարողությունը։ Օգտագործեք ' +
-        'բեռնատարողության ֆիլտրը՝ ձեր տեխնիկային համապատասխանողը գտնելու համար։',
-    },
-    {
-      question: 'Կարո՞ղ են բարձրացնել շինարարական տեխնիկա',
-      answer:
-        'Այո, եթե տեխնիկան պետք է բարձրացնել, այլ ոչ թե քաշել, ձեզ պետք է նաև մանիպուլյատոր՝ ' +
-        'տեսեք «Մանիպուլյատորով էվակուատոր» էջը։',
-    },
-  ],
 }
 
 /**

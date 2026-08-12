@@ -47,16 +47,16 @@ describe('the config', () => {
     }
   })
 
-  it('gives every page the copy a landing page needs', () => {
+  it('gives every page the copy it needs', () => {
     for (const page of VEHICLE_TYPE_PAGE_LIST) {
       expect(page.navLabel.length, page.slug).toBeGreaterThan(0)
       expect(page.heading.length, page.slug).toBeGreaterThan(0)
       expect(page.title.length, page.slug).toBeGreaterThan(0)
-      // Google truncates well before this; a description longer than it is one
-      // nobody reads the end of.
+      // These pages carry no on-page prose, so the meta description is the
+      // whole of what a search result shows under the title — it has to be
+      // there, and it has to fit. Google truncates well before 200 characters.
+      expect(page.description.length, page.slug).toBeGreaterThan(0)
       expect(page.description.length, page.slug).toBeLessThanOrEqual(200)
-      expect(page.intro.length, page.slug).toBeGreaterThan(0)
-      expect(page.faq.length, page.slug).toBeGreaterThan(0)
     }
   })
 
@@ -87,6 +87,47 @@ describe('every page exists everywhere it is promised', () => {
     // a Nitro handler and there is no server here (docs/testing.md).
     const sitemap = readFileSync(`${ROOT}server/routes/sitemap.xml.ts`, 'utf8')
     expect(sitemap).toContain('VEHICLE_TYPE_PAGE_LIST')
+  })
+})
+
+describe('the pages stay bare', () => {
+  /**
+   * These two show the drivers and nothing else — no filter sidebar, no sort,
+   * no active-filter chips, no "find the nearest" banner, no prose. Someone who
+   * lands here has already said what they need; the URL is the filter, and
+   * every control on top of it is one more thing between them and a phone
+   * number.
+   *
+   * Asserted as source text because there is no component runtime here
+   * (docs/testing.md). It is the kind of thing that gets re-added by copying
+   * the city page, which is exactly what this file is here to notice.
+   */
+  const listing = readFileSync(`${ROOT}components/vehicle-type/VehicleTypeListing.vue`, 'utf8')
+  const code = listing.replace(/<!--[\s\S]*?-->/g, '').replace(/\/\*[\s\S]*?\*\//g, '')
+
+  it('renders no filter or sort controls', () => {
+    for (const banned of [
+      'TowTruckFilters',
+      'MobileFilterDrawer',
+      'ActiveFilters',
+      'TowTruckSort',
+      'useTowTruckFilters',
+      'useResponsiveFilters',
+    ]) {
+      expect(code, `${banned} is back on the vehicle-type pages`).not.toContain(banned)
+    }
+  })
+
+  it('renders no nearest-search banner and no prose sections', () => {
+    for (const banned of ['NearestTowTrucksCta', 'FaqSection', 'SeoTextSection']) {
+      expect(code, `${banned} is back on the vehicle-type pages`).not.toContain(banned)
+    }
+  })
+
+  it('still renders the cards', () => {
+    // The negative assertions above are only meaningful if the page still has
+    // the one thing it is for.
+    expect(code).toContain('TowTruckList')
   })
 })
 

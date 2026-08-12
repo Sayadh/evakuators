@@ -118,8 +118,8 @@ describe('the pages stay bare', () => {
     }
   })
 
-  it('renders no nearest-search banner and no prose sections', () => {
-    for (const banned of ['NearestTowTrucksCta', 'FaqSection', 'SeoTextSection']) {
+  it('renders no nearest-search banner and no intro prose', () => {
+    for (const banned of ['NearestTowTrucksCta', 'SeoTextSection']) {
       expect(code, `${banned} is back on the vehicle-type pages`).not.toContain(banned)
     }
   })
@@ -128,6 +128,54 @@ describe('the pages stay bare', () => {
     // The negative assertions above are only meaningful if the page still has
     // the one thing it is for.
     expect(code).toContain('TowTruckList')
+  })
+
+  it('keeps the FAQ, and keeps it after the listing', () => {
+    // The one deliberate exception to "nothing else": it is there for search,
+    // so it must exist — and it must not come before the drivers, or it delays
+    // the visitor who already knows what they want.
+    expect(code).toContain('FaqSection')
+    expect(code.indexOf('FaqSection')).toBeGreaterThan(code.indexOf('TowTruckList'))
+  })
+})
+
+describe('the FAQ is set up so search engines can use it', () => {
+  it('gives every page real questions and answers', () => {
+    for (const page of VEHICLE_TYPE_PAGE_LIST) {
+      expect(page.faq.length, page.slug).toBeGreaterThanOrEqual(3)
+      for (const item of page.faq) {
+        expect(item.question.length, `${page.slug}: ${item.question}`).toBeGreaterThan(10)
+        // A one-line answer is what makes an FAQ look auto-generated. These are
+        // the page's only prose, so they carry its whole body content.
+        expect(item.answer.length, `${page.slug}: ${item.question}`).toBeGreaterThan(80)
+      }
+    }
+  })
+
+  it('asks each question only once per page', () => {
+    // Duplicate `name` values inside one FAQPage is invalid structured data.
+    for (const page of VEHICLE_TYPE_PAGE_LIST) {
+      const questions = page.faq.map((item) => item.question)
+      expect(new Set(questions).size, page.slug).toBe(questions.length)
+    }
+  })
+
+  it('emits FAQPage JSON-LD from the same array it renders', () => {
+    // Structured data that describes different questions from the visible text
+    // is the thing Google treats as a violation, so the two must have one
+    // source. FaqSection builds the schema from its own `items` prop.
+    const faqSection = readFileSync(`${ROOT}components/seo/FaqSection.vue`, 'utf8')
+    expect(faqSection).toContain('buildFaqSchema(props.items)')
+  })
+
+  it('does not repeat one page\'s questions on the other', () => {
+    // Two pages sharing an FAQ is duplicate content, and these two are adjacent
+    // enough that copy-paste is the obvious way to add the next one.
+    const [first, second] = VEHICLE_TYPE_PAGE_LIST
+    const firstQuestions = new Set(first!.faq.map((item) => item.question))
+    for (const item of second!.faq) {
+      expect(firstQuestions.has(item.question), item.question).toBe(false)
+    }
   })
 })
 

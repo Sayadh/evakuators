@@ -15,11 +15,17 @@ import { buildTowTruckListSchema } from '~/utils/schemaOrg'
  * ## Deliberately not the city page
  *
  * No filter sidebar, no sort control, no active-filter chips, no "find the
- * nearest" banner, no explanatory prose. Someone who lands here has already
- * said what they need — the URL IS the filter — and every control on top of
- * that is one more thing between them and a phone number. The city pages keep
- * all of it because "everyone who covers this town" is a set worth narrowing;
- * "every manipulator in the country" is already the answer.
+ * nearest" banner, no intro prose. Someone who lands here has already said what
+ * they need — the URL IS the filter — and every control on top of that is one
+ * more thing between them and a phone number. The city pages keep all of it
+ * because "everyone who covers this town" is a set worth narrowing; "every
+ * manipulator in the country" is already the answer.
+ *
+ * The FAQ is the one deliberate exception, and it is **below** the listing: it
+ * earns its place for search rather than for the visitor who already knows
+ * what they want, so it must never delay them. `FaqSection` emits the
+ * `FAQPage` JSON-LD from the same array it renders, so the structured data and
+ * the visible text cannot describe different questions.
  *
  * A consequence worth knowing: this page has no `v-if="isDesktop"` child and no
  * grid, so it sidesteps the SSR auto-placement trap the city pages have to pin
@@ -76,6 +82,11 @@ useJsonLd([buildTowTruckListSchema(towTrucks.value, props.page.heading)])
     <div v-if="hasMore" class="vehicle-type-page__more">
       <AppButton variant="outline" @click="loadMore">Ցուցադրել ավելին</AppButton>
     </div>
+
+    <!-- Last, on purpose. This is the page's only prose and it is here for
+         search, not for the visitor who came to call someone — so it sits
+         after the drivers rather than in front of them. -->
+    <FaqSection :items="page.faq" class="vehicle-type-page__faq" />
   </div>
 </template>
 
@@ -91,6 +102,11 @@ useJsonLd([buildTowTruckListSchema(towTrucks.value, props.page.heading)])
     display: flex;
     justify-content: center;
     margin-top: var(--space-5);
+  }
+
+  &__faq {
+    display: block;
+    margin-top: var(--space-7);
   }
 }
 </style>

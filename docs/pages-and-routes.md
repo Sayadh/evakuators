@@ -63,21 +63,39 @@ answer either, and they are what someone with an unusual vehicle arrives
 searching for — so they took the header slots that `/regions` and `/yerevan`
 used to hold.
 
-**They show the drivers and nothing else.** No filter sidebar, no sort control,
-no active-filter chips, no "find the nearest" banner, no prose, no FAQ — a
-breadcrumb, an `<h1>`, the cards and a "show more" button. Someone who lands
-here has already said what they need: the URL *is* the filter, and every
-control on top of it is one more thing between them and a phone number. The
-city pages keep all of it because "everyone who covers this town" is a set
-worth narrowing; "every manipulator in the country" is already the answer.
+**They show the drivers, then the FAQ, and nothing else.** No filter sidebar,
+no sort control, no active-filter chips, no "find the nearest" banner, no intro
+prose — a breadcrumb, an `<h1>`, the cards, a "show more" button and the FAQ
+below them. Someone who lands here has already said what they need: the URL
+*is* the filter, and every control on top of it is one more thing between them
+and a phone number. The city pages keep all of it because "everyone who covers
+this town" is a set worth narrowing; "every manipulator in the country" is
+already the answer.
 
-Two consequences worth knowing. The meta description is the whole of what a
-search result shows under the title, since there is no on-page prose to fall
-back on — so it has to stand alone. And with no `v-if="isDesktop"` child and no
-grid, these pages sidestep the SSR auto-placement trap the city pages pin
-around (`docs/architecture.md`); if a sidebar ever returns here, that rule
-returns with it. `frontend/tests/vehicleTypePages.spec.ts` asserts the page
-stays bare, because the way this regresses is someone copying the city page.
+**The FAQ is the one deliberate exception, and its position is the point.** It
+is there for search rather than for the visitor who already knows what they
+want, so it sits *after* the listing and never delays them. It is rendered
+through `FaqSection`, which builds `FAQPage` JSON-LD from the same array it
+displays — visible text and structured data cannot describe different
+questions, which is what Google treats as a violation. The answers carry the
+terms people actually type, including transliterated forms
+(«manipulatorov evakuator»), the same way `utils/seoContent.ts` does for the
+geography pages. Each page's questions are its own; two landing pages sharing
+an FAQ would be duplicate content, and copy-paste is the obvious way to add a
+third.
+
+With no `v-if="isDesktop"` child and no grid, these pages also sidestep the SSR
+auto-placement trap the city pages pin around (`docs/architecture.md`); if a
+sidebar ever returns here, that rule returns with it.
+`frontend/tests/vehicleTypePages.spec.ts` asserts the page stays bare, that the
+FAQ stays *below* the listing, and that the two pages do not share questions —
+because the way all of this regresses is someone copying the city page.
+
+Verified end to end against the built server: both routes return 200 with
+`ItemList`, `BreadcrumbList` and `FAQPage` JSON-LD, and no filter/sort/CTA
+markup. `/tsanr-tehnika` renders its empty state in mock mode because
+`frontend/mocks/towTrucks.ts` contains no heavy-duty vehicle — that is the
+mock dataset, not the filter.
 
 **Everything about both pages is one object.** `frontend/constants/vehicleTypePages.ts`
 holds the slug, the `VehicleType`, the nav label, the heading and the metadata;

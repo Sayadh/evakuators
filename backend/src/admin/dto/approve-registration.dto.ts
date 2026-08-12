@@ -10,6 +10,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator'
+import { IsLatitudeValue, IsLongitudeValue } from '../../common/coordinates'
 import { ServiceAreaDto } from '../../tow-trucks/dto/service-area.dto'
 
 /**
@@ -60,6 +61,34 @@ export class ApproveRegistrationDto {
   @IsString()
   @MaxLength(40)
   regionSlug?: string
+
+  /**
+   * Base parking coordinates, **only when the moderator changed them.**
+   *
+   * The driver already answers this at registration and `approve()` copies the
+   * pair across untouched, so omitting both keys is the normal case and means
+   * "keep what the driver sent". These exist for the two cases that copy cannot
+   * serve: a driver who skipped the question (most of them — it is optional at
+   * registration) and one who pasted the pair in the wrong order.
+   *
+   * Correcting it *after* approval was already possible via
+   * `PATCH /admin/tow-trucks/:id/coordinates`. What was not possible was seeing,
+   * at the moment of approval, whether there was anything to correct — so a
+   * profile went live with no marker and nobody noticed until someone went
+   * looking. The approval dialog now states it either way.
+   *
+   * Both or neither: half a coordinate is not a location. Enforced in
+   * `AdminService.approve()` rather than here, because class-validator
+   * decorates one property at a time and cannot express a rule about two —
+   * the same reason `RegistrationService` checks its own pair by hand.
+   */
+  @IsOptional()
+  @IsLatitudeValue()
+  latitude?: number
+
+  @IsOptional()
+  @IsLongitudeValue()
+  longitude?: number
 
   @IsOptional()
   @IsString()

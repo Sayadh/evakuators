@@ -476,6 +476,35 @@ Three boundaries worth not crossing:
 
 `frontend/tests/basePlaceRanking.spec.ts` covers all three.
 
+### Coordinates are stated at approval too
+
+Separate from the base and often confused with it: the base is *which page the
+truck is listed on*, the coordinates are *the point the "nearest evacuator"
+search measures from* (`docs/nearest-search.md`). A driver can have one without
+the other, and most do — the coordinate question is optional at registration and
+plenty of drivers skip it.
+
+The pair always flowed through: the request stores it and `approve()` copies it
+across. What was missing was that the approval dialog said **nothing** about it,
+so a profile went live with no marker and it surfaced only when someone went
+looking. Correcting it afterwards was always possible
+(`PATCH /admin/tow-trucks/:id/coordinates`); knowing to was the gap.
+
+The dialog now states it either way and offers the same `CoordinatesInput` the
+driver saw, pre-filled. `ApproveRegistrationDto.latitude`/`longitude` are
+optional and mean "the moderator changed it":
+
+- **neither key** → the driver's own pair, copied across exactly as before;
+- **both** → the moderator's, through the same `assertWithinArmenia` a driver's
+  pair gets. An admin is not exempt: a transposed pair lands a truck in the
+  Indian Ocean regardless of who typed it;
+- **one** → 400, same rule and same wording as `RegistrationService`.
+
+Still optional at approval, deliberately: a driver who could not manage the
+copy-paste is better approved without a marker than blocked behind one. That is
+the same call the registration form makes, and the reason its fallback note
+tells them to leave the box empty rather than paste the example.
+
 ## Adding a new zone or settlement
 
 **New service zone**: append to `staticServiceZones` with a fresh `id` and a

@@ -178,3 +178,81 @@ describe('setTowTruckPrimaryArea', () => {
     ).rejects.toThrow(/ուղղություն է/)
   })
 })
+
+describe('coordinates at approval', () => {
+  /**
+   * Approval copies the driver's own pair across. The moderator may override
+   * it, which is what the coordinate box in the approval dialog is for — but
+   * the override has to survive the same two checks a driver's pair does, and
+   * "no override" must remain byte-identical to the old copy-through.
+   *
+   * Reached through the private resolver rather than through `approve()`: the
+   * surrounding method opens a transaction, writes images and calls Telegram,
+   * none of which says anything about which coordinate pair wins.
+   */
+  const resolve = (
+    dtoFields: { latitude?: number; longitude?: number },
+    request: { latitude: unknown; longitude: unknown },
+  ): { latitude: unknown; longitude: unknown } => {
+    const { service } = buildService()
+    return (
+      service as unknown as {
+        resolveApprovalCoordinates: (
+          d: unknown,
+          r: unknown,
+        ) => { latitude: unknown; longitude: unknown }
+      }
+    ).resolveApprovalCoordinates(dtoFields, request)
+  }
+
+  /** Stands in for a Prisma Decimal — only identity matters here */
+  const STORED_LAT = { toNumber: () => 40.1792 }
+  const STORED_LNG = { toNumber: () => 44.4991 }
+
+  it("keeps the driver's pair when the moderator sends neither", () => {
+    // The overwhelmingly common path, and the one that must not change.
+    expect(resolve({}, { latitude: STORED_LAT, longitude: STORED_LNG })).toEqual({
+      latitude: STORED_LAT,
+      longitude: STORED_LNG,
+    })
+  })
+
+  it('keeps null when the driver skipped the question', () => {
+    // `locationUpdatedAt` is derived from this being null, so a stray default
+    // here would stamp a timestamp on a location nobody ever set.
+    expect(resolve({}, { latitude: null, longitude: null })).toEqual({
+      latitude: null,
+      longitude: null,
+    })
+  })
+
+  it("takes the moderator's pair when both are sent", () => {
+    expect(
+      resolve({ latitude: 40.2, longitude: 44.5 }, { latitude: STORED_LAT, longitude: STORED_LNG }),
+    ).toEqual({ latitude: 40.2, longitude: 44.5 })
+  })
+
+  it('fills in a pair the driver never gave', () => {
+    expect(resolve({ latitude: 40.2, longitude: 44.5 }, { latitude: null, longitude: null })).toEqual(
+      { latitude: 40.2, longitude: 44.5 },
+    )
+  })
+
+  it('rejects half a pair', () => {
+    // Half a coordinate is neither "has a location" nor "has none" downstream.
+    expect(() => resolve({ latitude: 40.2 }, { latitude: null, longitude: null })).toThrow(
+      BadRequestException,
+    )
+    expect(() => resolve({ longitude: 44.5 }, { latitude: null, longitude: null })).toThrow(
+      BadRequestException,
+    )
+  })
+
+  it('rejects a point outside Armenia, admin or not', () => {
+    // A transposed pair from an admin lands a truck in the Indian Ocean just as
+    // readily as one from a driver.
+    expect(() =>
+      resolve({ latitude: 44.4991, longitude: 40.1792 }, { latitude: null, longitude: null }),
+    ).toThrow(BadRequestException)
+  })
+})

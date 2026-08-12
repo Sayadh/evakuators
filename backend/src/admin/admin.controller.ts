@@ -13,7 +13,7 @@ import {
 import { RegistrationStatus } from '@prisma/client'
 import { AdminJwtGuard } from '../admin-auth/admin-jwt.guard'
 import { SetCoordinatesDto } from '../common/set-coordinates.dto'
-import type { RegistrationWithImages } from '../registration/registration.repository'
+import type { AdminRegistrationSummary } from './admin-registration.mapper'
 import type { ReviewWithTruck } from '../reviews/reviews.repository'
 import type { ServiceAreaJson } from '../tow-trucks/tow-truck.types'
 import type { AdminTowTruckSummary } from './admin-tow-truck.mapper'
@@ -34,7 +34,7 @@ export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
   @Get('registration-requests')
-  list(@Query() query: AdminRegistrationsQuery): Promise<RegistrationWithImages[]> {
+  list(@Query() query: AdminRegistrationsQuery): Promise<AdminRegistrationSummary[]> {
     return this.adminService.listRegistrations(query)
   }
 

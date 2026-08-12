@@ -18,7 +18,7 @@ import {
 import { useAdminAuthStore } from '~/stores/adminAuth'
 import { LocationType } from '~/types/enums'
 import type { ServiceType, VehicleType } from '~/types/enums'
-import { formatCoordinates, type Coordinates } from '~/utils/coordinates'
+import { formatCoordinates, parseCoordinates, type Coordinates } from '~/utils/coordinates'
 import { extractErrorMessage } from '~/utils/errors'
 import { formatDateNumeric } from '~/utils/formatters'
 import { armenianPhoneInputValue } from '~/utils/formatPhone'
@@ -900,8 +900,28 @@ const approveForm = reactive({
    */
   primarySlug: '',
   primarySettlement: '',
+  /**
+   * The base parking coordinates, as the one string Google Maps puts on a
+   * clipboard — `parseCoordinates` splits it on submit.
+   *
+   * Pre-filled from the request when the driver answered, so the usual action
+   * is to read it and move on. It is here at all because approval was the one
+   * moment nobody could see whether there was anything to fix: the pair was
+   * copied across silently, and a profile went live with no marker until
+   * somebody went looking. Correcting it afterwards was always possible; the
+   * gap was knowing to.
+   */
+  coordinates: '',
   description: '',
 })
+const approveCoordinatesError = ref('')
+
+/** Whether the driver answered the coordinates question at registration */
+const approveHasCoordinates = computed(
+  () =>
+    approveTarget.value?.latitude !== undefined &&
+    approveTarget.value?.longitude !== undefined,
+)
 
 /**
  * What the base picker may offer for the request being approved: the areas the
@@ -936,7 +956,12 @@ function openApprove(request: AdminRegistrationRequest): void {
    */
   approveForm.primarySlug = ''
   approveForm.primarySettlement = ''
+  // Pre-filled, unlike the base above: this one the driver may already have
+  // answered, and an admin re-typing a correct pair by hand is a way to get it
+  // wrong. Empty means they skipped it — which the dialog says out loud.
+  approveForm.coordinates = formatCoordinates(request.latitude, request.longitude)
   approveForm.description = ''
+  approveCoordinatesError.value = ''
   approveError.value = ''
   approveModalOpen.value = true
 }
@@ -951,6 +976,30 @@ async function submitApprove(): Promise<void> {
   if (!approveForm.primarySlug) {
     approveError.value = 'Ընտրեք հիմնական քաղաքը կամ Երևանի շրջանը'
     return
+  }
+
+  /**
+   * Coordinates stay optional at approval, exactly as they are at registration.
+   * A driver who could not manage the copy-paste is better approved without a
+   * marker than blocked behind one — the honest empty is what the registration
+   * form already tells them to leave (see CoordinatesInput's fallback note).
+   *
+   * So: blank means "send nothing", and the backend keeps whatever the request
+   * held. Non-blank has to parse, and is sent as two numbers.
+   */
+  approveCoordinatesError.value = ''
+  let coordinates: Coordinates | undefined
+
+  if (approveForm.coordinates.trim()) {
+    const parsed = parseCoordinates(approveForm.coordinates)
+    if (!parsed.ok) {
+      approveCoordinatesError.value = parsed.error
+      return
+    }
+    // Destructured rather than assigned whole: on success the result IS the
+    // pair plus an `ok` flag, and passing that through would put `ok: true`
+    // into the request body — which `forbidNonWhitelisted` rejects outright.
+    coordinates = { latitude: parsed.latitude, longitude: parsed.longitude }
   }
 
   // A request can now carry up to 2 regionSlugs (e.g. Yerevan + Kotayk), so
@@ -986,6 +1035,10 @@ async function submitApprove(): Promise<void> {
     locationName: composeLocationName(primaryName, approveForm.primarySettlement),
     description: approveForm.description.trim() || undefined,
     ...placement,
+    // Spread, so a blank box omits both keys entirely rather than sending two
+    // `undefined`s — which is how the backend tells "keep the driver's pair"
+    // apart from "the admin cleared it".
+    ...(coordinates ?? {}),
     // Resolve each slug to its real Armenian name here — the backend has no
     // geography data of its own (see schema.prisma), so if we sent raw
     // slugs it would just store them as-is and the public profile would
@@ -1573,6 +1626,35 @@ async function rejectReview(review: AdminReview): Promise<void> {
           v-model:settlement="approveForm.primarySettlement"
           :candidates="approveCandidates"
         />
+        <!-- Stated either way. Approval was the one moment nobody could see
+             whether the driver had sent a marker: the pair was copied across
+             silently, so a profile went live without one and it surfaced only
+             when someone went looking. Correcting it afterwards was always
+             possible — knowing to was the gap. -->
+        <div class="approve-form__coordinates">
+          <p class="approve-form__coordinates-status">
+            <AppBadge :variant="approveHasCoordinates ? 'success' : 'neutral'">
+              {{ approveHasCoordinates ? 'Կոորդինատները նշված են' : 'Կոորդինատները նշված չեն' }}
+            </AppBadge>
+            <span v-if="!approveHasCoordinates" class="admin-card__muted">
+              Վարորդը բաց է թողել այս դաշտը գրանցման ժամանակ։ Կարող եք լրացնել հիմա կամ ավելի ուշ։
+            </span>
+          </p>
+
+          <!-- showGuidance off: the five "open Google Maps" steps are written
+               for a driver doing this on their own phone, and telling an admin
+               "an administrator will help you" reads as a bug.
+               required off: a driver who could not manage the copy-paste is
+               better approved without a marker than blocked behind one, which
+               is the same call registration makes. -->
+          <CoordinatesInput
+            v-model="approveForm.coordinates"
+            :show-guidance="false"
+            :required="false"
+            :error="approveCoordinatesError"
+          />
+        </div>
+
         <AppInput v-model="approveForm.description" label="Նկարագրություն (ոչ պարտադիր)" />
 
         <p v-if="approveError" class="admin-error">{{ approveError }}</p>
@@ -2120,6 +2202,27 @@ async function rejectReview(review: AdminReview): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+
+  /* Boxed so the status badge and the field read as one question ("does this
+     driver have a marker, and what is it") rather than as a loose badge
+     floating above an unrelated input. */
+  &__coordinates {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-bg);
+  }
+
+  &__coordinates-status {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin: 0;
+  }
 }
 
 .telegram-link-box {

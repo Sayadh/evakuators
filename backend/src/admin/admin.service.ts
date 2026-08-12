@@ -6,7 +6,6 @@ import { assertServiceAreasWithinLimit } from '../tow-trucks/service-area-limits
 import { DriverAuthService } from '../driver-auth/driver-auth.service'
 import { IMAGE_ORDER } from '../images/image-order'
 import { PrismaService } from '../prisma/prisma.service'
-import type { RegistrationWithImages } from '../registration/registration.repository'
 import { ReviewsRepository, ReviewWithTruck } from '../reviews/reviews.repository'
 import { SupabaseStorageService } from '../storage/supabase-storage.service'
 import { telegramTokenFingerprint } from '../telegram/token-fingerprint'
@@ -15,6 +14,10 @@ import { assertPlacementIsServed } from '../tow-trucks/placement'
 import { AVAILABLE_24_7_SLUG } from '../tow-trucks/service-slugs'
 import type { ServiceAreaJson } from '../tow-trucks/tow-truck.types'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
+import {
+  AdminRegistrationSummary,
+  toAdminRegistrationSummary,
+} from './admin-registration.mapper'
 import { AdminTowTruckSummary, toAdminTowTruckSummary } from './admin-tow-truck.mapper'
 import type { AdminListQuery, AdminRegistrationsQuery } from './dto/admin-list.query'
 import type { ApproveRegistrationDto } from './dto/approve-registration.dto'
@@ -45,8 +48,8 @@ export class AdminService {
     private readonly driverAuth: DriverAuthService,
   ) {}
 
-  listRegistrations(query: AdminRegistrationsQuery): Promise<RegistrationWithImages[]> {
-    return this.prisma.registrationRequest.findMany({
+  async listRegistrations(query: AdminRegistrationsQuery): Promise<AdminRegistrationSummary[]> {
+    const requests = await this.prisma.registrationRequest.findMany({
       where: query.status ? { status: query.status } : undefined,
       // Driver's own order — main photo first (see IMAGE_ORDER)
       include: { images: { orderBy: IMAGE_ORDER } },
@@ -54,6 +57,56 @@ export class AdminService {
       take: query.limit,
       skip: query.offset,
     })
+
+    // Mapped rather than returned raw, for exactly one field: the coordinate
+    // pair is Decimal, which serialises as a string. See the mapper.
+    return requests.map(toAdminRegistrationSummary)
+  }
+
+  /**
+   * Which coordinate pair an approval writes.
+   *
+   * Three outcomes, and the first is the overwhelmingly common one:
+   *
+   * - **Neither key sent** → the driver's own pair, copied across untouched
+   *   exactly as it always was. Nothing about the existing flow changes for a
+   *   moderator who does not open the coordinate box.
+   * - **Both sent** → the moderator's, subject to the same two checks a driver's
+   *   pair gets: the DTO already proved they are numbers in range, and
+   *   `assertWithinArmenia` is the geography half. An admin is not exempt —
+   *   a transposed pair from an admin lands a truck in the Indian Ocean just as
+   *   readily as one from a driver.
+   * - **One sent** → rejected. Half a coordinate is neither "has a location"
+   *   nor "has none" for every reader downstream, and silently dropping the
+   *   stray half would hide a broken client instead of reporting it. Same rule,
+   *   same wording as `RegistrationService`.
+   *
+   * There is no way to *clear* a pair here, deliberately — the same decision
+   * `SetCoordinatesDto` documents. A location only ever gets corrected.
+   */
+  private resolveApprovalCoordinates(
+    dto: ApproveRegistrationDto,
+    request: { latitude: Prisma.Decimal | null; longitude: Prisma.Decimal | null },
+  ): { latitude: Prisma.Decimal | number | null; longitude: Prisma.Decimal | number | null } {
+    const hasLatitude = dto.latitude !== undefined
+    const hasLongitude = dto.longitude !== undefined
+
+    if (hasLatitude !== hasLongitude) {
+      throw new BadRequestException(
+        'Կոորդինատները պետք է լրացվեն ամբողջությամբ՝ և՛ լայնությունը, և՛ երկայնությունը, կամ թողնվեն դատարկ։',
+      )
+    }
+
+    if (!hasLatitude) {
+      return { latitude: request.latitude, longitude: request.longitude }
+    }
+
+    assertWithinArmenia(dto.latitude as number, dto.longitude as number)
+
+    // Plain numbers, not Decimals: Prisma accepts a number for a Decimal column
+    // and rounds it to the declared scale, which is the same path
+    // `setCoordinates` takes.
+    return { latitude: dto.latitude as number, longitude: dto.longitude as number }
   }
 
   /** Turns an approved request into a live TowTruck profile */
@@ -125,6 +178,10 @@ export class AdminService {
     // is a choice that can be mistaken, so it is checked.
     assertPlacementIsServed(dto.serviceAreas, dto)
 
+    // The coordinate pair the truck will be created with. Omitting both keys —
+    // the normal case — keeps whatever the driver sent at registration.
+    const coordinates = this.resolveApprovalCoordinates(dto, request)
+
     // Resolved to real Armenian names by the admin frontend (no geography
     // data lives in the backend) — see ServiceAreaDto in approve-registration.dto.ts
     const serviceAreas = dto.serviceAreas.map((area) => ({
@@ -180,17 +237,14 @@ export class AdminService {
             citySlug: dto.citySlug,
             districtSlug: dto.districtSlug,
             locationName: dto.locationName,
-            // Straight copy, like platformLengthM/platformWidthM — the request
-            // stores the same two Decimal columns, already validated at submit
-            // time (CreateRegistrationDto + assertWithinArmenia). The admin
-            // does not re-enter them; if they are wrong, the correction path is
-            // PATCH /admin/tow-trucks/:id/coordinates after approval.
-            latitude: request.latitude,
-            longitude: request.longitude,
+            // Usually a straight copy of what the driver sent, occasionally the
+            // moderator's correction — see resolveApprovalCoordinates.
+            latitude: coordinates.latitude,
+            longitude: coordinates.longitude,
             // Requests submitted before coordinates existed carry none, and a
             // timestamp for a location that was never set would be a lie —
             // `locationUpdatedAt` is null exactly when the pair is.
-            locationUpdatedAt: request.latitude !== null ? new Date() : null,
+            locationUpdatedAt: coordinates.latitude !== null ? new Date() : null,
             services: request.services,
             serviceAreas,
             priceCityCallout: request.priceCityCallout,

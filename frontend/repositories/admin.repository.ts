@@ -33,6 +33,14 @@ export interface AdminRegistrationRequest {
   priceWaitingPerHour?: number
   priceNightSurchargePercent?: number
   priceExtraLoading?: number
+  /**
+   * The base parking coordinates the driver sent at registration, if any —
+   * numbers, because the backend converts the two `Decimal` columns before
+   * they reach the wire (see `admin-registration.mapper.ts`). Both undefined
+   * for the many drivers who skip the question; it is optional at registration.
+   */
+  latitude?: number
+  longitude?: number
   createdAt: string
   images: { id: number; url: string }[]
 }
@@ -55,6 +63,15 @@ export interface ApproveRegistrationPayload {
   // registration request on the backend, not from this payload — see
   // ApproveRegistrationDto.
   description?: string
+  /**
+   * Sent **only when the moderator changed the pair.** Omitting both keys means
+   * "keep what the driver submitted", which is the normal case — the backend
+   * copies the request's own coordinates across.
+   *
+   * Both or neither; the backend rejects half a pair.
+   */
+  latitude?: number
+  longitude?: number
   /** Resolved Armenian names — the backend has no geography data of its own */
   serviceAreas: { slug: string; name: string; type: 'city' | 'district' | 'route' }[]
 }

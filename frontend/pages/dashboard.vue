@@ -30,6 +30,11 @@ import { toOptionalFloat } from '~/utils/registrationPayload'
 import { isDimension, isPhone, isYear, required, validateField } from '~/utils/validators'
 import { formatWorkingHoursRange, splitWorkingHoursRange } from '~/utils/workingHours'
 
+// Signed-out visitors never reach this page. In middleware, not in a top-level
+// `await navigateTo(...)` here — see middleware/driver-auth.ts for why that
+// version could silently fail to navigate.
+definePageMeta({ middleware: 'driver-auth' })
+
 useSeoMetaData({
   title: `Իմ պրոֆիլը | ${SITE_NAME}`,
   description: 'Խմբագրեք ձեր էվակուատորի պրոֆիլը։',
@@ -38,10 +43,6 @@ useSeoMetaData({
 })
 
 const driverAuth = useDriverAuthStore()
-
-if (import.meta.client && !driverAuth.isLoggedIn) {
-  await navigateTo('/login')
-}
 
 const truck = ref<TowTruck | null>(null)
 const loading = ref(true)
@@ -551,7 +552,10 @@ async function saveCoordinates(coordinates: Coordinates): Promise<void> {
 
 async function logout(): Promise<void> {
   driverAuth.logout()
-  await navigateTo('/login')
+  // `replace`, so Back does not return to a dashboard the driver has just
+  // signed out of — `driver-auth` would bounce them to /login anyway, but only
+  // after a flash of a page they no longer have a session for.
+  await navigateTo('/login', { replace: true })
 }
 </script>
 

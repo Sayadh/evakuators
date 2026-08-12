@@ -143,6 +143,7 @@ assume one is unused:
 | Understand request/response flow, mock vs real API | `docs/architecture.md` |
 | Show a region/city/district name, or a truck count | `docs/architecture.md` § "Geography: name vs count" |
 | Understand a Prisma model or add a migration | `docs/data-model.md` |
+| Redirect a visitor based on whether they are signed in | `docs/auth-and-security.md` § "The redirects are route middleware" — `navigateTo` from a page's `setup()` silently does nothing when it lands inside the router's middleware window, which is a bug with no error message; use `frontend/middleware/driver-{auth,guest}.ts` |
 | Touch admin login, driver login/passwords, Telegram link | `docs/auth-and-security.md` — in particular the table of `passwordHash`/`mustChangePassword` states: whether a Telegram re-link may overwrite a password is the security boundary of the whole handover, and nothing else in the system would notice if it inverted |
 | Touch services/vehicle-types/capacity pickers or filters | `docs/taxonomies.md` — and note that «Մանիպուլյատոր» is asked twice (vehicle type + equipment checkbox) and that every reader must go through `hasManipulator()`/`derivesManipulator()`, never the raw boolean |
 | Touch service zones (road corridors), settlements/villages, or location search | `docs/locations.md` |

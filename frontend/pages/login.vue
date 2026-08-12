@@ -15,6 +15,11 @@ import { isPhone, required, validateField } from '~/utils/validators'
  * timer, the "change phone number" step back, and the state where a driver is
  * halfway logged in.
  */
+// An already-signed-in driver never sees this form. In middleware, not in a
+// top-level `await navigateTo(...)` here — that version could silently fail to
+// navigate; see middleware/driver-auth.ts for the mechanism.
+definePageMeta({ middleware: 'driver-guest' })
+
 useSeoMetaData({
   title: `Վարորդի մուտք | ${SITE_NAME}`,
   description: 'Մուտք գործեք Ձեր էվակուատորի պրոֆիլը խմբագրելու համար։',
@@ -24,10 +29,6 @@ useSeoMetaData({
 
 const driverAuth = useDriverAuthStore()
 const apiEnabled = isApiEnabled()
-
-if (import.meta.client && driverAuth.isLoggedIn) {
-  await navigateTo('/dashboard')
-}
 
 // Pre-filled and locked to +374 — must match the same exact +374XXXXXXXX
 // shape stored at registration, since the backend looks the driver up by an
@@ -61,16 +62,26 @@ async function submit(): Promise<void> {
   try {
     const session = await driverAuthRepository.login(phone.value.trim(), password.value)
     driverAuth.login(session)
-    // Straight to the dashboard either way — when `mustChangePassword` is set,
-    // the dashboard opens its own dialog over the top. A separate
-    // "/change-password" route would be a second place to guard, and a driver
-    // could simply not go to it.
-    await navigateTo('/dashboard')
   } catch (err) {
     error.value = extractErrorMessage(err, 'Մուտք գործել չհաջողվեց, փորձեք կրկին')
+    return
   } finally {
     submitting.value = false
   }
+
+  // Outside the try, deliberately. Only the credential check belongs in there:
+  // a navigation that fails or is redirected must not be reported as "Մուտք
+  // գործել չհաջողվեց", which would tell a driver whose session was in fact
+  // created that their password was wrong.
+  //
+  // Straight to the dashboard either way — when `mustChangePassword` is set,
+  // the dashboard opens its own dialog over the top. A separate
+  // "/change-password" route would be a second place to guard, and a driver
+  // could simply not go to it.
+  //
+  // `replace`: the form must not sit in history behind the dashboard, or Back
+  // returns to it and `driver-guest` bounces the driver forward again.
+  await navigateTo('/dashboard', { replace: true })
 }
 </script>
 

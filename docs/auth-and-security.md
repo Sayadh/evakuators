@@ -278,6 +278,59 @@ locally) → "link is invalid or expired," even though the link was just
 generated correctly. This is not a token bug — see
 `docs/local-development.md` for the actual fix (a second test bot + tunnel).
 
+### The redirects are route middleware, and have to be
+
+`/dashboard` requires a session; `/login` sends an already-signed-in driver
+past it. Both live in `frontend/middleware/driver-auth.ts` and
+`driver-guest.ts`, declared with `definePageMeta({ middleware: … })`.
+
+They used to be two lines at the top of each page's `<script setup>`:
+`if (!isLoggedIn) await navigateTo('/login')`. That is not a supported place to
+redirect from, and it fails **silently** — which is exactly how it presented:
+a driver signed in, the session was stored, and nothing happened. The form
+stayed on screen until the page was reloaded by hand, at which point the same
+guard worked and they landed on the dashboard.
+
+The mechanism is in `navigateTo` itself
+(`nuxt/dist/app/composables/router.js`):
+
+```js
+if (import.meta.client && !isExternal && isProcessingMiddleware()) {
+  return to          // ← returns the target route. Does not navigate.
+}
+```
+
+That branch is the middleware protocol — middleware `return`s a route and the
+router performs the redirect. `_processingMiddleware` is set in the router's
+`beforeEach` and deleted in its `afterEach`, so whether a `navigateTo` called
+from a page's `setup()` actually navigates depends on which side of that window
+the setup happens to run in. A top-level `await` also makes the page an async
+component, so its setup resolves inside `<Suspense>` — timing a page has no
+business reasoning about. Land on the wrong side and the call is a no-op with
+no error and no navigation.
+
+Three rules that follow, all asserted by `frontend/tests/authRedirects.spec.ts`
+(including a check that the old `setup()` shape has not regrown):
+
+- **`return navigateTo(...)` inside middleware, never `await`** — awaiting it
+  hits the same branch and throws the returned route away.
+- **Neither middleware decides anything on the server.** The session is in
+  `localStorage`, so the server cannot know; guessing would bounce every
+  signed-in driver to `/login` on a hard refresh. Both return early under
+  `import.meta.server` and let the client's run decide. Both pages are
+  `noindex`, so nothing is leaked by rendering first.
+- **`{ replace: true }` on sign-in and sign-out.** Otherwise Back returns to a
+  page whose own guard immediately redirects forward again, which reads as the
+  button being broken.
+
+The login handler also keeps `navigateTo` **outside** the credential
+`try/catch`: a redirect failure reported as «Մուտք գործել չհաջողվեց» would tell
+a driver whose session was in fact created that their password was wrong.
+
+`handleExpiredSession` in `repositories/apiClient.ts` calls `navigateTo` too,
+but from a fetch error handler rather than from routing, so it is not on that
+boundary.
+
 ## Security response headers
 
 Two independent sets, because the two apps are deployed independently:

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   formatDistance,
@@ -5,6 +7,23 @@ import {
   formatDuration,
   formatDurationLine,
 } from '~/utils/formatDistance'
+
+describe('`formatDistance` exists exactly once across auto-imported utils', () => {
+  it('is not also exported from utils/formatters.ts', () => {
+    // Everything under utils/ auto-imports globally, and a duplicated name has
+    // exactly one winner — `formatters.ts`, by Nuxt's scan order. The removed
+    // duplicate took kilometres while this one takes metres, so the winner was
+    // silently unit-incompatible with every caller of the loser: a bare
+    // `formatDistance(4123)` would print «4123.0 կմ» for a 4 km drive. The
+    // build only ever warned about it. Guarded by name because that is the
+    // whole hazard — same name, different unit, global scope.
+    const formatters = readFileSync(
+      fileURLToPath(new URL('../utils/formatters.ts', import.meta.url)),
+      'utf8',
+    )
+    expect(formatters).not.toContain('export function formatDistance')
+  })
+})
 
 describe('formatDistance', () => {
   it('uses metres below a kilometre, rounded to 10 m', () => {

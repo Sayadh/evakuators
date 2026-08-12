@@ -3,10 +3,25 @@ export function formatCapacity(tons: number): string {
   return `${tons} տ`
 }
 
-/** 12.4 → "12.4 կմ" */
-export function formatDistance(km: number): string {
-  return `${km.toFixed(1)} կմ`
-}
+/*
+ * There is deliberately no `formatDistance` here.
+ *
+ * There used to be one — `(km: number) => "12.4 կմ"` — with no callers left. It
+ * collided by name with the real one in `utils/formatDistance.ts`, which takes
+ * **metres**, and Nuxt's auto-import resolves a duplicated name to exactly one
+ * winner: this file. The build said so on every run ("Duplicated imports
+ * \"formatDistance\", the one from utils/formatDistance.ts has been ignored"),
+ * as a warning nothing fails on.
+ *
+ * Nothing was broken by it only because the one component that formats a
+ * distance imports `formatDistanceLine` from the other file explicitly. The
+ * moment anyone wrote a bare auto-imported `formatDistance(meters)` — the
+ * obvious thing to write, and what the editor's autocomplete offers — they
+ * would have silently got the kilometre version and rendered a 4 km road
+ * distance as «4123.0 կմ». Keeping a unit-incompatible duplicate of a name
+ * that auto-imports globally is the whole hazard; deleting the unused one
+ * removes it.
+ */
 
 /**
  * ## Why this file formats Armenian dates by hand

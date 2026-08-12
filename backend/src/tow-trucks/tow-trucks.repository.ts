@@ -390,6 +390,27 @@ export class TowTrucksRepository {
   }
 
   /**
+   * Writes the truck's base: the three placement columns plus the label the
+   * cards render for it.
+   *
+   * `locationName` travels with them rather than in its own method because it
+   * is the display half of the same fact — the columns say which page the truck
+   * ranks on, the label says what a customer reads there. Splitting them is how
+   * a driver ends up filed under Vardenis while their card still says Abovyan.
+   */
+  setPrimaryArea(
+    id: number,
+    data: {
+      citySlug: string | null
+      districtSlug: string | null
+      regionSlug: string | null
+      locationName: string
+    },
+  ): Promise<TowTruck> {
+    return this.prisma.towTruck.update({ where: { id }, data })
+  }
+
+  /**
    * Writes the served-areas list together with the structural placement it
    * implies — one method taking both, because they are one fact.
    *

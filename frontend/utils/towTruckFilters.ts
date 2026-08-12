@@ -68,7 +68,56 @@ function getRecommendedScore(truck: TowTruckCard): number {
   )
 }
 
-export function sortTowTrucks(trucks: TowTruckCard[], sort: SortOption): TowTruckCard[] {
+/**
+ * The place a listing page is *about*, so the page can ask "is this driver
+ * based here?" — see `isBasedAt`.
+ *
+ * Only a city or a Yerevan district, never a marz and never a road corridor,
+ * because those are the only two things `TowTruck.citySlug`/`districtSlug` can
+ * hold. A corridor page passes nothing, which is correct rather than a gap: a
+ * truck cannot be "based in" «Գառնի–Գեղարդ», so on that page no driver is more
+ * local than any other and the ordering falls back to rating alone.
+ */
+export interface BasePlace {
+  citySlug?: string
+  districtSlug?: string
+}
+
+/**
+ * Whether this driver's own base is the place the page is about — i.e. they
+ * work here, not merely *also* here.
+ *
+ * Compared against the structural placement (`location.citySlug` /
+ * `districtSlug`), never against `serviceAreas`: every driver on a city page
+ * already serves that city, so matching on coverage would make this true for
+ * all of them and rank nothing.
+ */
+export function isBasedAt(truck: TowTruckCard, place: BasePlace | undefined): boolean {
+  if (!place) return false
+  if (place.citySlug) return truck.location.citySlug === place.citySlug
+  if (place.districtSlug) return truck.location.districtSlug === place.districtSlug
+  return false
+}
+
+/**
+ * `basePlace` reorders only the **Recommended** list — deliberately.
+ *
+ * Recommended is the default and is ours to define, and "the drivers actually
+ * based in this town, then everyone else who covers it" is what someone
+ * searching a town means. Price is the user overriding that with an explicit
+ * instruction: they asked for cheapest first, and a locally-based driver
+ * appearing above a cheaper one would read as the sort being broken. So the
+ * boost stops at the sort the customer chose.
+ *
+ * Within each tier the existing rating order is untouched, so being local wins
+ * a tie against a stranger but never rescues a badly-rated driver from the
+ * bottom of their own tier.
+ */
+export function sortTowTrucks(
+  trucks: TowTruckCard[],
+  sort: SortOption,
+  basePlace?: BasePlace,
+): TowTruckCard[] {
   const sorted = [...trucks]
   switch (sort) {
     case SortOption.Price:
@@ -78,17 +127,27 @@ export function sortTowTrucks(trucks: TowTruckCard[], sort: SortOption): TowTruc
       )
     case SortOption.Recommended:
     default:
-      return sorted.sort((a, b) => getRecommendedScore(b) - getRecommendedScore(a))
+      return sorted.sort((a, b) => {
+        // Two booleans, so this is -1/0/1 and never a partial comparator. With
+        // no `basePlace` both sides are false, the difference is 0, and the
+        // rating comparison below decides everything exactly as before.
+        const byBase = Number(isBasedAt(b, basePlace)) - Number(isBasedAt(a, basePlace))
+        if (byBase !== 0) return byBase
+
+        return getRecommendedScore(b) - getRecommendedScore(a)
+      })
   }
 }
 
 export function applyTowTruckFilters(
   trucks: TowTruckCard[],
   filters: TowTruckFilterState,
+  basePlace?: BasePlace,
 ): TowTruckCard[] {
   return sortTowTrucks(
     trucks.filter((truck) => matchesFilters(truck, filters)),
     filters.sort,
+    basePlace,
   )
 }
 

@@ -22,6 +22,7 @@ import { AdminListQuery, AdminRegistrationsQuery } from './dto/admin-list.query'
 import { ApproveRegistrationDto } from './dto/approve-registration.dto'
 import { IssuePasswordsDto } from './dto/issue-passwords.dto'
 import { RemoveServiceAreaDto } from './dto/remove-service-area.dto'
+import { SetPrimaryAreaDto } from './dto/set-primary-area.dto'
 import { SetTowTruckActiveDto } from './dto/set-tow-truck-active.dto'
 import { SetTowTruckFeaturedDto } from './dto/set-tow-truck-featured.dto'
 import { SetTowTruckPhoneDto } from './dto/set-tow-truck-phone.dto'
@@ -180,6 +181,29 @@ export class AdminController {
     @Body() dto: SetCoordinatesDto,
   ): Promise<{ id: number; latitude: number; longitude: number; locationUpdatedAt: string }> {
     return this.adminService.setTowTruckCoordinates(id, dto.latitude, dto.longitude)
+  }
+
+  /**
+   * Sets which single place the truck is **based** in, plus the label the cards
+   * show for it.
+   *
+   * Not cosmetic: city listings put locally-based drivers above the ones who
+   * merely also cover the town, so this decides who a customer sees first. It
+   * used to be inferred at approval from whichever served area came first —
+   * arbitrary, and uncorrectable afterwards. See SetPrimaryAreaDto.
+   */
+  @Patch('tow-trucks/:id/primary-area')
+  setPrimaryArea(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SetPrimaryAreaDto,
+  ): Promise<{
+    id: number
+    locationName: string
+    citySlug?: string
+    districtSlug?: string
+    regionSlug?: string
+  }> {
+    return this.adminService.setTowTruckPrimaryArea(id, dto)
   }
 
   /**

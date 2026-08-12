@@ -10,6 +10,7 @@ export type {
   IssuePasswordsResult,
   PasswordCandidate,
   RemoveServiceAreaPayload,
+  SetPrimaryAreaPayload,
 } from './admin.repository'
 export { adminAuthRepository } from './adminAuth.repository'
 export type { AdminSession } from './adminAuth.repository'

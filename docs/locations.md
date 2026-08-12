@@ -399,6 +399,83 @@ dashboard. The summary now carries `serviceAreas` plus the three placement slugs
 route is behind `AdminJwtGuard`. The **public** card shape must not grow fields
 by copying it (CLAUDE.md § "A listing is not a profile").
 
+## The base: one place a driver works out of
+
+Separate from coverage, and easy to conflate with it. **Coverage** is the list
+of places a driver will drive to (`serviceAreas`). The **base** is the single
+place they work out of — `TowTruck.citySlug` *or* `districtSlug`, plus
+`regionSlug`, plus the `locationName` label the cards render as «Հիմնական
+գտնվելու վայրը՝ …».
+
+### Why it stopped being inferred
+
+Approval used to derive it: *the first served area that is not a road
+corridor*. That is arbitrary — the order is whatever the driver ticked boxes in
+— and it was uncorrectable, because the driver's dashboard re-derived it the
+same way on every save, so a wrong value re-created itself.
+
+It became visible the moment city pages started ordering by it (below). A
+moderator now picks it explicitly, in `components/admin/PrimaryAreaPicker.vue`,
+shared by the approval modal and the per-truck editor for the same reason
+`ServiceAreaPicker` is shared by registration and the dashboard.
+
+### The rule — `backend/src/tow-trucks/placement.ts`
+
+**The base must be one of the served areas.** A truck filed under a town it
+does not serve ranks *first* on that town's page while being the one driver who
+never agreed to go there. `assertPlacementIsServed` is the single copy, used by
+all three write paths (approval, the primary-area editor, and the area-removal
+endpoint when it re-points a placement it just deleted). It also rejects:
+
+- a **road corridor** — nobody is "based in" «Գառնի–Գեղարդ», and a corridor
+  slug in `citySlug` files the driver under a city page that does not exist;
+- a **district sent as a city** or the reverse — the two are matched by
+  different columns, so a crossed pair means the row is never found at all.
+
+It deliberately does *not* check that `regionSlug` is the marz that city
+belongs to, or that a `city` slug is really a city. Both need geography, which
+this backend does not have (CLAUDE.md); the panel resolves them from the static
+data and sends them, exactly like `ServiceAreaDto.name`.
+
+### `locationName` is composed, never typed
+
+The label is «Վարդենիս», or «Վարդենիս, գյուղ Շատվան» when the driver is parked
+in a village. The backend cannot build either — it cannot turn `vardenis` into
+Armenian — so `composeLocationName()` in `frontend/utils/primaryArea.ts` builds
+it and the string is stored verbatim.
+
+The village half is free text on purpose: it is the one case the select cannot
+cover, a driver based somewhere that is not and should not become a filterable
+place of its own (that would mean a new entry in `data/cities.ts`, a new page
+and a new sitemap URL — for one driver). It changes the label only; `citySlug`
+is still the town whose page they rank on.
+
+The editor does **not** try to recover the village half from a stored label. It
+would mean parsing a composed string back apart, and a legacy label that never
+followed the format would parse into nonsense — so the field starts empty and
+asks again, which is a question rather than a silent wrong answer.
+
+### Drivers based here rank first — `sortTowTrucks`
+
+On a city or Yerevan district page the drivers **based** there are ordered above
+the ones who merely also cover it; within each tier the existing rating order is
+untouched. So being local wins a tie against a stranger but never rescues a
+badly-rated driver from the bottom of their own tier.
+
+Three boundaries worth not crossing:
+
+- **Recommended only.** Price is the customer overriding the default with an
+  explicit instruction; a local driver above a cheaper one there reads as the
+  sort being broken.
+- **Matched on the placement, never on `serviceAreas`.** Every driver on a city
+  page already serves that city, so matching on coverage would be true for all
+  of them and rank nothing.
+- **Corridor pages pass no base place at all**, and the boost is then a no-op —
+  correct, not a gap, since nobody is based in a corridor. A landing settlement
+  borrows its target city's list, so it borrows that city's test too.
+
+`frontend/tests/basePlaceRanking.spec.ts` covers all three.
+
 ## Adding a new zone or settlement
 
 **New service zone**: append to `staticServiceZones` with a fresh `id` and a

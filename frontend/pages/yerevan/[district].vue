@@ -16,7 +16,8 @@ if (!district.value) {
 const { data: towTrucks, pending } = await useTowTrucksByDistrict(districtSlug)
 const { data: nearbyDistricts } = useNearbyDistricts(districtSlug)
 
-const { filteredTowTrucks, activeFiltersCount } = useTowTruckFilters(towTrucks)
+/** Drivers based in this district rank above the ones who merely also cover it */
+const { filteredTowTrucks, activeFiltersCount } = useTowTruckFilters(towTrucks, { districtSlug })
 const { visibleItems, hasMore, loadMore } = usePagination(filteredTowTrucks, 9)
 const { isDesktop, isDrawerOpen, openDrawer } = useResponsiveFilters()
 

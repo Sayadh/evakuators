@@ -11,6 +11,7 @@ import { ReviewsRepository, ReviewWithTruck } from '../reviews/reviews.repositor
 import { SupabaseStorageService } from '../storage/supabase-storage.service'
 import { telegramTokenFingerprint } from '../telegram/token-fingerprint'
 import { TelegramService } from '../telegram/telegram.service'
+import { assertPlacementIsServed } from '../tow-trucks/placement'
 import { AVAILABLE_24_7_SLUG } from '../tow-trucks/service-slugs'
 import type { ServiceAreaJson } from '../tow-trucks/tow-truck.types'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
@@ -18,6 +19,7 @@ import { AdminTowTruckSummary, toAdminTowTruckSummary } from './admin-tow-truck.
 import type { AdminListQuery, AdminRegistrationsQuery } from './dto/admin-list.query'
 import type { ApproveRegistrationDto } from './dto/approve-registration.dto'
 import type { RemoveServiceAreaDto } from './dto/remove-service-area.dto'
+import type { SetPrimaryAreaDto } from './dto/set-primary-area.dto'
 
 const DEFAULT_DESCRIPTION = (locationName: string): string =>
   `Էվակուատորի ծառայություններ ${locationName}ում և հարակից բնակավայրերում։`
@@ -114,6 +116,14 @@ export class AdminService {
       dto.serviceAreas,
       request.regionSlugs.length > 0 ? request.regionSlugs : undefined,
     )
+
+    // The placement the moderator picked must be one of the areas being
+    // published in the same breath. It used to be inferred here instead — "the
+    // first served area that is not a corridor" — which could not be wrong in a
+    // way this check would catch, but also could not be *right* on purpose: the
+    // order was whatever the driver ticked boxes in. Now it is a choice, so it
+    // is a choice that can be mistaken, so it is checked.
+    assertPlacementIsServed(dto.serviceAreas, dto)
 
     // Resolved to real Armenian names by the admin frontend (no geography
     // data lives in the backend) — see ServiceAreaDto in approve-registration.dto.ts
@@ -625,12 +635,6 @@ export class AdminService {
       }
     }
 
-    if (dto.citySlug && dto.districtSlug) {
-      throw new BadRequestException(
-        'Նշեք կա՛մ քաղաք, կա՛մ շրջան՝ որպես հիմնական տեղակայում, ոչ թե երկուսը միասին։',
-      )
-    }
-
     const replacement = dto.citySlug ?? dto.districtSlug
 
     // No replacement offered. Allowed, and it means exactly one thing: nothing
@@ -643,15 +647,11 @@ export class AdminService {
       return { citySlug: null, districtSlug: null, regionSlug: null }
     }
 
-    // The one check that needs no geography and catches the mistake that
-    // matters: a placement pointing at something the truck does not serve. That
-    // is the state this whole endpoint exists to avoid, so it is not taken on
-    // trust just because the caller is an admin.
-    if (!remaining.some((area) => area.slug === replacement)) {
-      throw new BadRequestException(
-        `«${replacement}»-ը էվակուատորի սպասարկվող տարածքների մեջ չէ, ուստի չի կարող լինել նրա հիմնական տեղակայումը։`,
-      )
-    }
+    // The shared rule — checked against the areas that SURVIVE, not the ones
+    // that were stored, so a replacement pointing at the very area being
+    // removed is rejected too. Not taken on trust just because the caller is an
+    // admin: this is the state the whole endpoint exists to avoid.
+    assertPlacementIsServed(remaining, dto)
 
     return {
       citySlug: dto.citySlug ?? null,
@@ -661,6 +661,61 @@ export class AdminService {
       // otherwise a truck moving into Yerevan would stay listed on the marz page
       // it left.
       regionSlug: dto.districtSlug ? null : (dto.regionSlug ?? null),
+    }
+  }
+
+  /**
+   * Sets which single place an approved truck is **based** in.
+   *
+   * This is not cosmetic. City pages order locally-based drivers above the ones
+   * who merely also cover the town (`sortTowTrucks` on the frontend), so this
+   * value decides who a customer sees first — which is exactly why it stopped
+   * being inferred from "the first area the driver happened to tick" and became
+   * something a moderator states.
+   *
+   * Works on deactivated trucks too, for the same reason `setTowTruckPhone`
+   * does: deactivating hides a profile, it does not freeze the record.
+   */
+  async setTowTruckPrimaryArea(
+    id: number,
+    dto: SetPrimaryAreaDto,
+  ): Promise<{
+    id: number
+    locationName: string
+    citySlug?: string
+    districtSlug?: string
+    regionSlug?: string
+  }> {
+    const towTruck = await this.towTrucksRepository.findById(id)
+    if (!towTruck) throw new NotFoundException(`Էվակուատոր #${id}-ը չի գտնվել`)
+
+    // Required here, unlike in the removal path. There the empty placement is a
+    // real outcome (nothing left that could be one); here an admin has opened a
+    // picker whose entire purpose is to choose one, so an empty submission is a
+    // mistake rather than an answer.
+    if (!dto.citySlug && !dto.districtSlug) {
+      throw new BadRequestException('Ընտրեք հիմնական քաղաքը կամ Երևանի շրջանը։')
+    }
+
+    const areas = (towTruck.serviceAreas as unknown as ServiceAreaJson[]) ?? []
+    assertPlacementIsServed(areas, dto)
+
+    const updated = await this.towTrucksRepository.setPrimaryArea(id, {
+      citySlug: dto.citySlug ?? null,
+      districtSlug: dto.districtSlug ?? null,
+      // Yerevan is a pseudo-region and its districts have no marz, so a district
+      // placement nulls this — otherwise a truck moving into Yerevan would stay
+      // listed on the marz page it left.
+      regionSlug: dto.districtSlug ? null : (dto.regionSlug ?? null),
+      locationName: dto.locationName.trim(),
+    })
+
+    return {
+      id: updated.id,
+      locationName: updated.locationName,
+      citySlug: updated.citySlug ?? undefined,
+      districtSlug: updated.districtSlug ?? undefined,
+      regionSlug: updated.regionSlug ?? undefined,
     }
   }
 

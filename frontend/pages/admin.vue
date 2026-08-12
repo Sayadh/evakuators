@@ -29,6 +29,7 @@ import {
   resolveAreaType,
   YEREVAN_REGION_SLUG,
 } from '~/utils/geography'
+import { composeLocationName, placementFor } from '~/utils/primaryArea'
 import { isPhone, required, validateField } from '~/utils/validators'
 
 /**
@@ -677,6 +678,74 @@ function toggleAnalytics(truck: AdminTowTruck): void {
 }
 
 /**
+ * The per-truck base editor — the already-approved counterpart of the picker in
+ * the approval modal.
+ *
+ * It has to exist because before it there was no way to correct a base at all:
+ * approval inferred it from whichever served area came first, and the driver's
+ * own dashboard re-derived it the same way on every save, so a wrong value
+ * re-created itself. Since city pages now rank locally-based drivers first, a
+ * wrong base is not a cosmetic typo — it puts the wrong driver at the top of a
+ * town's results.
+ */
+const primaryAreaTruckId = ref<number | null>(null)
+const primaryAreaForm = reactive({ slug: '', settlement: '' })
+const primaryAreaError = ref('')
+const savingPrimaryArea = ref(false)
+
+function openPrimaryArea(truck: AdminTowTruck): void {
+  // Toggle: the same button closes it, matching how the analytics panel behaves
+  // two rows down.
+  if (primaryAreaTruckId.value === truck.id) {
+    primaryAreaTruckId.value = null
+    return
+  }
+
+  primaryAreaTruckId.value = truck.id
+  // Pre-selected from what is stored, so an admin opening this to change the
+  // village does not have to re-pick a town that was already right.
+  primaryAreaForm.slug = truck.citySlug ?? truck.districtSlug ?? ''
+  // The village half is deliberately NOT recovered from `locationName`. It
+  // would mean parsing a composed string back apart, and a legacy label that
+  // never followed the format would parse into nonsense. Empty means "state it
+  // again if it applies", which is a question, not a silent wrong answer.
+  primaryAreaForm.settlement = ''
+  primaryAreaError.value = ''
+}
+
+async function savePrimaryArea(truck: AdminTowTruck): Promise<void> {
+  if (!primaryAreaForm.slug) {
+    primaryAreaError.value = 'Ընտրեք հիմնական բնակավայրը'
+    return
+  }
+
+  savingPrimaryArea.value = true
+  primaryAreaError.value = ''
+  try {
+    const updated = await adminRepository.setTowTruckPrimaryArea(truck.id, {
+      ...placementFor(primaryAreaForm.slug),
+      locationName: composeLocationName(
+        // The stored name, so the label matches the words already on the
+        // driver's public profile rather than a freshly looked-up synonym.
+        truck.serviceAreas.find((area) => area.slug === primaryAreaForm.slug)?.name ??
+          cityOrDistrictLabel(primaryAreaForm.slug),
+        primaryAreaForm.settlement,
+      ),
+    })
+
+    truck.locationName = updated.locationName
+    truck.citySlug = updated.citySlug
+    truck.districtSlug = updated.districtSlug
+    truck.regionSlug = updated.regionSlug
+    primaryAreaTruckId.value = null
+  } catch (error) {
+    primaryAreaError.value = extractErrorMessage(error, 'Հիմնական տարածքը պահպանել չհաջողվեց։')
+  } finally {
+    savingPrimaryArea.value = false
+  }
+}
+
+/**
  * Which area is mid-removal — keyed by `${truckId}:${slug}` because one row can
  * hold several areas and only the clicked chip should show as busy.
  */
@@ -819,9 +888,33 @@ const approveModalOpen = ref(false)
 const approveTarget = ref<AdminRegistrationRequest | null>(null)
 const approveForm = reactive({
   slug: '',
-  locationName: '',
+  /**
+   * The base, as a chosen slug plus an optional village — not as free text.
+   *
+   * It used to be one `locationName` string an admin typed. That made the
+   * label and the structural placement two independent facts: the text said
+   * «Վարդենիս» while `citySlug` was whatever served area happened to come
+   * first, and nothing tied them together. Now the slug IS the answer and the
+   * label is composed from it, so a card cannot name a town the truck is not
+   * filed under.
+   */
+  primarySlug: '',
+  primarySettlement: '',
   description: '',
 })
+
+/**
+ * What the base picker may offer for the request being approved: the areas the
+ * driver asked for, resolved to names here because the request stores bare
+ * slugs. Corridors are dropped inside the picker.
+ */
+const approveCandidates = computed(() =>
+  (approveTarget.value?.citySlugs ?? []).map((slug) => ({
+    slug,
+    name: cityOrDistrictLabel(slug),
+    type: resolveAreaType(slug),
+  })),
+)
 const approveError = ref('')
 const approveSubmitting = ref(false)
 const telegramLinkModalOpen = ref(false)
@@ -832,11 +925,17 @@ const telegramLinkCopied = ref(false)
 function openApprove(request: AdminRegistrationRequest): void {
   approveTarget.value = request
   approveForm.slug = ''
-  // Pre-filled as a starting suggestion from the driver's first service area —
-  // admin overwrites by hand when the truck's actual base differs (e.g. driver
-  // covers all of Yerevan but is usually parked in a specific district, or a
-  // village that isn't in our predefined city/district list at all).
-  approveForm.locationName = request.citySlugs[0] ? cityOrDistrictLabel(request.citySlugs[0]) : ''
+  /**
+   * Deliberately NOT pre-filled from the driver's first area.
+   *
+   * That used to be the suggestion, and because it was already filled in it was
+   * usually just accepted — which made "the box the driver happened to tick
+   * first" decide where the truck is based. It now decides ranking on that
+   * town's page too, so an empty select that refuses to submit is the honest
+   * default: the one person who knows the answer is asked for it.
+   */
+  approveForm.primarySlug = ''
+  approveForm.primarySettlement = ''
   approveForm.description = ''
   approveError.value = ''
   approveModalOpen.value = true
@@ -849,8 +948,8 @@ async function submitApprove(): Promise<void> {
     approveError.value = 'Slug-ը պետք է լինի լատինատառ, kebab-case (օր.՝ ashot-tow-service)'
     return
   }
-  if (!approveForm.locationName.trim()) {
-    approveError.value = 'Վայրի անվանումը պարտադիր է'
+  if (!approveForm.primarySlug) {
+    approveError.value = 'Ընտրեք հիմնական քաղաքը կամ Երևանի շրջանը'
     return
   }
 
@@ -864,37 +963,29 @@ async function submitApprove(): Promise<void> {
 
   // The driver already gave us everything else at registration — capacity as
   // a range (see representativeCapacityTons) and the full service-area list
-  // (citySlugs). The admin only adds what registration *can't* provide: a
-  // unique slug and the truck's actual base location as free text.
-  // The structural placement must be a real place — a truck cannot be based in
-  // a road corridor, and a corridor slug in `citySlug` would file the driver
-  // under a city page that does not exist. A driver covering only corridors
-  // simply has no placement; both columns are nullable and the region rollup
-  // in servesRegion() is what keeps them findable.
-  const primarySlug = approveTarget.value.citySlugs.find(
-    (slug) => resolveAreaType(slug) !== LocationType.Route,
-  )
-  const primaryType = primarySlug ? resolveAreaType(primarySlug) : undefined
-  // TowTruck.regionSlug (the "best-effort" browsing fallback — see
-  // docs/data-model.md) is resolved from the PRIMARY slug's actual region,
-  // not just "the" region the driver picked first — the backend has no
-  // geography data to do this itself (see CLAUDE.md).
-  const primaryRegionSlug =
-    primaryType === LocationType.City ? findCityLocation(primarySlug as string)?.regionSlug : undefined
+  // (citySlugs). The admin adds what registration cannot provide: a unique
+  // slug, and which one of those areas the truck is actually BASED in.
+  //
+  // That base used to be inferred right here — "the first served area that is
+  // not a corridor" — which is arbitrary (it is whatever order the driver
+  // ticked boxes in) and, once city pages started ranking locally-based drivers
+  // first, arbitrary in a way customers see. It is now an explicit choice, and
+  // `placementFor` turns it into the three columns so this path and the
+  // per-truck editor cannot resolve them differently.
+  const placement = placementFor(approveForm.primarySlug)
+  const primaryName = cityOrDistrictLabel(approveForm.primarySlug)
+
   // No platform dimensions in this payload: the request stores them as the
   // same two Float columns the TowTruck does, so AdminService.approve() copies
   // them across directly. Nothing to parse and nothing for this form to ask.
   const payload: ApproveRegistrationPayload = {
     slug: approveForm.slug,
     capacityTons: representativeCapacityTons(approveTarget.value.capacityRange),
-    locationName: approveForm.locationName.trim(),
+    // Composed, never typed: the backend has no geography and cannot rebuild
+    // «Վարդենիս» from `vardenis`, so this string is stored exactly as sent.
+    locationName: composeLocationName(primaryName, approveForm.primarySettlement),
     description: approveForm.description.trim() || undefined,
-    ...(primaryType === LocationType.District
-      ? { districtSlug: primarySlug }
-      : primaryType === LocationType.City
-        ? { citySlug: primarySlug }
-        : {}),
-    regionSlug: primaryRegionSlug,
+    ...placement,
     // Resolve each slug to its real Armenian name here — the backend has no
     // geography data of its own (see schema.prisma), so if we sent raw
     // slugs it would just store them as-is and the public profile would
@@ -1270,6 +1361,27 @@ async function rejectReview(review: AdminReview): Promise<void> {
                 <dt>Telegram</dt>
                 <dd>{{ truck.hasTelegramLinked ? 'Կապակցված ✓' : 'Կապակցված չէ' }}</dd>
               </div>
+              <!-- The base, shown next to the phone because it is now what
+                   decides the truck's position on its own town's page. -->
+              <div>
+                <dt>Հիմնական տարածք</dt>
+                <dd class="admin-card__phone-view">
+                  <strong>{{ truck.locationName }}</strong>
+                  <!-- Flagged rather than left blank: a truck with no placement
+                       is filed under no city page at all, which is invisible
+                       unless the row says so. -->
+                  <AppBadge v-if="!truck.citySlug && !truck.districtSlug" variant="neutral">
+                    նշված չէ
+                  </AppBadge>
+                  <button
+                    type="button"
+                    class="admin-card__link-btn"
+                    @click="openPrimaryArea(truck)"
+                  >
+                    {{ primaryAreaTruckId === truck.id ? 'Փակել' : 'Փոխել' }}
+                  </button>
+                </dd>
+              </div>
               <div>
                 <dt>Կոորդինատներ</dt>
                 <dd v-if="truckCoordinates(truck)">{{ truckCoordinates(truck) }}</dd>
@@ -1279,6 +1391,36 @@ async function rejectReview(review: AdminReview): Promise<void> {
                 <dd v-else class="admin-card__muted">Տեղադիրքը նշված չէ</dd>
               </div>
             </dl>
+
+            <!-- Same picker the approval modal uses, pointed at a truck that
+                 already exists — and fed its OWN served areas, so the base can
+                 only ever be somewhere it actually works. -->
+            <div v-if="primaryAreaTruckId === truck.id" class="admin-card__primary-edit">
+              <PrimaryAreaPicker
+                v-model:slug="primaryAreaForm.slug"
+                v-model:settlement="primaryAreaForm.settlement"
+                :candidates="truck.serviceAreas"
+                :error="primaryAreaError"
+              />
+              <div class="admin-card__phone-edit-actions">
+                <AppButton
+                  variant="primary"
+                  size="sm"
+                  :disabled="savingPrimaryArea"
+                  @click="savePrimaryArea(truck)"
+                >
+                  Պահպանել
+                </AppButton>
+                <AppButton
+                  variant="outline"
+                  size="sm"
+                  :disabled="savingPrimaryArea"
+                  @click="primaryAreaTruckId = null"
+                >
+                  Չեղարկել
+                </AppButton>
+              </div>
+            </div>
 
             <!-- Coverage. Until this existed there was no way at all to see an
                  approved driver's served areas from the panel — `locationName`
@@ -1423,11 +1565,13 @@ async function rejectReview(review: AdminReview): Promise<void> {
           placeholder="ashot-tow-service"
           required
         />
-        <AppInput
-          v-model="approveForm.locationName"
-          label="Որտե՞ղ է սովորաբար կանգնում (ցուցադրվում է պրոֆիլում և քարտերի վրա)"
-          placeholder="Օր.՝ Նոր Նորք, կամ ցանկում չեղած գյուղի անուն"
-          required
+        <!-- Only the areas this driver asked to serve are offered — a base
+             they do not serve would rank them first on that town's page while
+             being the one driver who never agreed to go there. -->
+        <PrimaryAreaPicker
+          v-model:slug="approveForm.primarySlug"
+          v-model:settlement="approveForm.primarySettlement"
+          :candidates="approveCandidates"
         />
         <AppInput v-model="approveForm.description" label="Նկարագրություն (ոչ պարտադիր)" />
 
@@ -1827,6 +1971,18 @@ async function rejectReview(review: AdminReview): Promise<void> {
   &__phone-edit-actions {
     display: flex;
     gap: var(--space-2);
+  }
+
+  &__primary-edit {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    margin-bottom: var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-bg);
+    max-width: 420px;
   }
 
   &__areas {

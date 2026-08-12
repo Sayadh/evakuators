@@ -2,15 +2,23 @@ import { useTowTruckFiltersStore } from '~/stores/towTruckFilters'
 import type { TowTruckCard } from '~/types/towTruck'
 import { trackFilterApply } from '~/utils/analytics'
 import { buildFilterQueryParams, parseFilterQueryParams } from '~/utils/queryParams'
-import { applyTowTruckFilters } from '~/utils/towTruckFilters'
+import { applyTowTruckFilters, type BasePlace } from '~/utils/towTruckFilters'
 
 const FILTER_QUERY_KEYS = ['24h', 'manipulator', 'services', 'capacity', 'sort']
 
 /**
  * Connects the filter store to a tow truck list:
  * restores state from the URL, keeps the URL in sync and returns the filtered list.
+ *
+ * `basePlace` is the city or Yerevan district this page is about, if it is
+ * about one. Passing it puts the drivers *based* there above the ones who
+ * merely also cover it, in the Recommended order only — see `sortTowTrucks`.
+ * A page with no single place (a road corridor) omits it and nothing changes.
  */
-export function useTowTruckFilters(towTrucks: Ref<TowTruckCard[]>) {
+export function useTowTruckFilters(
+  towTrucks: Ref<TowTruckCard[]>,
+  basePlace?: MaybeRefOrGetter<BasePlace | undefined>,
+) {
   const store = useTowTruckFiltersStore()
   const route = useRoute()
   const router = useRouter()
@@ -34,7 +42,9 @@ export function useTowTruckFilters(towTrucks: Ref<TowTruckCard[]>) {
     })
   }
 
-  const filteredTowTrucks = computed(() => applyTowTruckFilters(towTrucks.value, store.$state))
+  const filteredTowTrucks = computed(() =>
+    applyTowTruckFilters(towTrucks.value, store.$state, toValue(basePlace)),
+  )
   const activeFiltersCount = computed(() => store.activeFiltersCount)
 
   return {

@@ -137,6 +137,23 @@ export interface AdminServiceArea {
  * its call site — a double cast that silences every future mismatch in that
  * payload too, which is exactly what a cast should not do.
  */
+/**
+ * Mirrors backend SetPrimaryAreaDto — the truck's base.
+ *
+ * Exactly one of `citySlug`/`districtSlug`, and it must be one of the truck's
+ * served areas (the backend rejects anything else, including a road corridor).
+ * `locationName` is the composed label — see `composeLocationName`.
+ *
+ * A `type`, not an `interface`, so it satisfies `apiFetch`'s
+ * `Record<string, unknown>` body without a cast — see the note below.
+ */
+export type SetPrimaryAreaPayload = {
+  citySlug?: string
+  districtSlug?: string
+  regionSlug?: string
+  locationName: string
+}
+
 export type RemoveServiceAreaPayload = {
   slug: string
   citySlug?: string
@@ -333,6 +350,28 @@ export const adminRepository = {
       `/admin/tow-trucks/${id}/coordinates`,
       { method: 'PATCH', body: { latitude, longitude }, headers: authHeader() },
     )
+  },
+
+  /**
+   * Sets which single place the truck is based in, plus the label its cards
+   * show. `locationName` is composed by the caller — the backend has no
+   * geography and cannot turn a slug into Armenian.
+   */
+  setTowTruckPrimaryArea(
+    id: number,
+    payload: SetPrimaryAreaPayload,
+  ): Promise<{
+    id: number
+    locationName: string
+    citySlug?: string
+    districtSlug?: string
+    regionSlug?: string
+  }> {
+    return apiFetch(`/admin/tow-trucks/${id}/primary-area`, {
+      method: 'PATCH',
+      body: payload,
+      headers: authHeader(),
+    })
   },
 
   /**

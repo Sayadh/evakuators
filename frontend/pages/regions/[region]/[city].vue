@@ -83,7 +83,17 @@ const seoSectionTitle = computed(() =>
       : `Էվակուատորի ծառայություններ ${areaName.value}ում`,
 )
 
-const { filteredTowTrucks, activeFiltersCount } = useTowTruckFilters(towTrucks)
+/**
+ * Which city's own drivers rank first. Mirrors the three cases above: a
+ * landing settlement borrows its target city's list, so it borrows that city's
+ * "based here" test too, and a corridor has none at all — nobody is *based* in
+ * «Գառնի–Գեղարդ», so on that page rating alone decides.
+ */
+const basePlace = computed(() =>
+  isZone ? undefined : { citySlug: isLanding ? landingCity!.slug : citySlug },
+)
+
+const { filteredTowTrucks, activeFiltersCount } = useTowTruckFilters(towTrucks, basePlace)
 const { visibleItems, hasMore, loadMore } = usePagination(filteredTowTrucks, 9)
 const { isDesktop, isDrawerOpen, openDrawer } = useResponsiveFilters()
 

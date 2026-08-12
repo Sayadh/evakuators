@@ -70,8 +70,11 @@ const mainAreas = computed(() =>
           <AppIcon name="clock" :size="15" />
           {{ towTruck.workingHours }}
         </li>
-        <li>
-          <AppIcon name="map" :size="15" />
+        <!-- Deliberately louder than its neighbours: on a city page the list is
+             ordered so the drivers BASED here come first (see sortTowTrucks),
+             and that ordering is invisible unless the base is easy to read. -->
+        <li class="truck-card__base">
+          <AppIcon name="map" :size="17" />
           Հիմնական գտնվելու վայրը՝ {{ towTruck.location.name }}
         </li>
         <li v-if="mainAreas">
@@ -179,6 +182,31 @@ const mainAreas = computed(() =>
         margin-top: 3px;
         color: var(--color-text-muted);
       }
+    }
+  }
+
+  /**
+   * The driver's own base — the fact the city listings are now ordered by, so
+   * it reads a step louder than the rest of the meta list.
+   *
+   * 0.88rem + 2px = 0.88rem + 0.125rem at the 16px root this project uses. Kept
+   * as a `calc` on the inherited size rather than a hard-coded 1.005rem so it
+   * still tracks if the list's own size is ever changed, and so the "+2px" the
+   * change was asked for stays legible in the source.
+   *
+   * Written as a descendant pair rather than a bare `&__base` because the rule
+   * it has to beat is `&__meta li` — one class plus one element — which a
+   * single class selector loses to. This is `.truck-card__meta
+   * .truck-card__base`, two classes, so it wins on specificity rather than on
+   * source order, and stays winning if the block is ever moved.
+   */
+  &__meta &__base {
+    font-size: calc(0.88rem + 2px);
+    font-weight: 700;
+    color: var(--color-text);
+
+    svg {
+      color: var(--color-primary);
     }
   }
 

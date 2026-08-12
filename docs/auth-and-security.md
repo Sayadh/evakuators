@@ -123,6 +123,49 @@ The re-issue in the middle row is deliberate too: a driver still holding OUR
 password gets a fresh one rather than the same one again, which retires a value
 that has been sitting readable in a Telegram chat they may since have lost.
 
+### The admin reset — how a driver gets back into row 1
+
+`POST /admin/tow-trucks/:id/reset-password`
+(`AdminService.resetDriverPassword`). The panel's «Զրոյացնել գաղտնաբառը»
+button. It does not mint anything: it moves the row **back to the top state of
+the table above** — `passwordHash` null, `mustChangePassword` false — and arms a
+fresh link. The password then comes from the same place it always does, when the
+driver taps.
+
+That is the whole design. There is no second password-minting path to keep in
+sync with the first, and no admin-chosen password anywhere in the system.
+
+Three things about it are load-bearing:
+
+- **It is one database write, not two.** `revokePasswordWithLinkToken` clears
+  both password columns and writes the token in a single `update`. Doing it as
+  `setPassword` + `setTelegramLinkToken` is shorter and strands the driver in
+  either order: clear-then-arm leaves them locked out with no link if the second
+  write fails, and arm-then-clear lets them tap in the gap — which consumes the
+  token, mints nothing (they still own their password at that instant) and then
+  the clear lands on a row with no live link. The second is worse, because the
+  admin saw a success. `backend/test/admin-reset-password.spec.ts` asserts the
+  single write for exactly this reason.
+- **The old password dies immediately, not when the driver taps.** So there is a
+  window where the driver cannot log in, and the panel's confirm says so. That
+  window is the point: the other reason to press this is that the current
+  password has been seen by someone who should not have it, and a reset that
+  left it working until the driver got round to it would not answer that.
+- **It never messages an already-linked chat, even though it could.**
+  `issuePasswordsForLinkedDrivers` does exactly that for the migration
+  population, and doing it here would save the admin a step. It is not done: a
+  driver who lost their Telegram account is the case where a reset is most
+  needed and where a stored `telegramChatId` is most likely to now belong to
+  someone else. A link the admin passes over a channel they chose can go to the
+  phone number on the registration instead. `telegramChatId` itself is left
+  alone, so contact notices keep working while the driver is between passwords.
+
+`AdminTowTruckSummary.hasPassword` exists for this button — it is what lets the
+panel say whether there is anything to revoke, and it is why the button is
+hidden for a driver who has none (the honest action there is
+«Ուղարկել Telegram link», which already does the arming half under a name that
+describes it).
+
 ### Migration path for drivers approved before passwords existed
 
 No backfill and no shared transitional secret — every pre-existing row has
@@ -169,7 +212,7 @@ the login page for a typo, with no message surviving the redirect.
 
 There is **no self-service reset**. The only channel we could send one through
 is Telegram, and a Telegram link does not prove identity — so a forgotten
-password is an admin's job, and `/login` says so.
+password is an admin's job (see "The admin reset" above), and `/login` says so.
 
 Changing a password does not invalidate any session, including the caller's:
 there are no refresh tokens and no session table to revoke against (see "Things
@@ -491,7 +534,9 @@ Browser-originated requests are unaffected and still throttled per client IP.
   lockout anywhere — deliberately for drivers, whose lookup key is a public
   phone number (see the driver-auth section). The IP is resolved from
   `X-Forwarded-For` — see the Throttling section.
-- No password reset a driver can perform themselves, and no password expiry.
+- No password reset a driver can perform themselves, and no password expiry. An
+  **admin** can reset one (see "The admin reset"), which puts the row back to
+  "no password" and hands over a fresh link; the driver has no equivalent.
   `mustChangePassword` forces exactly one change, at first login, and is never
   set again except by a Telegram re-link on an account that still holds a
   generated password.

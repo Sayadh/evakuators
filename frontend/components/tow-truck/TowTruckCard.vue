@@ -60,7 +60,9 @@ const mainAreas = computed(() =>
         <li>
           <AppIcon name="truck" :size="15" />
           {{ towTruck.vehicle.brand }} {{ towTruck.vehicle.model }} ·
-          {{ VEHICLE_TYPE_LABELS[towTruck.vehicle.type] }}
+          <strong class="truck-card__vehicle-type">{{
+            VEHICLE_TYPE_LABELS[towTruck.vehicle.type]
+          }}</strong>
         </li>
         <li>
           <AppIcon name="weight" :size="15" />
@@ -185,6 +187,13 @@ const mainAreas = computed(() =>
     }
   }
 
+  /** The vehicle type (e.g. "Հարթակով էվակուատոր") — bold so it reads as the
+   * headline fact of the first spec line, not just another word in it. */
+  &__vehicle-type {
+    font-weight: 700;
+    color: var(--color-text);
+  }
+
   /**
    * The driver's own base — the fact the city listings are now ordered by, so
    * it reads a step louder than the rest of the meta list.
@@ -195,12 +204,17 @@ const mainAreas = computed(() =>
    * change was asked for stays legible in the source.
    *
    * Written as a descendant pair rather than a bare `&__base` because the rule
-   * it has to beat is `&__meta li` — one class plus one element — which a
-   * single class selector loses to. This is `.truck-card__meta
+   * it has to beat is `&__specs li` — one class plus one element — which a
+   * single class selector loses to. This is `.truck-card__specs
    * .truck-card__base`, two classes, so it wins on specificity rather than on
    * source order, and stays winning if the block is ever moved.
+   *
+   * (This selector previously read `&__meta &__base` — `&__meta` does not
+   * exist anywhere in this component, so the rule never matched and the base
+   * line rendered as plain text despite the intent above. Fixed to
+   * `&__specs`, the list's real class.)
    */
-  &__meta &__base {
+  &__specs &__base {
     font-size: calc(0.88rem + 2px);
     font-weight: 700;
     color: var(--color-text);

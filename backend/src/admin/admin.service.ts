@@ -332,19 +332,105 @@ export class AdminService {
    * original link expired (7 days) or was lost before the driver used it.
    */
   async generateTelegramLink(towTruckId: number): Promise<string> {
-    const token = randomBytes(24).toString('hex')
-    const expiresAt = new Date(Date.now() + TELEGRAM_LINK_TTL_DAYS * 24 * 60 * 60 * 1000)
+    const { token, expiresAt } = this.mintTelegramLinkToken()
     await this.towTrucksRepository.setTelegramLinkToken(towTruckId, token, expiresAt)
-    // A fingerprint, never the token itself, and never a prefix of it — a
-    // prefix is still part of a live 7-day credential. The hash is stable, so
-    // this line still answers the only question it exists for: when a driver
-    // reports "link is invalid", the fingerprint here can be compared with the
-    // one TelegramWebhookController logs for the token they actually tapped.
+    this.logTelegramLink('Generated Telegram link token', towTruckId, token, expiresAt)
+    return this.telegram.buildLinkUrl(token)
+  }
+
+  /**
+   * A fresh link credential — random value plus its expiry, nothing written
+   * yet. Split out so the two paths that arm a token (`generateTelegramLink`
+   * and `resetDriverPassword`) cannot drift on the length of the random or the
+   * TTL, and so the reset can hand both values to a single database write.
+   */
+  private mintTelegramLinkToken(): { token: string; expiresAt: Date } {
+    return {
+      token: randomBytes(24).toString('hex'),
+      expiresAt: new Date(Date.now() + TELEGRAM_LINK_TTL_DAYS * 24 * 60 * 60 * 1000),
+    }
+  }
+
+  /**
+   * A fingerprint, never the token itself, and never a prefix of it — a prefix
+   * is still part of a live 7-day credential. The hash is stable, so this line
+   * still answers the only question it exists for: when a driver reports "link
+   * is invalid", the fingerprint here can be compared with the one
+   * TelegramWebhookController logs for the token they actually tapped.
+   */
+  private logTelegramLink(what: string, towTruckId: number, token: string, expiresAt: Date): void {
     this.logger.log(
-      `Generated Telegram link token for TowTruck #${towTruckId}: ` +
+      `${what} for TowTruck #${towTruckId}: ` +
         `fp=${telegramTokenFingerprint(token)} (expires ${expiresAt.toISOString()})`,
     )
-    return this.telegram.buildLinkUrl(token)
+  }
+
+  /**
+   * Takes a driver's password away and hands the admin a fresh link to send
+   * them, which is where the replacement comes from.
+   *
+   * ## What it is for
+   *
+   * A forgotten password, and a leaked one. There is no self-service reset —
+   * the only channel we could send one through is Telegram, and a Telegram link
+   * proves possession of a link rather than of an identity (see
+   * docs/auth-and-security.md), so somebody has to vouch for the driver. This
+   * endpoint is that somebody.
+   *
+   * ## The password dies here, not when the driver taps
+   *
+   * The row is left with no password at all, so the old one stops working the
+   * instant this returns and the driver cannot log in until they tap the new
+   * link. That gap is the feature, not a side effect: the other reason to press
+   * this button is that the current password has been seen by someone it should
+   * not have been, and a reset that leaves it working until the driver gets
+   * round to it would not answer that at all.
+   *
+   * It also means an accidental press locks a working driver out, which is why
+   * the panel confirms in those words and why the link is put in front of the
+   * admin immediately — the recovery is to send it, not to undo anything.
+   *
+   * ## Always a link, even when Telegram is already connected
+   *
+   * We could message a linked driver's existing chat directly and skip the
+   * out-of-band step entirely (`issuePasswordsForLinkedDrivers` does exactly
+   * that for the migration population). It is deliberately not done here: a
+   * driver who has lost their Telegram account is the one case where a password
+   * reset is most needed and an existing `telegramChatId` is most likely to be
+   * wrong. Sending to it would deliver the new credential to whoever holds that
+   * account now. A link an admin passes over a channel they chose can go to the
+   * phone number on the registration instead.
+   *
+   * Nothing is sent from here — the admin sends it. Which is also why this
+   * cannot half-fail the way a Telegram send can.
+   */
+  async resetDriverPassword(
+    id: number,
+  ): Promise<{ telegramLinkUrl: string; hadPassword: boolean }> {
+    const towTruck = await this.towTrucksRepository.findById(id)
+    if (!towTruck) throw new NotFoundException(`Էվակուատոր #${id}-ը չի գտնվել`)
+
+    // Read before the write, because the write is what makes it false. Reported
+    // back so the panel can tell "we revoked a live password" from "there was
+    // nothing to revoke, here is the link they never used" — the second is a
+    // normal outcome for a driver who was approved and never onboarded.
+    const hadPassword = towTruck.passwordHash !== null
+
+    const { token, expiresAt } = this.mintTelegramLinkToken()
+    // One write for both halves — see the repository method for why splitting
+    // it strands the driver in either order.
+    await this.towTrucksRepository.revokePasswordWithLinkToken(id, token, expiresAt)
+
+    // `warn`, unlike the ordinary link generation above: this is the one admin
+    // action that removes a driver's ability to log in, so it should stand out
+    // in `pm2 logs` when someone is working out why a driver is locked out.
+    this.logger.warn(
+      `Password reset for TowTruck #${id} by an admin ` +
+        `(had a password: ${hadPassword ? 'yes' : 'no'})`,
+    )
+    this.logTelegramLink('Armed password-reset link token', id, token, expiresAt)
+
+    return { telegramLinkUrl: this.telegram.buildLinkUrl(token), hadPassword }
   }
 
   /**

@@ -60,6 +60,19 @@ export interface AdminTowTruckSummary {
   /** Unset for Yerevan, which is a pseudo-region — see CLAUDE.md */
   regionSlug?: string
   hasTelegramLinked: boolean
+  /**
+   * Whether the driver can log in at all right now — a boolean, never the hash.
+   *
+   * The panel needs it for one honest sentence: the reset button asks an admin
+   * to revoke something, and until this existed it could not say whether there
+   * was anything to revoke. False means either "approved and never onboarded"
+   * or "already reset and has not tapped the new link yet"; both look identical
+   * from here, and both mean the same thing to the admin — send them a link.
+   *
+   * Same argument that lets this shape carry coordinates and coverage: the
+   * route is behind `AdminJwtGuard`. It says nothing about the password itself.
+   */
+  hasPassword: boolean
   createdAt: string
   images: { id: number; url: string }[]
 }
@@ -88,6 +101,7 @@ export function toAdminTowTruckSummary(truck: TowTruckWithImages): AdminTowTruck
     districtSlug: truck.districtSlug ?? undefined,
     regionSlug: truck.regionSlug ?? undefined,
     hasTelegramLinked: truck.telegramChatId !== null,
+    hasPassword: truck.passwordHash !== null,
     createdAt: truck.createdAt.toISOString(),
     images: truck.images.map((image) => ({ id: image.id, url: image.url })),
   }

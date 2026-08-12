@@ -439,10 +439,11 @@ export class TowTrucksRepository {
   }
 
   /**
-   * The one write path for both password columns, which is the point: they
-   * describe a single fact together ("whose password is this"), and a method
-   * that could set the hash without saying whether it is ours would make
-   * `mustChangePassword` a value someone has to remember to update.
+   * Both password columns are written here and in `revokePasswordWithLinkToken`
+   * below, and nowhere else — which is the point: they describe a single fact
+   * together ("whose password is this"), and a method that could set the hash
+   * without saying whether it is ours would make `mustChangePassword` a value
+   * someone has to remember to update.
    *
    * Takes a hash, never a password — bcrypt lives in DriverAuthService, so
    * there is no call site from which a plaintext could reach the column.
@@ -451,6 +452,53 @@ export class TowTrucksRepository {
     return this.prisma.towTruck.update({
       where: { id },
       data: { passwordHash, mustChangePassword },
+    })
+  }
+
+  /**
+   * The admin password reset: takes the driver's password away and arms a fresh
+   * Telegram link in its place, so tapping the link mints them a new temporary
+   * one (`TelegramWebhookController.handleStart`).
+   *
+   * ## Why one write and not two calls
+   *
+   * `setPassword` and `setTelegramLinkToken` already exist, and doing this as
+   * two sequential updates would be shorter. It is one statement because
+   * **neither order is safe**:
+   *
+   * - clear first, then arm the token → if the second write fails, the driver
+   *   is locked out with no way back in, and nothing on the row records that a
+   *   link was meant to follow;
+   * - arm first, then clear → the driver can tap the link in the gap. That
+   *   consumes the token and mints nothing (they still own their password at
+   *   that instant), and the clear then lands on a row with no live link at
+   *   all — same stranding, but silent, because the admin saw a success.
+   *
+   * A single `update` has no gap, so neither case exists. Do not split it.
+   *
+   * ## What it deliberately does NOT touch
+   *
+   * `telegramChatId`. The driver stays linked, so contact notices keep working
+   * while they are between passwords, and if they tap the new link with the
+   * same account nothing about the link changes hands. Tapping it with a
+   * *different* account still re-points the chat, exactly as it always did —
+   * `linkTelegramChat` owns that, not this.
+   *
+   * `mustChangePassword: false` is the honest value for a row with no hash, not
+   * a reset of intent: the flag means "the password on this row is one we
+   * generated", and there is no password on this row. It is also what a
+   * freshly-approved truck carries, and `issueTemporaryPassword` reads the two
+   * columns together for exactly that reason.
+   */
+  revokePasswordWithLinkToken(id: number, token: string, expiresAt: Date): Promise<TowTruck> {
+    return this.prisma.towTruck.update({
+      where: { id },
+      data: {
+        passwordHash: null,
+        mustChangePassword: false,
+        telegramLinkToken: token,
+        telegramLinkTokenExpiresAt: expiresAt,
+      },
     })
   }
 

@@ -88,6 +88,27 @@ export class AdminController {
     return this.adminService.issuePasswordsForLinkedDrivers(dto.towTruckIds)
   }
 
+  /**
+   * Takes a driver's password away and returns a fresh link to send them, which
+   * is where the replacement comes from. The only way a driver who forgot (or
+   * leaked) their password gets back in — there is no self-service reset, by
+   * design. See AdminService.resetDriverPassword.
+   *
+   * POST rather than DELETE: the effect is not "remove a resource", it is
+   * "issue a new credential channel", and the response carries the link that
+   * makes the action useful.
+   *
+   * Three segments, so no shadowing risk against the two-segment
+   * `tow-trucks/password-candidates` and `tow-trucks/count` above — asserted
+   * for the whole route table by admin.controller.count-route.spec.ts.
+   */
+  @Post('tow-trucks/:id/reset-password')
+  resetPassword(
+    @Param('id', ParseIntPipe) id: number,
+  ): Promise<{ telegramLinkUrl: string; hadPassword: boolean }> {
+    return this.adminService.resetDriverPassword(id)
+  }
+
   @Post('registration-requests/:id/reject')
   reject(
     @Param('id', ParseIntPipe) id: number,

@@ -127,6 +127,12 @@ export interface AdminTowTruck {
   /** Unset for Yerevan, which is a pseudo-region */
   regionSlug?: string
   hasTelegramLinked: boolean
+  /**
+   * Whether the driver can log in right now. False means either "never
+   * onboarded" or "reset and has not tapped the new link yet" — indistinguishable
+   * here, and the same action either way: send them a link.
+   */
+  hasPassword: boolean
   createdAt: string
   images: { id: number; url: string }[]
 }
@@ -248,6 +254,24 @@ export const adminRepository = {
       method: 'POST',
       headers: authHeader(),
     })
+  },
+
+  /**
+   * Revokes the driver's current password and returns a fresh link to send them.
+   *
+   * Sends nothing itself — the admin passes the link on out-of-band, and the
+   * new temporary password is minted when the driver taps it. Deliberately not
+   * a message to an already-linked chat: a driver who lost their Telegram is
+   * exactly who needs a reset, and that chat may now belong to someone else.
+   * See AdminService.resetDriverPassword.
+   */
+  resetDriverPassword(
+    towTruckId: number,
+  ): Promise<{ telegramLinkUrl: string; hadPassword: boolean }> {
+    return apiFetch<{ telegramLinkUrl: string; hadPassword: boolean }>(
+      `/admin/tow-trucks/${towTruckId}/reset-password`,
+      { method: 'POST', headers: authHeader() },
+    )
   },
 
   /**

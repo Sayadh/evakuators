@@ -528,9 +528,51 @@ async function resendTelegramLink(truck: AdminTowTruck): Promise<void> {
     telegramLinkUrl.value = result.telegramLinkUrl
     telegramLinkCopied.value = false
     telegramLinkModalTitle.value = truck.hasTelegramLinked ? 'Նոր Telegram link' : 'Telegram link'
+    telegramLinkModalHint.value = LINK_HINT_ONBOARDING
     telegramLinkModalOpen.value = true
   } catch (error) {
     towTrucksError.value = extractErrorMessage(error, 'Link-ը վերականգնել չհաջողվեց։')
+  } finally {
+    actioningId.value = null
+  }
+}
+
+/**
+ * Revokes the driver's password and shows the link that replaces it.
+ *
+ * The confirm names the lockout rather than the reset, because that is the part
+ * an admin can get wrong: the driver cannot log in from the moment this returns
+ * until they tap the link, and nothing here can put the old password back. The
+ * modal that follows is the recovery, which is why it opens immediately and
+ * carries its own wording (LINK_HINT_RESET) rather than the onboarding one.
+ *
+ * `hasPassword` is set to false locally rather than refetching the whole list:
+ * the backend has just guaranteed it, and reloading would scroll a long admin
+ * table back to the top mid-task. It goes true again on the next load, once the
+ * driver has actually tapped the link — which is a fact only the backend knows.
+ */
+async function resetDriverPassword(truck: AdminTowTruck): Promise<void> {
+  if (
+    !confirm(
+      `Զրոյացնե՞լ ${truck.driverName}-ի գաղտնաբառը։ Հին գաղտնաբառը կջնջվի անմիջապես, և ` +
+        'վարորդը մուտք գործել չի կարողանա այնքան ժամանակ, մինչև չսեղմի նոր link-ը։ ' +
+        'Link-ը կհայտնվի հաջորդ պատուհանում — պարտադիր ուղարկիր իրեն։',
+    )
+  ) {
+    return
+  }
+
+  actioningId.value = truck.id
+  try {
+    const result = await adminRepository.resetDriverPassword(truck.id)
+    truck.hasPassword = false
+    telegramLinkUrl.value = result.telegramLinkUrl
+    telegramLinkCopied.value = false
+    telegramLinkModalTitle.value = 'Նոր գաղտնաբառի link'
+    telegramLinkModalHint.value = LINK_HINT_RESET
+    telegramLinkModalOpen.value = true
+  } catch (error) {
+    towTrucksError.value = extractErrorMessage(error, 'Գաղտնաբառը զրոյացնել չհաջողվեց։')
   } finally {
     actioningId.value = null
   }
@@ -939,8 +981,29 @@ const approveError = ref('')
 const approveSubmitting = ref(false)
 const telegramLinkModalOpen = ref(false)
 const telegramLinkModalTitle = ref('')
+/**
+ * The sentence above the link, which is not the same sentence every time.
+ *
+ * The three entry points promise genuinely different things: onboarding and a
+ * re-link only *may* hand over a password (a driver who already set their own
+ * gets nothing — that asymmetry is the security rule of the whole handover),
+ * while a reset has just guaranteed one by taking the old password away. Wording
+ * that covered all three would have to hedge, and an admin forwarding it to a
+ * driver would be hedging about whether they can still log in.
+ */
+const telegramLinkModalHint = ref('')
 const telegramLinkUrl = ref('')
 const telegramLinkCopied = ref(false)
+
+const LINK_HINT_ONBOARDING =
+  'Ուղարկիր այս link-ը վարորդին (Telegram/WhatsApp-ով) — մեկ սեղմումով նրա Telegram-ը ' +
+  'կապակցվում է, և նույն պահին այնտեղ կստանա իր մուտքի գաղտնաբառը (եթե դեռ չունի իրենը)։ ' +
+  'Link-ը վավեր է 7 օր։'
+
+const LINK_HINT_RESET =
+  'Գաղտնաբառը ջնջված է — վարորդն այս պահին մուտք գործել չի կարող։ Ուղարկիր այս link-ը ' +
+  'իրեն (Telegram/WhatsApp-ով կամ գրանցման հեռախոսահամարին). սեղմելուց հետո Telegram-ում ' +
+  'կստանա նոր ժամանակավոր գաղտնաբառ։ Link-ը վավեր է 7 օր։'
 
 function openApprove(request: AdminRegistrationRequest): void {
   approveTarget.value = request
@@ -1061,6 +1124,7 @@ async function submitApprove(): Promise<void> {
     telegramLinkUrl.value = result.telegramLinkUrl
     telegramLinkCopied.value = false
     telegramLinkModalTitle.value = 'Պրոֆիլը ստեղծված է'
+    telegramLinkModalHint.value = LINK_HINT_ONBOARDING
     telegramLinkModalOpen.value = true
   } catch (error) {
     approveError.value = extractErrorMessage(error, 'Հաստատել չհաջողվեց, ստուգիր դաշտերը։')
@@ -1414,6 +1478,19 @@ async function rejectReview(review: AdminReview): Promise<void> {
                 <dt>Telegram</dt>
                 <dd>{{ truck.hasTelegramLinked ? 'Կապակցված ✓' : 'Կապակցված չէ' }}</dd>
               </div>
+              <!-- Whether the driver can log in at all. Worth its own row
+                   because "no password" is otherwise invisible in the panel and
+                   is the answer to most «մուտք չեմ գործում» reports — a driver
+                   who was approved and never tapped their link looks entirely
+                   healthy here without it. -->
+              <div>
+                <dt>Գաղտնաբառ</dt>
+                <dd>
+                  <AppBadge :variant="truck.hasPassword ? 'success' : 'neutral'">
+                    {{ truck.hasPassword ? 'Ունի ✓' : 'Չունի — link է պետք' }}
+                  </AppBadge>
+                </dd>
+              </div>
               <!-- The base, shown next to the phone because it is now what
                    decides the truck's position on its own town's page. -->
               <div>
@@ -1574,6 +1651,20 @@ async function rejectReview(review: AdminReview): Promise<void> {
                 >
                   {{ truck.hasTelegramLinked ? 'Փոխել Telegram-ը' : 'Ուղարկել Telegram link' }}
                 </AppButton>
+                <!-- Only offered when there is a password to take away. With
+                     none, the honest action is the button above it — the reset
+                     would revoke nothing and just arm a link, which is what
+                     «Ուղարկել Telegram link» already does under a name that
+                     describes it. -->
+                <AppButton
+                  v-if="truck.hasPassword"
+                  variant="outline"
+                  size="sm"
+                  :disabled="actioningId === truck.id"
+                  @click="resetDriverPassword(truck)"
+                >
+                  Զրոյացնել գաղտնաբառը
+                </AppButton>
                 <AppButton
                   variant="outline"
                   size="sm"
@@ -1684,11 +1775,10 @@ async function rejectReview(review: AdminReview): Promise<void> {
     />
 
     <AppModal v-model="telegramLinkModalOpen" :title="telegramLinkModalTitle">
-      <p>
-        Ուղարկիր այս link-ը վարորդին (Telegram/WhatsApp-ով) — մեկ սեղմումով նրա Telegram-ը
-        կապակցվում է, և նույն պահին այնտեղ կստանա իր մուտքի գաղտնաբառը (եթե դեռ չունի իրենը)։
-        Link-ը վավեր է 7 օր։
-      </p>
+      <!-- Set per entry point — onboarding/re-link only MAY hand over a
+           password, a reset has already guaranteed one. See
+           telegramLinkModalHint. -->
+      <p>{{ telegramLinkModalHint }}</p>
       <div class="telegram-link-box">
         <code>{{ telegramLinkUrl }}</code>
       </div>

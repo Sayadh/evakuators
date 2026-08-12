@@ -1,5 +1,6 @@
 import { decimalToNumber } from '../common/coordinates'
 import type { ServiceAreaJson, TowTruckWithImages } from '../tow-trucks/tow-truck.types'
+import { derivesHeavyEquipment } from '../tow-trucks/vehicle-types'
 
 /**
  * Admin-list shape — deliberately NOT the raw Prisma row. Two reasons:
@@ -19,6 +20,22 @@ export interface AdminTowTruckSummary {
   vehicleBrand: string
   vehicleModel?: string
   vehicleYear: number
+  /**
+   * The raw slug (`flatbed`, `manipulator`, `heavy-duty`, …). The panel needs
+   * it for one thing only: deciding whether the «Ծանր տեխնիկա» box is the
+   * admin's to change, or already settled by the type — see `heavyEquipment`.
+   */
+  vehicleType: string
+  /**
+   * Whether this truck appears on `/tsanr-tehnika`.
+   *
+   * **Derived, not the raw column.** True for every `heavy-duty` truck
+   * whatever the column says, exactly as the listing filter treats it — so the
+   * panel cannot render an unticked box next to a truck that page is already
+   * returning. The two are read together: `vehicleType === 'heavy-duty'` is
+   * what tells the panel to disable the box rather than merely tick it.
+   */
+  heavyEquipment: boolean
   locationName: string
   /**
    * Base parking coordinates, so the panel can show "already set" vs "not set"
@@ -89,6 +106,10 @@ export function toAdminTowTruckSummary(truck: TowTruckWithImages): AdminTowTruck
     vehicleBrand: truck.vehicleBrand,
     vehicleModel: truck.vehicleModel ?? undefined,
     vehicleYear: truck.vehicleYear,
+    vehicleType: truck.vehicleType,
+    // Through the same predicate the listing filter uses, so the panel and the
+    // public page can never disagree about who is on /tsanr-tehnika.
+    heavyEquipment: derivesHeavyEquipment(truck.vehicleType, truck.heavyEquipment),
     locationName: truck.locationName,
     latitude: decimalToNumber(truck.latitude),
     longitude: decimalToNumber(truck.longitude),

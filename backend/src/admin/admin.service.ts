@@ -13,7 +13,7 @@ import { TelegramService } from '../telegram/telegram.service'
 import { assertPlacementIsServed } from '../tow-trucks/placement'
 import { AVAILABLE_24_7_SLUG } from '../tow-trucks/service-slugs'
 import type { ServiceAreaJson } from '../tow-trucks/tow-truck.types'
-import { derivesManipulator } from '../tow-trucks/vehicle-types'
+import { derivesHeavyEquipment, derivesManipulator } from '../tow-trucks/vehicle-types'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
 import {
   AdminRegistrationSummary,
@@ -233,6 +233,18 @@ export class AdminService {
             // «Մանիպուլյատոր» filter. Same treatment works24Hours gets above.
             manipulator: derivesManipulator(request.vehicleType, request.manipulator),
             wheelSkates: request.wheelSkates,
+            // NOT derived, unlike `manipulator` directly above — and the
+            // asymmetry is deliberate. This column stores *only what an admin
+            // decided*; whether a truck appears on /tsanr-tehnika is the union
+            // of it and the vehicle type, applied on every READ (the listing
+            // filter and `toAdminTowTruckSummary`).
+            //
+            // Storing the derived `true` here instead would survive the driver
+            // later changing their vehicle type away from `heavy-duty` on the
+            // dashboard — leaving a flatbed permanently on a page only an admin
+            // is supposed to be able to put anyone on. Left at the column
+            // default, that self-promotion is not expressible.
+            heavyEquipment: false,
             // Resolved by the admin frontend from the chosen citySlug/districtSlug
             // (see ApproveRegistrationDto.regionSlug) — the backend has no
             // geography of its own, and with up to 2 regionSlugs on the request
@@ -994,6 +1006,51 @@ export class AdminService {
 
     const updated = await this.towTrucksRepository.setFeatured(id, isFeatured)
     return { id: updated.id, isFeatured: updated.isFeatured }
+  }
+
+  /**
+   * Marks/unmarks a truck as able to move heavy machinery — which is what puts
+   * it on `/tsanr-tehnika` alongside the trucks whose `vehicleType` already
+   * says so.
+   *
+   * ## The column stores the admin's decision; the page shows the union
+   *
+   * A truck whose type is already `heavy-duty` answers `true` whatever was
+   * sent, and **nothing is written**. "Off" is not a state that truck can be
+   * in — the listing filter ORs the type with this flag and would keep
+   * returning it regardless — so the panel shows it ticked and disabled, and
+   * this method enforces the same rule server-side, because a disabled
+   * checkbox is a hint to a browser and nothing to anything else that speaks
+   * HTTP.
+   *
+   * Note what it deliberately does NOT do: write the derived `true` into the
+   * column. Doing so would outlive the reason for it — a driver may change
+   * their vehicle type away from `heavy-duty` on their own dashboard, and a
+   * stored `true` would leave a flatbed permanently on a page only an admin
+   * can put anyone on. Keeping the column to "what an admin decided" makes
+   * that self-promotion impossible rather than merely unlikely.
+   */
+  async setTowTruckHeavyEquipment(
+    id: number,
+    heavyEquipment: boolean,
+  ): Promise<{ id: number; heavyEquipment: boolean }> {
+    const towTruck = await this.towTrucksRepository.findById(id)
+    if (!towTruck) throw new NotFoundException(`Էվակուատոր #${id}-ը չի գտնվել`)
+
+    // The type decides, and it is not the admin's to override in either
+    // direction. Answer with the derived value and leave the row alone.
+    if (derivesHeavyEquipment(towTruck.vehicleType, false)) {
+      return { id: towTruck.id, heavyEquipment: true }
+    }
+
+    // Skipping a no-op write keeps `updatedAt` — which the sitemap's <lastmod>
+    // reads — honest about a request that changed nothing.
+    if (heavyEquipment === towTruck.heavyEquipment) {
+      return { id: towTruck.id, heavyEquipment: towTruck.heavyEquipment }
+    }
+
+    const updated = await this.towTrucksRepository.setHeavyEquipment(id, heavyEquipment)
+    return { id: updated.id, heavyEquipment: updated.heavyEquipment }
   }
 
   /**

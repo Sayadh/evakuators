@@ -1,6 +1,11 @@
 import 'reflect-metadata'
 import { describe, expect, it } from 'vitest'
-import { derivesManipulator, MANIPULATOR_VEHICLE_TYPE } from '../src/tow-trucks/vehicle-types'
+import {
+  derivesHeavyEquipment,
+  derivesManipulator,
+  HEAVY_DUTY_VEHICLE_TYPE,
+  MANIPULATOR_VEHICLE_TYPE,
+} from '../src/tow-trucks/vehicle-types'
 
 /**
  * `manipulator` is derived on write, not trusted from the payload — the same
@@ -47,5 +52,48 @@ describe('derivesManipulator', () => {
     for (const type of ['flatbed', 'sliding-platform', 'heavy-duty', MANIPULATOR_VEHICLE_TYPE]) {
       expect(derivesManipulator(type, true)).toBe(true)
     }
+  })
+})
+
+describe('derivesHeavyEquipment', () => {
+  /**
+   * Same union shape as `derivesManipulator`, different source of truth: the
+   * flag half is set by an ADMIN, never by the driver — there is no
+   * registration field and no dashboard field for it. See the doc comment on
+   * the function for why this one judgement is not the driver's to make.
+   */
+  it('is true when an admin says so, whatever the type', () => {
+    // The case the flag exists for: a long-platform flatbed, or a manipulator
+    // with a crane big enough for an excavator. Neither picked `heavy-duty`.
+    expect(derivesHeavyEquipment('flatbed', true)).toBe(true)
+    expect(derivesHeavyEquipment(MANIPULATOR_VEHICLE_TYPE, true)).toBe(true)
+  })
+
+  it('is true when the type says so, whatever the flag', () => {
+    // Choosing «Ծանր տեխնիկայի էվակուատոր» is already the claim, which is why
+    // the admin panel shows those trucks ticked AND disabled.
+    expect(derivesHeavyEquipment(HEAVY_DUTY_VEHICLE_TYPE, false)).toBe(true)
+  })
+
+  it('is false only when neither says so', () => {
+    expect(derivesHeavyEquipment('flatbed', false)).toBe(false)
+    expect(derivesHeavyEquipment('sliding-platform', false)).toBe(false)
+    expect(derivesHeavyEquipment(MANIPULATOR_VEHICLE_TYPE, false)).toBe(false)
+  })
+
+  it('does not accept a near-miss slug', () => {
+    // Guards the manual sync point with `VehicleType.HeavyDuty`.
+    expect(derivesHeavyEquipment('heavyduty', false)).toBe(false)
+    expect(derivesHeavyEquipment('heavy_duty', false)).toBe(false)
+    expect(derivesHeavyEquipment('Heavy-Duty', false)).toBe(false)
+    expect(derivesHeavyEquipment('', false)).toBe(false)
+  })
+
+  it('is a different question from derivesManipulator', () => {
+    // The two are structurally identical and sit next to each other, so a
+    // copy-paste that crossed the constants would still compile and still
+    // return booleans — and quietly swap the two landing pages' contents.
+    expect(derivesHeavyEquipment(MANIPULATOR_VEHICLE_TYPE, false)).toBe(false)
+    expect(derivesManipulator(HEAVY_DUTY_VEHICLE_TYPE, false)).toBe(false)
   })
 })

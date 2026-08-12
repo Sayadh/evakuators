@@ -3,7 +3,7 @@ import type { Prisma, TowTruck } from '@prisma/client'
 import { IMAGE_ORDER } from '../images/image-order'
 import { PrismaService } from '../prisma/prisma.service'
 import type { TowTruckFilters, TowTruckWhere, TowTruckWithImages } from './tow-truck.types'
-import { MANIPULATOR_VEHICLE_TYPE } from './vehicle-types'
+import { HEAVY_DUTY_VEHICLE_TYPE, MANIPULATOR_VEHICLE_TYPE } from './vehicle-types'
 
 /**
  * Exactly the columns a listing card renders — see TowTruckCardApi for why the
@@ -391,6 +391,11 @@ export class TowTrucksRepository {
     return this.prisma.towTruck.update({ where: { id }, data: { isFeatured } })
   }
 
+  /** Admin-set "can move heavy machinery" — see AdminService.setTowTruckHeavyEquipment */
+  setHeavyEquipment(id: number, heavyEquipment: boolean): Promise<TowTruck> {
+    return this.prisma.towTruck.update({ where: { id }, data: { heavyEquipment } })
+  }
+
   /**
    * Writes the base parking coordinates, for both the driver's own edit and the
    * admin correction — one method, so the timestamp cannot be set by one caller
@@ -606,6 +611,21 @@ export class TowTrucksRepository {
       // written before that do not, and nothing migrated them.
       where.AND = [
         { OR: [{ vehicleType: MANIPULATOR_VEHICLE_TYPE }, { manipulator: true }] },
+      ]
+    } else if (filters.vehicleType === HEAVY_DUTY_VEHICLE_TYPE) {
+      // Same union, different question, and note the nesting is identical: this
+      // OR lives INSIDE `AND`, never next to the geography `or` above. «Ծանր
+      // տեխնիկա» is answered by the vehicle type or by the admin-set flag —
+      // a flatbed with a long platform and a manipulator with a big crane both
+      // belong on that page, and neither picked `heavy-duty` as their type.
+      //
+      // Both halves are load-bearing here, more so than in the manipulator
+      // branch: the column deliberately stores ONLY what an admin decided and
+      // is never backfilled from the type (see the migration), so without the
+      // first term every `heavy-duty` truck would vanish from its own page.
+      // Without the second, no admin decision would have any effect at all.
+      where.AND = [
+        { OR: [{ vehicleType: HEAVY_DUTY_VEHICLE_TYPE }, { heavyEquipment: true }] },
       ]
     } else if (filters.vehicleType) {
       where.vehicleType = filters.vehicleType

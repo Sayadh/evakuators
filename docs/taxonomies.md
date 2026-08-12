@@ -155,6 +155,63 @@ with a crane.
 backend file as text and asserts both the slug and that both sides are a union
 rather than an intersection.
 
+### «Ծանր տեխնիկա» is the same union with a different author
+
+`/tsanr-tehnika` works the same way — vehicle type OR a boolean — but the
+boolean is **set by an admin, never by the driver**. There is no registration
+field and no dashboard field for it, and that asymmetry is the point:
+
+| | «Մանիպուլյատոր» | «Ծանր տեխնիկա» |
+| --- | --- | --- |
+| Vehicle type | `manipulator` | `heavy-duty` |
+| Boolean | `TowTruck.manipulator` | `TowTruck.heavyEquipment` |
+| Who sets the boolean | the driver, at registration | **an admin**, in `/admin` |
+| Predicate | `derivesManipulator()` | `derivesHeavyEquipment()` |
+| Endpoint | (part of the normal write path) | `PATCH /admin/tow-trucks/:id/heavy-equipment` |
+
+«Ունի մանիպուլյատոր» is a question about equipment bolted to the truck: the
+driver is the only one who knows, and a wrong answer is visible in the photos.
+"Can move heavy machinery" is a judgement about capacity, platform size and
+experience that a driver has every incentive to answer yes to, and a wrong
+answer is discovered by a stranded excavator when the truck turns up and
+cannot lift it. So it is not the driver's to make — which is also why it is
+one of the very few fields exempt from CLAUDE.md's "registration and the
+dashboard must offer the same fields" rule: it is asked in neither.
+
+The admin panel ticks **and disables** the box for a `heavy-duty` truck, the
+same way the registration form does for the manipulator type, and
+`AdminService.setTowTruckHeavyEquipment` enforces the same rule on the write —
+a disabled input is a hint to a browser, nothing more.
+
+#### The union is applied on READ, and that is the whole safety property
+
+`derivesManipulator` runs on every **write**, so `TowTruck.manipulator` ends up
+holding the union. `heavyEquipment` is the opposite: the column stores **only
+what an admin decided**, and the union is recomputed by the listing filter and
+by `toAdminTowTruckSummary` each time they read. Nothing — not `approve()`, not
+the admin endpoint, not the migration — ever writes the derived `true`.
+
+That is not a style preference, it is what closes a self-promotion hole. The
+two inputs have different owners: a driver may change their own `vehicleType`
+from their dashboard at any time. If the union were baked into the column at
+approval, a driver could register as `heavy-duty`, let it be stored as `true`,
+then switch to `flatbed` — and stay on an admin-only page forever, with no
+admin ever having decided anything. Deriving on read means the type's
+contribution lasts exactly as long as the type does.
+
+`backend/test/admin-heavy-equipment.spec.ts` asserts the endpoint writes
+*nothing* for a `heavy-duty` truck, in both directions, which is the assertion
+that would fail if someone "fixed" the apparent inconsistency between the
+column and the panel.
+
+The flag is deliberately **not** on the public card or profile — it is a page
+filter, not a badge. Adding it to the card shape would publish it for every
+driver at once; see CLAUDE.md § "A listing is not a profile".
+
+`HEAVY_DUTY_VEHICLE_TYPE` is a **manual sync point** with `VehicleType.HeavyDuty`
+and with the `vehicleType` of `HEAVY_DUTY_PAGE` in
+`frontend/constants/vehicleTypePages.ts`, which is what sends it over the wire.
+
 ## Geography — `frontend/data/{regions,cities,districts}.ts`
 
 Not really a "taxonomy" in the picker sense, but the same single-source

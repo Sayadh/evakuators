@@ -195,6 +195,12 @@ float) — see `docs/taxonomies.md`.
 `TowTruck` has, so `approve()` copies them straight across like
 `winch`/`manipulator`.
 
+`TowTruck.heavyEquipment` has **no counterpart here on purpose.** It is the one
+boolean on a truck that is not a driver answer — an admin sets it, and
+`approve()` derives it from the vehicle type alone rather than copying a
+column that does not exist. See `docs/taxonomies.md` § «Ծանր տեխնիկա» for why
+this judgement is not the driver's to make.
+
 They used to be one free-text `platformDimensions` string (`"5.5 մ × 2.2 մ"`),
 and that single decision cost a format regex, a parser, and a conversion step
 at approval — a step which for a long time simply wasn't written, so the answer

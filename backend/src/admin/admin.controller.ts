@@ -26,6 +26,7 @@ import { RemoveServiceAreaDto } from './dto/remove-service-area.dto'
 import { SetPrimaryAreaDto } from './dto/set-primary-area.dto'
 import { SetTowTruckActiveDto } from './dto/set-tow-truck-active.dto'
 import { SetTowTruckFeaturedDto } from './dto/set-tow-truck-featured.dto'
+import { SetTowTruckHeavyEquipmentDto } from './dto/set-tow-truck-heavy-equipment.dto'
 import { SetTowTruckPhoneDto } from './dto/set-tow-truck-phone.dto'
 
 /** Moderation endpoints — every route requires a valid admin JWT (see AdminAuthModule) */
@@ -195,6 +196,24 @@ export class AdminController {
     @Body() dto: SetTowTruckFeaturedDto,
   ): Promise<{ id: number; isFeatured: boolean }> {
     return this.adminService.setTowTruckFeatured(id, dto.isFeatured)
+  }
+
+  /**
+   * Toggle "can move heavy machinery" — what puts this truck on
+   * `/tsanr-tehnika`. Unlike `/featured` this is not editorial: it changes
+   * public listing results.
+   *
+   * Admin-only with no driver counterpart, unlike almost every other field on
+   * a truck — see `derivesHeavyEquipment`. The response echoes the **derived**
+   * value, which is `true` for a `heavy-duty` truck no matter what was sent,
+   * so the panel re-renders from the answer rather than from its own guess.
+   */
+  @Patch('tow-trucks/:id/heavy-equipment')
+  setHeavyEquipment(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SetTowTruckHeavyEquipmentDto,
+  ): Promise<{ id: number; heavyEquipment: boolean }> {
+    return this.adminService.setTowTruckHeavyEquipment(id, dto.heavyEquipment)
   }
 
   /**

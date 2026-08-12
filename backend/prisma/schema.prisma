@@ -104,6 +104,19 @@ model TowTruck {
   /// platform. Same equipment-boolean shape as winch/manipulator — set once
   /// at registration, not editable from the driver's own dashboard.
   wheelSkates     Boolean @default(false)
+  /// Whether this truck can move heavy machinery — what puts it on
+  /// `/tsanr-tehnika`. UNLIKE every other boolean here it is NOT a driver
+  /// answer: it is set by an admin only (there is no registration field and no
+  /// dashboard field for it), because a driver who ticks it wrongly sends a
+  /// stranded excavator a truck that cannot lift it.
+  ///
+  /// UNLIKE `manipulator` this column is NOT derived on write: it stores only
+  /// what an admin decided. Who actually appears on `/tsanr-tehnika` is the
+  /// union of this and `vehicleType == 'heavy-duty'`, applied on every READ
+  /// (`derivesHeavyEquipment` — the listing filter and the admin mapper).
+  /// Storing the derived value instead would survive the driver later changing
+  /// their vehicle type, leaving a flatbed on an admin-only page.
+  heavyEquipment  Boolean @default(false)
   plateNumber     String?
   showPlateNumber Boolean @default(false)
 

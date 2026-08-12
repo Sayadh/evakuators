@@ -1,5 +1,5 @@
 /**
- * The one vehicle-type slug the backend cares about structurally.
+ * The two vehicle-type slugs the backend cares about structurally.
  *
  * Everything else in the taxonomy — labels, descriptions, the order of the
  * select — lives entirely in the frontend (`frontend/constants/vehicles.ts`),
@@ -42,4 +42,53 @@ export const MANIPULATOR_VEHICLE_TYPE = 'manipulator'
  */
 export function derivesManipulator(vehicleType: string, manipulator: boolean): boolean {
   return manipulator || vehicleType === MANIPULATOR_VEHICLE_TYPE
+}
+
+/**
+ * The slug behind `/tsanr-tehnika`.
+ *
+ * MANUAL SYNC POINT: must equal `VehicleType.HeavyDuty` in
+ * `frontend/types/enums.ts`, and the `vehicleType` of `HEAVY_DUTY_PAGE` in
+ * `frontend/constants/vehicleTypePages.ts` is what sends it over the wire.
+ * Nothing enforces it at compile time — the two apps share no code.
+ */
+export const HEAVY_DUTY_VEHICLE_TYPE = 'heavy-duty'
+
+/**
+ * Whether a truck can move heavy machinery, given its type and the admin's own
+ * flag. Either answer is enough — the same union `derivesManipulator` applies
+ * to «Մանիպուլյատոր», for the same reason: the vehicle type *is* the claim,
+ * said in the words of the taxonomy instead of the words of the flag.
+ *
+ * ## Why this one is admin-set and `manipulator` is driver-set
+ *
+ * «Ունի մանիպուլյատոր» is a question about equipment bolted to the truck — the
+ * driver is the only one who knows, and a wrong answer is visible in the photos.
+ * "Can move heavy machinery" is a judgement about capacity, platform size and
+ * experience that a driver has every incentive to answer yes to, and a wrong
+ * answer is discovered by a stranded excavator when the truck arrives and
+ * cannot lift it. So there is no registration field and no dashboard field for
+ * it, only `PATCH /admin/tow-trucks/:id/heavy-equipment`.
+ *
+ * The `heavy-duty` half of the union is not a loophole in that: choosing that
+ * vehicle type is choosing to appear on `/tsanr-tehnika` by name, and the
+ * admin panel shows those trucks as ticked-and-locked rather than pretending
+ * the flag is what decides.
+ *
+ * ## Applied on READ, not baked into the column
+ *
+ * `derivesManipulator` is applied on every write, so the column ends up
+ * holding the union. This one is the opposite: `TowTruck.heavyEquipment`
+ * stores only the admin's own decision, and this function is called by the
+ * listing filter and the admin mapper each time they read.
+ *
+ * The difference matters because the two inputs have different owners. A
+ * driver can change their vehicle type from their own dashboard at any time —
+ * if the union were baked in at approval, a driver could register as
+ * `heavy-duty`, then switch to `flatbed`, and stay on an admin-only page
+ * forever. Deriving on read means the type's contribution lasts exactly as
+ * long as the type does.
+ */
+export function derivesHeavyEquipment(vehicleType: string, heavyEquipment: boolean): boolean {
+  return heavyEquipment || vehicleType === HEAVY_DUTY_VEHICLE_TYPE
 }

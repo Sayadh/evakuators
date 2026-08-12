@@ -41,6 +41,27 @@ describe('the config', () => {
     expect(HEAVY_DUTY_PAGE.vehicleType).toBe(VehicleType.HeavyDuty)
   })
 
+  it('agrees with the slug the backend branches on', () => {
+    /**
+     * MANUAL SYNC POINT. `HEAVY_DUTY_PAGE.vehicleType` is what travels as
+     * `?vehicleType=`, and the backend compares it literally to decide whether
+     * to apply the union (the type OR the admin-set `heavyEquipment` flag).
+     * A drift does not error anywhere — the page just silently stops
+     * including every truck an admin ticked, which is the whole feature.
+     *
+     * Read as text because the two apps share no code (CLAUDE.md).
+     */
+    const backend = readFileSync(
+      `${ROOT}../backend/src/tow-trucks/vehicle-types.ts`,
+      'utf8',
+    )
+
+    expect(backend).toContain(`HEAVY_DUTY_VEHICLE_TYPE = '${HEAVY_DUTY_PAGE.vehicleType}'`)
+    // A union, not an equality — the `||` is the flag half. An intersection
+    // here would drop every admin-ticked flatbed off the page.
+    expect(backend).toContain('heavyEquipment || vehicleType === HEAVY_DUTY_VEHICLE_TYPE')
+  })
+
   it('keys the lookup by the slug it stores', () => {
     for (const page of VEHICLE_TYPE_PAGE_LIST) {
       expect(VEHICLE_TYPE_PAGES[page.slug as keyof typeof VEHICLE_TYPE_PAGES]).toBe(page)

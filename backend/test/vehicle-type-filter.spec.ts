@@ -2,7 +2,10 @@ import 'reflect-metadata'
 import { describe, expect, it } from 'vitest'
 import { TowTrucksRepository } from '../src/tow-trucks/tow-trucks.repository'
 import type { TowTruckFilters, TowTruckWhere } from '../src/tow-trucks/tow-truck.types'
-import { MANIPULATOR_VEHICLE_TYPE } from '../src/tow-trucks/vehicle-types'
+import {
+  HEAVY_DUTY_VEHICLE_TYPE,
+  MANIPULATOR_VEHICLE_TYPE,
+} from '../src/tow-trucks/vehicle-types'
 
 /**
  * The `vehicleType` half of `GET /tow-trucks` — what powers `/manipulator` and
@@ -10,7 +13,7 @@ import { MANIPULATOR_VEHICLE_TYPE } from '../src/tow-trucks/vehicle-types'
  *
  * Two properties matter here and neither is visible by eyeballing a result
  * list: that the type NARROWS the geography instead of widening it, and that
- * `manipulator` is a union rather than an equality.
+ * BOTH landing-page types are unions rather than equalities.
  */
 
 /** Reaches the private query builder — the thing under test is the WHERE it produces */
@@ -23,28 +26,33 @@ function buildWhere(filters: TowTruckFilters): TowTruckWhere {
 
 describe('vehicle type narrows, never widens', () => {
   it('ANDs with the geography clause instead of joining it', () => {
-    // The bug this prevents: pushing the type into `or` turns "manipulators in
-    // Kotayk" into "everything in Kotayk OR every manipulator in the country",
+    // The bug this prevents: pushing the type into `or` turns "flatbeds in
+    // Kotayk" into "everything in Kotayk OR every flatbed in the country",
     // which reads as the page merely returning too much.
-    const where = buildWhere({ regionSlug: 'kotayk', vehicleType: 'heavy-duty' })
+    const where = buildWhere({ regionSlug: 'kotayk', vehicleType: 'flatbed' })
 
-    expect(where.vehicleType).toBe('heavy-duty')
+    expect(where.vehicleType).toBe('flatbed')
     // The geography stays its own OR, untouched by the type
     expect(Array.isArray(where.OR)).toBe(true)
-    expect(JSON.stringify(where.OR)).not.toContain('heavy-duty')
+    expect(JSON.stringify(where.OR)).not.toContain('flatbed')
   })
 
   it('applies on its own with no geography at all', () => {
     // Which is how both landing pages call it: country-wide, one type.
-    const where = buildWhere({ vehicleType: 'heavy-duty' })
+    const where = buildWhere({ vehicleType: 'flatbed' })
 
-    expect(where.vehicleType).toBe('heavy-duty')
+    expect(where.vehicleType).toBe('flatbed')
     expect(where.OR).toBeUndefined()
     expect(where.isActive).toBe(true)
   })
 
-  it('never returns deactivated trucks', () => {
-    expect(buildWhere({ vehicleType: 'heavy-duty' }).isActive).toBe(true)
+  it('never returns deactivated trucks, for either union type', () => {
+    // `isActive` is the only publication flag this system has, and a union
+    // branch that forgot it would publish every deactivated truck on a landing
+    // page — the one place the extra `AND` makes it easy to forget.
+    expect(buildWhere({ vehicleType: 'flatbed' }).isActive).toBe(true)
+    expect(buildWhere({ vehicleType: MANIPULATOR_VEHICLE_TYPE }).isActive).toBe(true)
+    expect(buildWhere({ vehicleType: HEAVY_DUTY_VEHICLE_TYPE }).isActive).toBe(true)
   })
 
   it('adds nothing when no type is asked for', () => {
@@ -87,6 +95,46 @@ describe('manipulator is a union, not an equality', () => {
     const where = buildWhere({ vehicleType: 'flatbed' })
     expect(where.AND).toBeUndefined()
     expect(where.vehicleType).toBe('flatbed')
+  })
+
+  it('does not confuse the two unions with each other', () => {
+    // Both branches build the same shape, so a copy-paste that left the wrong
+    // column in place would still produce a valid-looking WHERE — and quietly
+    // fill each landing page with the other page's trucks.
+    expect(JSON.stringify(buildWhere({ vehicleType: MANIPULATOR_VEHICLE_TYPE })))
+      .not.toContain('heavyEquipment')
+    expect(JSON.stringify(buildWhere({ vehicleType: HEAVY_DUTY_VEHICLE_TYPE })))
+      .not.toContain('manipulator')
+  })
+})
+
+describe('heavy duty is a union too — the admin flag, not just the type', () => {
+  /**
+   * «Ծանր տեխնիկա» has two sources: the vehicle type a driver picked, and an
+   * admin-set flag on any other truck (a long-platform flatbed, a manipulator
+   * with a big crane). A plain equality would keep the page to trucks that
+   * happened to choose one taxonomy entry, which is the whole thing the flag
+   * exists to fix. See `derivesHeavyEquipment`.
+   */
+  it('matches the vehicle type OR the admin flag', () => {
+    const where = buildWhere({ vehicleType: HEAVY_DUTY_VEHICLE_TYPE })
+
+    expect(where.vehicleType).toBeUndefined()
+    expect(where.AND).toEqual([
+      { OR: [{ vehicleType: HEAVY_DUTY_VEHICLE_TYPE }, { heavyEquipment: true }] },
+    ])
+  })
+
+  it('keeps the union inside AND, so geography still narrows it', () => {
+    // The failure this catches is specific and silent: an OR at the top level
+    // would answer "trucks in Kotayk OR any heavy-equipment truck in the
+    // country" — a regional page quietly listing the whole fleet.
+    const where = buildWhere({ regionSlug: 'kotayk', vehicleType: HEAVY_DUTY_VEHICLE_TYPE })
+
+    expect(Array.isArray(where.OR)).toBe(true)
+    expect(Array.isArray(where.AND)).toBe(true)
+    expect(JSON.stringify(where.OR)).not.toContain('heavyEquipment')
+    expect(JSON.stringify(where.AND)).toContain('heavyEquipment')
   })
 })
 

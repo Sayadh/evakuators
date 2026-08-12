@@ -102,6 +102,15 @@ export interface AdminTowTruck {
   vehicleBrand: string
   vehicleModel?: string
   vehicleYear: number
+  /** Raw slug — read together with `heavyEquipment` to decide if the box is editable */
+  vehicleType: string
+  /**
+   * Whether this truck appears on `/tsanr-tehnika`. **Derived** server-side:
+   * always true for a `heavy-duty` truck, whatever the stored column says.
+   * The panel ticks AND disables the box in that case, because the vehicle
+   * type is the same claim and there is no "off" for it.
+   */
+  heavyEquipment: boolean
   locationName: string
   /**
    * Base parking coordinates. Both undefined for every driver approved before
@@ -408,6 +417,25 @@ export const adminRepository = {
       body: { isFeatured },
       headers: authHeader(),
     })
+  },
+
+  /**
+   * Toggle whether this truck can move heavy machinery — which is what puts it
+   * on `/tsanr-tehnika`. Unlike `setTowTruckFeatured` this changes public
+   * listing results, not just the homepage.
+   *
+   * The response carries the **derived** value, so the caller must assign what
+   * comes back rather than the value it sent: a `heavy-duty` truck answers
+   * `true` to an attempt to turn it off.
+   */
+  setTowTruckHeavyEquipment(
+    id: number,
+    heavyEquipment: boolean,
+  ): Promise<{ id: number; heavyEquipment: boolean }> {
+    return apiFetch<{ id: number; heavyEquipment: boolean }>(
+      `/admin/tow-trucks/${id}/heavy-equipment`,
+      { method: 'PATCH', body: { heavyEquipment }, headers: authHeader() },
+    )
   },
 
   /**

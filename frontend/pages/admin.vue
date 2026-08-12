@@ -18,8 +18,8 @@ import {
   type PasswordCandidate,
 } from '~/repositories'
 import { useAdminAuthStore } from '~/stores/adminAuth'
-import { LocationType } from '~/types/enums'
-import type { ServiceType, VehicleType } from '~/types/enums'
+import { LocationType, VehicleType } from '~/types/enums'
+import type { ServiceType } from '~/types/enums'
 import { formatCoordinates, parseCoordinates, type Coordinates } from '~/utils/coordinates'
 import { extractErrorMessage } from '~/utils/errors'
 import { formatDateNumeric } from '~/utils/formatters'
@@ -594,6 +594,40 @@ async function toggleTowTruckFeatured(truck: AdminTowTruck): Promise<void> {
   try {
     const updated = await adminRepository.setTowTruckFeatured(truck.id, nextFeatured)
     truck.isFeatured = updated.isFeatured
+  } catch (error) {
+    towTrucksError.value = extractErrorMessage(error, 'Կարգավիճակը փոխել չհաջողվեց։')
+  } finally {
+    actioningId.value = null
+  }
+}
+
+/**
+ * Whether the «Ծանր տեխնիկա» box is settled by the vehicle type rather than by
+ * the admin. Ticked and locked for those trucks — «Ծանր տեխնիկայի էվակուատոր»
+ * is the same claim in the words of the taxonomy, so there is no "off" state
+ * for it, and the backend derives `true` regardless of what is sent.
+ */
+function isHeavyEquipmentLocked(truck: AdminTowTruck): boolean {
+  return truck.vehicleType === VehicleType.HeavyDuty
+}
+
+/**
+ * NOT editorial, unlike the featured toggle above: this decides whether the
+ * truck appears on /tsanr-tehnika for every visitor.
+ *
+ * Assigns what the server returned rather than what was sent, because the
+ * value is derived — see AdminService.setTowTruckHeavyEquipment.
+ */
+async function toggleTowTruckHeavyEquipment(truck: AdminTowTruck): Promise<void> {
+  if (isHeavyEquipmentLocked(truck)) return
+
+  actioningId.value = truck.id
+  try {
+    const updated = await adminRepository.setTowTruckHeavyEquipment(
+      truck.id,
+      !truck.heavyEquipment,
+    )
+    truck.heavyEquipment = updated.heavyEquipment
   } catch (error) {
     towTrucksError.value = extractErrorMessage(error, 'Կարգավիճակը փոխել չհաջողվեց։')
   } finally {
@@ -1547,6 +1581,28 @@ async function rejectReview(review: AdminReview): Promise<void> {
               </div>
             </header>
 
+            <!-- Sits here rather than among the action buttons because it is not
+                 an action on the profile — it is a property of the truck, and
+                 the admin reads it far more often than they change it. -->
+            <div class="admin-card__heavy">
+              <AppCheckbox
+                :model-value="truck.heavyEquipment"
+                :disabled="isHeavyEquipmentLocked(truck) || actioningId === truck.id"
+                label="Կարող է տեղափոխել ծանր տեխնիկա"
+                @update:model-value="toggleTowTruckHeavyEquipment(truck)"
+              />
+              <p class="admin-card__hint">
+                <template v-if="isHeavyEquipmentLocked(truck)">
+                  Մեքենայի տեսակն արդեն «{{ vehicleTypeLabel(truck.vehicleType) }}» է, ուստի այս
+                  նշումը միշտ միացված է և չի փոխվում։
+                </template>
+                <template v-else>
+                  Միացնելիս այս էվակուատորը կհայտնվի «Ծանր տեխնիկա» էջում
+                  (<NuxtLink to="/tsanr-tehnika">/tsanr-tehnika</NuxtLink>)։
+                </template>
+              </p>
+            </div>
+
             <dl class="admin-card__grid">
               <div>
                 <dt>Հեռախոս</dt>
@@ -2304,6 +2360,26 @@ async function rejectReview(review: AdminReview): Promise<void> {
     align-items: center;
     gap: var(--space-2);
     flex-shrink: 0;
+  }
+
+  // Boxed off from the fields around it: unlike everything else in the card
+  // this control publishes the truck to a page the moment it is ticked, and a
+  // checkbox that sits flush with read-only rows is one an admin ticks by
+  // accident on the way past.
+  &__heavy {
+    padding: var(--space-2) var(--space-3);
+    margin-bottom: var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-bg);
+  }
+
+  &__hint {
+    margin: 0;
+    padding-left: 30px; // lines up under the checkbox label, not its box
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: var(--color-text-secondary);
   }
 
   &__text {

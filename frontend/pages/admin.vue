@@ -1369,7 +1369,15 @@ async function rejectReview(review: AdminReview): Promise<void> {
 
         <p v-if="registrationsError" class="admin-error">{{ registrationsError }}</p>
 
-        <LoadingSkeleton v-if="loadingRegistrations" variant="text" :count="4" />
+        <!-- Gated on the list being EMPTY, not just on `loading`, or "Ցույց
+             տալ ավելին" swaps 40 loaded cards for a 4-line skeleton the
+             instant it's pressed. That shrinks the page far below the current
+             scroll position, the browser clamps scrollY to the new (tiny) max
+             — which reads as "jumped to the top" — and nothing scrolls it back
+             down once the real page-length list returns, because no code ever
+             asks it to. Kept for a genuine first load, where there is nothing
+             yet to keep on screen. -->
+        <LoadingSkeleton v-if="loadingRegistrations && registrations.length === 0" variant="text" :count="4" />
 
         <EmptyState
           v-else-if="registrations.length === 0"
@@ -1471,7 +1479,9 @@ async function rejectReview(review: AdminReview): Promise<void> {
 
         <p v-if="reviewsError" class="admin-error">{{ reviewsError }}</p>
 
-        <LoadingSkeleton v-if="loadingReviews" variant="text" :count="3" />
+        <!-- Same "load more" scroll-jump reasoning as the registrations
+             skeleton above — gated on empty, not just on `loading`. -->
+        <LoadingSkeleton v-if="loadingReviews && reviews.length === 0" variant="text" :count="3" />
 
         <EmptyState v-else-if="reviews.length === 0" title="Սպասող կարծիքներ չկան" icon="check" />
 
@@ -1553,7 +1563,9 @@ async function rejectReview(review: AdminReview): Promise<void> {
 
         <p v-if="towTrucksError" class="admin-error">{{ towTrucksError }}</p>
 
-        <LoadingSkeleton v-if="loadingTowTrucks" variant="text" :count="3" />
+        <!-- Same "load more" scroll-jump reasoning as the registrations
+             skeleton above — gated on empty, not just on `loading`. -->
+        <LoadingSkeleton v-if="loadingTowTrucks && towTrucks.length === 0" variant="text" :count="3" />
 
         <EmptyState v-else-if="towTrucks.length === 0" title="Դեռ ոչ մի էվակուատոր չկա" icon="truck" />
 

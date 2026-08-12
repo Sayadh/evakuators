@@ -1,3 +1,4 @@
+import type { VehicleTypePage } from '~/constants/vehicleTypePages'
 import type { BreadcrumbItem } from '~/types/common'
 import type { CityWithStats, District, Region } from '~/types/location'
 import type { TowTruck } from '~/types/towTruck'
@@ -17,6 +18,17 @@ export function useBreadcrumbs() {
   const forRegions = (): BreadcrumbItem[] => [HOME, { label: 'Մարզեր' }]
 
   const forFreeRoutes = (): BreadcrumbItem[] => [HOME, { label: 'Ազատ երթուղիներ' }]
+
+  /**
+   * Two levels, not three: a vehicle-type page hangs directly off the home
+   * page. There is no «Տեխնիկա» hub above it to link to, and inventing one as
+   * an unlinked crumb would put a dead level in the trail and in the
+   * BreadcrumbList schema.
+   */
+  const forVehicleType = (page: Pick<VehicleTypePage, 'heading'>): BreadcrumbItem[] => [
+    HOME,
+    { label: page.heading },
+  ]
 
   const forRegion = (region: Pick<Region, 'name'>): BreadcrumbItem[] => [
     HOME,
@@ -74,6 +86,7 @@ export function useBreadcrumbs() {
   return {
     forRegions,
     forFreeRoutes,
+    forVehicleType,
     forRegion,
     forCity,
     forServiceZone,

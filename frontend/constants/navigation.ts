@@ -1,3 +1,5 @@
+import { VEHICLE_TYPE_PAGE_LIST } from '~/constants/vehicleTypePages'
+
 export interface NavLink {
   label: string
   to: string
@@ -23,8 +25,8 @@ export interface NavLink {
  */
 export const NAV_LINKS: NavLink[] = [
   // First: it is the fastest answer to the question most visitors arrive with,
-  // and it belongs above the browse-by-geography links rather than after them.
-  // The same destination also appears as an in-content block on the main pages
+  // and it belongs above the other links rather than after them. The same
+  // destination also appears as an in-content block on the main pages
   // (NearestTowTrucksCta) — a nav item is only discoverable to someone already
   // scanning the nav.
   //
@@ -32,8 +34,20 @@ export const NAV_LINKS: NavLink[] = [
   // visitors learn the feature is coming, and the page it leads to is written
   // as an announcement rather than an error — see constants/features.ts.
   { label: 'Մոտակա էվակուատորներ', to: '/evakuator' },
-  { label: 'Մարզեր', to: '/regions' },
-  { label: 'Երևան', to: '/yerevan' },
+
+  // These two replaced «Մարզեր» and «Երևան», which is a change of *question*,
+  // not a reshuffle. Geography answers "where are you"; the site already knows
+  // that from the page a visitor is on, from the search box and from the
+  // footer. These answer "what do you need" — a crane, or something that can
+  // carry a bus — which geography cannot answer at all and which is what
+  // someone with an unusual vehicle actually arrives searching for.
+  //
+  // Nothing was orphaned. The footer already lists every individual marz and
+  // district on every page, and its two column HEADINGS now link to the hubs
+  // themselves (`/regions`, `/yerevan`) — see AppFooter.vue. Both stay in the
+  // sitemap.
+  ...VEHICLE_TYPE_PAGE_LIST.map((page) => ({ label: page.navLabel, to: `/${page.slug}` })),
+
   { label: 'Ազատ երթուղիներ', to: '/free-routes' },
 ]
 

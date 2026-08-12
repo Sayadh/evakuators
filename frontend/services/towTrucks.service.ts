@@ -1,7 +1,8 @@
 import { mockRequest } from './apiClient'
 import { mockTowTrucks } from '~/mocks/towTrucks'
+import { hasManipulator } from '~/constants/vehicles'
 import { isApiEnabled, towTruckRepository } from '~/repositories'
-import { LocationType } from '~/types/enums'
+import { LocationType, VehicleType } from '~/types/enums'
 import type {
   TowTruck,
   TowTruckCard,
@@ -151,6 +152,27 @@ export const towTrucksService = {
       ? await towTruckRepository.getYerevan()
       : await mockRequest(() => mockTowTrucks.filter(servesYerevan))
     return [...trucks].sort((a, b) => Number(isBasedInYerevan(b)) - Number(isBasedInYerevan(a)))
+  },
+
+  /**
+   * Every truck of one vehicle type, country-wide.
+   *
+   * The mock branch goes through `hasManipulator` rather than comparing the
+   * type, so the mocks answer «Մանիպուլյատոր» exactly as the backend does —
+   * either the vehicle type or the equipment checkbox. Comparing the type here
+   * would make the mock list and the real list disagree about the one vehicle
+   * type where that is possible, which is precisely the page most likely to be
+   * checked against mocks.
+   */
+  getByVehicleType(vehicleType: VehicleType): Promise<TowTruckCard[]> {
+    if (isApiEnabled()) return towTruckRepository.getByVehicleType(vehicleType)
+    return mockRequest(() =>
+      mockTowTrucks.filter((truck) =>
+        vehicleType === VehicleType.Manipulator
+          ? hasManipulator(truck.vehicle)
+          : truck.vehicle.type === vehicleType,
+      ),
+    )
   },
 
   /**

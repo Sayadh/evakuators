@@ -1,5 +1,5 @@
 import { servesYerevan, towTrucksService } from '~/services'
-import { SortOption } from '~/types/enums'
+import { SortOption, type VehicleType } from '~/types/enums'
 import type { TowTruck, TowTruckCard } from '~/types/towTruck'
 import { sortTowTrucks } from '~/utils/towTruckFilters'
 
@@ -104,6 +104,22 @@ export function useTowTrucksByZone(zoneSlug: string) {
   return useAsyncData(
     `tow-trucks-zone-${zoneSlug}`,
     () => towTrucksService.getByZoneSlug(zoneSlug),
+    { default: () => [], transform: recommended },
+  )
+}
+
+/**
+ * Every truck of one vehicle type, country-wide — `/manipulator` and
+ * `/tsanr-tehnika`.
+ *
+ * No `basePlace` in the sort: these pages are not about a place, so "the
+ * drivers based here first" has nothing to mean. `recommended` alone leaves
+ * rating deciding, which is the right answer for a country-wide list.
+ */
+export function useTowTrucksByVehicleType(vehicleType: VehicleType) {
+  return useAsyncData(
+    `tow-trucks-vehicle-type-${vehicleType}`,
+    () => towTrucksService.getByVehicleType(vehicleType),
     { default: () => [], transform: recommended },
   )
 }

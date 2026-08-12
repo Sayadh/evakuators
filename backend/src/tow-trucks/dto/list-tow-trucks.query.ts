@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer'
-import { IsBoolean, IsInt, IsOptional, IsString, Max, Min } from 'class-validator'
+import { IsBoolean, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator'
 import { TOW_TRUCK_LIST_MAX_LIMIT } from '../tow-trucks.constants'
 
 export class ListTowTrucksQuery {
@@ -55,6 +55,30 @@ export class ListTowTrucksQuery {
   @IsOptional()
   @IsBoolean()
   yerevan?: boolean
+
+  /**
+   * A `VehicleType` slug — powers the two vehicle-type landing pages
+   * (`/manipulator`, `/tsanr-tehnika`).
+   *
+   * Deliberately **not** `@IsIn([...])`: the vehicle-type taxonomy lives in the
+   * frontend (`frontend/constants/vehicles.ts`) and the backend stores
+   * `vehicleType` as an opaque string — see CLAUDE.md § "Core architectural
+   * decision". Listing the members here would be a fourth copy to keep in sync,
+   * and an unknown slug already answers correctly: no truck matches, so the
+   * page renders its empty state.
+   *
+   * `manipulator` is the one value the backend does understand structurally,
+   * because it does not mean only `vehicleType = 'manipulator'` — see
+   * `TowTrucksRepository.buildWhere` and `vehicle-types.ts`.
+   *
+   * Composes with the geography filters rather than replacing them, so
+   * `?region=kotayk&vehicleType=heavy-duty` is a valid question even though no
+   * page asks it yet.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  vehicleType?: string
 
   /**
    * Omitted means TOW_TRUCK_LIST_DEFAULT_LIMIT, not "everything" — an

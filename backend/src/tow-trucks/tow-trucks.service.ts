@@ -26,6 +26,7 @@ export class TowTrucksService {
       zoneSlug: query.zone,
       regionZoneSlugs: query.regionZones,
       yerevan: query.yerevan,
+      vehicleType: query.vehicleType,
       limit,
       offset: query.offset,
     })
@@ -37,7 +38,8 @@ export class TowTrucksService {
     if (trucks.length === limit) {
       this.logger.warn(
         `Tow truck listing hit the ${limit}-row cap ` +
-          `(city=${query.city ?? '-'} district=${query.district ?? '-'} region=${query.region ?? '-'}). ` +
+          `(city=${query.city ?? '-'} district=${query.district ?? '-'} region=${query.region ?? '-'} ` +
+          `vehicleType=${query.vehicleType ?? '-'}). ` +
           'Client-side filtering is now hiding results — move filtering/pagination server-side.',
       )
     }

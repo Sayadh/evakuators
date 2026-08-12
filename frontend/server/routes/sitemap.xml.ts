@@ -3,6 +3,7 @@ import { staticCities } from '~/data/cities'
 import { staticDistricts } from '~/data/districts'
 import { staticRegions } from '~/data/regions'
 import { staticServiceZones } from '~/data/serviceZones'
+import { VEHICLE_TYPE_PAGE_LIST } from '~/constants/vehicleTypePages'
 import { servesCity } from '~/services/towTrucks.service'
 import type { TowTruckCoverage } from '~/types/towTruck'
 import { findSettlementTargetCity, getLandingSettlements } from '~/utils/settlements'
@@ -153,6 +154,16 @@ function buildEntries(
     // turns over faster than any other non-listing page on the site.
     { path: '/free-routes', priority: '0.8', changefreq: 'daily' },
     { path: '/regions', priority: '0.8', changefreq: 'weekly' },
+    // The vehicle-type landing pages. Derived from the same list the header
+    // reads, so a page can never be in the nav and missing from here — which is
+    // exactly what happened to /free-routes once (see the note above it).
+    // `weekly`: the listing changes whenever a driver of that type joins or
+    // edits their profile, which is real but not daily.
+    ...VEHICLE_TYPE_PAGE_LIST.map((page) => ({
+      path: `/${page.slug}`,
+      priority: '0.8',
+      changefreq: 'weekly' as const,
+    })),
     { path: '/register', priority: '0.6', changefreq: 'monthly' },
     { path: '/about', priority: '0.4', changefreq: 'monthly' },
     { path: '/contact', priority: '0.4', changefreq: 'monthly' },

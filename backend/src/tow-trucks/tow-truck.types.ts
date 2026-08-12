@@ -14,6 +14,12 @@ export interface TowTruckFilters {
   regionZoneSlugs?: string[]
   /** Any Yerevan-related truck (based in a district or serving one) */
   yerevan?: boolean
+  /**
+   * A `VehicleType` slug. Narrows the result — it is ANDed with whatever
+   * geography is asked for, never ORed into it. `manipulator` expands to a
+   * union; see `buildWhere`.
+   */
+  vehicleType?: string
   limit?: number
   /** Page offset — only used by consumers that must walk past the list cap */
   offset?: number

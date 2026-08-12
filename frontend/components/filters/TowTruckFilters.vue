@@ -4,6 +4,18 @@ import { SERVICE_CATEGORIES } from '~/constants/services'
 import { CAPACITY_RANGE_OPTIONS } from '~/constants/vehicles'
 import type { ServiceType } from '~/types/enums'
 
+/**
+ * `hideManipulator` is for `/manipulator`, where every result already matches
+ * that checkbox. A control that cannot change the list reads as broken — you
+ * tick it and nothing moves — so the page that has already answered the
+ * question stops asking it.
+ *
+ * Hidden rather than disabled: a disabled checkbox invites the question "why
+ * can't I use this?", and the honest answer here is that there is nothing to
+ * use it for.
+ */
+withDefaults(defineProps<{ hideManipulator?: boolean }>(), { hideManipulator: false })
+
 const store = useTowTruckFiltersStore()
 
 function onServicesUpdate(services: ServiceType[]): void {
@@ -32,7 +44,7 @@ function onServicesUpdate(services: ServiceType[]): void {
       />
     </fieldset>
 
-    <fieldset class="filters__group">
+    <fieldset v-if="!hideManipulator" class="filters__group">
       <legend class="filters__legend">Տեխնիկա</legend>
       <AppCheckbox
         :model-value="store.manipulator"

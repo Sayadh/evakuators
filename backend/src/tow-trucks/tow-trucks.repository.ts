@@ -3,6 +3,7 @@ import type { Prisma, TowTruck } from '@prisma/client'
 import { IMAGE_ORDER } from '../images/image-order'
 import { PrismaService } from '../prisma/prisma.service'
 import type { TowTruckFilters, TowTruckWhere, TowTruckWithImages } from './tow-truck.types'
+import { MANIPULATOR_VEHICLE_TYPE } from './vehicle-types'
 
 /**
  * Exactly the columns a listing card renders — see TowTruckCardApi for why the
@@ -512,6 +513,27 @@ export class TowTrucksRepository {
     }
 
     if (or.length > 0) where.OR = or
+
+    // Vehicle type NARROWS whatever the geography clause matched — it must never
+    // join `or`. Pushing it in there would turn "trucks in Kotayk that are
+    // manipulators" into "trucks in Kotayk OR manipulators anywhere", i.e. the
+    // whole country, which is the sort of bug that looks like the page merely
+    // returning too much.
+    //
+    // Hence `AND` rather than a second `OR` key: an object cannot carry two, and
+    // Prisma ANDs top-level fields with `OR` exactly as needed here.
+    if (filters.vehicleType === MANIPULATOR_VEHICLE_TYPE) {
+      // Not a plain equality. «Մանիպուլյատոր» is answered two ways — the vehicle
+      // type and the equipment checkbox — and either counts (see
+      // vehicle-types.ts). Writes derive the column now, so new rows agree; rows
+      // written before that do not, and nothing migrated them.
+      where.AND = [
+        { OR: [{ vehicleType: MANIPULATOR_VEHICLE_TYPE }, { manipulator: true }] },
+      ]
+    } else if (filters.vehicleType) {
+      where.vehicleType = filters.vehicleType
+    }
+
     return where
   }
 }

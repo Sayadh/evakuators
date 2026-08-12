@@ -14,10 +14,12 @@ and what auth (if any) gates it.
 | `/yerevan/[district]` | `pages/yerevan/[district].vue` | Tow trucks serving one district | Mock or API | Public |
 | `/tow-trucks/[slug]` | `pages/tow-trucks/[slug].vue` | Single tow truck profile — gallery (click-to-open lightbox with swipe/arrow-key navigation between photos, see `TowTruckGallery.vue`), pricing, service areas, reviews (list + submission form), similar trucks, JSON-LD business schema. Also the only page that records analytics: a `PAGE_VIEW` in `onMounted` and contact clicks via `usePhoneActions` (see `docs/analytics.md`) | Mock or API; 404s (fatal `createError`) if slug not found | Public |
 | `/evakuator` | `pages/evakuator.vue` | "Գտնել մոտակա էվակուատորները" — one-shot browser geolocation, then the nearest drivers with a road distance and a driving estimate. **Nothing happens until the button is pressed**: no geolocation on mount, no SSR fetch, no `useAsyncData`, because a permission prompt that appears because a page loaded is one the visitor did not ask for. Results render through the ordinary `TowTruckCard`, so the call button and its analytics are unchanged. The search is gated by `NEAREST_SEARCH_ENABLED` (`constants/features.ts`), currently off — the button then reports that the feature is being worked on and never prompts for a position. The nav link, the CTA banners and the sitemap entry deliberately stay up regardless: they are how visitors learn it is coming, so the page reads as an announcement rather than an error. See `docs/nearest-search.md` | Real API only (mock mode says so instead of prompting) | Public |
+| `/manipulator` | `pages/manipulator.vue` | Every «Մանիպուլյատորով էվակուատոր» in the country. Both vehicle-type pages are thin files rendering `VehicleTypeListing` from a `VEHICLE_TYPE_PAGES` entry — see § "Vehicle-type landing pages" | Mock or API | Public |
+| `/tsanr-tehnika` | `pages/tsanr-tehnika.vue` | Every «Ծանր տեխնիկայի էվակուատոր» in the country | Mock or API | Public |
 | `/free-routes` | `pages/free-routes/index.vue` | Public "Ազատ երթուղիներ" listing | Mock or API; only `ACTIVE` routes | Public |
 | `/register` | `pages/register.vue` | Driver registration form (multi-section: identity, vehicle, capacity range, services by category, **base parking coordinates**, pricing, image upload). The coordinates section is its own fieldset rather than part of "Տարածքներ" — service areas are where a driver is willing to *go*, the coordinates are where they *are*, and the two answers get confused under one heading. It is also the only **optional** section: copying a coordinate out of Google Maps on a phone is the step most likely to end a registration, and the value is editable from the dashboard the moment the driver is approved. A typed value must still parse; an empty box submits | Submits to `registrationRepository` (needs a real backend to actually persist — meaningless in pure mock mode beyond UI preview) | Public |
-| `/login` | `pages/login.vue` | Driver login — phone + password in one form → JWT. No self-service reset, deliberately (the only channel is Telegram, which proves possession of a link rather than identity — see `docs/auth-and-security.md`), so the footnote points a locked-out driver at an admin instead. Redirects to `/dashboard` if already logged in (client-side check) | Real API only (mock mode has no accounts) | Public (self-redirects once authenticated) |
-| `/dashboard` | `pages/dashboard.vue` | Driver's own analytics (`AnalyticsDashboard scope="driver"`) + **full** own-profile editor — it mirrors the registration form field-for-field (name, company, contacts, vehicle facts, equipment, capacity band, platform dimensions, base location, service areas via the shared `ServiceAreaPicker`, description, services, hours, pricing, photos), with `slug` and the main `phone` shown read-only — plus a **Տեղադիրք** block (base parking coordinates, edited in a dialog that saves through its own `PATCH /my/tow-truck/coordinates` — deliberately outside the profile form, so fixing a price never resubmits the coordinates and an invalid coordinate never blocks an unrelated save) and `FreeRoutesManager` for the driver's own routes, plus a collapsed **Գաղտնաբառ** section (`ChangePasswordForm`). When the session carries `mustChangePassword`, that same form is rendered **instead of** the whole dashboard rather than over it — a driver still holding the generated password has exactly one thing to do here, and a blocking screen has nothing behind it to tab into and no dialog to dismiss | Real API only | Driver JWT — redirects to `/login` if not authenticated (client-side check, `import.meta.client` guarded) |
+| `/login` | `pages/login.vue` | Driver login — phone + password in one form → JWT. No self-service reset, deliberately (the only channel is Telegram, which proves possession of a link rather than identity — see `docs/auth-and-security.md`), so the footnote points a locked-out driver at an admin instead. Redirects to `/dashboard` if already logged in (`driver-guest` route middleware, client-only) | Real API only (mock mode has no accounts) | Public (self-redirects once authenticated) |
+| `/dashboard` | `pages/dashboard.vue` | Driver's own analytics (`AnalyticsDashboard scope="driver"`) + **full** own-profile editor — it mirrors the registration form field-for-field (name, company, contacts, vehicle facts, equipment, capacity band, platform dimensions, base location, service areas via the shared `ServiceAreaPicker`, description, services, hours, pricing, photos), with `slug` and the main `phone` shown read-only — plus a **Տեղադիրք** block (base parking coordinates, edited in a dialog that saves through its own `PATCH /my/tow-truck/coordinates` — deliberately outside the profile form, so fixing a price never resubmits the coordinates and an invalid coordinate never blocks an unrelated save) and `FreeRoutesManager` for the driver's own routes, plus a collapsed **Գաղտնաբառ** section (`ChangePasswordForm`). When the session carries `mustChangePassword`, that same form is rendered **instead of** the whole dashboard rather than over it — a driver still holding the generated password has exactly one thing to do here, and a blocking screen has nothing behind it to tab into and no dialog to dismiss | Real API only | Driver JWT — redirects to `/login` if not authenticated (`driver-auth` route middleware, client-only) |
 | `/admin` | `pages/admin.vue` | Internal moderation panel — registration requests (approve/reject), pending reviews (approve/reject), tow truck list (activate/deactivate/delete, Telegram link management, base parking coordinates via the same `CoordinatesDialog` the driver gets — with the Google Maps steps switched off — expandable per-truck analytics via the same `AnalyticsDashboard` component with `scope="admin"`). The "Էվակուատորներ" section header shows the total/active/inactive counts from `GET /admin/tow-trucks/count`, refetched after any action that changes them (approve, delete, activate/deactivate) — independent of the paginated list itself, see `docs/api-reference.md` — and an "Ուղարկել գաղտնաբառեր" button opening a picker of the drivers who linked Telegram but have no password yet — checkboxes, nothing pre-ticked, sends only to the ticked ones (see `docs/auth-and-security.md` for why the selection is the safety mechanism rather than a convenience) | Real API only | Admin JWT; `noindex`, not linked from public nav, excluded from sitemap |
 | `/about` | `pages/about.vue` | Static "about us" content | Static | Public |
 | `/contact` | `pages/contact.vue` | Static contact info | Static | Public |
@@ -37,15 +39,65 @@ at all.
 
 ## Auth guards are client-side only (know this before assuming security)
 
-The `/dashboard` and `/login` redirect checks
-(`if (import.meta.client && !driverAuth.isLoggedIn) await navigateTo(...)`)
-run **in the browser**, not as Nuxt server middleware. The actual security
-boundary for driver/admin data is entirely on the backend
-(`DriverJwtGuard`/`AdminJwtGuard` on the API routes) — these frontend checks
-are UX conveniences (don't show an empty/broken dashboard to a logged-out
-visitor), not access control. Don't treat a missing client-side redirect as a
-security bug in itself; check whether the underlying API call is actually
-guarded.
+The `/dashboard` and `/login` redirects are **route middleware**
+(`frontend/middleware/driver-auth.ts`, `driver-guest.ts`) that decide nothing
+on the server — the session lives in `localStorage`, so the server genuinely
+cannot know. The actual security boundary for driver/admin data is entirely on
+the backend (`DriverJwtGuard`/`AdminJwtGuard` on the API routes); these
+frontend checks are UX conveniences (don't show an empty/broken dashboard to a
+logged-out visitor), not access control. Don't treat a missing client-side
+redirect as a security bug in itself; check whether the underlying API call is
+actually guarded.
+
+They must stay middleware. The same checks used to sit in each page's
+`setup()`, where `navigateTo` can silently return without navigating — a login
+that stored the session and then went nowhere until the page was reloaded by
+hand. See `docs/auth-and-security.md` § "The redirects are route middleware"
+for the mechanism.
+
+## Vehicle-type landing pages
+
+`/manipulator` and `/tsanr-tehnika` answer "what do you need" rather than
+"where are you": a crane, or something that can carry a bus. Geography cannot
+answer either, and they are what someone with an unusual vehicle arrives
+searching for — so they took the header slots that `/regions` and `/yerevan`
+used to hold.
+
+**Everything about both pages is one object.** `frontend/constants/vehicleTypePages.ts`
+holds the slug, the `VehicleType`, the nav label, the heading, the metadata,
+the intro copy and the FAQ; the header nav, the sitemap and the breadcrumb all
+read that same list. A page that is in the nav but missing from the sitemap is
+the failure this shape prevents — `/free-routes` was exactly that once.
+`frontend/tests/vehicleTypePages.spec.ts` asserts the derivation holds, that
+each slug has a page file, and that both geography hubs kept a link.
+
+**Adding a third** means an entry in that file plus a `pages/<slug>.vue` that
+renders `VehicleTypeListing`. Nothing else. The page files are thin because
+Nuxt routes by filename and the slugs are unrelated words — a single dynamic
+route would have to sit at the root and would swallow every other top-level URL.
+
+**Only these two, deliberately.** `flatbed` is most of the fleet, so its page
+would be the tow-truck listing with extra steps, and `sliding-platform` is a
+detail of how a flatbed loads rather than something people search for.
+
+**Backend.** One query parameter on the existing listing endpoint —
+`GET /tow-trucks?vehicleType=…` — not a route of its own, for the same reason
+`city`, `district`, `region` and `zone` are parameters: this is the card list,
+narrowed. A second endpoint would be a second place for the card shape, the
+rating join and the row cap to drift. Two things about it are easy to get
+wrong:
+
+- it **narrows** the geography clause and must never be pushed into its `OR`,
+  or "manipulators in Kotayk" becomes "everything in Kotayk or every
+  manipulator in the country";
+- `manipulator` is a **union**, not an equality — see `docs/taxonomies.md`
+  § "«Մանիպուլյատոր» is asked twice".
+
+Both are covered by `backend/test/vehicle-type-filter.spec.ts`.
+
+**`/regions` and `/yerevan` were not orphaned.** The footer lists every marz
+and every district on every page, and its two column *headings* now link the
+hubs themselves. Both keep their sitemap entries.
 
 ## SEO
 

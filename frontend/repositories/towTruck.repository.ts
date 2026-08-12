@@ -19,6 +19,24 @@ export const towTruckRepository = {
     return apiFetch<TowTruckCard[]>('/tow-trucks', { query: { district: districtSlug } })
   },
 
+  /**
+   * Every truck of one vehicle type, country-wide — the two vehicle-type
+   * landing pages.
+   *
+   * A query parameter on the same endpoint rather than a route of its own, for
+   * the same reason `city`, `district`, `region` and `zone` are: this is the
+   * card list, narrowed. A second endpoint would be a second place for the card
+   * shape, the rating join and the row cap to drift.
+   *
+   * `manipulator` is answered by the backend as a union of the vehicle type and
+   * the equipment checkbox — see `docs/taxonomies.md`. That rule lives there
+   * and not here, because the rows it has to cover are the ones written before
+   * the column was derived.
+   */
+  getByVehicleType(vehicleType: string): Promise<TowTruckCard[]> {
+    return apiFetch<TowTruckCard[]>('/tow-trucks', { query: { vehicleType } })
+  },
+
   /** Exact corridor match — the backend adds no city fallback for this one */
   getByZone(zoneSlug: string): Promise<TowTruckCard[]> {
     return apiFetch<TowTruckCard[]>('/tow-trucks', { query: { zone: zoneSlug } })

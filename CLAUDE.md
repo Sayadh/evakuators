@@ -155,6 +155,7 @@ assume one is unused:
 | Touch the base parking coordinates (lat/lng) | `backend/src/common/coordinates.ts` + `frontend/utils/coordinates.ts` — one rule each side, mirrored by hand; the UI is `CoordinatesInput.vue` / `CoordinatesDialog.vue`, shared by registration, the driver dashboard and `/admin` |
 | Touch `/evakuator`, PostGIS, or the route-matrix provider | `docs/nearest-search.md` — the two-step design, why the results reuse `TowTruckCard` untouched, the rule that a straight-line distance never gets a time next to it, and `NEAREST_SEARCH_ENABLED` (currently **off**), which pauses the search itself and nothing else — the nav link, the CTA banners and the sitemap entry stay up on purpose, so the page acts as an announcement |
 | Find what a specific page/route does | `docs/pages-and-routes.md` |
+| Add or change a vehicle-type landing page (`/manipulator`, `/tsanr-tehnika`) | `docs/pages-and-routes.md` § "Vehicle-type landing pages" — slug, nav label, SEO copy and sitemap entry all come from one entry in `frontend/constants/vehicleTypePages.ts`; the backend filter is `?vehicleType=` on the existing listing endpoint and it must AND with the geography, never join its `OR` |
 | Run the app on a local machine | `docs/local-development.md` |
 | Make local behave exactly like staging | `docs/local-development.md` § "Mirroring staging locally" — `scripts/refresh-local-db.sh` copies staging (never production), `backend/.env.local.example` lists the four variables that must differ and why |
 | Deploy to the VPS | `docs/deployment.md` |

@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { FOOTER_PAGES } from '~/constants/navigation'
 import { CONTACT_PHONE, SITE_DESCRIPTION, SOCIAL_LINKS } from '~/constants/site'
-import { getDistrictRoute, getRegionRoute } from '~/utils/routeHelpers'
+import {
+  getDistrictRoute,
+  getRegionRoute,
+  getRegionsRoute,
+  getYerevanRoute,
+} from '~/utils/routeHelpers'
 import { getPhoneHref, getTelegramPhoneUrl } from '~/utils/formatPhone'
 import { getStaticDistricts, getStaticRegions } from '~/utils/geography'
 
@@ -59,8 +64,15 @@ const currentYear = new Date().getFullYear()
           </ul>
         </div>
 
+        <!-- The two headings are links, and that is load-bearing rather than
+             decorative: `/regions` and `/yerevan` left the header when the two
+             vehicle-type pages took their places, and `/regions` is the entry
+             point to every marz and city page — most of the site. This is the
+             site-wide link that keeps both hubs reachable and crawlable. -->
         <nav class="footer__col" aria-label="Մարզեր">
-          <h3 class="footer__heading">Մարզեր</h3>
+          <h3 class="footer__heading">
+            <NuxtLink :to="getRegionsRoute()">Մարզեր</NuxtLink>
+          </h3>
           <ul class="footer__list">
             <li v-for="region in regions" :key="region.slug">
               <NuxtLink :to="getRegionRoute(region.slug)">{{ region.name }}</NuxtLink>
@@ -69,7 +81,9 @@ const currentYear = new Date().getFullYear()
         </nav>
 
         <nav class="footer__col" aria-label="Երևանի շրջաններ">
-          <h3 class="footer__heading">Երևան</h3>
+          <h3 class="footer__heading">
+            <NuxtLink :to="getYerevanRoute()">Երևան</NuxtLink>
+          </h3>
           <ul class="footer__list">
             <li v-for="district in districts" :key="district.slug">
               <NuxtLink :to="getDistrictRoute(district.slug)">{{ district.name }}</NuxtLink>

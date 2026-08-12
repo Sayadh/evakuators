@@ -48,6 +48,26 @@ from the server itself (Nuxt SSR over loopback) skip throttling entirely — see
 | `GET` | `/my/analytics/reviews` | Own reviews **including unmoderated ones**. `?status=CONFIRMED\|PENDING\|ALL&limit=` (limit capped at 100) |
 | `GET` | `/my/analytics/ratings` | Star histogram 1→5 split confirmed/pending, plus both averages (`null`, not `0`, when there are none) |
 
+### `?vehicleType=` on `GET /tow-trucks`
+
+Powers `/manipulator` and `/tsanr-tehnika`. A parameter rather than a route of
+its own, exactly like `city`/`district`/`region`/`zone` — this is the card
+list, narrowed, and a second endpoint would be a second place for the card
+shape, the rating join and the row cap to drift.
+
+- **Narrows, never widens.** It is ANDed with whatever geography is asked for.
+  Pushing it into the geography `OR` would turn `?region=kotayk&vehicleType=…`
+  into "everything in Kotayk or every truck of that type in the country".
+- **`manipulator` is a union**, not an equality: `vehicleType = 'manipulator'`
+  OR `manipulator = true`. The question is asked twice at registration and
+  either answer counts (`docs/taxonomies.md`). Writes derive the column now, so
+  new rows agree; rows written before that do not.
+- **Not validated against a member list**, on purpose: the vehicle-type
+  taxonomy lives in the frontend and the backend stores the column as an opaque
+  string. An unknown slug matches nothing, which is the honest answer.
+
+`backend/test/vehicle-type-filter.spec.ts` covers all three.
+
 ## Admin-authenticated (`Authorization: Bearer <admin JWT>`, `AdminJwtGuard`)
 
 | Method | Path | Notes |

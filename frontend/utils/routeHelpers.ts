@@ -8,6 +8,14 @@ export const getCityRoute = (regionSlug: string, citySlug: string): string =>
 export const getYerevanRoute = (): string => '/yerevan'
 export const getDistrictRoute = (districtSlug: string): string => `/yerevan/${districtSlug}`
 export const getTowTruckRoute = (towTruckSlug: string): string => `/tow-trucks/${towTruckSlug}`
+/**
+ * A vehicle-type landing page (`/manipulator`, `/tsanr-tehnika`).
+ *
+ * The slug comes from `VEHICLE_TYPE_PAGES` — these are top-level URLs with no
+ * shared prefix, so this helper is what keeps the leading slash and the shape
+ * in one place rather than scattered through templates.
+ */
+export const getVehicleTypePageRoute = (pageSlug: string): string => `/${pageSlug}`
 export const getRegisterRoute = (): string => '/register'
 
 /** Route to the listing page a tow truck belongs to (city or Yerevan district) */

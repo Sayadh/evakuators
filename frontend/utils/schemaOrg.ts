@@ -1,6 +1,6 @@
 import type { BreadcrumbItem, FaqItem } from '~/types/common'
 import type { Review } from '~/types/review'
-import type { TowTruck } from '~/types/towTruck'
+import type { TowTruck, TowTruckCard } from '~/types/towTruck'
 import { SERVICE_LABELS } from '~/constants/services'
 import {
   SITE_ALTERNATE_NAME,
@@ -39,7 +39,18 @@ export function buildFaqSchema(items: FaqItem[]): JsonLd {
   }
 }
 
-export function buildTowTruckListSchema(trucks: TowTruck[], listName: string): JsonLd {
+/**
+ * `TowTruckCard[]`, not `TowTruck[]` — the three fields read below (`slug`,
+ * `companyName`, `driverName`) all live on the card shape, and every caller is
+ * a listing page holding cards rather than full profiles.
+ *
+ * It was typed as `TowTruck[]` and every call site was quietly wrong about it;
+ * nothing broke because `TowTruck extends TowTruckCard` and the extra fields
+ * were never touched. Narrowing the parameter to what the function actually
+ * uses is what makes those calls type-check honestly — see CLAUDE.md § "A
+ * listing is not a profile" for why the two shapes are kept apart at all.
+ */
+export function buildTowTruckListSchema(trucks: TowTruckCard[], listName: string): JsonLd {
   return {
     '@context': 'https://schema.org',
     '@type': 'ItemList',

@@ -8,16 +8,16 @@ coordinates come from — this document is only about what is done with them.
 ## The switch — and what it deliberately does NOT switch
 
 `NEAREST_SEARCH_ENABLED` in `frontend/constants/features.ts`. **It is currently
-`false`.**
+`true`** — the search itself is live.
 
-It turns off **one thing**: `findNearest()` answers with «Այս պահին աշխատում ենք
-այս գործառույթի վրա» instead of asking the browser for a position. The check
-sits before `locate()`, so no permission prompt is ever raised — a browser that
-is refused once remembers it, and spending that prompt on something we cannot
-yet deliver would cost us the one we want at launch.
+While `false`, it turns off **one thing**: `findNearest()` answers with «Այս
+պահին աշխատում ենք այս գործառույթի վրա» instead of asking the browser for a
+position. The check sits before `locate()`, so no permission prompt is ever
+raised — a browser that is refused once remembers it, and spending that prompt
+on something we cannot yet deliver would cost us the one we want at launch.
 
-Everything else stays exactly where it is, and this is the part to not
-"tidy up":
+Everything else stays exactly where it is regardless of the flag, and this is
+the part to not "tidy up":
 
 | Stays visible while `false` | Why |
 | --- | --- |

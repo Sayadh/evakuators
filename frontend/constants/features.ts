@@ -36,4 +36,4 @@
  * it the search still returns drivers, but every distance is straight-line and
  * no arrival times are shown. See `docs/nearest-search.md`.
  */
-export const NEAREST_SEARCH_ENABLED = false
+export const NEAREST_SEARCH_ENABLED = true

@@ -20,7 +20,6 @@ const CARD_SELECT = {
   driverName: true,
   companyName: true,
   phone: true,
-  whatsapp: true,
   works24Hours: true,
   workingHoursText: true,
   priceCityCallout: true,

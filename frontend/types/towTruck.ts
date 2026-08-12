@@ -100,8 +100,14 @@ export interface TowTruckCoverage extends TowTruckGeography {
  * driver's secondary phone, WhatsApp, Telegram and email, so a single
  * unauthenticated `GET /tow-trucks` handed out the platform's entire contact
  * database; it also shipped descriptions, price tables, plate numbers and every
- * photo URL that no card renders. `whatsapp` survives because the card has a
- * WhatsApp button.
+ * photo URL that no card renders.
+ *
+ * The card now carries **one** way to reach a driver: the main phone, which is
+ * the button it renders. `whatsapp` lingered here for a while on the
+ * justification that "the card has a WhatsApp button" — it does not, and never
+ * did: `TowTruckContactActions` is mounted only on the profile page, and the
+ * card is a deliberate lightweight teaser with a single «Զանգահարել» link. If
+ * a WhatsApp button is ever added to the card, add the field back **with** it.
  *
  * `TowTruck` extends this, so anything typed `TowTruckCard` also accepts a full
  * profile object — including the local mock fixtures, which are full objects.
@@ -111,9 +117,8 @@ export interface TowTruckCard {
   slug: string
   driverName: string
   companyName?: string
-  /** Main phone — shown on cards and used for the primary call action */
+  /** Main phone — the card's one contact action. Everything else is profile-only */
   phone: string
-  whatsapp?: string
   works24Hours: boolean
   /** Unset when not 24/7 and the driver never specified real hours — hide the line then */
   workingHours?: string
@@ -143,18 +148,22 @@ export interface TowTruckCard {
 }
 
 /**
- * Anything the contact buttons can act on. A card carries phone + WhatsApp; a
- * full profile adds Telegram, email and the secondary phone. Typing
+ * Anything the contact buttons can act on. A card carries the main phone; a
+ * full profile adds WhatsApp, Telegram, email and the secondary phone. Typing
  * `usePhoneActions` against this is what lets one composable serve both the card
- * and the profile without pretending a card has fields it doesn't.
+ * and the profile without pretending a card has fields it doesn't — every extra
+ * channel is `Partial`, so the composable's `value.whatsapp ? … : null` guards
+ * are the same code path a card takes.
  */
 export type TowTruckContactable = TowTruckCard &
-  Partial<Pick<TowTruck, 'secondaryPhone' | 'telegram' | 'email'>>
+  Partial<Pick<TowTruck, 'secondaryPhone' | 'whatsapp' | 'telegram' | 'email'>>
 
 /** The full profile — only ever returned by `GET /tow-trucks/:slug` and `/my/tow-truck` */
 export interface TowTruck extends TowTruckCard {
   /** Optional secondary phone — shown only on the profile page */
   secondaryPhone?: string
+  /** Profile-page contact button, like `telegram`/`email` — never on a card */
+  whatsapp?: string
   telegram?: string
   email?: string
   /** Raw driver-entered value, used by the dashboard edit form */

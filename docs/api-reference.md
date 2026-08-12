@@ -21,7 +21,7 @@ from the server itself (Nuxt SSR over loopback) skip throttling entirely — see
 | `POST` | `/tow-trucks/:towTruckId/reviews` | 5/60s | Creates with `isApproved: false` — needs admin approval to appear |
 | `POST` | `/images` | 10/60s | Multipart, field name `file`, 30MB max (`MAX_UPLOAD_BYTES`, kept in sync by hand with the same-named constant in `image-processor.service.ts`) → returns `{ id, url, width, height }`, unattached until a registration references its id. Format is validated from the file's own bytes (`sharp().metadata().format`), not the client-declared mimetype: JPEG/PNG/WebP always, HEIC only if this sharp build has libheif — otherwise it returns a message telling the driver how to change the iPhone setting |
 | `POST` | `/analytics/site-events` | 60/60s | Body `{ eventType: SITE_VISIT\|FREE_ROUTES_VIEW, visitorId }`. `202` + empty body, deduplicated to once per visitor per Armenia day — see `docs/analytics.md` § "Site-wide traffic" |
-| `POST` | `/nearest-tow-trucks` | 10/60s + 40/day per IP | Body `{ latitude, longitude }` — the visitor's own position. Returns `{ results, routed }`, at most 10 drivers, each an ordinary **card shape** plus `straightLineMeters` and (when routing succeeded) `roadMeters`/`durationSeconds`. A **POST** despite being a read: a query string would put the visitor's exact coordinates in nginx's `access.log` next to their IP. The position is never stored. The daily ceiling is charged only when a search actually runs (a 5-minute cache hit is free, and is still served to an address over the ceiling); exceeding it answers `429` with `code: "NEAREST_DAILY_LIMIT"` — a code rather than a message, because the frontend shows different copy for this than for the per-minute throttle. **This ceiling is not the visitor-facing "2 searches per day"**, which is per browser; an IP is not a person (CGNAT) — see `docs/nearest-search.md` § "How often one person may search" |
+| `POST` | `/nearest-tow-trucks` | 10/60s per IP | Body `{ latitude, longitude, skipRouting? }` — the visitor's own position. Returns `{ results, routed }`, at most 10 drivers, each an ordinary **card shape** plus `straightLineMeters` and (when routing succeeded) `roadMeters`/`durationSeconds`. A **POST** despite being a read: a query string would put the visitor's exact coordinates in nginx's `access.log` next to their IP. The position is never stored. `skipRouting: true` asks for straight-line distances only — sent by the frontend once a visitor has spent their 2 detailed searches for the day, after which the search keeps working, unlimited and free. It is the one client-set flag the backend trusts uncorroborated, because it can only ask for **less**; the inverse ("route this one anyway") must never be added. A separate **global** daily budget (500 ORS calls/day, minus a safety margin — `NEAREST_ORS_DAILY_QUOTA`) is charged only when a search actually calls the route matrix (a 5-minute cache hit is free); once it is spent for the day, the search silently falls back to `routed: false` straight-line distances instead of erroring — there is no 429 for this, and it is never per-IP. **Unrelated to the visitor-facing "2 searches per day"**, which is per browser — see `docs/nearest-search.md` § "How often one person may search" |
 | `POST` | `/registrations` | 5/60s | Driver registration submission — `imageIds` must reference images uploaded via `/images` and not already attached elsewhere. `latitude`/`longitude` are **optional** (the form's hardest step, and editable from the dashboard once approved — see `docs/data-model.md`), but must be sent **both or neither**: one alone is a 400 |
 | `GET` | `/free-routes` | — | `ACTIVE` only |
 | `POST` | `/admin-auth/login` | 5/60s | `{ email, password }` → `{ token }`, or `{ requiresCode: true }` if the admin has linked Telegram 2FA (see below) |
@@ -82,6 +82,7 @@ shape, the rating join and the row cap to drift.
 | `GET` | `/admin/tow-trucks/count` | `{ total, active, inactive }` — totals across the **whole table**, independent of the pagination above. `inactive` is `total - active`, never a third `count()`, so the three numbers can't disagree with each other. Declared before every `tow-trucks/:id` route in `admin.controller.ts` so the literal segment `count` can never be swallowed by an `:id` param — see `backend/test/admin.controller.count-route.spec.ts`, which asserts that ordering as a general rule, not just for today's route list. Powers the total shown next to "Էվակուատորներ" in the admin panel (`pages/admin.vue`) |
 | `PATCH` | `/admin/tow-trucks/:id/active` | Body: `{ isActive: boolean }` — reversible |
 | `PATCH` | `/admin/tow-trucks/:id/featured` | Body: `{ isFeatured: boolean }` — drives the public `GET /tow-trucks/featured` list and the homepage "featured" section |
+| `PATCH` | `/admin/tow-trucks/:id/heavy-equipment` | Body: `{ heavyEquipment: boolean }` — whether this truck appears on `/tsanr-tehnika` (`?vehicleType=heavy-duty` ORs the type with this flag). Unlike `/featured` it changes public listing results. **Admin-only with no driver counterpart** — see `docs/taxonomies.md` § «Ծանր տեխնիկա». The response echoes the **derived** value: a truck whose `vehicleType` is already `heavy-duty` answers `true` whatever was sent, and nothing is written — so the panel must assign what came back, not what it sent |
 | `PATCH` | `/admin/tow-trucks/:id/phone` | Body: `{ phone: string }` (`+374` + 8 digits). Corrects the main login phone — the driver's own dashboard can't touch this field. Rejected with 400 if another **active** truck already uses it (same uniqueness rule as approval) |
 | `PATCH` | `/admin/tow-trucks/:id/coordinates` | Body `{ latitude, longitude }` — same `SetCoordinatesDto`, same rule and same messages as the driver's route above, deliberately shared so the two audiences can never validate one value differently. Unlike `/phone` this is **not** an admin-only field: it exists so support can fix a pair pasted in the wrong order without asking the driver to log in. Works on deactivated trucks too |
 | `PATCH` | `/admin/tow-trucks/:id/primary-area` | Body `{ citySlug? \| districtSlug?, regionSlug?, locationName }` — the truck's **base**, i.e. the one place it works out of, as opposed to the list of places it covers. Exactly one of city/district, and it must be one of the truck's own served areas: `assertPlacementIsServed` also rejects a road corridor and a district sent as a city. `regionSlug` is nulled for a Yerevan district (pseudo-region). `locationName` is the composed label («Վարդենիս, գյուղ Շատվան») — the backend has no geography and stores it verbatim. Not cosmetic: city listings rank locally-based drivers first. See `docs/locations.md` § "The base" |
@@ -111,12 +112,26 @@ There are now three shapes, and which one you get depends on the endpoint:
 | Shape | Endpoints | Contains | Size |
 | --- | --- | --- | --- |
 | **Coverage** | `/tow-trucks/coverage` | base location, service-area slugs, `works24Hours` | ~230 B/truck, **no personal data** |
-| **Card** | `/tow-trucks`, `/tow-trucks/featured` | what a listing card renders: main phone + WhatsApp, vehicle summary, services, service areas, one thumbnail | ~1.1 KB/truck |
+| **Card** | `/tow-trucks`, `/tow-trucks/featured` | what a listing card renders: main phone, vehicle summary, services, service areas, one thumbnail | ~1.1 KB/truck |
 | **Full** | `/tow-trucks/:slug`, `/my/tow-truck` | everything | ~2.0 KB/truck |
 
 Measured on a representative fixture: the card is 54% of the old list row and
-the coverage record 11%. `whatsapp` is in the card because the card has a
-WhatsApp button; `telegram` and `email` are not, because it doesn't.
+the coverage record 11%.
+
+**The card carries exactly one way to reach a driver — the main phone**, which
+is the button it renders. WhatsApp, Telegram, email and the secondary phone are
+all profile-only, because `TowTruckContactActions` (the component with those
+buttons) is mounted only on `/tow-trucks/:slug`; the card is a deliberate
+lightweight teaser with a single «Զանգահարել» link.
+
+`whatsapp` was the exception for a while, kept on the stated justification that
+"the card has a WhatsApp button". It did not and never had one — so the field
+was published for every driver in bulk, from an unauthenticated endpoint, in
+exchange for nothing. That is the same failure the narrowing above was done to
+fix, surviving in one field because the justification was never re-checked
+against the component. **If a contact channel is added to the card, add the
+field back with it — not before**, and `backend/test/card-shape.spec.ts`
+asserts the rule.
 
 The narrowing is a Prisma `select`, not a post-mapping step — the omitted
 columns are never read off disk, and a list query loads one image row per truck

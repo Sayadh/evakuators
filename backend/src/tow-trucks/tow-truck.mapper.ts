@@ -145,7 +145,6 @@ export function toTowTruckCardApi(
     driverName: truck.driverName,
     companyName: truck.companyName ?? undefined,
     phone: truck.phone,
-    whatsapp: truck.whatsapp ?? undefined,
     works24Hours: truck.works24Hours,
     workingHours: buildWorkingHours(truck.works24Hours, truck.workingHoursText),
     startingPrice: truck.priceCityCallout ?? undefined,

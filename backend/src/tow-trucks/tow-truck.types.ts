@@ -36,19 +36,25 @@ export interface TowTruckFilters {
  * photo URL, none of which a card displays.
  *
  * So the list and the detail endpoints now return deliberately different
- * shapes. `whatsapp` stays because the card has a WhatsApp button; `telegram`
- * and `email` do not, because it doesn't. The profile page
- * (`GET /tow-trucks/:slug`) still returns everything — one truck at a time, for
- * someone actually looking at that truck.
+ * shapes. The card carries **one** way to reach a driver — the main phone,
+ * which is the button it renders. WhatsApp, Telegram, email and the secondary
+ * phone are all profile-page details, because `TowTruckContactActions` (the
+ * component that renders those buttons) is only ever mounted on
+ * `GET /tow-trucks/:slug`; the card mounts a single «Զանգահարել» link.
+ *
+ * `whatsapp` was the exception here for a while, justified by "the card has a
+ * WhatsApp button". It does not and never did — the card is a deliberate
+ * lightweight teaser — so the field was published for every driver in bulk in
+ * exchange for nothing. If a WhatsApp button is ever added to the card, add
+ * the field back **with** it, not before.
  */
 export interface TowTruckCardApi {
   id: number
   slug: string
   driverName: string
   companyName?: string
-  /** Main phone only — `secondaryPhone` is a profile-page detail */
+  /** Main phone only — the card's one contact action. Everything else is profile-only */
   phone: string
-  whatsapp?: string
   works24Hours: boolean
   workingHours?: string
   startingPrice?: number

@@ -177,10 +177,19 @@ vigil.
 | `AnalyticsVisitorDay (towTruckId, statDate, eventType, visitorKey)` UNIQUE | the once-per-day rule **and** `COUNT(DISTINCT visitorKey)` | `visitorKey` is deliberately **last**. That makes the unique-visitors query an **index-only scan** — the metric needs no second index and never touches the heap. Confirmed with `EXPLAIN`. |
 | `AnalyticsVisitorDay (statDate)` | the retention purge only | The purge filters `statDate` across *all* trucks, so it cannot use the `towTruckId`-leading index above. |
 
-No index on `eventType` alone (never queried without a truck), none on
-`visitorKey` alone (never looked up by visitor — that would be the one query
-this design refuses to support), and no `createdAt` index (audit column, not
-a filter).
+No index on `eventType` alone (never queried without a truck — see the one
+exception below), none on `visitorKey` alone (never looked up by visitor —
+that would be the one query this design refuses to support), and no
+`createdAt` index (audit column, not a filter).
+
+**The one query that IS "eventType without a truck": `countUniqueVisitorsSiteWide`**
+(§ "Platform-wide active callers" below) deliberately does not get a fourth
+index. It reuses the standalone `(statDate)` index the retention purge already
+relies on, which is bounded by the retention window regardless of platform
+size — the same accepted cost class as the purge itself, run far less often. A
+fourth index `(eventType, statDate, visitorKey)` would make it index-only, and
+is the documented fix if this ever becomes a hot path — not a pre-emptive
+addition for one occasional admin read.
 
 ## Retention
 
@@ -294,6 +303,58 @@ ring; it has to be readable at a glance from a lock screen and nothing else.
 Every failure path is swallowed and logged at `warn`. A blocked bot must never
 surface to the visitor who just pressed a button, and the notice is never
 awaited — the browser is being handed off to `tel:` at that moment.
+
+## Platform-wide active callers
+
+`SiteAnalyticsOverviewApi.callers` — the admin panel's «Ակտիվ զանգողներ» card.
+Answers a question none of the per-truck dashboards can: not "did people call
+*this* listing" but "are people calling drivers at all". Someone who called
+three different drivers is three per-truck unique visitors and **one**
+platform-wide active caller; only a query with no `towTruckId` in it can say
+that.
+
+**Not a `SiteEventType`.** `SiteVisitorDay`/`SiteDailyStat` only ever recorded
+`SITE_VISIT` and `FREE_ROUTES_VIEW` (see below) — a phone click is, and stays,
+a **per-truck** event, written to `AnalyticsVisitorDay`/`AnalyticsDailyStat`
+by the same `recordEvent()` every contact button already goes through. This
+metric reads those same two tables with the `towTruckId` predicate left out,
+rather than inventing a new write path or a third table. `PHONE_CLICK`
+specifically — not WhatsApp/Telegram/email — because "active caller" is what
+was asked for, named as a constant
+(`ANALYTICS_SITE_WIDE_CALLER_EVENT_TYPE`) rather than inlined at each call
+site, same reasoning as `ANALYTICS_UNIQUE_VISITOR_EVENT_TYPE`.
+
+Two new `AnalyticsRepository` methods, both intentionally the only ones in the
+class with no `towTruckId` parameter:
+
+- `countUniqueVisitorsSiteWide(eventType, range)` — `COUNT(DISTINCT
+  visitorKey)` over `AnalyticsVisitorDay`, windowed. Not index-only (see the
+  index-design note above) — accepted, because the query is bounded by the
+  180-day retention window and run rarely (an admin panel, not a hot path).
+- `sumEventTypeSiteWide(eventType, range?)` — `SUM(eventCount)` over
+  `AnalyticsDailyStat`, the small never-purged aggregate table, so an
+  all-time read (`range` omitted) costs the same class of query as a
+  windowed one — same reasoning as `sumByEventType`.
+
+`AnalyticsDashboardService.getSiteOverview` calls both alongside the existing
+`SiteAnalyticsRepository` queries, all four concurrently — deliberately
+sourced from **two different repositories** in one method, which is the one
+place in this module that happens: `callers` needs the per-truck tables,
+everything else in that response needs the site-wide ones, and there is no
+third table that would make them the same query.
+
+**Testing note.** This sandbox has no Postgres to repeat the real-engine
+verification the rest of this module got (see "Verification performed"
+below). What's covered instead
+(`backend/test/analytics-site-wide-callers.spec.ts`) is the part that doesn't
+need a database: `sumEventTypeSiteWide`'s range/no-range branching (a bug in
+the ternary could silently drop the `eventType` filter), and a regression
+guard asserting `countUniqueVisitorsSiteWide`'s raw SQL text never mentions
+`towTruckId` — the one property the whole method exists for, confirmed to
+actually fail when a `towTruckId` clause is reintroduced. The `COUNT(DISTINCT
+…) … BETWEEN` shape itself rides on `countUniqueVisitors`'s own real-Postgres
+verification (same statement, one predicate fewer), not a fresh unverified
+path.
 
 ## Site-wide traffic (admin panel)
 
@@ -419,6 +480,9 @@ backend/src/analytics/
   dto/analytics-period.query.ts
   dto/analytics-reviews.query.ts
 
+backend/test/
+  analytics-site-wide-callers.spec.ts   sumEventTypeSiteWide + countUniqueVisitorsSiteWide
+
 frontend/
   constants/analytics.ts            labels, card definitions, cookie/storage keys
   types/analytics.ts                mirrors the backend API shapes
@@ -539,11 +603,15 @@ the actual migration SQL applied. All of the following passed:
   `Index Only Scan using "AnalyticsVisitorDay_towTruckId_statDate_eventType_visitorKe_key"`
   — the index-only claim above is measured, not assumed
 
-There are no automated tests in this repo yet (no test runner is configured in
-either app), so these were one-off checks. If a test runner is ever added,
-`AnalyticsRepository.recordEvent` and `AnalyticsClock`/`analytics.utils.ts`
-are the two highest-value places to start — the first is the concurrency
-guarantee, the second is the timezone guarantee.
+These were one-off checks against a real engine, from before this repo had a
+configured test runner. A runner exists now (`vitest`, see `docs/testing.md`),
+and it never touches a real database — so newer additions to this module
+(§ "Platform-wide active callers") are covered by mocked-Prisma tests instead,
+which is a different, narrower guarantee: application logic around a query,
+not the query's own correctness against a real engine. `recordEvent`'s
+concurrency guarantee and `AnalyticsClock`/`analytics.utils.ts`'s timezone
+guarantee remain the two highest-value places to add real-engine verification
+if a Postgres-backed test environment is ever set up.
 
 ## Future scalability
 

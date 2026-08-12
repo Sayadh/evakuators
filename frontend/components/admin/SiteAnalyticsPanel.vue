@@ -66,6 +66,17 @@ const metrics = computed<Metric[]>(() => {
       visits: data.totals[SiteEventType.FreeRoutesView],
       allTime: data.allTimeTotals[SiteEventType.FreeRoutesView],
     },
+    // Not a SiteEventType — a phone click is a per-truck event read here with
+    // no towTruckId filter (see SiteWideCallerStats), so it comes from a
+    // separate field on the response rather than the totals/uniqueVisitors
+    // maps above. Placed last: it answers a different question ("are people
+    // calling drivers at all", not "did people open the site").
+    {
+      label: 'Ակտիվ զանգողներ',
+      unique: data.callers.uniqueCallers,
+      visits: data.callers.totalCalls,
+      allTime: data.callers.allTimeTotalCalls,
+    },
   ]
 })
 </script>
@@ -138,6 +149,12 @@ const metrics = computed<Metric[]>(() => {
 
     @media (min-width: 640px) {
       grid-template-columns: repeat(2, 1fr);
+    }
+
+    // Three cards now that "Ակտիվ զանգողներ" joined the two site-traffic
+    // ones — two-per-row would leave the third alone on its own line.
+    @media (min-width: 960px) {
+      grid-template-columns: repeat(3, 1fr);
     }
   }
 

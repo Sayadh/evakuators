@@ -150,6 +150,7 @@ assume one is unused:
 | Touch service zones (road corridors), settlements/villages, or location search | `docs/locations.md` |
 | Touch "Ազատ երթուղիներ" (Free Routes) | `docs/free-routes.md` |
 | Touch per-driver statistics / visitor tracking | `docs/analytics.md` |
+| Touch the platform-wide "active callers" number in `/admin` | `docs/analytics.md` § "Platform-wide active callers" — it is a per-truck `PHONE_CLICK` read with the `towTruckId` filter deliberately left out, not a new event type; the two `AnalyticsRepository` methods behind it are the only ones in that class with no truck scope, on purpose |
 | Decide whether a field is driver-editable or admin-only | `backend/src/my-tow-truck/dto/update-my-tow-truck.dto.ts` — the boundary and its two exceptions are argued there |
 | Touch a driver's base (`citySlug`/`districtSlug`/`locationName`) or the order of a city listing | `docs/locations.md` § "The base" — the base must be one of the served areas (`backend/src/tow-trucks/placement.ts`, one copy for all three write paths), the label is composed on the frontend because the backend has no geography, and city pages rank locally-based drivers above everyone else in the Recommended order **only** |
 | Change a driver's coverage from `/admin` | `docs/locations.md` § "An admin can remove a single area" — the endpoint takes the slug to REMOVE, never the new list, which is what lets it skip the coverage cap; re-read that before making it a general editor |

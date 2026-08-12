@@ -191,6 +191,74 @@ export class AnalyticsRepository {
   }
 
   /**
+   * The platform-wide twin of `countUniqueVisitors` above: distinct visitors
+   * who triggered `eventType` on ANY tow truck's profile, not one truck's.
+   * Exists for the admin panel's "active callers" number — every other query
+   * in this class is deliberately scoped to a single driver, and this is the
+   * one deliberate exception.
+   *
+   * ## Why this drops `towTruckId` rather than taking `undefined` for "any"
+   *
+   * A separate method, not an optional parameter on `countUniqueVisitors`,
+   * because "no truck filter" is not a variation of "one truck's numbers" —
+   * it answers a different question for a different audience (the platform's
+   * owner, not a driver), and the two must never be reachable through the
+   * same call shape a bug could accidentally leave unscoped.
+   *
+   * ## Cost: not index-only, and that is an accepted trade
+   *
+   * The dedup ledger's only index is `(towTruckId, statDate, eventType,
+   * visitorKey)` — see docs/analytics.md § "Index design, and why there are
+   * only three". Dropping the leading column means Postgres cannot seek into
+   * that index, so this scans through the standalone `(statDate)` index the
+   * nightly retention purge already relies on (`purgeVisitorDaysBefore`)
+   * rather than the composite one. That index is bounded by
+   * `ANALYTICS_VISITOR_DAY_RETENTION_DAYS` regardless of how many trucks or
+   * how much history exist, so this query's cost does not grow with the
+   * platform — the same accepted cost class as the purge, and this runs far
+   * less often (an admin opening a panel, not a 4am cron). If it ever becomes
+   * a hot path, the fix is a fourth index `(eventType, statDate,
+   * visitorKey)` — deliberately not added pre-emptively for one occasional
+   * admin read.
+   */
+  async countUniqueVisitorsSiteWide(
+    eventType: AnalyticsEventType,
+    range: { from: AnalyticsDateKey; to: AnalyticsDateKey },
+  ): Promise<number> {
+    const rows = await this.prisma.$queryRaw<{ count: number }[]>`
+      SELECT COUNT(DISTINCT "visitorKey")::int AS "count"
+      FROM "AnalyticsVisitorDay"
+      WHERE "eventType" = ${eventType}::"AnalyticsEventType"
+        AND "statDate" BETWEEN ${range.from}::date AND ${range.to}::date
+    `
+    return rows[0]?.count ?? 0
+  }
+
+  /**
+   * The platform-wide twin of `sumByEventType`, for one event type rather
+   * than a per-truck breakdown of all five — the admin panel wants "how many
+   * calls, total, across every truck", not five numbers it would have to sum
+   * itself. Reads only `AnalyticsDailyStat`, which stays small regardless of
+   * platform age (see `sumByEventType`'s comment), so an all-time read
+   * (`range` omitted) costs the same class of query as a windowed one.
+   */
+  async sumEventTypeSiteWide(
+    eventType: AnalyticsEventType,
+    range?: { from: AnalyticsDateKey; to: AnalyticsDateKey },
+  ): Promise<number> {
+    const result = await this.prisma.analyticsDailyStat.aggregate({
+      where: {
+        eventType,
+        ...(range
+          ? { statDate: { gte: dateKeyToDate(range.from), lte: dateKeyToDate(range.to) } }
+          : {}),
+      },
+      _sum: { eventCount: true },
+    })
+    return result._sum?.eventCount ?? 0
+  }
+
+  /**
    * Raw daily rows for the chart. Only the three columns the chart needs — no
    * `select: *`, so wide-row reads never creep in as the table gains columns.
    */

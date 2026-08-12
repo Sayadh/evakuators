@@ -134,13 +134,40 @@ export interface SiteEventTypeSumRow {
 }
 
 /**
- * GET /admin/site-analytics — the two numbers the admin panel exists to show.
+ * Platform-wide callers — how many distinct people pressed "Զանգահարել" on
+ * ANY tow truck's profile, not one driver's. The per-truck dashboards already
+ * answer "did people call THIS listing"; this answers a different question
+ * ("are people calling drivers at all"), which no per-truck number can, since
+ * someone who called three different drivers is three per-truck unique
+ * visitors and one platform-wide active caller.
  *
- * Both are already deduplicated to once per visitor per Armenia day at write
- * time, so `totals.SITE_VISIT` IS the distinct-people count for the period's
- * days summed, and `uniqueVisitors` is the distinct-people count across the
- * whole window (someone visiting Monday and Friday is 2 daily visits but 1
- * unique visitor). Both are useful and neither can be derived from the other.
+ * See `AnalyticsRepository.countUniqueVisitorsSiteWide` /
+ * `sumEventTypeSiteWide`, and `ANALYTICS_SITE_WIDE_CALLER_EVENT_TYPE` for why
+ * this is specifically the phone button and not WhatsApp/Telegram/email.
+ */
+export interface SiteWideCallerStatsApi {
+  /** Distinct callers, across every truck, inside the selected period */
+  uniqueCallers: number
+  /**
+   * Sum of daily deduplicated call clicks inside the period — same asymmetry
+   * as `totals` vs `uniqueVisitors` everywhere else in this module: a visitor
+   * who calls two different trucks the same day counts twice here (once per
+   * truck's own dedup) but once in `uniqueCallers`.
+   */
+  totalCalls: number
+  /** Same total over all recorded history — never purged */
+  allTimeTotalCalls: number
+}
+
+/**
+ * GET /admin/site-analytics — the numbers the admin panel exists to show.
+ *
+ * `totals`/`uniqueVisitors` are already deduplicated to once per visitor per
+ * Armenia day at write time, so `totals.SITE_VISIT` IS the distinct-people
+ * count for the period's days summed, and `uniqueVisitors` is the
+ * distinct-people count across the whole window (someone visiting Monday and
+ * Friday is 2 daily visits but 1 unique visitor). Both are useful and neither
+ * can be derived from the other.
  */
 export interface SiteAnalyticsOverviewApi {
   range: AnalyticsRangeApi
@@ -149,4 +176,5 @@ export interface SiteAnalyticsOverviewApi {
   uniqueVisitors: SiteEventTotals
   /** Same counters over all recorded history — never purged */
   allTimeTotals: SiteEventTotals
+  callers: SiteWideCallerStatsApi
 }

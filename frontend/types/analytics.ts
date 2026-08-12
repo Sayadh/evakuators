@@ -104,6 +104,23 @@ export interface TrackSiteEventPayload {
 export type SiteEventTotals = Record<SiteEventType, number>
 
 /**
+ * Platform-wide active callers — distinct people who pressed "Զանգահարել" on
+ * ANY tow truck's profile, not one driver's. Mirrors backend
+ * `SiteWideCallerStatsApi`. Comes from a different table than
+ * `SiteEventTotals` above: a phone click is a per-truck event
+ * (`AnalyticsDailyStat`/`AnalyticsVisitorDay`), read here with no
+ * `towTruckId` filter — `SITE_VISIT`/`FREE_ROUTES_VIEW` never lived there.
+ */
+export interface SiteWideCallerStats {
+  /** Distinct callers, across every truck, inside the selected period */
+  uniqueCallers: number
+  /** Sum of daily deduplicated call clicks inside the period, across every truck */
+  totalCalls: number
+  /** Same total over all recorded history — never purged */
+  allTimeTotalCalls: number
+}
+
+/**
  * GET /admin/site-analytics.
  *
  * `totals` sums the per-day deduplicated counts (a person returning on three
@@ -117,4 +134,5 @@ export interface SiteAnalyticsOverview {
   uniqueVisitors: SiteEventTotals
   /** Lifetime counters, unaffected by the period switcher */
   allTimeTotals: SiteEventTotals
+  callers: SiteWideCallerStats
 }

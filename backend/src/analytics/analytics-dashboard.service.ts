@@ -2,7 +2,10 @@ import { Injectable, NotFoundException } from '@nestjs/common'
 import { ReviewsRepository } from '../reviews/reviews.repository'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
 import { AnalyticsClock } from './analytics-clock.service'
-import { ANALYTICS_UNIQUE_VISITOR_EVENT_TYPE } from './analytics.constants'
+import {
+  ANALYTICS_SITE_WIDE_CALLER_EVENT_TYPE,
+  ANALYTICS_UNIQUE_VISITOR_EVENT_TYPE,
+} from './analytics.constants'
 import { AnalyticsPeriod, AnalyticsReviewStatus, SiteEventType } from './analytics.enums'
 import {
   toAnalyticsReviewApi,
@@ -59,15 +62,38 @@ export class AnalyticsDashboardService {
    * *daily* deduplicated counts (a person returning on three days counts
    * three times — that's "visits"), uniqueVisitors is distinct people across
    * the whole window (that person counts once — that's "reach").
+   *
+   * `callers` is a third, separate question, answered from a different table:
+   * `SiteVisitorDay`/`SiteDailyStat` only ever recorded `SITE_VISIT` and
+   * `FREE_ROUTES_VIEW` — a phone click is a per-truck event, written to
+   * `AnalyticsVisitorDay`/`AnalyticsDailyStat` instead (see
+   * `docs/analytics.md`). Read platform-wide via
+   * `countUniqueVisitorsSiteWide`/`sumEventTypeSiteWide` rather than a
+   * `towTruckId`-scoped call, which is why it comes from
+   * `analyticsRepository`, not `siteAnalyticsRepository`, below.
    */
   async getSiteOverview(period: AnalyticsPeriod): Promise<SiteAnalyticsOverviewApi> {
     const range = this.clock.resolveRange(period)
 
-    const [periodRows, allTimeRows, uniqueVisits, uniqueFreeRoutes] = await Promise.all([
+    const [
+      periodRows,
+      allTimeRows,
+      uniqueVisits,
+      uniqueFreeRoutes,
+      uniqueCallers,
+      totalCalls,
+      allTimeTotalCalls,
+    ] = await Promise.all([
       this.siteAnalyticsRepository.sumByEventType(range),
       this.siteAnalyticsRepository.sumByEventType(),
       this.siteAnalyticsRepository.countUniqueVisitors(SiteEventType.SITE_VISIT, range),
       this.siteAnalyticsRepository.countUniqueVisitors(SiteEventType.FREE_ROUTES_VIEW, range),
+      this.analyticsRepository.countUniqueVisitorsSiteWide(
+        ANALYTICS_SITE_WIDE_CALLER_EVENT_TYPE,
+        range,
+      ),
+      this.analyticsRepository.sumEventTypeSiteWide(ANALYTICS_SITE_WIDE_CALLER_EVENT_TYPE, range),
+      this.analyticsRepository.sumEventTypeSiteWide(ANALYTICS_SITE_WIDE_CALLER_EVENT_TYPE),
     ])
 
     return {
@@ -78,6 +104,7 @@ export class AnalyticsDashboardService {
         [SiteEventType.FREE_ROUTES_VIEW]: uniqueFreeRoutes,
       },
       allTimeTotals: toSiteEventTotals(allTimeRows),
+      callers: { uniqueCallers, totalCalls, allTimeTotalCalls },
     }
   }
 

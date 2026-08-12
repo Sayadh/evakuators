@@ -95,7 +95,7 @@ shape, the rating join and the row cap to drift.
 | `GET` | `/admin/tow-trucks/:id/analytics/charts` | |
 | `GET` | `/admin/tow-trucks/:id/analytics/reviews` | |
 | `GET` | `/admin/tow-trucks/:id/analytics/ratings` | |
-| `GET` | `/admin/site-analytics` | Site-wide traffic, no tow truck involved: visits + Free Routes views, each as distinct people and as daily-summed visits, for `?period=` and all time. The only report in the analytics module that isn't scoped to a driver, which is why it has its own controller |
+| `GET` | `/admin/site-analytics` | Site-wide traffic, no tow truck involved: visits + Free Routes views, each as distinct people and as daily-summed visits, for `?period=` and all time. Also `callers` — distinct people who pressed "Զանգահարել" on ANY truck's profile in the period, plus daily-summed and all-time call totals; read platform-wide from the per-truck analytics tables with no `towTruckId` filter, not from the site-visit tables above. The only report in the analytics module that isn't scoped to a driver, which is why it has its own controller. See `docs/analytics.md` § "Platform-wide active callers" |
 
 ## List vs detail — two different shapes on purpose
 

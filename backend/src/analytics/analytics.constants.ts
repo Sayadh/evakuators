@@ -38,6 +38,17 @@ export const ANALYTICS_DEFAULT_PERIOD = AnalyticsPeriod.Last30Days
 export const ANALYTICS_UNIQUE_VISITOR_EVENT_TYPE = AnalyticsEventType.PAGE_VIEW
 
 /**
+ * What "an active user" means for the platform-wide caller count in the admin
+ * panel (`SiteAnalyticsOverviewApi.callers`): a visitor who pressed
+ * "Զանգահարել" on at least one tow truck's profile. Not WhatsApp, Telegram or
+ * email — those are separate contact channels a driver may not even offer,
+ * and the ask this metric answers is specifically about the phone button. A
+ * named constant rather than `PHONE_CLICK` inlined at each call site, same
+ * reasoning as ANALYTICS_UNIQUE_VISITOR_EVENT_TYPE above.
+ */
+export const ANALYTICS_SITE_WIDE_CALLER_EVENT_TYPE = AnalyticsEventType.PHONE_CLICK
+
+/**
  * How long the per-visitor dedup ledger is kept. MUST stay strictly greater
  * than the longest selectable period (90 days) — the unique-visitors metric
  * reads this table directly, so purging inside the selectable window would

@@ -116,7 +116,7 @@ half-answered page.
 
 | | Verdict |
 | --- | --- |
-| **OpenRouteService** | Free key, 2,500 req/day, 40k/month, 3,500 locations per matrix. One visitor search is one request, cached 5 minutes — orders of magnitude of headroom. **Chosen.** |
+| **OpenRouteService** | Free key, 3,500 locations per matrix, one visitor search is one request, cached 5 minutes. This deployment's key is capped at **500 req/day** — `NearestQuotaService` tracks calls against that real number, not an advertised one. **Chosen.** |
 | OSRM public demo | Free, no key, but its own usage policy is non-commercial, ≤1 req/s, no uptime guarantee, withdrawable without notice. Fine for a local experiment. |
 | Self-hosted OSRM | Removes those problems, adds an OSM extract, a preprocessing pipeline and ~1 GB RAM to the VPS that already runs everything else. |
 
@@ -172,59 +172,121 @@ They are easiest to keep straight by who they are keyed on:
 | --- | --- | --- | --- |
 | Result cache | rounded position | 5 min | "has *anyone nearby* just asked this?" |
 | Remembered answer | one browser | **1 hour** | "has *this person* just asked this?" |
-| Daily allowance | one browser | **2 / day** | "how many fresh answers does a person get?" |
+| Daily allowance | one browser | **2 / day** | "how many *road-distance* answers does a person get?" |
 | Per-minute throttle | IP | 10 / min | burst control |
-| Daily ceiling | IP | **40 / day** | "is one source hammering the metered quota?" |
+| ORS daily budget | platform-wide | **480 matrix calls / day** | "is today's shared routing budget gone?" |
 
-### The two daily numbers are different on purpose — do not "make them match"
+### The allowance takes away road data, not the search
+
+**Nothing on this page ever refuses to answer.** `NEAREST_DAILY_SEARCH_LIMIT`
+(2/day, per browser) buys **detailed** answers — the ones carrying road
+distances and driving times, which cost a call against the metered external
+quota. Once it is spent, the page goes on searching, **unlimited**: it sends
+`skipRouting: true` and the backend answers with the same complete, ranked
+list of nearest drivers measured «Ուղիղ գծով». Only the road figures wait
+until tomorrow.
+
+That asymmetry is the whole design. The expensive half of a search is one ORS
+call; the PostGIS half costs a single indexed query and is effectively free,
+so rationing it would save nothing and cost everything — someone standing next
+to a broken car on their third look of the day is the last person who should
+meet an empty screen. `frontend/tests/nearestSearchLimits.spec.ts` asserts
+there is no early exit between reading the limit and calling the API, because
+restoring an `if (limitReached) return` guard is the tidy-looking change that
+would bring the dead end back.
+
+The page says which of the two reasons produced a straight-line list, and they
+are not interchangeable: «այսօրվա մանրամասն որոնումներն օգտագործված են» is a
+rule working as designed and resets at midnight, «ծառայությունն այս պահին
+հասանելի չէ» is an outage. Reporting either as the other is a lie the visitor
+cannot act on.
+
+#### Why the client is trusted with `skipRouting`
+
+Every other "can the client be trusted?" rule in this codebase exists because
+a client could ask for **more** than it is entitled to. This flag can only ask
+for **less**: a request carrying it is strictly cheaper to serve, and the worst
+a forged `true` achieves is a worse answer for the forger. The inverse flag —
+"route this one for me anyway" — must never be added, since it would let anyone
+spend the shared budget at will.
+
+The two answers are separated in the result cache (`…|nr` key suffix) so they
+cannot serve each other wrongly. A **routed** entry satisfies both kinds of
+request and is checked first: it is strictly better and free to hand over. A
+**straight-line** entry is never served to a caller who still has allowance —
+otherwise one visitor past their limit would warm the cache for a whole ~110 m
+square and silently degrade everyone else there for five minutes.
+
+### The ORS budget is global — it used to be per-IP, and that was wrong
 
 `NEAREST_DAILY_SEARCH_LIMIT = 2` (`frontend/constants/nearest.ts`) is the
 **product rule**, per person, with visible copy: «Օրական 2 որոնման
 սահմանաչափը սպառվել է։ Խնդրում ենք փորձել վաղը»։
 
-`NEAREST_DAILY_IP_SEARCH_LIMIT = 40` (`backend/src/nearest/nearest.constants.ts`)
-is an **abuse ceiling** on the metered OpenRouteService quota.
+An earlier version of this feature also had `NEAREST_DAILY_IP_SEARCH_LIMIT = 40`,
+a per-IP abuse ceiling meant to protect the ORS quota. It was removed, because
+it protected the wrong quantity: this deployment's real ORS budget is
+**500 requests/day** (not the larger figure sometimes advertised for the free
+tier in general — see § Route matrix), and a per-IP number set low enough to
+matter still lets a modest handful of distinct addresses — a dozen or so, doing
+nothing unusual — collectively exceed a platform-wide budget that small. Making
+the per-IP number small enough to actually bound that risk (closer to
+`NEAREST_DAILY_SEARCH_LIMIT`) would have re-created the CGNAT problem instead:
+Armenian mobile carriers share one public address across many phones, so a
+low per-IP number refuses real people, not abusers.
 
-Lowering the backend number to 2 to make them agree would break the feature for
-a large share of real users: **`req.ip` is not a person.** Armenian mobile
-carriers use CGNAT, so many phones share one public address — at 2/day the
-third phone in the country on a given carrier address gets refused, and it
-would present as "the search just doesn't work on mobile". 40 sits far above
-any plausible number of genuine searches from one address in a day and far
-below ORS's 2,500/day free tier. `backend/test/nearest-quota.spec.ts` asserts
-the gap so the reasoning survives someone tidying up.
+`NEAREST_ORS_DAILY_QUOTA = 500` and `NEAREST_ORS_DAILY_SAFETY_MARGIN = 20`
+(`backend/src/nearest/nearest.constants.ts`) now cap the thing that actually
+runs out — total matrix calls made today, counted once, platform-wide — with
+20 calls of headroom against a burst. `NearestQuotaService` tracks this single
+counter; there is no per-caller table to size or evict.
 
-### Both are counted on work done, not requests received
+### Running out degrades the search — it does not refuse it
 
-The backend charges an address only **after** the result cache has missed and
-the search has actually run (`NearestQuotaService.consume`, called from
-`NearestService` past the cache lookup). A request served from the 5-minute
-cache costs nothing upstream, so it costs nothing here either — including for
-someone already over the ceiling, who still gets a cached answer rather than a
-429. A search that throws (PostGIS down) is not charged either: a limit the
-visitor cannot see or appeal must not be spent on our outage.
+Once the daily budget is spent, `NearestService` stops calling ORS entirely for
+the rest of the Armenia day: the PostGIS step still runs, the visitor still
+gets a list, it is just ranked by straight-line distance with no times — the
+same `routed: false` state the page already renders for an ORS outage. There is
+**no 429 for this**, deliberately: running out of a shared daily budget is not
+any one visitor's fault, so nobody is told to wait. Note the visitor-facing
+allowance behaves the same way for a different reason — see "The allowance
+takes away road data, not the search" above. Neither limit on this page has a
+"come back tomorrow" dead end; both only ever remove the road figures.
 
-The browser follows the same rule. An allowance is spent only when a fresh
-answer was actually delivered — a refused permission prompt or a failed request
-costs nothing, and neither does pressing the button inside the remembered hour.
+### Counted on work done, not requests received
+
+`NearestQuotaService.consume()` runs only once the result cache has missed and
+the search is actually about to call ORS (past the cache lookup, inside
+`NearestService.search`). A request served from the 5-minute cache costs
+nothing upstream, so it costs nothing against the budget either.
+
+The browser follows the same rule for its own allowance. An allowance is spent
+only when a fresh answer that actually bought road data was delivered — a
+refused permission prompt, a failed request, a press inside the remembered
+hour, and a straight-line-only search past the limit all cost nothing.
 
 ### The hour, and what it does to the permission prompt
 
-Pressing the button checks, in this order: **fresh remembered answer → today's
-allowance → the browser's position.** The order is the feature. A visitor
-inside the hour is shown the same list instantly, with **no permission prompt
-and no request at all** — which also means a browser that would remember a
-refusal is never asked a second time for something already answered.
+Pressing the button checks, in this order: **fresh remembered answer → the
+browser's position → the search** (with today's allowance deciding only
+whether that search asks for road data). The first step is the feature. A
+visitor inside the hour is shown the same list instantly, with **no permission
+prompt and no request at all** — which also means a browser that would
+remember a refusal is never asked a second time for something already
+answered.
 
 The list then carries the time it was computed («Ցուցակը կազմվել է 14:32-ին»),
 because an hour-old answer to "who is near me" is indistinguishable from a live
 one otherwise, and this page's whole discipline is not letting a number look
 more current than it is.
 
-When the hour has passed **and** the allowance is gone, the old list stays on
-screen under the notice rather than being replaced by an empty page: a
-stale list of the drivers nearest where someone stood an hour ago still answers
-"who do I call", and that is the question they came with.
+When the hour has passed **and** the allowance is gone, the press runs a fresh
+straight-line search rather than showing the stale list under a notice — the
+list is newer, the visitor may have moved, and it costs nothing. The remembered
+answer is still overwritten with it (that is what spares the *next* press a
+geolocation prompt), but the allowance counter is not touched: there is nothing
+left to charge, and counting past the limit would make the "N of 2 left" figure
+on screen nonsense.
 
 ### What the browser stores — and what it deliberately does not
 
@@ -239,10 +301,11 @@ refresh silently" is the plausible change that would quietly break it.
 
 Neither browser-side rule is a security boundary — storage can be cleared and
 incognito starts fresh. That is expected: they shape the behaviour of the
-overwhelming majority who never try, and the per-IP ceiling is what actually
-protects the quota. **Do not "harden" them by fingerprinting the browser**, which
-would turn an anonymous page into a tracking one — the trade already refused in
-"What is deliberately not here".
+overwhelming majority who never try, and the global ORS budget cap is what
+actually protects the quota regardless of what any one browser does. **Do not
+"harden" them by fingerprinting the browser**, which would turn an anonymous
+page into a tracking one — the trade already refused in "What is deliberately
+not here".
 
 The day boundary is **Asia/Yerevan**, shared with the backend through
 `ARMENIA_TIMEZONE` in `backend/src/common/armenia-day.ts` (which
@@ -298,7 +361,7 @@ backend/src/nearest/
   nearest.repository.ts        the ONLY place PostGIS is touched (raw SQL)
   route-matrix.service.ts      OpenRouteService; every failure returns null
   nearest-cache.service.ts     5-minute in-memory cache, rounded keys, size cap
-  nearest-quota.service.ts     per-IP daily ceiling — an abuse bound, NOT the 2/day rule
+  nearest-quota.service.ts     global daily ORS-call budget, NOT the 2/day rule and NOT per-IP
   nearest.constants.ts         every tunable number
   nearest.types.ts             API shapes
   dto/find-nearest.dto.ts      two validated numbers, nothing else

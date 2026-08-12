@@ -3,15 +3,14 @@
  *
  * Both numbers below exist to stop one person costing the platform a metered
  * routing request every time they reopen the page — but they are *product*
- * rules with visible copy attached, not the backend's abuse ceiling. See
- * `NEAREST_DAILY_IP_SEARCH_LIMIT` in `backend/src/nearest/nearest.constants.ts`
- * for that one, and for why the two numbers are deliberately far apart (an IP
- * is not a person; Armenian mobile carriers put many phones behind one).
+ * rules with visible copy attached, not the backend's real protection. That is
+ * `NEAREST_ORS_DAILY_QUOTA` in `backend/src/nearest/nearest.constants.ts`, one
+ * global budget for the whole platform.
  *
  * Neither of these is a security boundary. Anything kept in a browser can be
  * cleared, and incognito starts fresh — that is fine and expected. They shape
- * the behaviour of the overwhelming majority who never try, while the backend
- * ceiling handles the ones who do.
+ * the behaviour of the overwhelming majority who never try, while the global
+ * budget handles whatever any one browser claims.
  */
 
 /**
@@ -28,15 +27,26 @@
 export const NEAREST_RESULT_CACHE_TTL_MS = 60 * 60 * 1000
 
 /**
- * Fresh searches one person may run in an Armenia calendar day.
+ * **Detailed** searches one person may run in an Armenia calendar day — the
+ * ones that come back with road distances and driving times.
  *
- * Counts searches that actually reached the backend — a press served from the
- * cache above costs nothing and is not charged, and neither is a press where
- * the visitor refused the location prompt or the request failed. So "2" means
- * two genuine answers, not two button presses.
+ * ## This does not limit searching, only road data
  *
- * Resets at midnight Yerevan time, not on a rolling 24 hours, so that
- * «փորձեք վաղը» is literally true.
+ * Spending it never turns the page into a dead end. Past this number the page
+ * goes on searching, unlimited, asking the backend for straight-line distances
+ * only (`skipRouting`): the visitor still gets the complete ranked list of the
+ * drivers nearest them, just measured «Ուղիղ գծով» with no times. Only the
+ * expensive half — one call against a metered external quota — is rationed;
+ * the PostGIS half is a single indexed query and rationing it would save
+ * nothing while costing someone standing next to a broken car everything.
+ *
+ * Counts searches that actually bought road data — a press served from the
+ * cache above costs nothing, and neither does one where the visitor refused
+ * the location prompt, the request failed, or the answer was straight-line
+ * only. So "2" means two detailed answers, not two button presses.
+ *
+ * Resets at midnight Yerevan time, not on a rolling 24 hours, so that «վաղը»
+ * in the copy is literally true.
  */
 export const NEAREST_DAILY_SEARCH_LIMIT = 2
 

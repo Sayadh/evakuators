@@ -16,9 +16,14 @@ import { ROUTE_MATRIX_TIMEOUT_MS } from './nearest.constants'
  *
  * ## Why OpenRouteService
  *
- * Free API key, 2,500 requests/day and 40,000/month, up to 3,500 locations per
- * matrix request — orders of magnitude above what this feature needs, since one
- * visitor search is one request and results are cached for five minutes.
+ * Free API key, up to 3,500 locations per matrix request — one visitor search
+ * is one request, cached for five minutes, so the feature itself uses very
+ * little of it. The key configured for this deployment is provisioned for
+ * **500 requests/day** (not the larger figure sometimes advertised for the
+ * free tier in general — tiers and keys vary, and 500 is the number that is
+ * real for this platform). `NearestQuotaService` tracks calls against that
+ * real number and degrades the search to straight-line distances before it
+ * could ever be exceeded — see `NEAREST_ORS_DAILY_QUOTA`.
  *
  * The alternative that keeps getting suggested is OSRM's public demo server,
  * which is free and needs no key. Its own usage policy rules it out here: it is

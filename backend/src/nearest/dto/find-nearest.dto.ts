@@ -1,3 +1,4 @@
+import { IsBoolean, IsOptional } from 'class-validator'
 import { IsLatitudeValue, IsLongitudeValue } from '../../common/coordinates'
 
 /**
@@ -10,9 +11,8 @@ import { IsLatitudeValue, IsLongitudeValue } from '../../common/coordinates'
  * `Infinity`, which matters more here than anywhere else: these values come
  * straight from an anonymous request body.
  *
- * Two fields, both required, and `forbidNonWhitelisted` (main.ts) turns any
- * third one into a 400. There is nothing else to send, and nothing else this
- * endpoint would do with it.
+ * `forbidNonWhitelisted` (main.ts) turns any field not declared here into a
+ * 400, so the three below are the whole vocabulary of this endpoint.
  *
  * ## Why the whole thing is a POST body
  *
@@ -30,4 +30,31 @@ export class FindNearestDto {
 
   @IsLongitudeValue()
   longitude!: number
+
+  /**
+   * "Answer with straight-line distances only — do not call the routing
+   * service for me."
+   *
+   * Sent by the frontend once a visitor has used today's allowance of
+   * detailed searches (`NEAREST_DAILY_SEARCH_LIMIT`, 2/day per browser). Past
+   * that the search keeps working — the PostGIS half costs nothing — it just
+   * stops buying road distances and times out of the platform's shared daily
+   * ORS budget.
+   *
+   * ## Why it is safe to let the client ask for this
+   *
+   * Every other "trust the client?" rule in this codebase exists because a
+   * client could ask for *more* than it is entitled to. This flag can only ask
+   * for **less**: a request carrying it is strictly cheaper to serve than one
+   * without, and the worst a forged `true` achieves is a worse answer for the
+   * forger. So it needs no server-side corroboration, unlike `restaurantId`
+   * or any ownership identifier.
+   *
+   * The inverse is *not* true and must never be added — a client flag meaning
+   * "route this one for me anyway" would let anyone spend the shared budget at
+   * will, which is exactly what `NearestQuotaService` exists to bound.
+   */
+  @IsOptional()
+  @IsBoolean({ message: 'skipRouting-ը պետք է լինի boolean' })
+  skipRouting?: boolean
 }

@@ -72,46 +72,42 @@ export const NEAREST_THROTTLE_LIMIT = 10
 export const NEAREST_THROTTLE_TTL_MS = 60_000
 
 /**
- * Searches one IP may actually *perform* in an Armenia calendar day.
+ * Real daily cap on the OpenRouteService key this deployment actually uses.
  *
- * ## This is NOT the "2 searches per day" product rule — read this before changing it
+ * ## Why this exists, and why it replaced a per-IP ceiling
  *
- * The visitor-facing limit ("you have used your 2 searches, try tomorrow")
- * lives in the browser, keyed per person: `NEAREST_DAILY_SEARCH_LIMIT` in
- * `frontend/constants/nearest.ts`. This number is a different thing with a
- * different job — an **abuse ceiling** protecting the metered OpenRouteService
- * quota from a single source hammering the endpoint.
+ * An earlier version of this file capped searches per IP address (40/day) as
+ * an abuse ceiling. That was the wrong quantity to protect: the thing that
+ * can actually run out is the ONE shared daily budget the whole platform
+ * draws from, and a per-IP number set low enough to matter (40) still lets a
+ * modest handful of distinct addresses — 13 of them, doing nothing unusual —
+ * collectively exceed it, while a per-IP number set high enough not to matter
+ * protects nothing. The budget that needs a cap is global, so it is now
+ * counted directly instead of proxied through IPs.
  *
- * They are deliberately far apart, and setting this to 2 to "match" would take
- * the feature away from real users. Armenian mobile carriers use CGNAT: a
- * large share of phones share a handful of public addresses, so `req.ip` is
- * emphatically not a person. At 2/day, the third *phone in the country* on a
- * given carrier address gets refused. 40 is chosen to sit far above any
- * plausible number of genuine searches from one address in a day, and far
- * below ORS's 2,500/day free tier even if several addresses hit the ceiling
- * at once.
- *
- * The per-minute throttle above is the burst control; this is the daily one.
- * Neither replaces the other — 10/min alone permits 14,400 searches a day.
+ * 500 is this deployment's actual key, confirmed against the ORS account —
+ * not the 2,500/day sometimes advertised for the free tier in general; keys
+ * and tiers vary, and this number is the one that is real for this platform.
  */
-export const NEAREST_DAILY_IP_SEARCH_LIMIT = 40
+export const NEAREST_ORS_DAILY_QUOTA = 500
 
 /**
- * Hard cap on tracked IPs, for the same reason the result cache has one: a Map
- * keyed on something an anonymous caller controls is an unbounded write
- * primitive. Entries are one small object each, and the whole table is dropped
- * the moment the Armenia day rolls over, so this only has to survive one day
- * of distinct addresses.
+ * Headroom subtracted from the raw quota before the app calls it "no budget
+ * left for today". Traffic is not perfectly even across a day, and the last
+ * few calls of the quota are worth more as a buffer against a burst than as a
+ * few extra visitors getting a road distance instead of a straight line.
  */
-export const NEAREST_QUOTA_MAX_ENTRIES = 10_000
+export const NEAREST_ORS_DAILY_SAFETY_MARGIN = 20
 
 /**
- * Marks the 429 raised by the daily ceiling, so the frontend can tell it apart
- * from the per-minute throttle's 429 — the two need different copy («փորձեք
- * վաղը» vs «փորձեք մեկ պահից»), and matching on a translated message string
- * is the kind of coupling that breaks the day someone rewords it.
+ * The number of matrix calls this app will actually make in one Armenia day
+ * before degrading. Past this, `NearestService` skips the ORS call entirely
+ * and serves straight-line distances — the same `routed: false` outcome the
+ * page already renders when a call fails, so a visitor is degraded, never
+ * refused. There is deliberately no 429 for this: unlike the per-minute
+ * throttle, running out of ORS budget is not the visitor's doing.
  */
-export const NEAREST_DAILY_LIMIT_CODE = 'NEAREST_DAILY_LIMIT'
+export const NEAREST_ORS_DAILY_CALL_LIMIT = NEAREST_ORS_DAILY_QUOTA - NEAREST_ORS_DAILY_SAFETY_MARGIN
 
 /** Timeout for the matrix call — past this the straight-line fallback is better than waiting */
 export const ROUTE_MATRIX_TIMEOUT_MS = 4000

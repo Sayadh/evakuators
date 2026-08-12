@@ -9,7 +9,17 @@ import { yerevanDateKey } from '~/utils/formatters'
 
 /**
  * The remembered half of «Գտնել մոտակա էվակուատորները»: an hour-long cache of
- * the last answer, and a per-day allowance of fresh ones.
+ * the last answer, and a per-day allowance of **detailed** ones.
+ *
+ * ## The allowance limits road data, not the search
+ *
+ * Spending it does not take the feature away. Past it the page keeps
+ * searching — it asks the backend for straight-line distances only
+ * (`skipRouting`), which costs the platform nothing because the expensive half
+ * is the external routing call, not PostGIS. So `limitReached` means "no more
+ * road distances and times today", never "no more answers today", and the
+ * counter below is only ever charged for a search that actually bought road
+ * data.
  *
  * ## Why the page does not do this itself
  *
@@ -30,13 +40,13 @@ import { yerevanDateKey } from '~/utils/formatters'
  * ## Neither rule is a security boundary
  *
  * `localStorage` can be cleared and incognito starts fresh. That is fine and
- * expected: these shape the behaviour of the overwhelming majority who never
- * try, and the backend's own per-IP daily ceiling (see
+ * expected: this shapes the behaviour of the overwhelming majority who never
+ * try, and the backend's global daily ORS budget (see
  * `backend/src/nearest/nearest-quota.service.ts`) is what actually protects
- * the metered routing quota. Do not "harden" this by fingerprinting the
- * browser — that would turn an anonymous page into a tracking one, which is
- * the trade `docs/nearest-search.md` § "What is deliberately not here"
- * already refused.
+ * the metered routing quota, whatever any one browser claims. Do not "harden"
+ * this by fingerprinting the browser — that would turn an anonymous page into
+ * a tracking one, which is the trade `docs/nearest-search.md` § "What is
+ * deliberately not here" already refused.
  */
 
 interface CachedSearch {
@@ -134,14 +144,25 @@ export function useNearestSearch() {
   }
 
   /**
-   * Records one fresh search. Called **after** a successful one, never before:
-   * a visitor who was refused by the browser's permission prompt, or whose
-   * request failed, has had nothing delivered and must not be charged for it.
+   * Remembers an answer, and — unless told otherwise — charges it against
+   * today's allowance.
+   *
+   * Called **after** a successful search, never before: a visitor who was
+   * refused by the browser's permission prompt, or whose request failed, has
+   * had nothing delivered and must not be charged for it.
+   *
+   * @param charge `false` for a straight-line-only answer served after the
+   *   allowance was already spent. It is still worth remembering — it is the
+   *   newest thing we know, and the hour-long cache is what spares the next
+   *   press a geolocation prompt — but there is nothing left to charge, and
+   *   incrementing past the limit would make a "used N of 2" figure nonsense.
    */
-  function remember(result: NearestSearchResult): void {
+  function remember(result: NearestSearchResult, charge = true): void {
     const entry: CachedSearch = { savedAt: Date.now(), result }
     cached.value = entry
     writeStored(NEAREST_CACHE_STORAGE_KEY, entry)
+
+    if (!charge) return
 
     searchesUsedToday.value += 1
     writeStored(NEAREST_QUOTA_STORAGE_KEY, {

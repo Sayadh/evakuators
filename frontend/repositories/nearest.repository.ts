@@ -14,10 +14,21 @@ import type { NearestSearchResult } from '~/types/nearest'
  * miss costs an external routing request.
  */
 export const nearestRepository = {
-  findNearest(latitude: number, longitude: number): Promise<NearestSearchResult> {
+  /**
+   * @param skipRouting Ask for straight-line distances only. Sent once the
+   *   visitor has used today's allowance of detailed searches — the search
+   *   keeps working, it just stops buying road distances and times. This is
+   *   the one flag in the app a client may set for itself, because it can only
+   *   request *less*; see the backend's `FindNearestDto`.
+   */
+  findNearest(
+    latitude: number,
+    longitude: number,
+    skipRouting = false,
+  ): Promise<NearestSearchResult> {
     return apiFetch<NearestSearchResult>('/nearest-tow-trucks', {
       method: 'POST',
-      body: { latitude, longitude },
+      body: { latitude, longitude, skipRouting },
     })
   },
 }

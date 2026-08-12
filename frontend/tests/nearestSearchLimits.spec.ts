@@ -24,13 +24,14 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
 const composable = readFileSync(`${ROOT}composables/useNearestSearch.ts`, 'utf8')
 const page = readFileSync(`${ROOT}pages/evakuator.vue`, 'utf8')
+const repository = readFileSync(`${ROOT}repositories/nearest.repository.ts`, 'utf8')
 
 describe('the numbers', () => {
   it('caches an answer for exactly one hour', () => {
     expect(NEAREST_RESULT_CACHE_TTL_MS).toBe(60 * 60 * 1000)
   })
 
-  it('allows two fresh searches a day', () => {
+  it('allows two detailed searches a day', () => {
     expect(NEAREST_DAILY_SEARCH_LIMIT).toBe(2)
   })
 
@@ -109,9 +110,9 @@ describe('what is written to storage', () => {
 
 describe('the order the page checks things in', () => {
   /**
-   * Cache first, then the allowance, then the request. The order is the
-   * feature: a visitor inside the hour must never see a permission prompt,
-   * which only holds if the cache is consulted before `locate()`.
+   * Cache first, then the request. The order is the feature: a visitor inside
+   * the hour must never see a permission prompt, which only holds if the cache
+   * is consulted before `locate()`.
    */
   it('serves a fresh cache before asking for a position', () => {
     const cacheCheck = page.indexOf('isCacheFresh.value')
@@ -122,17 +123,47 @@ describe('the order the page checks things in', () => {
     expect(cacheCheck).toBeLessThan(locateCall)
   })
 
-  it('checks the allowance before asking for a position too', () => {
-    // Prompting and then refusing would spend a browser permission on a
-    // request that was never going to be made.
-    expect(page.indexOf('limitReached.value')).toBeLessThan(page.indexOf('await locate()'))
-  })
-
   it('charges an allowance only after a delivered answer', () => {
     // `remember()` sits after the await, inside the try — so a refused prompt
     // (which returns early above) and a failed request (which lands in the
     // catch) both cost nothing.
-    expect(page.indexOf('remember(fresh)')).toBeGreaterThan(page.indexOf('await nearestRepository'))
+    expect(page.indexOf('remember(fresh')).toBeGreaterThan(page.indexOf('await nearestRepository'))
+  })
+
+  it('degrades past the allowance instead of refusing', () => {
+    /**
+     * The allowance buys ROAD DATA, not the search. Spending it must never
+     * turn the button into a dead end — the earlier version of this page did
+     * exactly that, and someone standing next to a broken car on their third
+     * look of the day got an empty screen instead of the drivers nearest them.
+     *
+     * Asserted as "no early exit between reading the limit and asking for the
+     * position" rather than by name, because the plausible regression is
+     * someone restoring the `if (limitReached) return` guard for tidiness.
+     * The window stops at `locate()` deliberately: the `if (!position) return`
+     * just past it is a refused permission prompt, which is a real reason to
+     * stop and not the dead end being guarded.
+     */
+    const limitRead = page.indexOf('limitReached.value')
+    const locateCall = page.indexOf('await locate()')
+
+    expect(limitRead).toBeGreaterThan(-1)
+    expect(limitRead).toBeLessThan(locateCall)
+    expect(page.slice(limitRead, locateCall)).not.toContain('return')
+  })
+
+  it('asks the backend for the cheap answer rather than paying for road data', () => {
+    // Without the flag the request costs the shared ORS budget exactly as much
+    // as a full one, and "unlimited straight-line searches" becomes a way to
+    // drain the day's budget for everyone.
+    expect(page).toContain('straightLineOnly')
+    expect(repository).toContain('skipRouting')
+  })
+
+  it('does not charge an allowance for a straight-line answer', () => {
+    // There is nothing left to charge, and counting past the limit would make
+    // the "N of 2 left" figure on screen nonsense.
+    expect(page).toContain('remember(fresh, !straightLineOnly)')
   })
 
   it('reads storage after mount, never during render', () => {

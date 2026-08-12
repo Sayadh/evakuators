@@ -49,14 +49,26 @@ export class NearestCacheService {
   private readonly entries = new Map<string, CacheEntry>()
 
   /**
-   * `40.1792, 44.4991` → `"40.179,44.499"`.
+   * `40.1792, 44.4991` → `"40.179,44.499"`, or `"40.179,44.499|nr"` for an
+   * answer that was deliberately computed without routing.
    *
    * `toFixed` rather than a multiply-round-divide: it produces the same string
    * for `40.1792` and `40.17920000000001`, which floating-point arithmetic on a
    * coordinate that has been through JSON does not guarantee.
+   *
+   * ## Why the routing intent is part of the key
+   *
+   * The two answers are not interchangeable in both directions. A routed one
+   * is strictly better and can be served to anyone (the caller checks for it
+   * first, see `NearestService`), but a straight-line-only one must never be
+   * handed to a visitor who still has allowance to spend on road distances —
+   * they would silently get the degraded page and no way to ask again for five
+   * minutes. Separating them at the key is what makes that impossible rather
+   * than merely unlikely.
    */
-  buildKey(latitude: number, longitude: number): string {
-    return `${latitude.toFixed(NEAREST_CACHE_KEY_PRECISION)},${longitude.toFixed(NEAREST_CACHE_KEY_PRECISION)}`
+  buildKey(latitude: number, longitude: number, routed = true): string {
+    const position = `${latitude.toFixed(NEAREST_CACHE_KEY_PRECISION)},${longitude.toFixed(NEAREST_CACHE_KEY_PRECISION)}`
+    return routed ? position : `${position}|nr`
   }
 
   get(key: string): NearestSearchApi | null {

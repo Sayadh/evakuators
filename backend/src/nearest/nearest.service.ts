@@ -1,17 +1,16 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common'
+import { Injectable } from '@nestjs/common'
 import { assertWithinArmenia } from '../common/coordinates'
 import { TowTrucksService } from '../tow-trucks/tow-trucks.service'
 import { NearestCacheService } from './nearest-cache.service'
 import { NearestQuotaService } from './nearest-quota.service'
 import {
   NEAREST_CANDIDATE_LIMIT,
-  NEAREST_DAILY_LIMIT_CODE,
   NEAREST_RADIUS_METERS,
   NEAREST_RESULT_LIMIT,
 } from './nearest.constants'
 import { NearestRepository } from './nearest.repository'
 import type { NearestSearchApi, NearestTowTruckApi } from './nearest.types'
-import { RouteMatrixService } from './route-matrix.service'
+import { RouteMatrixService, type RouteMatrixEntry } from './route-matrix.service'
 
 /**
  * "Which drivers can reach me, and how far away are they."
@@ -42,14 +41,16 @@ export class NearestService {
   ) {}
 
   /**
-   * @param clientIp Charged for the search — see NearestQuotaService for why
-   *   this is an abuse ceiling on an external quota and emphatically not the
-   *   visitor-facing "2 per day" rule, which lives in the browser.
+   * @param skipRouting The visitor has asked for straight-line distances only
+   *   — they have spent today's allowance of detailed searches, so the search
+   *   still runs (PostGIS costs nothing) but buys no road data. Trusted
+   *   without corroboration because it can only ask for *less*; see
+   *   `FindNearestDto.skipRouting`.
    */
   async findNearest(
     latitude: number,
     longitude: number,
-    clientIp: string,
+    skipRouting = false,
   ): Promise<NearestSearchApi> {
     // Same geography rule the drivers' own coordinates go through, applied to
     // the visitor's. A browser reporting a position outside Armenia is either
@@ -57,37 +58,21 @@ export class NearestService {
     // this platform, and both are cheaper to reject than to route.
     assertWithinArmenia(latitude, longitude)
 
-    const cacheKey = this.cache.buildKey(latitude, longitude)
-    const cached = this.cache.get(cacheKey)
-    // Deliberately before the quota check, not after: a cache hit costs no
-    // external request, so refusing one would be taking a free answer away
-    // from someone. The ceiling exists to bound upstream cost, and this
-    // response has none.
-    if (cached) return cached
+    // A routed answer already in the cache satisfies BOTH kinds of request: it
+    // is strictly better than what a straight-line caller asked for and costs
+    // nothing to hand over, so it is checked first regardless of the flag.
+    const routedCached = this.cache.get(this.cache.buildKey(latitude, longitude))
+    if (routedCached) return routedCached
 
-    // Checked here — after the cache, before the work — so the counter tracks
-    // searches performed rather than requests received.
-    if (!this.quota.hasRemaining(clientIp)) {
-      throw new HttpException(
-        {
-          statusCode: HttpStatus.TOO_MANY_REQUESTS,
-          // Machine-readable, because the frontend shows different copy for
-          // this than for the per-minute throttle's 429.
-          code: NEAREST_DAILY_LIMIT_CODE,
-          message:
-            'Այս ցանցից այսօրվա որոնումների սահմանաչափը սպառվել է։ Խնդրում ենք փորձել վաղը, ' +
-            'կամ օգտվել մարզերի և քաղաքների որոնումից։',
-        },
-        HttpStatus.TOO_MANY_REQUESTS,
-      )
+    const cacheKey = this.cache.buildKey(latitude, longitude, !skipRouting)
+    // Only reached when skipRouting is set — the routed key was just missed
+    // above — but written generally so the two paths cannot diverge.
+    if (skipRouting) {
+      const plainCached = this.cache.get(cacheKey)
+      if (plainCached) return plainCached
     }
 
-    const result = await this.search(latitude, longitude)
-
-    // Charged only once the search actually ran. A throw above this line —
-    // PostGIS down, an unexpected error — costs the visitor nothing, which is
-    // the right way round for a limit they cannot see or appeal.
-    this.quota.consume(clientIp)
+    const result = await this.search(latitude, longitude, !skipRouting)
 
     // Empty results are cached too, on purpose: "nobody near this village" is a
     // stable answer for the next five minutes, and it is exactly the query a
@@ -97,7 +82,11 @@ export class NearestService {
     return result
   }
 
-  private async search(latitude: number, longitude: number): Promise<NearestSearchApi> {
+  private async search(
+    latitude: number,
+    longitude: number,
+    allowRouting: boolean,
+  ): Promise<NearestSearchApi> {
     const candidates = await this.repository.findNearestCandidates(
       latitude,
       longitude,
@@ -118,10 +107,24 @@ export class NearestService {
     const routable = candidates.filter((candidate) => cardById.has(candidate.id))
     if (routable.length === 0) return { results: [], routed: false }
 
-    const matrix = await this.routeMatrix.matrix(
-      { latitude, longitude },
-      routable.map((candidate) => ({ latitude: candidate.latitude, longitude: candidate.longitude })),
-    )
+    // Two independent reasons to skip the routing step, and the same outcome
+    // for both — the call is never attempted, never billed, and this candidate
+    // set is ranked by straight-line distance instead, exactly as it is when a
+    // matrix call fails:
+    //
+    //   `allowRouting` false  — the visitor asked for the cheap answer, having
+    //                           spent today's 2 detailed searches.
+    //   no budget remaining   — the platform's shared daily ORS budget is gone
+    //                           (see NearestQuotaService for why that is one
+    //                           global count and not a per-visitor one).
+    let matrix: (RouteMatrixEntry | null)[] | null = null
+    if (allowRouting && this.quota.hasRemaining()) {
+      this.quota.consume()
+      matrix = await this.routeMatrix.matrix(
+        { latitude, longitude },
+        routable.map((candidate) => ({ latitude: candidate.latitude, longitude: candidate.longitude })),
+      )
+    }
 
     const results: NearestTowTruckApi[] = routable.map((candidate, index) => {
       const road = matrix?.[index] ?? null

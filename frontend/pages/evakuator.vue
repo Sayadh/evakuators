@@ -32,17 +32,27 @@ import { useNearestSearch } from '~/composables/useNearestSearch'
  * written to `localStorage` is the **result list and a timestamp**, never the
  * position it was computed from. See `useNearestSearch`.
  *
- * ## Three things can happen when the button is pressed
+ * ## What happens when the button is pressed
  *
  * In this order, and the order is the point — the cheapest outcome is checked
  * first, so a visitor inside the hour never sees a permission prompt at all:
  *
  * 1. **A fresh remembered answer exists** → show it. No prompt, no request.
- * 2. **Today's allowance is used up** → say so, and keep showing the old list
- *    if there is one. A stale list of the drivers nearest a place someone
- *    stood an hour ago is far more use to them than an empty screen.
- * 3. **Otherwise** → ask for the position and search, then remember both the
- *    answer and the fact that an allowance was spent.
+ * 2. **Otherwise** → ask for the position and search.
+ *
+ * ## The daily allowance takes away road data, not the search
+ *
+ * `NEAREST_DAILY_SEARCH_LIMIT` (2/day) buys **detailed** answers — the ones
+ * carrying road distances and driving times, which cost the platform a call
+ * against a metered external quota. Once it is spent the page goes on
+ * searching, unlimited, with `skipRouting`: the visitor still gets the
+ * drivers nearest them, ranked and complete, measured «Ուղիղ գծով». Only the
+ * road figures wait until tomorrow.
+ *
+ * That is why there is no "come back tomorrow" dead end here. Someone
+ * standing next to a broken car who has already looked twice today is the
+ * last person who should be handed an empty screen, and the half of the answer
+ * that costs nothing to produce is the half that tells them who to call.
  */
 
 useSeoMetaData({
@@ -70,8 +80,13 @@ const searchError = ref('')
 const result = ref<NearestSearchResult | null>(null)
 /** Set when a press was answered from storage rather than the network */
 const servedFromCache = ref(false)
-/** Set when a press was refused because today's allowance is gone */
-const showingLimitNotice = ref(false)
+/**
+ * Set when the list on screen has no road figures *because the allowance is
+ * spent*, rather than because the routing service is down. The two look
+ * identical in the response (`routed: false`) and need opposite copy: one is
+ * a rule working as designed and resets at midnight, the other is an outage.
+ */
+const degradedByAllowance = ref(false)
 
 // `localStorage` does not exist on the server, so both remembered values are
 // read after mount rather than during setup. Reading them while rendering
@@ -92,7 +107,7 @@ const cachedAtLabel = computed(() => (cachedAt.value ? formatClockTime(cachedAt.
 async function findNearest(): Promise<void> {
   searchError.value = ''
   servedFromCache.value = false
-  showingLimitNotice.value = false
+  degradedByAllowance.value = false
   result.value = null
 
   // Checked before locate(), not after: while the feature is off a visitor must
@@ -114,24 +129,19 @@ async function findNearest(): Promise<void> {
     return
   }
 
-  // Before the permission prompt AND before the allowance check: the answer is
-  // already here, so asking the browser for a position would be spending a
-  // prompt to recompute something we can show instantly.
+  // Before the permission prompt: the answer is already here, so asking the
+  // browser for a position would be spending a prompt to recompute something
+  // we can show instantly.
   if (isCacheFresh.value && cachedResult.value) {
     result.value = cachedResult.value
     servedFromCache.value = true
     return
   }
 
-  // Nothing fresh left to show and nothing left to spend. The old list stays
-  // on screen underneath (see the template) — an hour-old list of nearby
-  // drivers still answers "who do I call", which an empty page does not.
-  if (limitReached.value) {
-    showingLimitNotice.value = true
-    result.value = cachedResult.value
-    servedFromCache.value = cachedResult.value !== null
-    return
-  }
+  // Out of detailed searches is not out of searches. The request still goes,
+  // it just asks for the half that costs nothing — so this is read here, in
+  // front of the call, rather than being a reason not to make it.
+  const straightLineOnly = limitReached.value
 
   const position = await locate()
   // `locate()` has already set a specific message; adding one here would show
@@ -140,11 +150,17 @@ async function findNearest(): Promise<void> {
 
   searching.value = true
   try {
-    const fresh = await nearestRepository.findNearest(position.latitude, position.longitude)
+    const fresh = await nearestRepository.findNearest(
+      position.latitude,
+      position.longitude,
+      straightLineOnly,
+    )
     result.value = fresh
-    // Charged only on a delivered answer — a refused prompt or a failed
-    // request above never reaches this line, so neither costs an allowance.
-    remember(fresh)
+    degradedByAllowance.value = straightLineOnly
+    // Charged only for a delivered answer that actually bought road data — a
+    // refused prompt or a failed request above never reaches this line, and a
+    // straight-line answer has nothing left to charge.
+    remember(fresh, !straightLineOnly)
   } catch (error) {
     searchError.value = extractErrorMessage(
       error,
@@ -179,33 +195,24 @@ async function findNearest(): Promise<void> {
     </AppButton>
 
     <!-- Gated on `restored` so the figure is never rendered before storage has
-         been read — see the composable. Hidden once the allowance is gone,
-         because the notice below then says the same thing with more detail. -->
-    <p
-      v-if="NEAREST_SEARCH_ENABLED && restored && !limitReached"
-      class="nearest-page__allowance"
-    >
-      Այսօր մնացել է {{ searchesLeftToday }} որոնում {{ NEAREST_DAILY_SEARCH_LIMIT }}-ից։
-      Կրկնակի սեղմումը մեկ ժամվա ընթացքում նոր որոնում չի ծախսում։
+         been read — see the composable. Both branches are deliberately about
+         road data rather than about searching: the search itself never runs
+         out, and copy implying it does would send someone away from a page
+         that still works. -->
+    <p v-if="NEAREST_SEARCH_ENABLED && restored" class="nearest-page__allowance">
+      <template v-if="limitReached">
+        Այսօրվա {{ NEAREST_DAILY_SEARCH_LIMIT }} մանրամասն որոնումն օգտագործված է։ Որոնումը
+        շարունակում է աշխատել՝ առանց ճանապարհային հեռավորության և ժամանակի, իսկ դրանք կրկին
+        հասանելի կլինեն վաղը։
+      </template>
+      <template v-else>
+        Այսօր մնացել է {{ searchesLeftToday }} մանրամասն որոնում
+        {{ NEAREST_DAILY_SEARCH_LIMIT }}-ից՝ ճանապարհային հեռավորությամբ և ժամանակով։ Կրկնակի
+        սեղմումը մեկ ժամվա ընթացքում նոր որոնում չի ծախսում։
+      </template>
     </p>
 
     <p v-if="shownError" class="nearest-page__error" role="alert">{{ shownError }}</p>
-
-    <!-- Not styled as an error: nothing went wrong, the allowance is simply
-         spent. It says when it resets, and the list below stays on screen. -->
-    <p v-if="showingLimitNotice" class="nearest-page__notice" role="status">
-      <AppIcon name="info" :size="16" />
-      <span>
-        Օրական {{ NEAREST_DAILY_SEARCH_LIMIT }} որոնման սահմանաչափը սպառվել է։ Խնդրում ենք
-        փորձել վաղը։
-        <template v-if="cachedResult">
-          Ստորև ցուցադրված է Ձեր վերջին որոնման արդյունքը՝ {{ cachedAtLabel }}-ի դրությամբ։
-        </template>
-        <template v-else>
-          Այդ ընթացքում կարող եք գտնել վարորդ ըստ մարզի կամ քաղաքի։
-        </template>
-      </span>
-    </p>
 
     <div v-if="busy" class="nearest-page__results">
       <LoadingSkeleton variant="card" :count="3" />
@@ -246,12 +253,20 @@ async function findNearest(): Promise<void> {
             ժամանակի GPS դիրքից։ Ճշգրիտ ժամանակը ճշտեք վարորդի հետ զանգով։
           </span>
         </p>
-        <!-- Shown only in fallback mode, where it explains why there are no
-             times at all — otherwise it would be an apology for a page that is
-             working correctly. -->
+        <!-- Both branches explain the same missing numbers, and the reason is
+             what differs. Telling someone the routing service is down when it
+             is simply their third search of the day would be a false outage
+             report; telling someone their allowance is spent when the service
+             is actually down would be a lie they cannot act on. -->
         <p v-if="!result.routed" class="nearest-page__disclaimer">
-          <AppIcon name="alert" :size="16" />
-          <span>
+          <AppIcon v-if="degradedByAllowance" name="info" :size="16" />
+          <AppIcon v-else name="alert" :size="16" />
+          <span v-if="degradedByAllowance">
+            Ցուցադրվում է ուղիղ գծով հեռավորությունը, քանի որ այսօրվա մանրամասն որոնումներն
+            օգտագործված են։ Ցանկը լրիվ է՝ սրանք Ձեզ ամենամոտ վարորդներն են, պարզապես առանց
+            ճանապարհային հեռավորության և ժամանակի։ Իրական ճանապարհը սովորաբար ավելի երկար է։
+          </span>
+          <span v-else>
             Ճանապարհային հեռավորության ծառայությունն այս պահին հասանելի չէ, ուստի ցուցադրվում է
             ուղիղ գծով հեռավորությունը։ Իրական ճանապարհը սովորաբար ավելի երկար է։
           </span>
@@ -331,28 +346,6 @@ async function findNearest(): Promise<void> {
     font-size: 0.85rem;
     line-height: 1.55;
     color: var(--color-text-muted);
-  }
-
-  // Same shape as the error box, neutral colours — a spent allowance is a
-  // rule working as intended, not a failure, and colouring it red would send
-  // someone looking for a problem to fix.
-  &__notice {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--space-2);
-    margin-top: var(--space-4);
-    padding: var(--space-3) var(--space-4);
-    border-radius: var(--radius-md);
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
-    color: var(--color-text-secondary);
-    line-height: 1.55;
-
-    svg {
-      flex-shrink: 0;
-      margin-top: 2px;
-      color: var(--color-text-muted);
-    }
   }
 
   &__summary {

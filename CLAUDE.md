@@ -104,6 +104,11 @@ assume one is unused:
   rejects; raising it on the frontend only means the rule is advisory. Note
   neither rule applies to the LOGIN form on either side, deliberately — see
   `DriverLoginDto`.
+- `TELEGRAM_MESSAGE_MAX_LENGTH` in
+  `backend/src/admin/dto/broadcast-message.dto.ts` ↔ the same constant in
+  `frontend/constants/admin.ts`. Same asymmetry as the password length above —
+  raising it on the frontend only means the textarea accepts a value the API
+  then rejects.
 - `ARMENIA_BOUNDS` in `frontend/utils/coordinates.ts` ↔ the same constant in
   `backend/src/common/coordinates.ts`. The backend is the authority (it rejects
   the write); the frontend copy exists so a driver sees the problem while
@@ -146,6 +151,7 @@ assume one is unused:
 | Redirect a visitor based on whether they are signed in | `docs/auth-and-security.md` § "The redirects are route middleware" — `navigateTo` from a page's `setup()` silently does nothing when it lands inside the router's middleware window, which is a bug with no error message; use `frontend/middleware/driver-{auth,guest}.ts` |
 | Touch admin login, driver login/passwords, Telegram link | `docs/auth-and-security.md` — in particular the table of `passwordHash`/`mustChangePassword` states: whether a Telegram re-link may overwrite a password is the security boundary of the whole handover, and nothing else in the system would notice if it inverted |
 | Reset a driver's password from `/admin` | `docs/auth-and-security.md` § "The admin reset" — it mints nothing: it puts the row back to "no password" and arms a fresh link, so the password still comes from `handleStart` and there is no second minting path. Both halves are **one** database write (`revokePasswordWithLinkToken`) because either order of two writes can strand a driver with no password and no live link; and it deliberately never messages an already-linked chat, since a driver who lost their Telegram is exactly who needs a reset |
+| Broadcast a message to drivers from `/admin` | `docs/auth-and-security.md` § "The admin broadcast" — active + Telegram-linked drivers only, and always an explicit id list an admin ticked, never "everyone": same picker discipline and the same staging-real-chat-ids reasoning as the password broadcast it's modelled on. This is the "third message type" that section's bot-silencing warning asks every addition to justify — the justification is that a human decides per message, unlike the automatic contact notices |
 | Touch services/vehicle-types/capacity pickers or filters | `docs/taxonomies.md` — and note that «Մանիպուլյատոր» is asked twice (vehicle type + equipment checkbox) and that every reader must go through `hasManipulator()`/`derivesManipulator()`, never the raw boolean |
 | Touch service zones (road corridors), settlements/villages, or location search | `docs/locations.md` |
 | Touch "Ազատ երթուղիներ" (Free Routes) | `docs/free-routes.md` |

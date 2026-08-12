@@ -540,6 +540,83 @@ export class AdminService {
     return { issued, failed, skipped }
   }
 
+  /**
+   * The pool for the broadcast picker: active drivers with Telegram linked.
+   * Read-only, side-effect free — same reasoning as `listPasswordCandidates`,
+   * an admin sees exactly who a send would reach before pressing anything.
+   */
+  async listBroadcastCandidates(): Promise<
+    Array<{ id: number; slug: string; driverName: string; phone: string }>
+  > {
+    const candidates = await this.towTrucksRepository.findActiveWithTelegramLinked()
+    return candidates.map(({ id, slug, driverName, phone }) => ({ id, slug, driverName, phone }))
+  }
+
+  /**
+   * Sends one admin-authored message, verbatim, to exactly the drivers named.
+   *
+   * Same shape as `issuePasswordsForLinkedDrivers`, and for the same reason:
+   * `towTruckIds` is a filter over the live candidate list, never a source of
+   * truth on its own, so an id that is no longer eligible (deactivated,
+   * Telegram unlinked, since the panel loaded) is counted in `skipped` rather
+   * than acted on — without that intersection this endpoint would be a way to
+   * message an arbitrary driver by id regardless of whether they are even
+   * reachable through the channel it uses.
+   *
+   * Each send is independent: one failure (a blocked bot, a Telegram outage)
+   * must not stop the rest, so failures are caught per-row and reported back
+   * rather than thrown — identical reasoning to the password broadcast.
+   */
+  async broadcastMessage(
+    message: string,
+    towTruckIds: number[],
+  ): Promise<{
+    sent: number
+    failed: Array<{ id: number; slug: string }>
+    /** Requested but no longer eligible — the list an admin saw can go stale between load and send */
+    skipped: number
+  }> {
+    const candidates = await this.towTrucksRepository.findActiveWithTelegramLinked()
+    const eligible = new Map(candidates.map((truck) => [truck.id, truck]))
+
+    const failed: Array<{ id: number; slug: string }> = []
+    let sent = 0
+    let skipped = 0
+
+    // Iterating the REQUESTED ids, not the candidate list — so the loop can
+    // only ever touch someone the admin named, same discipline as
+    // issuePasswordsForLinkedDrivers.
+    for (const id of towTruckIds) {
+      const truck = eligible.get(id)
+      if (!truck) {
+        skipped += 1
+        continue
+      }
+
+      try {
+        // No button, unlike every other message this bot sends — those each
+        // exist to make one specific action easy (log in, link), and an
+        // admin-authored announcement has no single action to attach one to.
+        await this.telegram.sendMessage(truck.telegramChatId, message)
+        sent += 1
+      } catch (error) {
+        const err = error as Error
+        this.logger.error(`broadcastMessage: failed for TowTruck #${truck.id}: ${err.message}`)
+        failed.push({ id: truck.id, slug: truck.slug })
+      }
+    }
+
+    // `warn`, unlike the ordinary per-driver Telegram sends elsewhere in this
+    // class: this is the one action that reaches every selected driver's
+    // Telegram in one call, so a mistaken broadcast should stand out in
+    // `pm2 logs` rather than blend into routine per-driver traffic.
+    this.logger.warn(
+      `broadcastMessage: requested ${towTruckIds.length}, sent ${sent}, ` +
+        `failed ${failed.length}, skipped ${skipped}`,
+    )
+    return { sent, failed, skipped }
+  }
+
   async reject(id: number): Promise<{ id: number; status: RegistrationStatus }> {
     const request = await this.prisma.registrationRequest.findUnique({ where: { id } })
     if (!request) throw new NotFoundException(`Հայտ #${id}-ը չի գտնվել`)

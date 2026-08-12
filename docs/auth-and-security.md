@@ -307,7 +307,45 @@ What is left is narrower but still real:
   link-confirmation message (`TelegramWebhookController.handleStart`) names both
   kinds of message and asks explicitly not to block the bot; a third message
   type should come with a real justification, or with the opt-out this one
-  deliberately doesn't have.
+  deliberately doesn't have. The admin broadcast below is exactly that third
+  type — see it for the justification.
+
+### The admin broadcast — the third message type, and its justification
+
+`POST /admin/tow-trucks/broadcast-message`
+(`AdminService.broadcastMessage`), the panel's «Ուղարկել հաղորդագրություն»
+button. One admin-authored message, sent verbatim, to the drivers an admin
+explicitly ticks in a picker — same shape and same reasoning as the password
+issuance above (`issuePasswordsForLinkedDrivers`), reused deliberately rather
+than invented fresh:
+
+- **Recipients: active, Telegram-linked, and named — never "everyone".**
+  `TowTrucksRepository.findActiveWithTelegramLinked()` is the candidate pool;
+  `BroadcastMessageDto.towTruckIds` is a filter over it, never a source of
+  truth on its own, so a stale or tampered id is skipped rather than
+  messaged. There is no "omit the list to mean everyone" shorthand on the
+  API, matching `IssuePasswordsDto` — the same staging risk applies (its
+  database is a copy of production's, real chat ids and all) and the same
+  fix applies: naming recipients makes the blast radius a decision, not a
+  default.
+- **Active only, not "ever approved".** Unlike `findLinkedWithoutPassword`
+  (which deliberately does NOT filter on `isActive` — handing a deactivated
+  truck a password costs nothing), a broadcast is a message about the
+  platform sent to someone right now, and a deactivated driver is not
+  currently using it. Reactivating a truck does not retroactively deliver
+  messages sent while it was inactive.
+- **The justification the warning above asks for.** This is not automatic
+  and not frequent — it fires once per admin action, gated behind a
+  confirm() naming the exact recipient count, exactly like the password
+  broadcast. Contact notices fire on their own, every time a visitor takes an
+  action, with no human deciding per-message whether it's worth the
+  pressure on the channel; this one has a human deciding every single time.
+  That is the difference between a message type needing an opt-out and one
+  that doesn't.
+- **No button on the message**, unlike every other message this bot sends
+  (login, link confirmation, password handover) — those each exist to make
+  one specific action easy, and admin-authored text has no single action to
+  attach one to.
 
 ### The Telegram bot's webhook is singular — this bites people
 

@@ -239,6 +239,35 @@ export class TowTrucksRepository {
   }
 
   /**
+   * The pool for the admin broadcast message: active drivers who have Telegram
+   * linked, since that is the only channel a broadcast can reach them through.
+   *
+   * `isActive: true` is deliberate and different from `findLinkedWithoutPassword`
+   * above, which intentionally does NOT filter on it (handing a deactivated
+   * truck a password costs nothing and saves a surprise on reactivation). A
+   * broadcast is different: it is an outbound message to a person, sent right
+   * now, about something happening on the platform now — a deactivated driver
+   * is not currently working through it, so including them would mean texting
+   * someone about a site they are not using. See docs/auth-and-security.md
+   * § "The admin broadcast" for the full reasoning, including why this is
+   * `isActive` rather than `isActive` OR the more permissive "ever approved".
+   */
+  async findActiveWithTelegramLinked(): Promise<
+    Array<{ id: number; slug: string; driverName: string; phone: string; telegramChatId: bigint }>
+  > {
+    const rows = await this.prisma.towTruck.findMany({
+      where: { isActive: true, telegramChatId: { not: null } },
+      select: { id: true, slug: true, driverName: true, phone: true, telegramChatId: true },
+    })
+    // Same non-null narrowing as findLinkedWithoutPassword — the WHERE clause
+    // already guarantees it, this just gives Prisma's generated type an honest
+    // non-null field instead of forcing every caller to null-check a value that
+    // cannot actually be null.
+    return rows
+      .filter((row): row is typeof row & { telegramChatId: bigint } => row.telegramChatId !== null)
+  }
+
+  /**
    * Admin-only — unlike the public listing, this intentionally includes
    * inactive trucks, and it is paginated: the admin table is the one listing
    * that grows monotonically and is never filtered down by geography.

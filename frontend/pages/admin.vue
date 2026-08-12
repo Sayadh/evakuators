@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { FetchError } from 'ofetch'
+import { TELEGRAM_MESSAGE_MAX_LENGTH } from '~/constants/admin'
 import { SERVICE_LABELS } from '~/constants/services'
 import { SITE_NAME } from '~/constants/site'
 import { representativeCapacityTons, VEHICLE_TYPE_LABELS } from '~/constants/vehicles'
@@ -13,6 +14,7 @@ import {
   type AdminTowTruck,
   type AdminTowTruckCounts,
   type ApproveRegistrationPayload,
+  type BroadcastCandidate,
   type PasswordCandidate,
 } from '~/repositories'
 import { useAdminAuthStore } from '~/stores/adminAuth'
@@ -291,6 +293,109 @@ async function sendPasswords(): Promise<void> {
     issuePasswordsResult.value = extractErrorMessage(err, 'Չհաջողվեց ուղարկել գաղտնաբառերը')
   } finally {
     issuingPasswords.value = false
+  }
+}
+
+/**
+ * The admin broadcast: one free-text message, sent verbatim over Telegram to
+ * every active, Telegram-linked driver an admin explicitly ticks.
+ *
+ * Same picker discipline as the password modal above, and for the same
+ * reason — a Telegram message cannot be unsent, and staging's database is a
+ * copy of production's, real chat ids and all. No "send to everyone" call
+ * exists on the backend at all; this always names its recipients.
+ */
+const broadcastModalOpen = ref(false)
+const broadcastCandidates = ref<BroadcastCandidate[]>([])
+const loadingBroadcastCandidates = ref(false)
+const broadcastCandidatesError = ref('')
+const broadcastMessage = ref('')
+/** Ids ticked in the modal. A Set, same reasoning as selectedForPassword. */
+const selectedForBroadcast = ref<Set<number>>(new Set())
+const sendingBroadcast = ref(false)
+const broadcastResult = ref('')
+
+const allBroadcastCandidatesSelected = computed(
+  () =>
+    broadcastCandidates.value.length > 0 &&
+    selectedForBroadcast.value.size === broadcastCandidates.value.length,
+)
+
+const broadcastMessageTooLong = computed(
+  () => broadcastMessage.value.length > TELEGRAM_MESSAGE_MAX_LENGTH,
+)
+
+async function openBroadcastModal(): Promise<void> {
+  broadcastModalOpen.value = true
+  broadcastCandidatesError.value = ''
+  broadcastResult.value = ''
+  broadcastMessage.value = ''
+  // Nothing pre-ticked — same reasoning as openPasswordModal: the default for
+  // an irreversible outbound action has to be "send to nobody".
+  selectedForBroadcast.value = new Set()
+  loadingBroadcastCandidates.value = true
+  try {
+    broadcastCandidates.value = await adminRepository.listBroadcastCandidates()
+  } catch (err) {
+    broadcastCandidatesError.value = extractErrorMessage(err, 'Ցուցակը բեռնել չհաջողվեց։')
+    broadcastCandidates.value = []
+  } finally {
+    loadingBroadcastCandidates.value = false
+  }
+}
+
+function toggleBroadcastCandidate(id: number, checked: boolean): void {
+  const next = new Set(selectedForBroadcast.value)
+  if (checked) next.add(id)
+  else next.delete(id)
+  selectedForBroadcast.value = next
+}
+
+function toggleAllBroadcastCandidates(checked: boolean): void {
+  selectedForBroadcast.value = checked
+    ? new Set(broadcastCandidates.value.map((candidate) => candidate.id))
+    : new Set()
+}
+
+/**
+ * Confirmed by exact count before sending, same as sendPasswords — this is
+ * the other action on this page whose effect leaves the system and cannot be
+ * undone from inside it.
+ */
+async function sendBroadcast(): Promise<void> {
+  const ids = [...selectedForBroadcast.value]
+  const text = broadcastMessage.value.trim()
+  if (ids.length === 0 || !text || broadcastMessageTooLong.value) return
+
+  if (
+    !confirm(
+      `Ուղարկե՞լ այս հաղորդագրությունը ${ids.length} վարորդի Telegram-ով։ ` +
+        'Հետ կանչել հնարավոր չէ։',
+    )
+  ) {
+    return
+  }
+
+  broadcastResult.value = ''
+  sendingBroadcast.value = true
+  try {
+    const result = await adminRepository.broadcastMessage(text, ids)
+
+    const parts = [`Ուղարկվեց ${result.sent} վարորդի։`]
+    if (result.failed.length > 0) {
+      parts.push(`Ձախողվեց ${result.failed.length}՝ ${result.failed.map((f) => f.slug).join(', ')}։`)
+    }
+    if (result.skipped > 0) parts.push(`${result.skipped}-ն այլևս ցուցակում չէր։`)
+    broadcastResult.value = parts.join(' ')
+
+    // Cleared on success, same as sendPasswords — the recipients just got
+    // this exact text, so leaving it in the box invites a duplicate send.
+    broadcastMessage.value = ''
+    selectedForBroadcast.value = new Set()
+  } catch (err) {
+    broadcastResult.value = extractErrorMessage(err, 'Չհաջողվեց ուղարկել հաղորդագրությունը')
+  } finally {
+    sendingBroadcast.value = false
   }
 }
 
@@ -1403,9 +1508,14 @@ async function rejectReview(review: AdminReview): Promise<void> {
           <AppButton variant="outline" size="sm" @click="openPasswordModal">
             Ուղարկել գաղտնաբառեր
           </AppButton>
+          <!-- Same lazy-fetch discipline — see openBroadcastModal(). -->
+          <AppButton variant="outline" size="sm" @click="openBroadcastModal">
+            Ուղարկել հաղորդագրություն
+          </AppButton>
         </div>
 
         <p v-if="issuePasswordsResult" class="admin-hint">{{ issuePasswordsResult }}</p>
+        <p v-if="broadcastResult" class="admin-hint">{{ broadcastResult }}</p>
 
         <p v-if="towTrucksError" class="admin-error">{{ towTrucksError }}</p>
 
@@ -1850,6 +1960,87 @@ async function rejectReview(review: AdminReview): Promise<void> {
       </p>
     </AppModal>
 
+    <AppModal v-model="broadcastModalOpen" title="Ուղարկել հաղորդագրություն">
+      <p class="password-picker__intro">
+        Տեքստն ուղարկվում է Telegram-ով, ինչպես գրված է, առանց փոփոխության։ Ցուցակում են
+        միայն ակտիվ և Telegram կապակցված վարորդները — նշիր, ում ուղարկել։
+      </p>
+
+      <div class="broadcast-picker__field">
+        <textarea
+          v-model="broadcastMessage"
+          class="broadcast-picker__textarea"
+          rows="4"
+          placeholder="Հաղորդագրության տեքստը…"
+          :maxlength="TELEGRAM_MESSAGE_MAX_LENGTH"
+        />
+        <p
+          class="broadcast-picker__counter"
+          :class="{ 'broadcast-picker__counter--over': broadcastMessageTooLong }"
+        >
+          {{ broadcastMessage.length }} / {{ TELEGRAM_MESSAGE_MAX_LENGTH }}
+        </p>
+      </div>
+
+      <LoadingSkeleton v-if="loadingBroadcastCandidates" variant="text" :count="3" />
+
+      <p v-else-if="broadcastCandidatesError" class="admin-error">{{ broadcastCandidatesError }}</p>
+
+      <!-- Distinct from an error: nothing went wrong, there just isn't anyone
+           the broadcast can currently reach. -->
+      <EmptyState
+        v-else-if="broadcastCandidates.length === 0"
+        title="Ուղարկելու վարորդ չկա"
+        description="Ակտիվ և Telegram կապակցված վարորդ դեռ չկա։"
+        icon="info"
+      />
+
+      <template v-else>
+        <div class="password-picker__all">
+          <AppCheckbox
+            :model-value="allBroadcastCandidatesSelected"
+            :label="`Նշել բոլորը (${broadcastCandidates.length})`"
+            @update:model-value="toggleAllBroadcastCandidates"
+          />
+        </div>
+
+        <ul class="password-picker__list">
+          <li v-for="candidate in broadcastCandidates" :key="candidate.id">
+            <AppCheckbox
+              :model-value="selectedForBroadcast.has(candidate.id)"
+              :label="candidate.driverName"
+              @update:model-value="(checked) => toggleBroadcastCandidate(candidate.id, checked)"
+            />
+            <span class="password-picker__phone">{{ candidate.phone }}</span>
+          </li>
+        </ul>
+
+        <AppButton
+          variant="success"
+          block
+          :disabled="
+            sendingBroadcast ||
+            selectedForBroadcast.size === 0 ||
+            !broadcastMessage.trim() ||
+            broadcastMessageTooLong
+          "
+          @click="sendBroadcast"
+        >
+          {{
+            sendingBroadcast
+              ? 'Ուղարկվում է…'
+              : selectedForBroadcast.size === 0
+                ? 'Նշիր առնվազն մեկ վարորդ'
+                : `Ուղարկել ${selectedForBroadcast.size} վարորդի`
+          }}
+        </AppButton>
+      </template>
+
+      <p v-if="broadcastResult" class="admin-hint password-picker__result">
+        {{ broadcastResult }}
+      </p>
+    </AppModal>
+
     <Teleport to="body">
       <div
         v-if="lightboxOpen"
@@ -2041,6 +2232,36 @@ async function rejectReview(review: AdminReview): Promise<void> {
 
   &__result {
     margin: var(--space-4) 0 0;
+  }
+}
+
+.broadcast-picker {
+  &__field {
+    margin-bottom: var(--space-4);
+  }
+
+  &__textarea {
+    width: 100%;
+    padding: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    font-size: 1rem;
+    font-family: inherit;
+    color: var(--color-text);
+    background: var(--color-surface);
+    resize: vertical;
+  }
+
+  &__counter {
+    margin: var(--space-1) 0 0;
+    font-size: 0.78rem;
+    color: var(--color-text-muted);
+    text-align: right;
+
+    &--over {
+      color: var(--color-danger);
+      font-weight: 600;
+    }
   }
 }
 

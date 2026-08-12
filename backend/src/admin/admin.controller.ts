@@ -20,6 +20,7 @@ import type { AdminTowTruckSummary } from './admin-tow-truck.mapper'
 import { AdminService } from './admin.service'
 import { AdminListQuery, AdminRegistrationsQuery } from './dto/admin-list.query'
 import { ApproveRegistrationDto } from './dto/approve-registration.dto'
+import { BroadcastMessageDto } from './dto/broadcast-message.dto'
 import { IssuePasswordsDto } from './dto/issue-passwords.dto'
 import { RemoveServiceAreaDto } from './dto/remove-service-area.dto'
 import { SetPrimaryAreaDto } from './dto/set-primary-area.dto'
@@ -107,6 +108,34 @@ export class AdminController {
     @Param('id', ParseIntPipe) id: number,
   ): Promise<{ telegramLinkUrl: string; hadPassword: boolean }> {
     return this.adminService.resetDriverPassword(id)
+  }
+
+  /**
+   * The pool for the broadcast picker: active drivers with Telegram linked —
+   * the only ones a broadcast can reach. Read-only, same shape and same reason
+   * as `password-candidates` above. Declared before any `tow-trucks/:id` route
+   * for the same reason that one is.
+   */
+  @Get('tow-trucks/broadcast-candidates')
+  broadcastCandidates(): Promise<
+    Array<{ id: number; slug: string; driverName: string; phone: string }>
+  > {
+    return this.adminService.listBroadcastCandidates()
+  }
+
+  /**
+   * Sends one admin-authored message, verbatim, to exactly the drivers named
+   * in the body — never "everyone", for the same reason `issue-passwords`
+   * takes an explicit list: a Telegram message cannot be unsent, and
+   * staging's database holds real drivers' real chat ids.
+   */
+  @Post('tow-trucks/broadcast-message')
+  broadcastMessage(@Body() dto: BroadcastMessageDto): Promise<{
+    sent: number
+    failed: Array<{ id: number; slug: string }>
+    skipped: number
+  }> {
+    return this.adminService.broadcastMessage(dto.message, dto.towTruckIds)
   }
 
   @Post('registration-requests/:id/reject')

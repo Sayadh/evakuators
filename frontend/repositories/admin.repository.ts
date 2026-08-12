@@ -210,6 +210,26 @@ export interface IssuePasswordsResult {
   skipped: number
 }
 
+/**
+ * One driver reachable by the broadcast: active, Telegram linked. Same shape
+ * as `PasswordCandidate`, kept as its own type rather than reused because the
+ * two lists answer different eligibility questions (has no password yet, vs.
+ * is currently active) and could drift independently on the backend.
+ */
+export interface BroadcastCandidate {
+  id: number
+  slug: string
+  driverName: string
+  phone: string
+}
+
+export interface BroadcastMessageResult {
+  sent: number
+  failed: Array<{ id: number; slug: string }>
+  /** Named in the request but no longer eligible — the list can go stale between load and send */
+  skipped: number
+}
+
 /** Every /admin/* route requires a valid admin JWT — attach it here */
 function authHeader(): Record<string, string> {
   return useAdminAuthStore().authHeader
@@ -296,6 +316,33 @@ export const adminRepository = {
     return apiFetch<IssuePasswordsResult>('/admin/tow-trucks/issue-passwords', {
       method: 'POST',
       body: { towTruckIds },
+      headers: authHeader(),
+    })
+  },
+
+  /**
+   * Drivers the broadcast can currently reach — active, Telegram linked.
+   * Read-only: the panel lists these with checkboxes so an admin chooses
+   * recipients before anything leaves the system, same discipline as the
+   * password picker.
+   */
+  listBroadcastCandidates(): Promise<BroadcastCandidate[]> {
+    return apiFetch<BroadcastCandidate[]>('/admin/tow-trucks/broadcast-candidates', {
+      headers: authHeader(),
+    })
+  },
+
+  /**
+   * Sends one admin-authored message, verbatim, to exactly the drivers named.
+   *
+   * Always takes an explicit id list — there is no "send to everyone" call,
+   * deliberately, because a Telegram message cannot be unsent. The backend
+   * re-checks eligibility and counts anything stale as `skipped`.
+   */
+  broadcastMessage(message: string, towTruckIds: number[]): Promise<BroadcastMessageResult> {
+    return apiFetch<BroadcastMessageResult>('/admin/tow-trucks/broadcast-message', {
+      method: 'POST',
+      body: { message, towTruckIds },
       headers: authHeader(),
     })
   },

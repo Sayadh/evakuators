@@ -7,6 +7,8 @@ export type {
   AdminTowTruck,
   AdminTowTruckCounts,
   ApproveRegistrationPayload,
+  BroadcastCandidate,
+  BroadcastMessageResult,
   IssuePasswordsResult,
   PasswordCandidate,
   RemoveServiceAreaPayload,

@@ -45,8 +45,23 @@ interface Metric {
   label: string
   /** Distinct people over the whole window — the headline number */
   unique: number
-  /** Sum of daily deduplicated counts — returning visitors counted per day */
-  visits: number
+  /**
+   * Sum of daily deduplicated counts, scoped to the selected period — the
+   * SAME quantity for every card (one row per calendar day a person did the
+   * thing, summed), but the word for "the thing" differs: a site visit is a
+   * "visit", a phone click is not, so this ships its own label rather than a
+   * hardcoded "Այցեր" that made no sense on the calls card (a driver's phone
+   * getting pressed twice on different days is not two "visits").
+   */
+  periodLabel: string
+  periodTotal: number
+  /**
+   * Same daily-deduplicated sum, but over the truck's/site's ENTIRE recorded
+   * history — never purged, and NOT scoped by the period switcher above. This
+   * is the number that keeps growing every time a person who already counted
+   * as "unique" comes back on a new day, which `unique` by definition cannot
+   * show (see the note at the bottom of the template).
+   */
   allTime: number
 }
 
@@ -57,13 +72,15 @@ const metrics = computed<Metric[]>(() => {
     {
       label: 'Մուտք կայք',
       unique: data.uniqueVisitors[SiteEventType.SiteVisit],
-      visits: data.totals[SiteEventType.SiteVisit],
+      periodLabel: 'Այցեր',
+      periodTotal: data.totals[SiteEventType.SiteVisit],
       allTime: data.allTimeTotals[SiteEventType.SiteVisit],
     },
     {
       label: 'Ազատ երթուղիներ',
       unique: data.uniqueVisitors[SiteEventType.FreeRoutesView],
-      visits: data.totals[SiteEventType.FreeRoutesView],
+      periodLabel: 'Այցեր',
+      periodTotal: data.totals[SiteEventType.FreeRoutesView],
       allTime: data.allTimeTotals[SiteEventType.FreeRoutesView],
     },
     // Not a SiteEventType — a phone click is a per-truck event read here with
@@ -74,7 +91,8 @@ const metrics = computed<Metric[]>(() => {
     {
       label: 'Ակտիվ զանգողներ',
       unique: data.callers.uniqueCallers,
-      visits: data.callers.totalCalls,
+      periodLabel: 'Զանգեր',
+      periodTotal: data.callers.totalCalls,
       allTime: data.callers.allTimeTotalCalls,
     },
   ]
@@ -106,10 +124,13 @@ const metrics = computed<Metric[]>(() => {
         <p class="site-analytics__meta">տարբեր մարդ ընտրված ժամանակահատվածում</p>
         <dl class="site-analytics__extra">
           <div>
-            <dt>Այցեր</dt>
-            <dd>{{ metric.visits }}</dd>
+            <dt>{{ metric.periodLabel }}</dt>
+            <dd>{{ metric.periodTotal }}</dd>
           </div>
-          <div>
+          <!-- The one number in the row that keeps climbing when someone
+               already counted in "unique" above comes back on a new day —
+               made to stand out for exactly that reason, see the note below. -->
+          <div class="site-analytics__extra-highlight">
             <dt>Ընդհանուր</dt>
             <dd>{{ metric.allTime }}</dd>
           </div>
@@ -118,9 +139,17 @@ const metrics = computed<Metric[]>(() => {
     </div>
 
     <p class="site-analytics__note">
-      Մեկ մարդը օրական մեկ անգամ է հաշվվում։ «Տարբեր մարդ»-ը ամբողջ
-      ժամանակահատվածում եզակի այցելուներն են, «Այցեր»-ը՝ օրերի գումարը (նույն
-      մարդը երեք տարբեր օր՝ 3 այց, բայց 1 մարդ)։ «Ընդհանուր»-ը ամբողջ պատմությունն է։
+      Մեկ մարդը մեկ օրում մեկ անգամ է հաշվվում, անկախ քանի անգամ է սեղմել/այցելել
+      այդ օրում։ Վերևի մեծ թիվը («Տարբեր մարդ») ամբողջ ընտրված ժամանակահատվածում
+      եզակի մարդկանց թիվն է. եթե նույն մարդը վերադառնում է մեկ այլ օր (նույնիսկ
+      նույն ժամանակահատվածում), այդ թիվը ՉԻ փոխվում, քանի որ արդեն մեկ անգամ
+      հաշվված է։ Այդ կրկնվող այցերն ու զանգերն ուրիշ տեղում են երևում.
+      ստորին տողի առաջին թիվը՝ ընտրված ժամանակահատվածում օրերի գումարն է
+      (նույն մարդը 3 տարբեր օր՝ 3, բայց դեռ 1 «տարբեր մարդ»), իսկ
+      «Ընդհանուր»-ը՝ նույն հաշիվն ամբողջ պատմության վրա, առանց ժամանակահատվածի
+      սահմանափակման. սա է թիվը, որ մեծանում է ամեն նոր օր, երբ նույն մարդն
+      նորից գործողություն է կատարում, նույնիսկ եթե «Տարբեր մարդ»-ը տեղում է
+      մնում։
     </p>
   </div>
 </template>
@@ -199,6 +228,22 @@ const metrics = computed<Metric[]>(() => {
     dd {
       margin: 0;
       font-weight: 600;
+    }
+  }
+
+  // Deliberately louder than its sibling in the same row (larger, bold,
+  // brand-coloured) — this is the number an admin needs to actually notice
+  // moving day over day, since the card's headline "unique" figure stays flat
+  // for a returning person by definition. See the template comment above.
+  &__extra-highlight {
+    dt {
+      color: var(--color-text-secondary);
+    }
+
+    dd {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--color-primary);
     }
   }
 

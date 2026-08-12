@@ -1,4 +1,5 @@
 import { CronExpression } from '@nestjs/schedule'
+import { ARMENIA_TIMEZONE } from '../common/armenia-day'
 import { AnalyticsEventType, AnalyticsPeriod } from './analytics.enums'
 
 /**
@@ -15,8 +16,13 @@ import { AnalyticsEventType, AnalyticsPeriod } from './analytics.enums'
  * Asia/Yerevan is UTC+4 with no DST today, but this is resolved through the
  * ICU timezone database at runtime (see analytics.utils.ts) rather than a
  * hardcoded +4 offset — if Armenia ever reintroduces DST, nothing here changes.
+ *
+ * Re-exported from `common/armenia-day.ts` rather than written again: the
+ * nearest-search daily quota needs the same day boundary, and two literals
+ * that must always be equal are a sync point waiting to drift. The alias stays
+ * so every existing import in this module keeps reading in its own vocabulary.
  */
-export const ANALYTICS_TIMEZONE = 'Asia/Yerevan'
+export const ANALYTICS_TIMEZONE = ARMENIA_TIMEZONE
 
 /** How many calendar days (inclusive of today) each selectable period covers */
 export const ANALYTICS_PERIOD_DAYS: Record<AnalyticsPeriod, number> = {

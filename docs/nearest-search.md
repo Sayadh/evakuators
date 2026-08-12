@@ -163,6 +163,94 @@ quota. Cache: **5 minutes**, in-memory, capped at 500 entries — without a cap 
 script walking coordinates in 110 m steps would grow the heap until the process
 died.
 
+## How often one person may search
+
+Three limits, in front of each other, answering three different questions.
+They are easiest to keep straight by who they are keyed on:
+
+| Limit | Keyed on | Number | Question it answers |
+| --- | --- | --- | --- |
+| Result cache | rounded position | 5 min | "has *anyone nearby* just asked this?" |
+| Remembered answer | one browser | **1 hour** | "has *this person* just asked this?" |
+| Daily allowance | one browser | **2 / day** | "how many fresh answers does a person get?" |
+| Per-minute throttle | IP | 10 / min | burst control |
+| Daily ceiling | IP | **40 / day** | "is one source hammering the metered quota?" |
+
+### The two daily numbers are different on purpose — do not "make them match"
+
+`NEAREST_DAILY_SEARCH_LIMIT = 2` (`frontend/constants/nearest.ts`) is the
+**product rule**, per person, with visible copy: «Օրական 2 որոնման
+սահմանաչափը սպառվել է։ Խնդրում ենք փորձել վաղը»։
+
+`NEAREST_DAILY_IP_SEARCH_LIMIT = 40` (`backend/src/nearest/nearest.constants.ts`)
+is an **abuse ceiling** on the metered OpenRouteService quota.
+
+Lowering the backend number to 2 to make them agree would break the feature for
+a large share of real users: **`req.ip` is not a person.** Armenian mobile
+carriers use CGNAT, so many phones share one public address — at 2/day the
+third phone in the country on a given carrier address gets refused, and it
+would present as "the search just doesn't work on mobile". 40 sits far above
+any plausible number of genuine searches from one address in a day and far
+below ORS's 2,500/day free tier. `backend/test/nearest-quota.spec.ts` asserts
+the gap so the reasoning survives someone tidying up.
+
+### Both are counted on work done, not requests received
+
+The backend charges an address only **after** the result cache has missed and
+the search has actually run (`NearestQuotaService.consume`, called from
+`NearestService` past the cache lookup). A request served from the 5-minute
+cache costs nothing upstream, so it costs nothing here either — including for
+someone already over the ceiling, who still gets a cached answer rather than a
+429. A search that throws (PostGIS down) is not charged either: a limit the
+visitor cannot see or appeal must not be spent on our outage.
+
+The browser follows the same rule. An allowance is spent only when a fresh
+answer was actually delivered — a refused permission prompt or a failed request
+costs nothing, and neither does pressing the button inside the remembered hour.
+
+### The hour, and what it does to the permission prompt
+
+Pressing the button checks, in this order: **fresh remembered answer → today's
+allowance → the browser's position.** The order is the feature. A visitor
+inside the hour is shown the same list instantly, with **no permission prompt
+and no request at all** — which also means a browser that would remember a
+refusal is never asked a second time for something already answered.
+
+The list then carries the time it was computed («Ցուցակը կազմվել է 14:32-ին»),
+because an hour-old answer to "who is near me" is indistinguishable from a live
+one otherwise, and this page's whole discipline is not letting a number look
+more current than it is.
+
+When the hour has passed **and** the allowance is gone, the old list stays on
+screen under the notice rather than being replaced by an empty page: a
+stale list of the drivers nearest where someone stood an hour ago still answers
+"who do I call", and that is the question they came with.
+
+### What the browser stores — and what it deliberately does not
+
+Two `localStorage` keys, `evakuators:nearest-result` and
+`evakuators:nearest-quota`: **the answer, a timestamp, and a counter. Never the
+coordinates.** The promise in "The visitor's position is never stored" below is
+unchanged by this cache, because caching the *answer* rather than the *question*
+is what keeps it true — serving a remembered list needs the list, not the place
+it was computed from. `frontend/tests/nearestSearchLimits.spec.ts` asserts no
+coordinate ever enters the stored shape, since "also save the position so we can
+refresh silently" is the plausible change that would quietly break it.
+
+Neither browser-side rule is a security boundary — storage can be cleared and
+incognito starts fresh. That is expected: they shape the behaviour of the
+overwhelming majority who never try, and the per-IP ceiling is what actually
+protects the quota. **Do not "harden" them by fingerprinting the browser**, which
+would turn an anonymous page into a tracking one — the trade already refused in
+"What is deliberately not here".
+
+The day boundary is **Asia/Yerevan**, shared with the backend through
+`ARMENIA_TIMEZONE` in `backend/src/common/armenia-day.ts` (which
+`ANALYTICS_TIMEZONE` now re-exports, so the string exists once) and
+`yerevanDateKey()` in `frontend/utils/formatters.ts`. A UTC day would make
+«փորձեք վաղը» come true at 04:00 Yerevan time, and a device-local day would
+make it depend on the reader's clock.
+
 ## The results reuse the existing card, deliberately
 
 `NearestResultCard` wraps `TowTruckCard`; it does not replace it. The card
@@ -200,25 +288,35 @@ answer for five minutes, and it is exactly the query a bored visitor repeats.
 ## Files
 
 ```
+backend/src/common/
+  armenia-day.ts               ARMENIA_TIMEZONE + armeniaDateKey — shared with analytics
+
 backend/src/nearest/
   nearest.module.ts            imports TowTrucksModule for the card path only
   nearest.controller.ts        POST /nearest-tow-trucks — public, throttled 10/60s
-  nearest.service.ts           the two steps, the ranking, the cache lookup
+  nearest.service.ts           the two steps, the ranking, the cache and quota lookups
   nearest.repository.ts        the ONLY place PostGIS is touched (raw SQL)
   route-matrix.service.ts      OpenRouteService; every failure returns null
   nearest-cache.service.ts     5-minute in-memory cache, rounded keys, size cap
+  nearest-quota.service.ts     per-IP daily ceiling — an abuse bound, NOT the 2/day rule
   nearest.constants.ts         every tunable number
   nearest.types.ts             API shapes
   dto/find-nearest.dto.ts      two validated numbers, nothing else
+
+backend/test/
+  nearest-quota.spec.ts        day rollover, cache hits are free, the ceiling stays a ceiling
 
 frontend/
   pages/evakuator.vue                        the page — nothing happens until the button
   components/nearest/NearestTowTrucksCta.vue the shared CTA (banner + inline variants)
   components/nearest/NearestResultCard.vue   distance strip + the existing TowTruckCard
   composables/useGeolocation.ts              one-shot lookup, per-code Armenian messages
+  composables/useNearestSearch.ts            the 1-hour memory + the 2/day allowance
+  constants/nearest.ts                       both visitor-facing numbers and the storage keys
   repositories/nearest.repository.ts
   utils/formatDistance.ts                    «Ճանապարհով՝ մոտ 4.1 կմ» / «Մոտավոր՝ 8 րոպե»
   types/nearest.ts
+  tests/nearestSearchLimits.spec.ts          the day key, and the order the page checks things in
 ```
 
 Dependencies are inbound only — nothing outside `backend/src/nearest/` depends

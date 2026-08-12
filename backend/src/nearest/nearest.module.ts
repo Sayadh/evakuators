@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common'
 import { TowTrucksModule } from '../tow-trucks/tow-trucks.module'
 import { NearestCacheService } from './nearest-cache.service'
+import { NearestQuotaService } from './nearest-quota.service'
 import { NearestController } from './nearest.controller'
 import { NearestRepository } from './nearest.repository'
 import { NearestService } from './nearest.service'
@@ -18,6 +19,12 @@ import { RouteMatrixService } from './route-matrix.service'
 @Module({
   imports: [TowTrucksModule],
   controllers: [NearestController],
-  providers: [NearestService, NearestRepository, RouteMatrixService, NearestCacheService],
+  providers: [
+    NearestService,
+    NearestRepository,
+    RouteMatrixService,
+    NearestCacheService,
+    NearestQuotaService,
+  ],
 })
 export class NearestModule {}

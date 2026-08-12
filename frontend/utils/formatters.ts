@@ -164,3 +164,40 @@ export function formatDateNumeric(iso: string): string {
   const { day, month, year } = yerevanFields(new Date(iso))
   return `${String(day).padStart(2, '0')}.${String(month).padStart(2, '0')}.${year}`
 }
+
+/**
+ * A moment → "14:32" (Armenia time, 24-hour).
+ *
+ * Takes a `Date` rather than an ISO string: the one caller is timing something
+ * that happened in this browser (when a cached search was made), so there is
+ * no server-produced string to parse and turning it into one just to parse it
+ * back would be ceremony.
+ *
+ * Goes through `yerevanFields` like everything else here, so it inherits the
+ * pinned `hourCycle: 'h23'` and `numberingSystem: 'latn'` — without those, the
+ * same instant renders "2:32 PM" or with Eastern Arabic digits depending on
+ * the reader's browser.
+ */
+export function formatClockTime(date: Date): string {
+  const { hour, minute } = yerevanFields(date)
+  return `${hour}:${minute}`
+}
+
+/**
+ * A moment → "2026-08-12", the Armenia calendar day it falls on.
+ *
+ * Not for display — this is a storage key, which is why it is ISO and not
+ * Armenian. It answers "is this still today?" for the daily search limit, and
+ * it has to agree with the backend's `armeniaDateKey()` so that a limit which
+ * says «փորձեք վաղը» resets when tomorrow actually starts in Yerevan, rather
+ * than at whatever midnight the reader's device is set to.
+ *
+ * The ban on runtime localisation (CLAUDE.md) is about producing *words* that
+ * two runtimes might spell differently. `YYYY-MM-DD` from `en-CA` is the same
+ * technique the backend uses for exactly the same reason, and produces the
+ * same string everywhere.
+ */
+export function yerevanDateKey(date: Date): string {
+  const { year, month, day } = yerevanFields(date)
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}

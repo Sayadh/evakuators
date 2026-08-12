@@ -71,5 +71,47 @@ export const NEAREST_CACHE_MAX_ENTRIES = 500
 export const NEAREST_THROTTLE_LIMIT = 10
 export const NEAREST_THROTTLE_TTL_MS = 60_000
 
+/**
+ * Searches one IP may actually *perform* in an Armenia calendar day.
+ *
+ * ## This is NOT the "2 searches per day" product rule — read this before changing it
+ *
+ * The visitor-facing limit ("you have used your 2 searches, try tomorrow")
+ * lives in the browser, keyed per person: `NEAREST_DAILY_SEARCH_LIMIT` in
+ * `frontend/constants/nearest.ts`. This number is a different thing with a
+ * different job — an **abuse ceiling** protecting the metered OpenRouteService
+ * quota from a single source hammering the endpoint.
+ *
+ * They are deliberately far apart, and setting this to 2 to "match" would take
+ * the feature away from real users. Armenian mobile carriers use CGNAT: a
+ * large share of phones share a handful of public addresses, so `req.ip` is
+ * emphatically not a person. At 2/day, the third *phone in the country* on a
+ * given carrier address gets refused. 40 is chosen to sit far above any
+ * plausible number of genuine searches from one address in a day, and far
+ * below ORS's 2,500/day free tier even if several addresses hit the ceiling
+ * at once.
+ *
+ * The per-minute throttle above is the burst control; this is the daily one.
+ * Neither replaces the other — 10/min alone permits 14,400 searches a day.
+ */
+export const NEAREST_DAILY_IP_SEARCH_LIMIT = 40
+
+/**
+ * Hard cap on tracked IPs, for the same reason the result cache has one: a Map
+ * keyed on something an anonymous caller controls is an unbounded write
+ * primitive. Entries are one small object each, and the whole table is dropped
+ * the moment the Armenia day rolls over, so this only has to survive one day
+ * of distinct addresses.
+ */
+export const NEAREST_QUOTA_MAX_ENTRIES = 10_000
+
+/**
+ * Marks the 429 raised by the daily ceiling, so the frontend can tell it apart
+ * from the per-minute throttle's 429 — the two need different copy («փորձեք
+ * վաղը» vs «փորձեք մեկ պահից»), and matching on a translated message string
+ * is the kind of coupling that breaks the day someone rewords it.
+ */
+export const NEAREST_DAILY_LIMIT_CODE = 'NEAREST_DAILY_LIMIT'
+
 /** Timeout for the matrix call — past this the straight-line fallback is better than waiting */
 export const ROUTE_MATRIX_TIMEOUT_MS = 4000

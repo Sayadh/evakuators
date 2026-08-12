@@ -347,6 +347,58 @@ That same over-budget state is reachable without any old data: pick two marzes
 and five cities, drop one marz, then add Yerevan, and the budget falls from 5 to
 2 while the ticks survive.
 
+### An admin can remove a single area — and that path skips the cap on purpose
+
+`PATCH /admin/tow-trucks/:id/service-areas` drops one area from an approved
+driver. It is the fourth write path for `serviceAreas` and the only one that is
+not in the table above, because it is the only one that cannot grow a list.
+
+**It takes the slug to remove, never the resulting list.** That one choice is the
+whole safety argument: the server reads what is stored, drops the matching
+entries, and writes the remainder back, so no request an admin could craft adds
+coverage a driver never claimed. Nothing has to be validated to prevent it, and
+two admins removing two different areas from the same truck cannot clobber each
+other the way two full-list writes would.
+
+**It deliberately does not call `assertServiceAreasWithinLimit`.** That looks
+like a missing check and is the opposite of one. Legacy drivers keep lists of
+8-10 areas (see above — nothing was migrated). Running the cap here would throw
+on the *result* of the first removal, since 9 is still over the limit, so the
+drivers an admin most needs to trim would be the only ones who could not be
+trimmed at all. The rule the write needs is "strictly fewer than before", and
+removing an entry satisfies it by construction.
+`backend/test/admin-service-areas.spec.ts` asserts both halves so nobody
+"restores" the check.
+
+**The last area cannot be removed.** An empty `serviceAreas` matches no city,
+district or marz filter, so the driver would vanish from every browsing page
+while still reading «Ակտիվ» in the panel — a deactivation nobody performed and
+nothing displays. The X is disabled with a title explaining it, the backend
+refuses it independently, and both messages point at «Ապաակտիվացնել».
+
+**The structural placement follows the removal.** `citySlug`/`districtSlug` must
+always name one of the served areas, so removing the area that *is* the
+placement re-points it. Which one to re-point to cannot be decided on the
+backend — picking it means knowing which surviving slug is a settlement and
+which is a road corridor, i.e. geography — so `pages/admin.vue` resolves it with
+the same "first area that is not a corridor" rule `approve()` and the dashboard
+use, and sends it. The backend cannot *derive* the answer but it does *check*
+it: a placement that is not among the remaining areas is rejected, which needs
+no geography, only the stored list. A Yerevan district replacement also nulls
+`regionSlug`, or a truck moving into Yerevan would stay listed on the marz it
+left. When nothing that survives can be a placement (corridor-only coverage)
+both columns go null — the same state `findPlaceSlug` already produces for a
+driver, so refusing it would only block a cleanup the data model permits.
+
+Until this existed **an admin could not see a driver's coverage anywhere in the
+panel**: `AdminTowTruckSummary` did not carry it, `locationName` is only the
+free-text base label, and the pending-request card's «Մարզեր» row shows what was
+*submitted*, which stops describing reality the moment the driver edits their own
+dashboard. The summary now carries `serviceAreas` plus the three placement slugs
+— justified by the same argument that lets it carry `latitude`/`longitude`: the
+route is behind `AdminJwtGuard`. The **public** card shape must not grow fields
+by copying it (CLAUDE.md § "A listing is not a profile").
+
 ## Adding a new zone or settlement
 
 **New service zone**: append to `staticServiceZones` with a fresh `id` and a

@@ -9,6 +9,7 @@ import {
   isApiEnabled,
   type AdminRegistrationRequest,
   type AdminReview,
+  type AdminServiceArea,
   type AdminTowTruck,
   type AdminTowTruckCounts,
   type ApproveRegistrationPayload,
@@ -675,6 +676,97 @@ function toggleAnalytics(truck: AdminTowTruck): void {
   analyticsTruckId.value = analyticsTruckId.value === truck.id ? null : truck.id
 }
 
+/**
+ * Which area is mid-removal — keyed by `${truckId}:${slug}` because one row can
+ * hold several areas and only the clicked chip should show as busy.
+ */
+const removingAreaKey = ref<string | null>(null)
+
+function areaKey(truckId: number, slug: string): string {
+  return `${truckId}:${slug}`
+}
+
+/**
+ * Removes one served area from an approved driver.
+ *
+ * ## The placement problem, solved here rather than on the backend
+ *
+ * `citySlug`/`districtSlug` is what the browsing pages filter on, and it must
+ * always name one of the served areas. So when the area being removed IS the
+ * truck's placement, a replacement has to be chosen — and choosing one means
+ * knowing which remaining slug is a real settlement and which is a road
+ * corridor («Գառնի–Գեղարդ» is coverage, not an address). That is geography,
+ * which lives only here (CLAUDE.md), so this is the only side that can answer.
+ *
+ * The derivation is deliberately the same one `approve()` and the driver's own
+ * dashboard use — first surviving area that is not a corridor — so a truck ends
+ * up filed identically no matter which of the three paths last touched it.
+ *
+ * The backend still checks the answer against the list it is about to store; it
+ * cannot resolve a placement, but it can refuse one that is not among the
+ * remaining areas.
+ */
+async function removeServiceArea(truck: AdminTowTruck, area: AdminServiceArea): Promise<void> {
+  // Refused before the request rather than after: the backend rejects this too,
+  // but an admin should not have to send a doomed call to learn that emptying
+  // the coverage is not how you hide a driver.
+  if (truck.serviceAreas.length <= 1) {
+    towTrucksError.value =
+      'Էվակուատորը պետք է սպասարկի առնվազն մեկ տարածք։ Պրոֆիլն ամբողջությամբ թաքցնելու համար օգտագործիր «Ապաակտիվացնել» կոճակը։'
+    return
+  }
+
+  const remaining = truck.serviceAreas.filter((item) => item.slug !== area.slug)
+  const losesPlacement = truck.citySlug === area.slug || truck.districtSlug === area.slug
+
+  // Only computed when it is actually needed. Sending a placement on every
+  // removal would be a second, silent way to relocate a driver — the backend
+  // ignores it in that case for exactly that reason, and so does this.
+  const replacement = losesPlacement
+    ? remaining.find((item) => item.type !== LocationType.Route)
+    : undefined
+
+  const confirmed = confirm(
+    `Հեռացնե՞լ «${area.name}»-ը ${truck.driverName}-ի սպասարկվող տարածքներից։\n\n` +
+      'Հաստատելուց հետո այդ տարածքը կհեռանա նաև վարորդի պրոֆիլից, և նա այլևս չի երևա ' +
+      'այդ վայրի որոնման արդյունքներում։ Վարորդն ինքը կարող է այն հետ ավելացնել իր էջից։' +
+      (losesPlacement
+        ? replacement
+          ? `\n\nՈւշադրություն. սա էվակուատորի հիմնական տեղակայումն է — այն կփոխվի «${replacement.name}»-ի։`
+          : '\n\nՈւշադրություն. սա էվակուատորի հիմնական տեղակայումն է, և մնացած տարածքներից ոչ մեկը քաղաք կամ շրջան չէ, ուստի հիմնական տեղակայումը կմնա դատարկ։'
+        : ''),
+  )
+  if (!confirmed) return
+
+  removingAreaKey.value = areaKey(truck.id, area.slug)
+  towTrucksError.value = ''
+  try {
+    const updated = await adminRepository.removeTowTruckServiceArea(truck.id, {
+      slug: area.slug,
+      ...(replacement
+        ? replacement.type === LocationType.District
+          ? { districtSlug: replacement.slug }
+          : {
+              citySlug: replacement.slug,
+              regionSlug: findCityLocation(replacement.slug)?.regionSlug,
+            }
+        : {}),
+    })
+
+    // Patched in place from the response, not from `remaining` — the backend is
+    // the one that decided the final placement, and re-reading its answer keeps
+    // the row honest if it ever differs from what was predicted here.
+    truck.serviceAreas = updated.serviceAreas
+    truck.citySlug = updated.citySlug
+    truck.districtSlug = updated.districtSlug
+    truck.regionSlug = updated.regionSlug
+  } catch (error) {
+    towTrucksError.value = extractErrorMessage(error, 'Տարածքը հեռացնել չհաջողվեց։')
+  } finally {
+    removingAreaKey.value = null
+  }
+}
+
 /** Irreversible — deletes the truck, its images (DB + Supabase Storage) and reviews */
 async function deleteTowTruck(truck: AdminTowTruck): Promise<void> {
   const confirmed = confirm(
@@ -1188,6 +1280,58 @@ async function rejectReview(review: AdminReview): Promise<void> {
               </div>
             </dl>
 
+            <!-- Coverage. Until this existed there was no way at all to see an
+                 approved driver's served areas from the panel — `locationName`
+                 above is only the free-text base label, and the pending-request
+                 card shows what was SUBMITTED, which stops matching reality the
+                 moment the driver edits their own dashboard. -->
+            <div class="admin-card__areas">
+              <!-- Not a <dt>: this block sits outside the <dl> above, and a
+                   stray <dt> with no <dl> parent is invalid markup. -->
+              <p class="admin-card__areas-title">
+                Սպասարկվող տարածքներ
+                <span class="admin-card__areas-count">{{ truck.serviceAreas.length }}</span>
+              </p>
+              <p v-if="truck.serviceAreas.length === 0" class="admin-card__muted">
+                Տարածքներ նշված չեն
+              </p>
+              <ul v-else class="admin-card__area-list">
+                <li
+                  v-for="area in truck.serviceAreas"
+                  :key="area.slug"
+                  class="admin-card__area"
+                  :class="{
+                    'admin-card__area--primary':
+                      truck.citySlug === area.slug || truck.districtSlug === area.slug,
+                  }"
+                >
+                  <span>{{ area.name }}</span>
+                  <!-- The last one cannot be removed: an empty coverage list
+                       matches no filter, so the driver would silently disappear
+                       from every browsing page while still looking live here.
+                       Disabled with a reason rather than hidden, so the rule is
+                       discoverable instead of looking like a missing button. -->
+                  <button
+                    type="button"
+                    class="admin-card__area-remove"
+                    :disabled="
+                      truck.serviceAreas.length <= 1 ||
+                      removingAreaKey === areaKey(truck.id, area.slug)
+                    "
+                    :title="
+                      truck.serviceAreas.length <= 1
+                        ? 'Վերջին տարածքը հնարավոր չէ հեռացնել։ Օգտագործիր «Ապաակտիվացնել»։'
+                        : `Հեռացնել «${area.name}»-ը`
+                    "
+                    :aria-label="`Հեռացնել «${area.name}»-ը սպասարկվող տարածքներից`"
+                    @click="removeServiceArea(truck, area)"
+                  >
+                    ×
+                  </button>
+                </li>
+              </ul>
+            </div>
+
             <div v-if="truck.images.length" class="admin-card__images">
               <button
                 v-for="(image, index) in truck.images"
@@ -1683,6 +1827,79 @@ async function rejectReview(review: AdminReview): Promise<void> {
   &__phone-edit-actions {
     display: flex;
     gap: var(--space-2);
+  }
+
+  &__areas {
+    margin-bottom: var(--space-4);
+  }
+
+  &__areas-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: 0.78rem;
+    color: var(--color-text-secondary);
+    margin-bottom: var(--space-2);
+  }
+
+  &__areas-count {
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  &__area-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  &__area {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 4px 4px 4px var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-full);
+    background: var(--color-bg);
+    font-size: 0.82rem;
+    line-height: 1.4;
+  }
+
+  /* The one that is also the truck's citySlug/districtSlug. Marked because
+     removing it is the case that re-points the placement, and an admin should
+     be able to see that coming before the confirm dialog says so. */
+  &__area--primary {
+    border-color: var(--color-primary);
+    font-weight: 600;
+  }
+
+  &__area-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    color: var(--color-text-secondary);
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      background: var(--color-danger);
+      color: #fff;
+    }
+
+    &:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
   }
 
   &__images {

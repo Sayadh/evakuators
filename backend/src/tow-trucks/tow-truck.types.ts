@@ -114,10 +114,22 @@ export interface TowTruckCoverageApi {
   works24Hours: boolean
 }
 
+/**
+ * One stored entry of `TowTruck.serviceAreas`, as it comes back out of the
+ * JSONB column.
+ *
+ * MANUAL SYNC POINT: `type` must equal `ServiceAreaDto.type` (the write side)
+ * and `LocationType` in `frontend/types/enums.ts`. It said `'region'` for a
+ * while — a value nothing has ever written — while the third real value,
+ * `'route'` (a road corridor like «Գառնի–Գեղարդ»), was missing. Nothing broke,
+ * because reads only ever pass the value straight through; but any backend code
+ * that switches on the type would have been type-checked against a union that
+ * does not describe the data.
+ */
 export interface ServiceAreaJson {
   name: string
   slug: string
-  type: 'city' | 'district' | 'region'
+  type: 'city' | 'district' | 'route'
 }
 
 /** API shape — mirrors the frontend `TowTruck` interface exactly */

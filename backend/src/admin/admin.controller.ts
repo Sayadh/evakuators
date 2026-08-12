@@ -15,11 +15,13 @@ import { AdminJwtGuard } from '../admin-auth/admin-jwt.guard'
 import { SetCoordinatesDto } from '../common/set-coordinates.dto'
 import type { RegistrationWithImages } from '../registration/registration.repository'
 import type { ReviewWithTruck } from '../reviews/reviews.repository'
+import type { ServiceAreaJson } from '../tow-trucks/tow-truck.types'
 import type { AdminTowTruckSummary } from './admin-tow-truck.mapper'
 import { AdminService } from './admin.service'
 import { AdminListQuery, AdminRegistrationsQuery } from './dto/admin-list.query'
 import { ApproveRegistrationDto } from './dto/approve-registration.dto'
 import { IssuePasswordsDto } from './dto/issue-passwords.dto'
+import { RemoveServiceAreaDto } from './dto/remove-service-area.dto'
 import { SetTowTruckActiveDto } from './dto/set-tow-truck-active.dto'
 import { SetTowTruckFeaturedDto } from './dto/set-tow-truck-featured.dto'
 import { SetTowTruckPhoneDto } from './dto/set-tow-truck-phone.dto'
@@ -178,6 +180,36 @@ export class AdminController {
     @Body() dto: SetCoordinatesDto,
   ): Promise<{ id: number; latitude: number; longitude: number; locationUpdatedAt: string }> {
     return this.adminService.setTowTruckCoordinates(id, dto.latitude, dto.longitude)
+  }
+
+  /**
+   * Removes ONE area from a truck's served-areas list.
+   *
+   * PATCH rather than `DELETE .../service-areas/:slug`: the request sometimes
+   * has to carry a replacement structural placement (when the removed area is
+   * the truck's own city/district), and a DELETE with a body is the kind of
+   * thing an intermediary is entitled to strip.
+   *
+   * It takes the slug to remove, NOT the new list — so the endpoint can only
+   * ever shrink the coverage, which is what makes it safe to skip the coverage
+   * cap here. See RemoveServiceAreaDto and AdminService for both arguments.
+   *
+   * Three segments, so no shadowing risk against `tow-trucks/count` — the same
+   * argument as `/coordinates` above, asserted for the whole route table by
+   * admin.controller.count-route.spec.ts.
+   */
+  @Patch('tow-trucks/:id/service-areas')
+  removeServiceArea(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: RemoveServiceAreaDto,
+  ): Promise<{
+    id: number
+    serviceAreas: ServiceAreaJson[]
+    citySlug?: string
+    districtSlug?: string
+    regionSlug?: string
+  }> {
+    return this.adminService.removeTowTruckServiceArea(id, dto)
   }
 
   /** Permanently deletes the tow truck + its images/reviews. Irreversible. */

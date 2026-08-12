@@ -3,11 +3,13 @@ export { adminRepository } from './admin.repository'
 export type {
   AdminRegistrationRequest,
   AdminReview,
+  AdminServiceArea,
   AdminTowTruck,
   AdminTowTruckCounts,
   ApproveRegistrationPayload,
   IssuePasswordsResult,
   PasswordCandidate,
+  RemoveServiceAreaPayload,
 } from './admin.repository'
 export { adminAuthRepository } from './adminAuth.repository'
 export type { AdminSession } from './adminAuth.repository'

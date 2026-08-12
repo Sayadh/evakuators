@@ -98,9 +98,50 @@ export interface AdminTowTruck {
   longitude?: number
   /** ISO datetime of the last coordinate write; undefined when never set */
   locationUpdatedAt?: string
+  /**
+   * Everywhere the driver claims to work, with the Armenian names resolved at
+   * write time — the panel renders these labels as-is rather than looking them
+   * up, so an admin sees exactly the words the public profile shows.
+   */
+  serviceAreas: AdminServiceArea[]
+  /** Structural placement — at most one of the two, both unset for corridor-only coverage */
+  citySlug?: string
+  districtSlug?: string
+  /** Unset for Yerevan, which is a pseudo-region */
+  regionSlug?: string
   hasTelegramLinked: boolean
   createdAt: string
   images: { id: number; url: string }[]
+}
+
+/** One entry of a truck's stored coverage — mirrors backend ServiceAreaJson */
+export interface AdminServiceArea {
+  slug: string
+  name: string
+  type: 'city' | 'district' | 'route'
+}
+
+/**
+ * Mirrors backend RemoveServiceAreaDto.
+ *
+ * Names the area to REMOVE, never the resulting list — so the endpoint cannot
+ * grow a driver's coverage, only shrink it. The placement fields are read only
+ * when the removed area is the truck's own `citySlug`/`districtSlug` and are
+ * ignored otherwise; the backend rejects a placement that is not among the
+ * areas that survive.
+ *
+ * A `type` rather than an `interface` on purpose: only a type alias gets an
+ * implicit index signature, so this is assignable to `apiFetch`'s
+ * `Record<string, unknown>` body directly. `ApproveRegistrationPayload` above is
+ * an interface and therefore needs `as unknown as Record<string, unknown>` at
+ * its call site — a double cast that silences every future mismatch in that
+ * payload too, which is exactly what a cast should not do.
+ */
+export type RemoveServiceAreaPayload = {
+  slug: string
+  citySlug?: string
+  districtSlug?: string
+  regionSlug?: string
 }
 
 /** Mirrors the backend's `GET /admin/tow-trucks/count` — `inactive` is `total - active` */
@@ -292,6 +333,30 @@ export const adminRepository = {
       `/admin/tow-trucks/${id}/coordinates`,
       { method: 'PATCH', body: { latitude, longitude }, headers: authHeader() },
     )
+  },
+
+  /**
+   * Drops one served area from an approved truck.
+   *
+   * Returns the coverage as it now stands, read back from the row — the panel
+   * patches its list from the response rather than from what it sent, so a
+   * placement the backend re-pointed is reflected without a reload.
+   */
+  removeTowTruckServiceArea(
+    id: number,
+    payload: RemoveServiceAreaPayload,
+  ): Promise<{
+    id: number
+    serviceAreas: AdminServiceArea[]
+    citySlug?: string
+    districtSlug?: string
+    regionSlug?: string
+  }> {
+    return apiFetch(`/admin/tow-trucks/${id}/service-areas`, {
+      method: 'PATCH',
+      body: payload,
+      headers: authHeader(),
+    })
   },
 
   /** Permanent — deletes the truck, its images (DB + Supabase Storage), reviews and OTPs */

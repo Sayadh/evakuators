@@ -390,6 +390,33 @@ export class TowTrucksRepository {
   }
 
   /**
+   * Writes the served-areas list together with the structural placement it
+   * implies — one method taking both, because they are one fact.
+   *
+   * `serviceAreas` (what the profile lists) and `citySlug`/`districtSlug`/
+   * `regionSlug` (what the browsing pages filter on) have to describe the same
+   * geography; a method that could set one without the other is how a truck
+   * ends up filed under a city it no longer serves. `MyTowTruckService` enforces
+   * that pairing by hand for the driver's own save — this signature makes it
+   * unforgettable for the admin removal path instead.
+   *
+   * All three placement columns are `null`able rather than optional on purpose:
+   * a truck moving out of Yerevan has to be able to clear `districtSlug`, and a
+   * truck left covering only road corridors has no placement at all. `undefined`
+   * would mean "leave it alone", which is never what this caller wants.
+   */
+  setServiceAreas(
+    id: number,
+    serviceAreas: Prisma.InputJsonValue,
+    placement: { citySlug: string | null; districtSlug: string | null; regionSlug: string | null },
+  ): Promise<TowTruck> {
+    return this.prisma.towTruck.update({
+      where: { id },
+      data: { serviceAreas, ...placement },
+    })
+  }
+
+  /**
    * The one write path for both password columns, which is the point: they
    * describe a single fact together ("whose password is this"), and a method
    * that could set the hash without saying whether it is ours would make

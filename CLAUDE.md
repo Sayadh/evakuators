@@ -78,7 +78,12 @@ assume one is unused:
   `backend/src/tow-trucks/dto/service-area.dto.ts`. Both directions of
   `TowTruck.serviceAreas` compare `type` literally, so a mismatch means a
   driver's zone/city/district coverage silently matches nothing in filtering.
-  See `docs/locations.md` § "Service zones".
+  See `docs/locations.md` § "Service zones". There is a **third** copy on the
+  read side — `ServiceAreaJson.type` in `backend/src/tow-trucks/tow-truck.types.ts`
+  — and it had already drifted: it said `'region'`, a value nothing has ever
+  written, and omitted `'route'`. Nothing broke, because reads only pass the
+  value through; any backend code that branches on the type would have been
+  type-checked against a union that does not describe the data.
 - `frontend/types/enums.ts` `AnalyticsEventType` values ↔ `enum
   AnalyticsEventType` in `backend/prisma/schema.prisma`. These travel over the
   wire in both directions (sent when tracking an event, used as response object
@@ -138,6 +143,7 @@ assume one is unused:
 | Touch "Ազատ երթուղիներ" (Free Routes) | `docs/free-routes.md` |
 | Touch per-driver statistics / visitor tracking | `docs/analytics.md` |
 | Decide whether a field is driver-editable or admin-only | `backend/src/my-tow-truck/dto/update-my-tow-truck.dto.ts` — the boundary and its two exceptions are argued there |
+| Change a driver's coverage from `/admin` | `docs/locations.md` § "An admin can remove a single area" — the endpoint takes the slug to REMOVE, never the new list, which is what lets it skip the coverage cap; re-read that before making it a general editor |
 | Touch the base parking coordinates (lat/lng) | `backend/src/common/coordinates.ts` + `frontend/utils/coordinates.ts` — one rule each side, mirrored by hand; the UI is `CoordinatesInput.vue` / `CoordinatesDialog.vue`, shared by registration, the driver dashboard and `/admin` |
 | Touch `/evakuator`, PostGIS, or the route-matrix provider | `docs/nearest-search.md` — the two-step design, why the results reuse `TowTruckCard` untouched, the rule that a straight-line distance never gets a time next to it, and `NEAREST_SEARCH_ENABLED` (currently **off**), which pauses the search itself and nothing else — the nav link, the CTA banners and the sitemap entry stay up on purpose, so the page acts as an announcement |
 | Find what a specific page/route does | `docs/pages-and-routes.md` |

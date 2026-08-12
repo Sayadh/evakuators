@@ -1,5 +1,5 @@
 import { decimalToNumber } from '../common/coordinates'
-import type { TowTruckWithImages } from '../tow-trucks/tow-truck.types'
+import type { ServiceAreaJson, TowTruckWithImages } from '../tow-trucks/tow-truck.types'
 
 /**
  * Admin-list shape — deliberately NOT the raw Prisma row. Two reasons:
@@ -33,6 +33,32 @@ export interface AdminTowTruckSummary {
   longitude?: number
   /** ISO datetime of the last coordinate write; undefined when never set */
   locationUpdatedAt?: string
+  /**
+   * Everywhere the driver claims to work, with the Armenian names the frontend
+   * resolved when it was written — so the panel can render the list without a
+   * geography lookup of its own, and match the labels the public profile shows.
+   *
+   * Added for the admin removal button. Until then an admin could not see a
+   * driver's coverage anywhere in the panel: `locationName` is the free-text
+   * base label, and the pending-request card's «Մարզեր» row is what was
+   * *submitted*, which stops describing reality the moment the driver edits
+   * their own dashboard. The only way to check was to open the public profile.
+   *
+   * Same argument that lets this shape carry `latitude`/`longitude`: the route
+   * is behind `AdminJwtGuard`. The public card shape must NOT grow fields by
+   * copying this one — see CLAUDE.md § "A listing is not a profile".
+   */
+  serviceAreas: ServiceAreaJson[]
+  /**
+   * Structural placement — what the browsing pages filter on, and what the
+   * removal endpoint has to re-point when the area being removed is this one.
+   * At most one of the two is ever set; both are unset for a truck whose only
+   * coverage is road corridors (see `findPlaceSlug` on the frontend).
+   */
+  citySlug?: string
+  districtSlug?: string
+  /** Unset for Yerevan, which is a pseudo-region — see CLAUDE.md */
+  regionSlug?: string
   hasTelegramLinked: boolean
   createdAt: string
   images: { id: number; url: string }[]
@@ -54,6 +80,13 @@ export function toAdminTowTruckSummary(truck: TowTruckWithImages): AdminTowTruck
     latitude: decimalToNumber(truck.latitude),
     longitude: decimalToNumber(truck.longitude),
     locationUpdatedAt: truck.locationUpdatedAt?.toISOString(),
+    // `?? []` for the same reason toTowTruckApi does it: the column is JSONB and
+    // Prisma types it as JsonValue, so an old row that somehow holds null must
+    // render as "no areas" rather than crash the whole admin list.
+    serviceAreas: (truck.serviceAreas as unknown as ServiceAreaJson[]) ?? [],
+    citySlug: truck.citySlug ?? undefined,
+    districtSlug: truck.districtSlug ?? undefined,
+    regionSlug: truck.regionSlug ?? undefined,
     hasTelegramLinked: truck.telegramChatId !== null,
     createdAt: truck.createdAt.toISOString(),
     images: truck.images.map((image) => ({ id: image.id, url: image.url })),

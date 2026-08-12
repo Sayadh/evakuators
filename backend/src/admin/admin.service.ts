@@ -12,10 +12,12 @@ import { SupabaseStorageService } from '../storage/supabase-storage.service'
 import { telegramTokenFingerprint } from '../telegram/token-fingerprint'
 import { TelegramService } from '../telegram/telegram.service'
 import { AVAILABLE_24_7_SLUG } from '../tow-trucks/service-slugs'
+import type { ServiceAreaJson } from '../tow-trucks/tow-truck.types'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
 import { AdminTowTruckSummary, toAdminTowTruckSummary } from './admin-tow-truck.mapper'
 import type { AdminListQuery, AdminRegistrationsQuery } from './dto/admin-list.query'
 import type { ApproveRegistrationDto } from './dto/approve-registration.dto'
+import type { RemoveServiceAreaDto } from './dto/remove-service-area.dto'
 
 const DEFAULT_DESCRIPTION = (locationName: string): string =>
   `Էվակուատորի ծառայություններ ${locationName}ում և հարակից բնակավայրերում։`
@@ -501,6 +503,165 @@ export class AdminService {
       this.towTrucksRepository.setPhone(id, phone),
     )
     return { id: updated.id, phone: updated.phone }
+  }
+
+  /**
+   * Removes ONE served area from an already-approved truck.
+   *
+   * ## Why the coverage cap is deliberately not applied here
+   *
+   * `assertServiceAreasWithinLimit` guards the two paths that can *grow* a
+   * coverage list. This one can only shrink it, so the cap could never reject a
+   * legitimate call — but it could reject an entirely correct one, and that is
+   * the reason to leave it out rather than an omission.
+   *
+   * Drivers approved before the cap existed keep their old lists (that was the
+   * explicit decision: do not touch stored data, ask for a trim on the next
+   * save). Several of them hold 8-10 areas. Running the cap here would throw on
+   * the *result* of the very first removal — 9 areas is still over the limit —
+   * so the exact drivers an admin most needs to trim would be the only ones
+   * whose areas could not be trimmed at all. The rule the write actually needs
+   * is "strictly fewer than before", and dropping one entry from the stored list
+   * satisfies that by construction.
+   *
+   * ## The last area
+   *
+   * Refused. A truck with an empty `serviceAreas` matches no city, district or
+   * marz filter, so it silently vanishes from every browsing page while still
+   * looking live in the panel — a deactivation nobody performed and nothing
+   * displays. Hiding a driver is what `setTowTruckActive(id, false)` is for, and
+   * the error says so.
+   */
+  async removeTowTruckServiceArea(
+    id: number,
+    dto: RemoveServiceAreaDto,
+  ): Promise<{
+    id: number
+    serviceAreas: ServiceAreaJson[]
+    citySlug?: string
+    districtSlug?: string
+    regionSlug?: string
+  }> {
+    const towTruck = await this.towTrucksRepository.findById(id)
+    if (!towTruck) throw new NotFoundException(`Էվակուատոր #${id}-ը չի գտնվել`)
+
+    const areas = (towTruck.serviceAreas as unknown as ServiceAreaJson[]) ?? []
+    const target = areas.find((area) => area.slug === dto.slug)
+
+    // Not a 404: the truck exists, and the usual cause is a panel left open
+    // while someone else removed the same area. Saying so is more useful than
+    // "not found", which reads as if the truck were gone.
+    if (!target) {
+      throw new BadRequestException(
+        `«${dto.slug}» տարածքը այս էվակուատորի ցանկում չկա։ Հնարավոր է՝ այն արդեն հեռացվել է — թարմացրեք էջը։`,
+      )
+    }
+
+    // Compared by slug, not by identity: two entries could in principle share a
+    // slug (nothing has ever enforced uniqueness inside the JSON), and removing
+    // "the one the admin clicked" would then leave a duplicate behind that the
+    // panel still shows. Dropping every match makes the button's promise true.
+    const remaining = areas.filter((area) => area.slug !== dto.slug)
+
+    if (remaining.length === 0) {
+      throw new BadRequestException(
+        'Էվակուատորը պետք է սպասարկի առնվազն մեկ տարածք։ Եթե ուզում եք ամբողջությամբ թաքցնել պրոֆիլը, օգտագործեք «Ապաակտիվացնել» կոճակը։',
+      )
+    }
+
+    const placement = this.resolvePlacementAfterRemoval(towTruck, dto, remaining)
+
+    const updated = await this.towTrucksRepository.setServiceAreas(
+      id,
+      // Mapped to plain objects rather than written straight back: what came out
+      // of the column is `JsonValue`, and re-narrowing it here means the row can
+      // only ever be rewritten with the three keys this shape is documented to
+      // hold, whatever an older row happened to carry.
+      remaining.map((area) => ({ slug: area.slug, name: area.name, type: area.type })),
+      placement,
+    )
+
+    // Read back from the row, like setTowTruckCoordinates — the panel patches
+    // its list from this, so it must show what is stored, not what was inferred.
+    return {
+      id: updated.id,
+      serviceAreas: (updated.serviceAreas as unknown as ServiceAreaJson[]) ?? [],
+      citySlug: updated.citySlug ?? undefined,
+      districtSlug: updated.districtSlug ?? undefined,
+      regionSlug: updated.regionSlug ?? undefined,
+    }
+  }
+
+  /**
+   * Where the truck is filed after the removal.
+   *
+   * Two cases, and the boring one is the common one: if the area being removed
+   * is not the truck's placement, the placement does not change. The DTO's
+   * placement fields are ignored outright in that case — relocating a driver is
+   * `approve()`'s job and the dashboard's, and letting a removal quietly carry
+   * one would make this a second, undocumented way to move a truck between
+   * cities.
+   *
+   * When the placement IS what is being removed, it has to be re-pointed, and
+   * the replacement can only come from the caller: choosing one means knowing
+   * which surviving slug is a settlement and which is a road corridor — a truck
+   * cannot be "based in" «Գառնի–Գեղարդ» — and that is geography, which this
+   * backend does not have (CLAUDE.md). What it *can* do without any geography is
+   * check the answer against the list it just wrote, which is what happens here.
+   */
+  private resolvePlacementAfterRemoval(
+    towTruck: { citySlug: string | null; districtSlug: string | null; regionSlug: string | null },
+    dto: RemoveServiceAreaDto,
+    remaining: readonly ServiceAreaJson[],
+  ): { citySlug: string | null; districtSlug: string | null; regionSlug: string | null } {
+    const removedThePlacement =
+      towTruck.citySlug === dto.slug || towTruck.districtSlug === dto.slug
+
+    if (!removedThePlacement) {
+      return {
+        citySlug: towTruck.citySlug,
+        districtSlug: towTruck.districtSlug,
+        regionSlug: towTruck.regionSlug,
+      }
+    }
+
+    if (dto.citySlug && dto.districtSlug) {
+      throw new BadRequestException(
+        'Նշեք կա՛մ քաղաք, կա՛մ շրջան՝ որպես հիմնական տեղակայում, ոչ թե երկուսը միասին։',
+      )
+    }
+
+    const replacement = dto.citySlug ?? dto.districtSlug
+
+    // No replacement offered. Allowed, and it means exactly one thing: nothing
+    // that survives can BE a placement — the truck is left covering only road
+    // corridors. Both columns are nullable for that case and `findPlaceSlug` on
+    // the frontend returns undefined for it, so this is the same state a driver
+    // can already reach; refusing would just make an admin unable to finish a
+    // cleanup the data model permits.
+    if (!replacement) {
+      return { citySlug: null, districtSlug: null, regionSlug: null }
+    }
+
+    // The one check that needs no geography and catches the mistake that
+    // matters: a placement pointing at something the truck does not serve. That
+    // is the state this whole endpoint exists to avoid, so it is not taken on
+    // trust just because the caller is an admin.
+    if (!remaining.some((area) => area.slug === replacement)) {
+      throw new BadRequestException(
+        `«${replacement}»-ը էվակուատորի սպասարկվող տարածքների մեջ չէ, ուստի չի կարող լինել նրա հիմնական տեղակայումը։`,
+      )
+    }
+
+    return {
+      citySlug: dto.citySlug ?? null,
+      districtSlug: dto.districtSlug ?? null,
+      // Yerevan is a pseudo-region and its districts carry no marz, so a
+      // district replacement nulls this rather than keeping the old value —
+      // otherwise a truck moving into Yerevan would stay listed on the marz page
+      // it left.
+      regionSlug: dto.districtSlug ? null : (dto.regionSlug ?? null),
+    }
   }
 
   /**

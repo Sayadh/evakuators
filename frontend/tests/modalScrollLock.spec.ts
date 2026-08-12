@@ -40,4 +40,17 @@ describe('AppModal locks body scroll while open, like AppDrawer already does', (
   it('matches the pattern AppDrawer already uses', () => {
     expect(drawer).toContain("document.body.style.overflow = open ? 'hidden' : ''")
   })
+
+  it('captures defineProps into `props` before the watch reads props.modelValue', () => {
+    // The watch below reads `props.modelValue`. `defineProps` only returns a
+    // usable reactive object if its result is assigned — `withDefaults(defineProps<Props>(), ...)`
+    // on its own discards it, leaving `props` an undeclared identifier. That
+    // is a silent TypeScript-only mistake in `<script setup>` (no lint rule
+    // catches an unassigned macro call), and unlike a template-only miss it
+    // throws a ReferenceError the instant the watcher's getter runs — which
+    // is immediately, on every mount, crashing the whole page that renders
+    // this modal into Nuxt's generic 500 page. This exact regression shipped
+    // once; this guard is here so it can't ship silently again.
+    expect(modal).toContain('const props = withDefaults(defineProps<Props>()')
+  })
 })

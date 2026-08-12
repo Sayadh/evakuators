@@ -4,7 +4,7 @@ interface Props {
   title?: string
 }
 
-withDefaults(defineProps<Props>(), { title: undefined })
+const props = withDefaults(defineProps<Props>(), { title: undefined })
 
 const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
 

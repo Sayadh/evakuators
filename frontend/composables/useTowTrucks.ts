@@ -38,14 +38,23 @@ import { sortTowTrucks } from '~/utils/towTruckFilters'
  * makes `limit`/`offset` paging return a stable set of rows (see the `id`
  * tie-break in `TowTrucksRepository.findManyCards`), which this cannot do.
  */
-function recommended(trucks: TowTruckCard[]): TowTruckCard[] {
-  return sortTowTrucks(trucks, SortOption.Recommended)
+/**
+ * The seed is read here, once, rather than inside `recommended()`.
+ *
+ * `transform` runs outside a component's setup context (it is called by
+ * `useAsyncData` when the request resolves), and `useState` must not be reached
+ * from there — so the value is captured while the composable is still running
+ * and closed over.
+ */
+function recommendedWith(seed: number) {
+  return (trucks: TowTruckCard[]): TowTruckCard[] =>
+    sortTowTrucks(trucks, SortOption.Recommended, undefined, seed)
 }
 
 export function useTowTrucksByCity(citySlug: string) {
   return useAsyncData(`tow-trucks-city-${citySlug}`, () => towTrucksService.getByCitySlug(citySlug), {
     default: () => [],
-    transform: recommended,
+    transform: recommendedWith(useListingShuffleSeed()),
   })
 }
 
@@ -53,7 +62,7 @@ export function useTowTrucksByDistrict(districtSlug: string) {
   return useAsyncData(
     `tow-trucks-district-${districtSlug}`,
     () => towTrucksService.getByDistrictSlug(districtSlug),
-    { default: () => [], transform: recommended },
+    { default: () => [], transform: recommendedWith(useListingShuffleSeed()) },
   )
 }
 
@@ -67,7 +76,7 @@ export function useFeaturedTowTrucks(limit = 6) {
     default: () => [],
     // Being featured is the admin's pick of WHICH trucks appear; the order
     // among them is still "best first", same as every other listing.
-    transform: recommended,
+    transform: recommendedWith(useListingShuffleSeed()),
   })
 }
 
@@ -76,7 +85,7 @@ export function useTowTrucksInYerevan() {
   return useAsyncData('tow-trucks-yerevan', () => towTrucksService.getYerevanTowTrucks(), {
     default: () => [],
     dedupe: 'defer',
-    transform: recommended,
+    transform: recommendedWith(useListingShuffleSeed()),
   })
 }
 
@@ -104,7 +113,7 @@ export function useTowTrucksByZone(zoneSlug: string) {
   return useAsyncData(
     `tow-trucks-zone-${zoneSlug}`,
     () => towTrucksService.getByZoneSlug(zoneSlug),
-    { default: () => [], transform: recommended },
+    { default: () => [], transform: recommendedWith(useListingShuffleSeed()) },
   )
 }
 
@@ -120,7 +129,7 @@ export function useTowTrucksByVehicleType(vehicleType: VehicleType) {
   return useAsyncData(
     `tow-trucks-vehicle-type-${vehicleType}`,
     () => towTrucksService.getByVehicleType(vehicleType),
-    { default: () => [], transform: recommended },
+    { default: () => [], transform: recommendedWith(useListingShuffleSeed()) },
   )
 }
 
@@ -128,13 +137,13 @@ export function useTowTrucksByRegion(regionSlug: string) {
   return useAsyncData(
     `tow-trucks-region-${regionSlug}`,
     () => towTrucksService.getByRegionSlug(regionSlug),
-    { default: () => [], transform: recommended },
+    { default: () => [], transform: recommendedWith(useListingShuffleSeed()) },
   )
 }
 
 export function useSimilarTowTrucks(truck: TowTruck) {
   return useAsyncData(`similar-tow-trucks-${truck.slug}`, () => towTrucksService.getSimilar(truck), {
     default: () => [],
-    transform: recommended,
+    transform: recommendedWith(useListingShuffleSeed()),
   })
 }

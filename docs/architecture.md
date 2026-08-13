@@ -265,6 +265,39 @@ Armenian labels living in the frontend as constants is the same rule the rest
 of this project already follows (see CLAUDE.md); dates and prices were simply
 the last place still delegating it to a library.
 
+## The listing order is random, and the seed is why that is SSR-safe
+
+Inside a town, drivers are shown in a shuffled order rather than ranked by
+rating. The reason is a marketplace one: the smoothed score separated them by
+hundredths, so every town had one fixed queue — the same two or three profiles
+on top of it every time, and everyone below never called, so never reviewed, so
+never moved. See `sortTowTrucks` for the full argument and for the two coarse
+groups that still decide something (based here, then a half-point rating band).
+
+The part that matters architecturally is how the randomness survives hydration.
+`Math.random()` at render time produces one order on the server and another in
+the browser, which is the same class of bug as runtime-localised dates above,
+with the same symptom: Vue force-patches the DOM, or the list visibly reshuffles
+a moment after the page appears.
+
+So there is exactly one random number per page load, `useListingShuffleSeed()`,
+and it is a `useState` — created on the server and serialised into the Nuxt
+payload, so the browser reads the same value instead of inventing its own. Every
+listing derives its order from it, and `seededShuffle` is deterministic given a
+seed.
+
+Three rules follow, and each is guarded by
+`frontend/tests/listingShuffle.spec.ts`:
+
+- **Read the seed in setup**, never inside a `useAsyncData` transform or a
+  computed's getter — `useState` needs a Nuxt context and those run outside one.
+  The listing composables capture it and close over it.
+- **Shuffle first, then sort.** A comparator that returns random values is not a
+  comparator; the sort contract requires consistency. `Array.prototype.sort` is
+  stable, so sorting the already-shuffled array by the grouping keys leaves the
+  shuffled order intact within a group.
+- **The price sort is never shuffled.** The customer asked for cheapest first.
+
 ## A CSS grid with a viewport-conditional child is an SSR bug waiting to happen
 
 `useResponsiveFilters()` (`frontend/composables/useResponsiveFilters.ts`)

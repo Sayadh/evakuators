@@ -2,6 +2,7 @@ import { RATING_PRIOR, RATING_PRIOR_WEIGHT } from '~/constants/rating'
 import { hasManipulator, matchesCapacityRange } from '~/constants/vehicles'
 import { SortOption } from '~/types/enums'
 import type { TowTruckCard } from '~/types/towTruck'
+import { seededShuffle } from '~/utils/seededShuffle'
 import type { TowTruckFilterState } from '~/types/filters'
 
 export function createDefaultFilterState(): TowTruckFilterState {
@@ -103,6 +104,29 @@ export function isBasedAt(truck: TowTruckCard, place: BasePlace | undefined): bo
 }
 
 /**
+ * The rating, as a **coarse band** rather than a number.
+ *
+ * The smoothed score is a near-total order: with a prior of 4.3 it separates
+ * drivers by hundredths, so ordering by it directly produced one fixed queue —
+ * the same two or three profiles at the top of a town's page every time, and
+ * everyone below them effectively unreachable. On a marketplace whose supply is
+ * a few drivers per town, that is not a ranking, it is a monopoly.
+ *
+ * Rounding to a half point collapses that. Almost every driver lands in the same
+ * band as everyone else, so the band decides nothing most of the time; a
+ * genuinely bad record (the 8 × 3.2 row in the table above scores 3.50) still
+ * drops one, and stays below. It is the weakest separation that still means
+ * something.
+ *
+ * Half a point, not a whole one: whole points would put 4.0 and 4.9 together,
+ * which is the difference between "fine" and "excellent" and is exactly what a
+ * customer would want honoured.
+ */
+function ratingBand(truck: TowTruckCard): number {
+  return Math.round(getRecommendedScore(truck) * 2) / 2
+}
+
+/**
  * `basePlace` reorders only the **Recommended** list — deliberately.
  *
  * Recommended is the default and is ours to define, and "the drivers actually
@@ -112,33 +136,61 @@ export function isBasedAt(truck: TowTruckCard, place: BasePlace | undefined): bo
  * appearing above a cheaper one would read as the sort being broken. So the
  * boost stops at the sort the customer chose.
  *
- * Within each tier the existing rating order is untouched, so being local wins
- * a tie against a stranger but never rescues a badly-rated driver from the
- * bottom of their own tier.
+ * ## Within a tier the order is random, not ranked
+ *
+ * It used to be the smoothed rating, to hundredths — which meant one fixed
+ * queue per town, the same profiles on top of it every time, and every driver
+ * below them never called. Nobody calls them, so nobody reviews them, so they
+ * never move: the ordering was quietly deciding who got work.
+ *
+ * So the two groups that decide anything are coarse — **based here**, then
+ * **rating band** — and inside a group the order is shuffled. Every driver in
+ * the same town and the same band gets the top of the list about equally often,
+ * which is the point.
+ *
+ * ## `seed`, and why the shuffle is not in the comparator
+ *
+ * A comparator that returns random values is not a comparator: the sort
+ * contract requires consistency, and violating it lets an engine produce
+ * anything at all. So the list is shuffled FIRST and then sorted by the two
+ * grouping keys — `Array.prototype.sort` is stable (ES2019), so entries with
+ * equal keys keep the shuffled order they arrived in.
+ *
+ * `seed` is decided once per page load and travels in the Nuxt payload
+ * (`useListingShuffleSeed`), because the same permutation has to happen on the
+ * server and in the browser or hydration breaks. Omitting it is legitimate and
+ * means "do not shuffle" — the mock-mode and test paths take it, and so does
+ * any caller that wants a reproducible list.
  */
 export function sortTowTrucks(
   trucks: TowTruckCard[],
   sort: SortOption,
   basePlace?: BasePlace,
+  seed?: number,
 ): TowTruckCard[] {
-  const sorted = [...trucks]
   switch (sort) {
     case SortOption.Price:
-      // Trucks without a price go to the end
-      return sorted.sort(
+      // Trucks without a price go to the end. Not shuffled at all: the customer
+      // asked for cheapest first, and two drivers on the same price swapping
+      // places between refreshes would read as the sort being broken.
+      return [...trucks].sort(
         (a, b) => (a.startingPrice ?? Infinity) - (b.startingPrice ?? Infinity),
       )
     case SortOption.Recommended:
-    default:
-      return sorted.sort((a, b) => {
+    default: {
+      const base = seed === undefined ? [...trucks] : seededShuffle(trucks, seed)
+
+      return base.sort((a, b) => {
         // Two booleans, so this is -1/0/1 and never a partial comparator. With
-        // no `basePlace` both sides are false, the difference is 0, and the
-        // rating comparison below decides everything exactly as before.
+        // no `basePlace` both sides are false and the difference is 0.
         const byBase = Number(isBasedAt(b, basePlace)) - Number(isBasedAt(a, basePlace))
         if (byBase !== 0) return byBase
 
-        return getRecommendedScore(b) - getRecommendedScore(a)
+        // Bands, not scores. Equal bands compare 0, and a stable sort then
+        // leaves the shuffled order in place — which is the whole mechanism.
+        return ratingBand(b) - ratingBand(a)
       })
+    }
   }
 }
 
@@ -146,11 +198,13 @@ export function applyTowTruckFilters(
   trucks: TowTruckCard[],
   filters: TowTruckFilterState,
   basePlace?: BasePlace,
+  seed?: number,
 ): TowTruckCard[] {
   return sortTowTrucks(
     trucks.filter((truck) => matchesFilters(truck, filters)),
     filters.sort,
     basePlace,
+    seed,
   )
 }
 

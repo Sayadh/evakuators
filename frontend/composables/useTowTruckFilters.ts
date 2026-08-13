@@ -19,6 +19,10 @@ export function useTowTruckFilters(
   towTrucks: Ref<TowTruckCard[]>,
   basePlace?: MaybeRefOrGetter<BasePlace | undefined>,
 ) {
+  // Read once, in setup: `useState` cannot be reached from inside a computed's
+  // getter, and the value must be the same one the SSR pass used anyway.
+  const seed = useListingShuffleSeed()
+
   const store = useTowTruckFiltersStore()
   const route = useRoute()
   const router = useRouter()
@@ -43,7 +47,7 @@ export function useTowTruckFilters(
   }
 
   const filteredTowTrucks = computed(() =>
-    applyTowTruckFilters(towTrucks.value, store.$state, toValue(basePlace)),
+    applyTowTruckFilters(towTrucks.value, store.$state, toValue(basePlace), seed),
   )
   const activeFiltersCount = computed(() => store.activeFiltersCount)
 

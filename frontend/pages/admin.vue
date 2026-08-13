@@ -1327,8 +1327,18 @@ async function rejectReview(review: AdminReview): Promise<void> {
 
     <div v-else-if="!adminAuth.isLoggedIn" class="admin-login">
       <form v-if="loginStep === 'credentials'" class="admin-login__form" @submit.prevent="submitCredentials">
-        <AppInput v-model="loginEmail" type="email" label="Email" required />
-        <AppInput v-model="loginPassword" type="password" label="Գաղտնաբառ" required />
+        <!-- `username` rather than `email` on an email-typed field: the token
+             names the ROLE in the credential pair, which is what lets a
+             password manager store and offer the two together. `email` would
+             file it as contact details instead. -->
+        <AppInput v-model="loginEmail" type="email" label="Email" required autocomplete="username" />
+        <AppInput
+          v-model="loginPassword"
+          type="password"
+          label="Գաղտնաբառ"
+          required
+          autocomplete="current-password"
+        />
         <p v-if="loginError" class="admin-error">{{ loginError }}</p>
         <AppButton type="submit" variant="success" block :disabled="loginSubmitting">
           {{ loginSubmitting ? 'Ստուգվում է…' : 'Մուտք' }}
@@ -1337,7 +1347,18 @@ async function rejectReview(review: AdminReview): Promise<void> {
 
       <form v-else class="admin-login__form" @submit.prevent="submitCode">
         <p class="admin-login__hint">Մուտքի կոդն ուղարկվեց Ձեր Telegram-ին։</p>
-        <AppInput v-model="loginCode" type="text" label="6-նիշանոց կոդ" placeholder="123456" required />
+        <!-- `one-time-code` is what lets a phone offer the code from the
+             notification instead of making an admin retype it. It must never
+             be `off` here: this field is the second factor, and the value is
+             single-use, so there is nothing to leak by helping. -->
+        <AppInput
+          v-model="loginCode"
+          type="text"
+          label="6-նիշանոց կոդ"
+          placeholder="123456"
+          required
+          autocomplete="one-time-code"
+        />
         <p v-if="loginError" class="admin-error">{{ loginError }}</p>
         <AppButton type="submit" variant="success" block :disabled="loginSubmitting">
           {{ loginSubmitting ? 'Ստուգվում է…' : 'Հաստատել' }}

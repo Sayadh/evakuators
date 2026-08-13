@@ -214,11 +214,13 @@ export default defineNuxtConfig({
          * is ever uploaded (`URL.createObjectURL`) — without it a driver picks
          * a photo and sees a broken image.
          *
-         * The two Google hosts are Ads remarketing, which delivers some
-         * beacons as *images* (`/pagead/1p-user-list/`, `/rmkt/collect`,
-         * `/ccm/collect`, `/ads/ga-audiences`) rather than as fetches — so they
-         * need listing here as well as in `connect-src`. `.am` because Google
-         * issues those calls from the visitor's own country domain.
+         * The Google hosts are Ads remarketing, which delivers some beacons as
+         * *images* (`/pagead/1p-user-list/`, `/rmkt/collect`, `/ccm/collect`,
+         * `/ads/ga-audiences`) rather than as fetches — so they need listing
+         * here as well as in `connect-src`. `.am` because Google issues those
+         * calls from the visitor's own country domain. `ad.doubleclick.net` is
+         * the same family; see the note in `connect-src` for why it is its own
+         * entry.
          */
         'img-src': [
           "'self'",
@@ -227,6 +229,7 @@ export default defineNuxtConfig({
           'https://xmdgvutudwciacyfnzat.supabase.co',
           'https://www.google.com',
           'https://www.google.am',
+          'https://ad.doubleclick.net',
         ],
 
         'font-src': ["'self'", 'data:'],
@@ -260,6 +263,20 @@ export default defineNuxtConfig({
           // not google.com.
           'https://www.google.com',
           'https://www.google.am',
+          // `ad.doubleclick.net/ccm/s/collect` — the same remarketing feature
+          // (GA4 Google Signals), but sent to a host that shares no suffix
+          // with any entry above, so nothing here covered it and the browser
+          // refused it on every page load. Only the audience/remarketing half
+          // was affected: GA's own measurement goes to google-analytics.com,
+          // which was allowed, so the stats were never wrong — the visible
+          // symptom was purely a pair of console errors.
+          //
+          // Listed as the exact host, not `https://*.doubleclick.net`: the
+          // wildcard would additionally admit every ad-serving subdomain
+          // Google operates, which is a far wider permission than the one
+          // beacon we are unblocking. If Google ever moves the beacon, the
+          // right response is to add that host too, not to widen this one.
+          'https://ad.doubleclick.net',
         ],
 
         'object-src': ["'none'"],

@@ -466,6 +466,65 @@ environment and looks like it worked. `frontend/tests/cspApiOrigin.spec.ts`
 asserts both deployed environments resolve to their own origin, and that no API
 hostname reappears in the static policy.
 
+### The Google hosts are three separate decisions, not one
+
+Analytics and remarketing do not share a domain, and the remarketing half does
+not share a domain with itself. Each entry below had to be added on its own,
+and each was added *after* a browser refused a call:
+
+| Host | Carries | Why no other entry covers it |
+| --- | --- | --- |
+| `www.google-analytics.com`, `*.google-analytics.com` | GA measurement | — |
+| `analytics.google.com` **and** `*.analytics.google.com` | GA measurement, incl. regional endpoints | A CSP wildcard must match at least one label, so the wildcard alone does **not** cover the apex — `/g/collect` was refused while the policy read as if GA were fully allowed |
+| `www.google.com`, `www.google.am` | Ads remarketing beacons | Google issues these from the visitor's own country domain, which for this site's traffic is almost always `.am` |
+| `ad.doubleclick.net` | GA4 Google Signals (`/ccm/s/collect`) | Shares no suffix with anything above |
+
+Two rules for the whole group:
+
+- **Each host belongs in `connect-src` *and* `img-src`.** Remarketing delivers
+  some beacons as `fetch` and others as image requests; listing a host in one
+  directive blocks half its calls, which is how this was first reported.
+- **Exact hosts, never `*.doubleclick.net`.** The wildcard would admit every
+  ad-serving subdomain Google operates in order to unblock a single beacon. If
+  Google moves it, add the new host — do not widen this one.
+
+Worth knowing when triaging: a refused *remarketing* call is cosmetic. The
+numbers in GA come from `google-analytics.com`, so a blocked beacon costs the
+audience/remarketing feature and produces two console errors, and nothing else.
+
+### Credential fields carry an `autocomplete` token
+
+`AppInput` takes an optional `autocomplete` prop, typed to a union of real HTML
+tokens — a misspelled token is ignored by every browser rather than rejected,
+so `string` would have let the fix silently undo itself.
+
+It is `undefined` by default, which renders no attribute: most fields here (a
+plate number, a price, a capacity) match no autofill category, and guessing one
+invites the browser to fill nonsense. Every field in a credential exchange sets
+one explicitly:
+
+| Form | Field | Token |
+| --- | --- | --- |
+| `/admin` login | Email | `username` |
+| `/admin` login | Password | `current-password` |
+| `/admin` second factor | 6-digit code | `one-time-code` |
+| `/login` (driver) | Phone number | `username` |
+| `/login` (driver) | Password | `current-password` |
+| `ChangePasswordForm` | Current/temporary password | `current-password` |
+| `ChangePasswordForm` | New password ×2 | `new-password` |
+
+`username` rather than `email`/`tel` on the two identifier fields is deliberate:
+the token names the field's **role in the credential pair**, which is what lets
+a password manager store and re-offer the two together. `email` would file the
+value as contact details instead.
+
+The change-password form is the one where this is load-bearing rather than
+polish. With all three fields marked alike, a password manager cannot tell which
+entry it is filling and which it is updating, and typically fills all three with
+the saved password — the driver then gets a validation error about repeating a
+password they never typed. `frontend/tests/credentialAutocomplete.spec.ts`
+guards every row of the table above.
+
 Three values are deliberately *looser* than the module's defaults, and undoing
 them will break the site:
 

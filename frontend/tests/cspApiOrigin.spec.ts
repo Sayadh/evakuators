@@ -105,10 +105,31 @@ describe('the configuration itself', () => {
     // Remarketing delivers some beacons as fetches and others as image
     // requests, so each host has to appear in both directives — listing one in
     // only one directive blocks half the calls, which is how this was reported.
-    for (const host of ['https://www.google.com', 'https://www.google.am']) {
+    for (const host of [
+      'https://www.google.com',
+      'https://www.google.am',
+      // ad.doubleclick.net/ccm/s/collect is the GA4 Google Signals beacon. It
+      // shares no suffix with any other entry, so it was refused on every page
+      // load until it was listed explicitly — two console errors per view, with
+      // the measurement half unaffected because that goes to
+      // google-analytics.com. Guarded by name so removing it is a decision, not
+      // a tidy-up.
+      'https://ad.doubleclick.net',
+    ]) {
       expect(directive('connect-src'), `${host} missing from connect-src`).toContain(host)
       expect(directive('img-src'), `${host} missing from img-src`).toContain(host)
     }
+  })
+
+  it('does not admit doubleclick.net by wildcard', () => {
+    // The narrow host is the point: `*.doubleclick.net` would admit every
+    // ad-serving subdomain Google operates in order to unblock one beacon.
+    //
+    // Asserted against the QUOTED form, which is the only shape a policy entry
+    // can take — the prose above the entry names the wildcard in order to
+    // reject it, and a bare substring check would fail on that comment.
+    const config = read('nuxt.config.ts')
+    expect(config).not.toContain("'https://*.doubleclick.net'")
   })
 
   it('allows analytics.google.com itself, not only its subdomains', () => {

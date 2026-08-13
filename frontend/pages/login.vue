@@ -104,6 +104,11 @@ async function submit(): Promise<void> {
         </p>
 
         <form class="login-form" @submit.prevent="submit">
+          <!-- A driver's identifier IS their phone number, so this field is
+               both. `username` (not `tel`) is the token that pairs it with the
+               password below for a password manager; the `type="tel"` keeps
+               the numeric keypad on a phone, which is the part that matters
+               for someone standing next to a truck. -->
           <AppInput
             v-model="phoneModel"
             type="tel"
@@ -111,8 +116,15 @@ async function submit(): Promise<void> {
             placeholder="+37491000001"
             required
             :maxlength="12"
+            autocomplete="username"
           />
-          <AppInput v-model="password" type="password" label="Գաղտնաբառ" required />
+          <AppInput
+            v-model="password"
+            type="password"
+            label="Գաղտնաբառ"
+            required
+            autocomplete="current-password"
+          />
           <p v-if="error" class="login-error">{{ error }}</p>
           <AppButton type="submit" variant="success" block :disabled="submitting">
             {{ submitting ? 'Ստուգվում է…' : 'Մուտք' }}

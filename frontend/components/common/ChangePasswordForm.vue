@@ -92,14 +92,33 @@ async function submit(): Promise<void> {
       Ձեր սեփական գաղտնաբառը։
     </p>
 
+    <!-- The distinction that makes this form behave: the first field is the
+         password already saved (`current-password`), the two below are the
+         replacement (`new-password`). Marked identically, a password manager
+         cannot tell which entry to fill and which to update, and typically
+         fills all three with the old one — which then fails validation with a
+         message about repeating the password the driver never typed. -->
     <AppInput
       v-model="currentPassword"
       type="password"
       :label="forced ? 'Ժամանակավոր գաղտնաբառ' : 'Ընթացիկ գաղտնաբառ'"
       required
+      autocomplete="current-password"
     />
-    <AppInput v-model="newPassword" type="password" label="Նոր գաղտնաբառ" required />
-    <AppInput v-model="repeatPassword" type="password" label="Կրկնեք նոր գաղտնաբառը" required />
+    <AppInput
+      v-model="newPassword"
+      type="password"
+      label="Նոր գաղտնաբառ"
+      required
+      autocomplete="new-password"
+    />
+    <AppInput
+      v-model="repeatPassword"
+      type="password"
+      label="Կրկնեք նոր գաղտնաբառը"
+      required
+      autocomplete="new-password"
+    />
 
     <p v-if="error" class="change-password__error" role="alert">{{ error }}</p>
     <p v-else-if="success" class="change-password__success" role="status">

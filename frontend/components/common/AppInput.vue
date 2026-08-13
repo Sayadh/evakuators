@@ -1,4 +1,28 @@
 <script setup lang="ts">
+/**
+ * The `autocomplete` values this app has a use for, spelled as the HTML spec
+ * spells them. A union rather than a bare `string` because every one of these
+ * is a token a browser either recognises exactly or ignores entirely — a typo
+ * (`current_password`, `newPassword`) is not an error anywhere, it just
+ * silently turns the hint off again, which is the bug this prop exists to fix.
+ *
+ * `off` is included and is the honest value for a field that must never be
+ * remembered — but note browsers increasingly ignore `off` on password fields
+ * specifically, so it is a request, not a guarantee.
+ */
+type AutocompleteToken =
+  | 'off'
+  | 'name'
+  | 'given-name'
+  | 'family-name'
+  | 'organization'
+  | 'email'
+  | 'tel'
+  | 'username'
+  | 'current-password'
+  | 'new-password'
+  | 'one-time-code'
+
 interface Props {
   modelValue: string
   label?: string
@@ -7,6 +31,18 @@ interface Props {
   required?: boolean
   error?: string
   maxlength?: number
+  /**
+   * Left undefined by default, which renders no attribute at all and lets the
+   * browser guess — right for the many ordinary fields here (a truck's plate
+   * number, a price) that no autofill category describes.
+   *
+   * It is NOT right for a credential field, and that is why this prop exists.
+   * Without it a password manager cannot tell a login password from a new one,
+   * so it either offers nothing or offers to overwrite a saved entry from the
+   * change-password form. Chrome also logs a DOM warning naming the exact
+   * token it expected. Every credential field in this app now passes one.
+   */
+  autocomplete?: AutocompleteToken
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -16,6 +52,7 @@ const props = withDefaults(defineProps<Props>(), {
   required: false,
   error: undefined,
   maxlength: undefined,
+  autocomplete: undefined,
 })
 
 const emit = defineEmits<{ 'update:modelValue': [value: string]; blur: [] }>()
@@ -113,6 +150,7 @@ function onKeydown(event: KeyboardEvent): void {
       :placeholder="placeholder"
       :required="required"
       :maxlength="maxlength"
+      :autocomplete="autocomplete"
       :aria-invalid="Boolean(error)"
       @input="onInput"
       @blur="emit('blur')"

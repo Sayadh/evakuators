@@ -16,6 +16,7 @@ import { composeLocationName, placementFor } from '~/utils/primaryArea'
 import { buildRegistrationPayload } from '~/utils/registrationPayload'
 import {
   createRegistrationFormState,
+  numberFieldText,
   validateRegistrationForm,
 } from '~/utils/registrationForm'
 
@@ -132,9 +133,6 @@ watch(
 
 /* ── Load ── */
 
-/** A number back to the text an <input> holds — an unanswered price stays empty */
-const optionalNumberText = (value?: number): string => (value === undefined ? '' : String(value))
-
 /** Fills the shared form from the stored request — every field, unchanged */
 function fillForm(data: AdminRegistrationRequest): void {
   Object.assign(form, createRegistrationFormState(), {
@@ -151,10 +149,11 @@ function fillForm(data: AdminRegistrationRequest): void {
     year: String(data.vehicleYear),
     vehicleType: data.vehicleType,
     capacity: data.capacityRange,
-    // Numbers back to the strings the inputs hold. `?? ''` and not `String(x ?? '')`
-    // so an unanswered dimension stays empty rather than becoming "undefined".
-    platformLengthM: data.platformLengthM === undefined ? '' : String(data.platformLengthM),
-    platformWidthM: data.platformWidthM === undefined ? '' : String(data.platformWidthM),
+    // `numberFieldText`, not `String(...)`: an unanswered number arrives as
+    // null or as 0, and both have to render as an empty box or the form
+    // refuses to submit on a field nobody filled in. See the helper.
+    platformLengthM: numberFieldText(data.platformLengthM),
+    platformWidthM: numberFieldText(data.platformWidthM),
     winch: data.winch,
     manipulator: data.manipulator,
     wheelSkates: data.wheelSkates,
@@ -166,11 +165,11 @@ function fillForm(data: AdminRegistrationRequest): void {
     // empty box. See resolveApprovalCoordinates on the backend.
     coordinates: formatCoordinates(data.latitude, data.longitude),
     services: [...data.services],
-    priceCityCallout: optionalNumberText(data.priceCityCallout),
-    pricePerKm: optionalNumberText(data.pricePerKm),
-    priceWaitingPerHour: optionalNumberText(data.priceWaitingPerHour),
-    priceNightSurchargePercent: optionalNumberText(data.priceNightSurchargePercent),
-    priceExtraLoading: optionalNumberText(data.priceExtraLoading),
+    priceCityCallout: numberFieldText(data.priceCityCallout),
+    pricePerKm: numberFieldText(data.pricePerKm),
+    priceWaitingPerHour: numberFieldText(data.priceWaitingPerHour),
+    priceNightSurchargePercent: numberFieldText(data.priceNightSurchargePercent),
+    priceExtraLoading: numberFieldText(data.priceExtraLoading),
   })
 }
 

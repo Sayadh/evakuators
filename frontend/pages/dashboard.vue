@@ -33,6 +33,7 @@ import {
   resolveAreaType,
   YEREVAN_REGION_SLUG,
 } from '~/utils/geography'
+import { numberFieldText } from '~/utils/registrationForm'
 import { toOptionalFloat } from '~/utils/registrationPayload'
 import { isDimension, isPhone, isYear, required, validateField } from '~/utils/validators'
 import { formatWorkingHoursRange, splitWorkingHoursRange } from '~/utils/workingHours'
@@ -324,8 +325,10 @@ function fillFormFromTruck(data: TowTruck): void {
   form.vehicleYear = data.vehicle.year.toString()
   form.vehicleType = data.vehicle.type
   form.capacity = capacityRangeFromTons(data.vehicle.capacityTons)
-  form.platformLengthM = data.vehicle.platformLengthM?.toString() ?? ''
-  form.platformWidthM = data.vehicle.platformWidthM?.toString() ?? ''
+  // See `numberFieldText`: a stored 0 rendered as "0", which `isDimension`
+  // then rejected — so a driver in that state could never save their profile.
+  form.platformLengthM = numberFieldText(data.vehicle.platformLengthM)
+  form.platformWidthM = numberFieldText(data.vehicle.platformWidthM)
   form.winch = data.vehicle.winch
   form.manipulator = data.vehicle.manipulator
   form.wheelSkates = data.vehicle.wheelSkates
@@ -365,11 +368,11 @@ function fillFormFromTruck(data: TowTruck): void {
     ),
   ]
 
-  form.priceCityCallout = data.pricing?.cityCallout?.toString() ?? ''
-  form.pricePerKm = data.pricing?.perKm?.toString() ?? ''
-  form.priceWaitingPerHour = data.pricing?.waitingPerHour?.toString() ?? ''
-  form.priceNightSurchargePercent = data.pricing?.nightSurchargePercent?.toString() ?? ''
-  form.priceExtraLoading = data.pricing?.extraLoading?.toString() ?? ''
+  form.priceCityCallout = numberFieldText(data.pricing?.cityCallout)
+  form.pricePerKm = numberFieldText(data.pricing?.perKm)
+  form.priceWaitingPerHour = numberFieldText(data.pricing?.waitingPerHour)
+  form.priceNightSurchargePercent = numberFieldText(data.pricing?.nightSurchargePercent)
+  form.priceExtraLoading = numberFieldText(data.pricing?.extraLoading)
   existingImages.value = data.imageDetails ? [...data.imageDetails] : []
 
   // The picked-but-not-yet-published photos, cleared here and only here.

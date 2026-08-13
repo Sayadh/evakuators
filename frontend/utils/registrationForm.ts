@@ -80,6 +80,37 @@ export function createRegistrationFormState(): RegistrationFormState {
   }
 }
 
+/**
+ * A stored number back into the text an `<input>` holds.
+ *
+ * Empty for anything that is not a real answer: `null`, `undefined`, or a
+ * **non-positive** number.
+ *
+ * ## Why zero counts as "not answered"
+ *
+ * Every optional numeric field on this form is validated as a positive value —
+ * `isAmount` wants 3-7 digits, `isDimension` wants a length above zero — so a
+ * form pre-filled with `0` refuses to submit, on a field that is not required,
+ * with a message about a value the person never typed. That is what it did:
+ * both the admin review page and the driver's own dashboard turned a stored `0`
+ * into the string `"0"`, and the whole form became unsubmittable. A driver in
+ * that state could not save their profile at all, and a moderator could not
+ * approve the request.
+ *
+ * `0` is also not a price this platform can display. `toTowTruckApi` includes
+ * any non-null value, so a stored zero renders «0 Դ» on the public profile —
+ * which a customer reads as "free", not as "unknown". The honest reading of a
+ * zero here is that nobody answered, so that is how it is shown, and the person
+ * can type a real number if there is one.
+ *
+ * `null` alone was a bug of its own: `String(null)` is `"null"`, which a
+ * `<input type="number">` silently renders as empty and then rejects on submit —
+ * an error on a field that looks blank.
+ */
+export function numberFieldText(value: number | null | undefined): string {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? String(value) : ''
+}
+
 /** Error keys this validator can set — one per field or field pair on the shared form */
 export type RegistrationFormErrors = Record<string, string>
 

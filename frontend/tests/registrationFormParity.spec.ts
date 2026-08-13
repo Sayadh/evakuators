@@ -1,7 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { createRegistrationFormState, validateRegistrationForm } from '~/utils/registrationForm'
+import {
+  createRegistrationFormState,
+  numberFieldText,
+  validateRegistrationForm,
+} from '~/utils/registrationForm'
 
 /**
  * The registration form is filled in by two different people, on two different
@@ -114,6 +118,62 @@ describe('the shared component asks every question', () => {
     for (const wrapper of ['phoneModel', 'secondaryPhoneModel', 'whatsappModel']) {
       expect(fields).toContain(`v-model="${wrapper}"`)
     }
+  })
+})
+
+describe('an optional number that was never answered', () => {
+  // The bug: both forms pre-filled these with `String(value)`, so a stored 0
+  // became "0" and a stored null became "null". Every optional numeric field
+  // here is validated as a POSITIVE value — `isAmount` wants 3-7 digits — so
+  // the form then refused to submit, on fields nobody had filled in, with an
+  // error about a value nobody had typed.
+  //
+  // It blocked both sides: a moderator could not approve the request, and a
+  // driver whose stored price was 0 could never save their profile at all.
+
+  it('renders as an empty box', () => {
+    expect(numberFieldText(null)).toBe('')
+    expect(numberFieldText(undefined)).toBe('')
+    expect(numberFieldText(0)).toBe('')
+  })
+
+  it('renders a real answer unchanged', () => {
+    expect(numberFieldText(7000)).toBe('7000')
+    expect(numberFieldText(5.5)).toBe('5.5')
+  })
+
+  it('refuses a negative or non-finite number, which is not an answer either', () => {
+    expect(numberFieldText(-100)).toBe('')
+    expect(numberFieldText(Number.NaN)).toBe('')
+  })
+
+  it('leaves the form submittable, which is the whole point', () => {
+    // The end-to-end property. A form pre-filled from a request whose optional
+    // numbers are all unset must validate.
+    const errors: Record<string, string> = {}
+    const form = {
+      ...createRegistrationFormState(),
+      firstName: 'Աշոտ',
+      lastName: 'Աշոտյան',
+      phone: '+37491000001',
+      brand: 'Isuzu',
+      year: '2018',
+      vehicleType: 'flatbed',
+      capacity: 'up-to-3',
+      regionSlugs: ['kotayk'],
+      citySlugs: ['abovyan'],
+      services: ['towing'],
+      // Exactly what the pages now produce for an unanswered 0/null.
+      priceCityCallout: numberFieldText(0),
+      pricePerKm: numberFieldText(null),
+      priceWaitingPerHour: numberFieldText(0),
+      priceNightSurchargePercent: numberFieldText(0),
+      priceExtraLoading: numberFieldText(0),
+      platformLengthM: numberFieldText(0),
+      platformWidthM: numberFieldText(null),
+    }
+
+    expect(validateRegistrationForm(form, errors).ok).toBe(true)
   })
 })
 

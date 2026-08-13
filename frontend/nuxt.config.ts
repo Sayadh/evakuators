@@ -19,7 +19,14 @@ export default defineNuxtConfig({
     // the DOM, which is the "flashes to login, then opens" bug. Since this is
     // an internal, noindex-only panel, there's no SEO cost to just rendering
     // it fully client-side instead.
+    //
+    // BOTH patterns, deliberately. `/admin/**` does not match `/admin` itself
+    // (a `**` segment needs something to match), and `/admin` does not cover
+    // its children — so listing one alone would leave the other server-rendered
+    // and reintroduce exactly that flash on half the panel. The review page at
+    // `/admin/registrations/:id` is the reason there are children at all.
     '/admin': { ssr: false },
+    '/admin/**': { ssr: false },
   },
 
   app: {

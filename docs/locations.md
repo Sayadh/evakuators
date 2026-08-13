@@ -73,7 +73,7 @@ Query params: `GET /tow-trucks?zone=<slug>` and `?regionZones=<slug>,<slug>`
 
 - **Picker**: `components/common/ServiceAreaPicker.vue` — each region group
   shows its cities and, if any, its zones as a second sub-list ("Հավելյալ
-  սպասարկման ուղղություններ"). Shared by both `register.vue` and the driver
+  սպասարկման ուղղություններ"). Shared by `RegistrationFormFields.vue` (so both the public form and the admin review page get it) and the driver
   dashboard, same as the rest of that component — see CLAUDE.md § "Manual
   sync points" for why that sharing matters.
 - **Filtering a listing**: `useTowTrucksByZone(zoneSlug)`
@@ -380,7 +380,7 @@ refuses it independently, and both messages point at «Ապաակտիվացնե�
 always name one of the served areas, so removing the area that *is* the
 placement re-points it. Which one to re-point to cannot be decided on the
 backend — picking it means knowing which surviving slug is a settlement and
-which is a road corridor, i.e. geography — so `pages/admin.vue` resolves it with
+which is a road corridor, i.e. geography — so the admin review page resolves it with
 the same "first area that is not a corridor" rule `approve()` and the dashboard
 use, and sends it. The backend cannot *derive* the answer but it does *check*
 it: a placement that is not among the remaining areas is rejected, which needs

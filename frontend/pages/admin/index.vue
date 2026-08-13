@@ -3,7 +3,7 @@ import { FetchError } from 'ofetch'
 import { TELEGRAM_MESSAGE_MAX_LENGTH } from '~/constants/admin'
 import { SERVICE_LABELS } from '~/constants/services'
 import { SITE_NAME } from '~/constants/site'
-import { representativeCapacityTons, VEHICLE_TYPE_LABELS } from '~/constants/vehicles'
+import { VEHICLE_TYPE_LABELS } from '~/constants/vehicles'
 import {
   adminAuthRepository,
   adminRepository,
@@ -13,14 +13,13 @@ import {
   type AdminServiceArea,
   type AdminTowTruck,
   type AdminTowTruckCounts,
-  type ApproveRegistrationPayload,
   type BroadcastCandidate,
   type PasswordCandidate,
 } from '~/repositories'
 import { useAdminAuthStore } from '~/stores/adminAuth'
 import { LocationType, VehicleType } from '~/types/enums'
 import type { ServiceType } from '~/types/enums'
-import { formatCoordinates, parseCoordinates, type Coordinates } from '~/utils/coordinates'
+import { formatCoordinates } from '~/utils/coordinates'
 import { extractErrorMessage } from '~/utils/errors'
 import { formatDateNumeric } from '~/utils/formatters'
 import { armenianPhoneInputValue } from '~/utils/formatPhone'
@@ -28,7 +27,6 @@ import {
   cityOrDistrictLabel,
   findCityLocation,
   findStaticRegion,
-  resolveAreaType,
   YEREVAN_REGION_SLUG,
 } from '~/utils/geography'
 import { composeLocationName, placementFor } from '~/utils/primaryArea'
@@ -400,57 +398,22 @@ async function sendBroadcast(): Promise<void> {
 }
 
 /**
- * Full-size image viewer shared by both the registration-request cards and
- * the tow-truck cards — an admin approving a request needs to actually see
- * what was uploaded, not just a 84×84 thumbnail. One global overlay rather
- * than one per card since only one can ever be open at a time.
+ * Full-size image viewer for the request and tow-truck thumbnail grids — an
+ * admin needs to actually see what was uploaded, not a 84x84 thumbnail.
+ *
+ * The overlay itself is `AdminImageLightbox`, shared with the review page at
+ * `/admin/registrations/:id`. One global instance rather than one per card,
+ * since only one can ever be open at a time.
  */
 const lightboxImages = ref<string[]>([])
 const lightboxIndex = ref(0)
 const lightboxOpen = ref(false)
-
-const lightboxImage = computed(() => lightboxImages.value[lightboxIndex.value] ?? '')
-const lightboxHasMultiple = computed(() => lightboxImages.value.length > 1)
 
 function openLightbox(images: string[], index: number): void {
   lightboxImages.value = images
   lightboxIndex.value = index
   lightboxOpen.value = true
 }
-
-function closeLightbox(): void {
-  lightboxOpen.value = false
-}
-
-function lightboxNext(): void {
-  lightboxIndex.value = (lightboxIndex.value + 1) % lightboxImages.value.length
-}
-
-function lightboxPrev(): void {
-  lightboxIndex.value = (lightboxIndex.value - 1 + lightboxImages.value.length) % lightboxImages.value.length
-}
-
-function onLightboxKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Escape') closeLightbox()
-  else if (event.key === 'ArrowRight' && lightboxHasMultiple.value) lightboxNext()
-  else if (event.key === 'ArrowLeft' && lightboxHasMultiple.value) lightboxPrev()
-}
-
-// A Teleport'd overlay never holds document focus, so a `@keydown` bound on
-// the div itself would never fire — listen on `document` instead (see the
-// same pattern in AppDrawer.vue) and only while the lightbox is actually open.
-watch(lightboxOpen, (open) => {
-  if (!import.meta.client) return
-  document.body.style.overflow = open ? 'hidden' : ''
-  if (open) document.addEventListener('keydown', onLightboxKeydown)
-  else document.removeEventListener('keydown', onLightboxKeydown)
-})
-
-onBeforeUnmount(() => {
-  if (!import.meta.client) return
-  document.body.style.overflow = ''
-  document.removeEventListener('keydown', onLightboxKeydown)
-})
 
 function serviceLabel(slug: string): string {
   return SERVICE_LABELS[slug as ServiceType] ?? slug
@@ -1049,75 +1012,7 @@ watch(statusFilter, () => {
   if (apiEnabled) void loadRegistrations()
 })
 
-/* ── Reject registration ── */
-async function rejectRegistration(request: AdminRegistrationRequest): Promise<void> {
-  if (!confirm(`Մերժե՞լ ${request.firstName} ${request.lastName}-ի հայտը։`)) return
-
-  actioningId.value = request.id
-  try {
-    await adminRepository.rejectRegistration(request.id)
-    await loadRegistrations()
-  } catch (error) {
-    registrationsError.value = extractErrorMessage(error, 'Մերժել չհաջողվեց։')
-  } finally {
-    actioningId.value = null
-  }
-}
-
-/* ── Approve registration (modal form) ── */
-const approveModalOpen = ref(false)
-const approveTarget = ref<AdminRegistrationRequest | null>(null)
-const approveForm = reactive({
-  slug: '',
-  /**
-   * The base, as a chosen slug plus an optional village — not as free text.
-   *
-   * It used to be one `locationName` string an admin typed. That made the
-   * label and the structural placement two independent facts: the text said
-   * «Վարդենիս» while `citySlug` was whatever served area happened to come
-   * first, and nothing tied them together. Now the slug IS the answer and the
-   * label is composed from it, so a card cannot name a town the truck is not
-   * filed under.
-   */
-  primarySlug: '',
-  primarySettlement: '',
-  /**
-   * The base parking coordinates, as the one string Google Maps puts on a
-   * clipboard — `parseCoordinates` splits it on submit.
-   *
-   * Pre-filled from the request when the driver answered, so the usual action
-   * is to read it and move on. It is here at all because approval was the one
-   * moment nobody could see whether there was anything to fix: the pair was
-   * copied across silently, and a profile went live with no marker until
-   * somebody went looking. Correcting it afterwards was always possible; the
-   * gap was knowing to.
-   */
-  coordinates: '',
-  description: '',
-})
-const approveCoordinatesError = ref('')
-
-/** Whether the driver answered the coordinates question at registration */
-const approveHasCoordinates = computed(
-  () =>
-    approveTarget.value?.latitude !== undefined &&
-    approveTarget.value?.longitude !== undefined,
-)
-
-/**
- * What the base picker may offer for the request being approved: the areas the
- * driver asked for, resolved to names here because the request stores bare
- * slugs. Corridors are dropped inside the picker.
- */
-const approveCandidates = computed(() =>
-  (approveTarget.value?.citySlugs ?? []).map((slug) => ({
-    slug,
-    name: cityOrDistrictLabel(slug),
-    type: resolveAreaType(slug),
-  })),
-)
-const approveError = ref('')
-const approveSubmitting = ref(false)
+/* ── Telegram link hand-off (shown after approval and after a reset) ── */
 const telegramLinkModalOpen = ref(false)
 const telegramLinkModalTitle = ref('')
 /**
@@ -1143,134 +1038,6 @@ const LINK_HINT_RESET =
   'Գաղտնաբառը ջնջված է — վարորդն այս պահին մուտք գործել չի կարող։ Ուղարկիր այս link-ը ' +
   'իրեն (Telegram/WhatsApp-ով կամ գրանցման հեռախոսահամարին). սեղմելուց հետո Telegram-ում ' +
   'կստանա նոր ժամանակավոր գաղտնաբառ։ Link-ը վավեր է 7 օր։'
-
-function openApprove(request: AdminRegistrationRequest): void {
-  approveTarget.value = request
-  approveForm.slug = ''
-  /**
-   * Deliberately NOT pre-filled from the driver's first area.
-   *
-   * That used to be the suggestion, and because it was already filled in it was
-   * usually just accepted — which made "the box the driver happened to tick
-   * first" decide where the truck is based. It now decides ranking on that
-   * town's page too, so an empty select that refuses to submit is the honest
-   * default: the one person who knows the answer is asked for it.
-   */
-  approveForm.primarySlug = ''
-  approveForm.primarySettlement = ''
-  // Pre-filled, unlike the base above: this one the driver may already have
-  // answered, and an admin re-typing a correct pair by hand is a way to get it
-  // wrong. Empty means they skipped it — which the dialog says out loud.
-  approveForm.coordinates = formatCoordinates(request.latitude, request.longitude)
-  approveForm.description = ''
-  approveCoordinatesError.value = ''
-  approveError.value = ''
-  approveModalOpen.value = true
-}
-
-async function submitApprove(): Promise<void> {
-  if (!approveTarget.value) return
-
-  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(approveForm.slug)) {
-    approveError.value = 'Slug-ը պետք է լինի լատինատառ, kebab-case (օր.՝ ashot-tow-service)'
-    return
-  }
-  if (!approveForm.primarySlug) {
-    approveError.value = 'Ընտրեք հիմնական քաղաքը կամ Երևանի շրջանը'
-    return
-  }
-
-  /**
-   * Coordinates stay optional at approval, exactly as they are at registration.
-   * A driver who could not manage the copy-paste is better approved without a
-   * marker than blocked behind one — the honest empty is what the registration
-   * form already tells them to leave (see CoordinatesInput's fallback note).
-   *
-   * So: blank means "send nothing", and the backend keeps whatever the request
-   * held. Non-blank has to parse, and is sent as two numbers.
-   */
-  approveCoordinatesError.value = ''
-  let coordinates: Coordinates | undefined
-
-  if (approveForm.coordinates.trim()) {
-    const parsed = parseCoordinates(approveForm.coordinates)
-    if (!parsed.ok) {
-      approveCoordinatesError.value = parsed.error
-      return
-    }
-    // Destructured rather than assigned whole: on success the result IS the
-    // pair plus an `ok` flag, and passing that through would put `ok: true`
-    // into the request body — which `forbidNonWhitelisted` rejects outright.
-    coordinates = { latitude: parsed.latitude, longitude: parsed.longitude }
-  }
-
-  // A request can now carry up to 2 regionSlugs (e.g. Yerevan + Kotayk), so
-  // citySlugs can be a MIX of real cities and Yerevan districts — a single
-  // "isYerevan" flag for the whole request would mislabel half of them.
-  // Each slug's own type has to be resolved individually instead.
-  // resolveAreaType, not a local two-branch guess: with road corridors in the
-  // mix, "anything that isn't a district is a city" would label
-  // «Գառնի–Գեղարդ» a city and drop it into city search results.
-
-  // The driver already gave us everything else at registration — capacity as
-  // a range (see representativeCapacityTons) and the full service-area list
-  // (citySlugs). The admin adds what registration cannot provide: a unique
-  // slug, and which one of those areas the truck is actually BASED in.
-  //
-  // That base used to be inferred right here — "the first served area that is
-  // not a corridor" — which is arbitrary (it is whatever order the driver
-  // ticked boxes in) and, once city pages started ranking locally-based drivers
-  // first, arbitrary in a way customers see. It is now an explicit choice, and
-  // `placementFor` turns it into the three columns so this path and the
-  // per-truck editor cannot resolve them differently.
-  const placement = placementFor(approveForm.primarySlug)
-  const primaryName = cityOrDistrictLabel(approveForm.primarySlug)
-
-  // No platform dimensions in this payload: the request stores them as the
-  // same two Float columns the TowTruck does, so AdminService.approve() copies
-  // them across directly. Nothing to parse and nothing for this form to ask.
-  const payload: ApproveRegistrationPayload = {
-    slug: approveForm.slug,
-    capacityTons: representativeCapacityTons(approveTarget.value.capacityRange),
-    // Composed, never typed: the backend has no geography and cannot rebuild
-    // «Վարդենիս» from `vardenis`, so this string is stored exactly as sent.
-    locationName: composeLocationName(primaryName, approveForm.primarySettlement),
-    description: approveForm.description.trim() || undefined,
-    ...placement,
-    // Spread, so a blank box omits both keys entirely rather than sending two
-    // `undefined`s — which is how the backend tells "keep the driver's pair"
-    // apart from "the admin cleared it".
-    ...(coordinates ?? {}),
-    // Resolve each slug to its real Armenian name here — the backend has no
-    // geography data of its own (see schema.prisma), so if we sent raw
-    // slugs it would just store them as-is and the public profile would
-    // show "ashtarak" instead of "Աշտարակ".
-    serviceAreas: approveTarget.value.citySlugs.map((slug) => ({
-      slug,
-      name: cityOrDistrictLabel(slug),
-      type: resolveAreaType(slug),
-    })),
-  }
-
-  approveSubmitting.value = true
-  approveError.value = ''
-  try {
-    const result = await adminRepository.approveRegistration(approveTarget.value.id, payload)
-    approveModalOpen.value = false
-    // Approving is the one action that CREATES a truck, so the totals move.
-    await Promise.all([loadRegistrations(), loadTowTruckCounts()])
-
-    telegramLinkUrl.value = result.telegramLinkUrl
-    telegramLinkCopied.value = false
-    telegramLinkModalTitle.value = 'Պրոֆիլը ստեղծված է'
-    telegramLinkModalHint.value = LINK_HINT_ONBOARDING
-    telegramLinkModalOpen.value = true
-  } catch (error) {
-    approveError.value = extractErrorMessage(error, 'Հաստատել չհաջողվեց, ստուգիր դաշտերը։')
-  } finally {
-    approveSubmitting.value = false
-  }
-}
 
 async function copyTelegramLink(): Promise<void> {
   try {
@@ -1463,22 +1230,20 @@ async function rejectReview(review: AdminReview): Promise<void> {
 
             <footer class="admin-card__footer">
               <span class="admin-card__muted">{{ formatDate(request.createdAt) }}</span>
+              <!-- One way in, deliberately. Approving used to be a dialog on
+                   this card with four fields in it, which meant a moderator
+                   decided on a driver from a five-line summary and could not
+                   correct anything they noticed. Everything now happens on the
+                   request's own page, where the whole profile is visible and
+                   editable — including rejection, so that the decision to say
+                   no is made from the same view as the decision to say yes. -->
               <div v-if="request.status === 'PENDING'" class="admin-card__actions">
                 <AppButton
-                  variant="outline"
-                  size="sm"
-                  :disabled="actioningId === request.id"
-                  @click="rejectRegistration(request)"
-                >
-                  Մերժել
-                </AppButton>
-                <AppButton
+                  :to="`/admin/registrations/${request.id}`"
                   variant="success"
                   size="sm"
-                  :disabled="actioningId === request.id"
-                  @click="openApprove(request)"
                 >
-                  Հաստատել
+                  Բացել և ստուգել
                 </AppButton>
               </div>
             </footer>
@@ -1900,61 +1665,6 @@ async function rejectReview(review: AdminReview): Promise<void> {
       </section>
     </template>
 
-    <AppModal v-model="approveModalOpen" title="Հաստատել հայտը">
-      <form class="approve-form" @submit.prevent="submitApprove">
-        <AppInput
-          v-model="approveForm.slug"
-          label="Slug (latin, kebab-case)"
-          placeholder="ashot-tow-service"
-          required
-        />
-        <!-- Only the areas this driver asked to serve are offered — a base
-             they do not serve would rank them first on that town's page while
-             being the one driver who never agreed to go there. -->
-        <PrimaryAreaPicker
-          v-model:slug="approveForm.primarySlug"
-          v-model:settlement="approveForm.primarySettlement"
-          :candidates="approveCandidates"
-        />
-        <!-- Stated either way. Approval was the one moment nobody could see
-             whether the driver had sent a marker: the pair was copied across
-             silently, so a profile went live without one and it surfaced only
-             when someone went looking. Correcting it afterwards was always
-             possible — knowing to was the gap. -->
-        <div class="approve-form__coordinates">
-          <p class="approve-form__coordinates-status">
-            <AppBadge :variant="approveHasCoordinates ? 'success' : 'neutral'">
-              {{ approveHasCoordinates ? 'Կոորդինատները նշված են' : 'Կոորդինատները նշված չեն' }}
-            </AppBadge>
-            <span v-if="!approveHasCoordinates" class="admin-card__muted">
-              Վարորդը բաց է թողել այս դաշտը գրանցման ժամանակ։ Կարող եք լրացնել հիմա կամ ավելի ուշ։
-            </span>
-          </p>
-
-          <!-- showGuidance off: the five "open Google Maps" steps are written
-               for a driver doing this on their own phone, and telling an admin
-               "an administrator will help you" reads as a bug.
-               required off: a driver who could not manage the copy-paste is
-               better approved without a marker than blocked behind one, which
-               is the same call registration makes. -->
-          <CoordinatesInput
-            v-model="approveForm.coordinates"
-            :show-guidance="false"
-            :required="false"
-            :error="approveCoordinatesError"
-          />
-        </div>
-
-        <AppInput v-model="approveForm.description" label="Նկարագրություն (ոչ պարտադիր)" />
-
-        <p v-if="approveError" class="admin-error">{{ approveError }}</p>
-
-        <AppButton type="submit" variant="success" block :disabled="approveSubmitting">
-          {{ approveSubmitting ? 'Հաստատվում է…' : 'Հաստատել և ստեղծել պրոֆիլ' }}
-        </AppButton>
-      </form>
-    </AppModal>
-
     <!-- The very same dialog the driver sees in /dashboard, pointed at this
          truck's admin endpoint. `show-guidance` is off because the Google Maps
          tutorial and the "an administrator will help you" note are both aimed
@@ -2130,46 +1840,11 @@ async function rejectReview(review: AdminReview): Promise<void> {
       </p>
     </AppModal>
 
-    <Teleport to="body">
-      <div
-        v-if="lightboxOpen"
-        class="admin-lightbox"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Նկարի մեծացված տեսք"
-        @click.self="closeLightbox"
-      >
-        <button type="button" class="admin-lightbox__close" aria-label="Փակել" @click="closeLightbox">
-          <AppIcon name="close" :size="26" />
-        </button>
-
-        <button
-          v-if="lightboxHasMultiple"
-          type="button"
-          class="admin-lightbox__nav admin-lightbox__nav--prev"
-          aria-label="Նախորդ նկարը"
-          @click.stop="lightboxPrev"
-        >
-          <AppIcon name="chevron-left" :size="28" />
-        </button>
-
-        <img :src="lightboxImage" alt="" class="admin-lightbox__img" @click.stop>
-
-        <button
-          v-if="lightboxHasMultiple"
-          type="button"
-          class="admin-lightbox__nav admin-lightbox__nav--next"
-          aria-label="Հաջորդ նկարը"
-          @click.stop="lightboxNext"
-        >
-          <AppIcon name="chevron-right" :size="28" />
-        </button>
-
-        <p v-if="lightboxHasMultiple" class="admin-lightbox__count">
-          {{ lightboxIndex + 1 }} / {{ lightboxImages.length }}
-        </p>
-      </div>
-    </Teleport>
+    <AdminImageLightbox
+      v-model="lightboxOpen"
+      :images="lightboxImages"
+      :start-index="lightboxIndex"
+    />
   </div>
 </template>
 
@@ -2655,88 +2330,4 @@ async function rejectReview(review: AdminReview): Promise<void> {
   font-size: 0.9rem;
 }
 
-/* Shared full-size viewer for the request/tow-truck thumbnail grids above —
-   see TowTruckGallery.vue's lightbox for the same pattern on the public site. */
-.admin-lightbox {
-  position: fixed;
-  inset: 0;
-  z-index: 200;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(8, 18, 30, 0.92);
-
-  &__img {
-    max-width: min(92vw, 1100px);
-    max-height: 86vh;
-    object-fit: contain;
-    border-radius: var(--radius-sm);
-  }
-
-  &__close {
-    position: absolute;
-    top: var(--space-4);
-    right: var(--space-4);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    border: none;
-    background: rgba(255, 255, 255, 0.12);
-    color: #fff;
-    cursor: pointer;
-
-    &:hover {
-      background: rgba(255, 255, 255, 0.22);
-    }
-  }
-
-  &__nav {
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    border: none;
-    background: rgba(255, 255, 255, 0.12);
-    color: #fff;
-    cursor: pointer;
-
-    &:hover {
-      background: rgba(255, 255, 255, 0.22);
-    }
-
-    &--prev {
-      left: var(--space-3);
-    }
-
-    &--next {
-      right: var(--space-3);
-    }
-
-    @media (min-width: 640px) {
-      width: 52px;
-      height: 52px;
-    }
-  }
-
-  &__count {
-    position: absolute;
-    bottom: var(--space-4);
-    left: 50%;
-    transform: translateX(-50%);
-    margin: 0;
-    padding: 4px 12px;
-    border-radius: var(--radius-sm);
-    background: rgba(255, 255, 255, 0.12);
-    color: #fff;
-    font-size: 0.85rem;
-  }
-}
 </style>

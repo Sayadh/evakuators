@@ -65,30 +65,58 @@ export class AdminService {
   }
 
   /**
+   * One request, for the review page at `/admin/registrations/:id`.
+   *
+   * That page is a real URL an admin can bookmark, reload, or open in a second
+   * tab, so it cannot be served out of whatever the list happened to have in
+   * memory — a refresh would land on an empty form. It also cannot reuse the
+   * list endpoint with a filter: the list is paginated and status-filtered, so
+   * a request that has scrolled past page one, or that an admin reached from a
+   * non-PENDING tab, would simply not be in the response.
+   *
+   * Same shape as one element of the list — one mapper, so the page and the
+   * card can never disagree about what a field means.
+   */
+  async getRegistration(id: number): Promise<AdminRegistrationSummary> {
+    const request = await this.prisma.registrationRequest.findUnique({
+      where: { id },
+      // Driver's own order — main photo first (see IMAGE_ORDER)
+      include: { images: { orderBy: IMAGE_ORDER } },
+    })
+    if (!request) throw new NotFoundException(`Հայտ #${id}-ը չի գտնվել`)
+
+    return toAdminRegistrationSummary(request)
+  }
+
+  /**
    * Which coordinate pair an approval writes.
    *
-   * Three outcomes, and the first is the overwhelmingly common one:
+   * The pair is simply what the moderator submitted, because the review page
+   * shows it to them — pre-filled from the request when the driver answered,
+   * blank when they skipped it — and submits the box as it stands.
    *
-   * - **Neither key sent** → the driver's own pair, copied across untouched
-   *   exactly as it always was. Nothing about the existing flow changes for a
-   *   moderator who does not open the coordinate box.
-   * - **Both sent** → the moderator's, subject to the same two checks a driver's
-   *   pair gets: the DTO already proved they are numbers in range, and
-   *   `assertWithinArmenia` is the geography half. An admin is not exempt —
-   *   a transposed pair from an admin lands a truck in the Indian Ocean just as
+   * That is a real change from how this worked. While approval was a yes/no on
+   * a record, omitting both keys had to mean "keep the driver's pair", since
+   * there was no form to show the moderator what they were keeping. Now there
+   * is, so omission means what it says: the box is empty, this truck has no
+   * base marker yet, and the driver can add one from their dashboard. Reading
+   * a stored value the moderator was looking at an empty box for would be the
+   * surprising behaviour.
+   *
+   * Two rules survive unchanged:
+   *
+   * - **One key without the other** → rejected. Half a coordinate is neither
+   *   "has a location" nor "has none" for every reader downstream, and silently
+   *   dropping the stray half would hide a broken client instead of reporting
+   *   it. Same rule, same wording as `RegistrationService`.
+   * - **A pair outside Armenia** → rejected. An admin is not exempt: a
+   *   transposed pair from an admin lands a truck in the Indian Ocean just as
    *   readily as one from a driver.
-   * - **One sent** → rejected. Half a coordinate is neither "has a location"
-   *   nor "has none" for every reader downstream, and silently dropping the
-   *   stray half would hide a broken client instead of reporting it. Same rule,
-   *   same wording as `RegistrationService`.
-   *
-   * There is no way to *clear* a pair here, deliberately — the same decision
-   * `SetCoordinatesDto` documents. A location only ever gets corrected.
    */
-  private resolveApprovalCoordinates(
-    dto: ApproveRegistrationDto,
-    request: { latitude: Prisma.Decimal | null; longitude: Prisma.Decimal | null },
-  ): { latitude: Prisma.Decimal | number | null; longitude: Prisma.Decimal | number | null } {
+  private resolveApprovalCoordinates(dto: ApproveRegistrationDto): {
+    latitude: number | null
+    longitude: number | null
+  } {
     const hasLatitude = dto.latitude !== undefined
     const hasLongitude = dto.longitude !== undefined
 
@@ -98,9 +126,7 @@ export class AdminService {
       )
     }
 
-    if (!hasLatitude) {
-      return { latitude: request.latitude, longitude: request.longitude }
-    }
+    if (!hasLatitude) return { latitude: null, longitude: null }
 
     assertWithinArmenia(dto.latitude as number, dto.longitude as number)
 
@@ -110,7 +136,26 @@ export class AdminService {
     return { latitude: dto.latitude as number, longitude: dto.longitude as number }
   }
 
-  /** Turns an approved request into a live TowTruck profile */
+  /**
+   * Turns a reviewed request into a live TowTruck profile.
+   *
+   * ## The DTO is the profile, the stored request is the audit trail
+   *
+   * Every column a person can answer is written from `dto`, never from
+   * `request`. The moderator has just been looking at the whole profile on
+   * `/admin/registrations/:id`, pre-filled from the request and editable, so
+   * what they submitted is by definition what they intend to publish —
+   * including the fields they did not touch, which arrive back unchanged.
+   *
+   * Reading `request` for some columns and `dto` for others is precisely the
+   * bug this shape exists to prevent: it would mean a moderator could correct a
+   * misspelt surname on screen, press Approve, and watch the original get
+   * published anyway, with nothing on the page to explain why.
+   *
+   * Only three things still come off the stored row, and none of them is
+   * editable on the page: the **photos** (uploaded by the driver, re-pointed at
+   * the new truck below), the request's own **id/status**, and nothing else.
+   */
   async approve(
     id: number,
     dto: ApproveRegistrationDto,
@@ -132,10 +177,15 @@ export class AdminService {
     // truck's phone to be reused would silently break the moment that truck
     // is reactivated (two ACTIVE trucks sharing one login phone). A
     // secondary phone is allowed to repeat, only the main one is guarded.
-    const phoneConflict = await this.towTrucksRepository.findByMainPhoneAnyStatus(request.phone)
+    //
+    // `dto.phone`, not `request.phone`. The moderator can correct the number on
+    // the review page, and correcting a mistyped one is among the commonest
+    // reasons to edit a request at all — checking the stored value would reject
+    // a number the admin just fixed, or admit a duplicate they just introduced.
+    const phoneConflict = await this.towTrucksRepository.findByMainPhoneAnyStatus(dto.phone)
     if (phoneConflict) {
       throw new BadRequestException(
-        `Այս հեռախոսահամարով (${request.phone}) արդեն կա էվակուատոր՝ «${phoneConflict.slug}» (${phoneConflict.isActive ? 'ակտիվ' : 'ապաակտիվացված'})։ Հիմնական հեռախոսահամարը պետք է եզակի լինի։`,
+        `Այս հեռախոսահամարով (${dto.phone}) արդեն կա էվակուատոր՝ «${phoneConflict.slug}» (${phoneConflict.isActive ? 'ակտիվ' : 'ապաակտիվացված'})։ Հիմնական հեռախոսահամարը պետք է եզակի լինի։`,
       )
     }
 
@@ -156,19 +206,26 @@ export class AdminService {
     // could only apply a bound (its payload has no types), so a crafted
     // submission that slipped past it is stopped here instead — before anything
     // is published, and with a message the admin can act on.
-    // The region list comes from the **stored request**, never from the request
-    // body. It tells 3-for-one-marz from 5-for-two, which the typed areas alone
-    // cannot — and taking it from the DTO would let a caller assert two marzes
-    // to unlock the looser budget for a selection that is really one. The
-    // driver's own submission is already on disk here; there is no reason to ask
-    // the client to repeat it.
+    // The region list now comes from the **submitted body**, which is a
+    // deliberate reversal of how this read.
+    //
+    // It used to take the stored request's list on the grounds that a caller
+    // asserting "two marzes" could unlock the looser budget (5 areas instead of
+    // 3) for a selection that is really one. That guard assumed the regions
+    // were fixed by the time anyone approved. They are not any more: the review
+    // page lets a moderator narrow a driver from two marzes to one, and reading
+    // the stored list would then measure a selection that no longer exists —
+    // handing out the two-marz budget for a one-marz truck. The submitter here
+    // is an authenticated admin, not an anonymous form, so the assertion the
+    // old guard defended against is one this caller is entitled to make.
     //
     // Requests predating `regionSlugs` carry an empty array. That is "unknown",
     // not "zero regions", so it degrades to the loose bound rather than being
-    // read as one marz and rejecting a perfectly valid old submission.
+    // read as one marz and rejecting a perfectly valid old submission — and the
+    // same holds if a body somehow arrives with none.
     assertServiceAreasWithinLimit(
       dto.serviceAreas,
-      request.regionSlugs.length > 0 ? request.regionSlugs : undefined,
+      dto.regionSlugs.length > 0 ? dto.regionSlugs : undefined,
     )
 
     // The placement the moderator picked must be one of the areas being
@@ -179,9 +236,9 @@ export class AdminService {
     // is a choice that can be mistaken, so it is checked.
     assertPlacementIsServed(dto.serviceAreas, dto)
 
-    // The coordinate pair the truck will be created with. Omitting both keys —
-    // the normal case — keeps whatever the driver sent at registration.
-    const coordinates = this.resolveApprovalCoordinates(dto, request)
+    // The coordinate pair the truck will be created with — the box exactly as
+    // the moderator left it. See resolveApprovalCoordinates.
+    const coordinates = this.resolveApprovalCoordinates(dto)
 
     // Resolved to real Armenian names by the admin frontend (no geography
     // data lives in the backend) — see ServiceAreaDto in approve-registration.dto.ts
@@ -191,48 +248,50 @@ export class AdminService {
       type: area.type,
     })) satisfies Prisma.InputJsonValue
 
-    const towTruck = await this.createTowTruckOrRethrowPhoneConflict(request.phone, () =>
+    const towTruck = await this.createTowTruckOrRethrowPhoneConflict(dto.phone, () =>
       this.prisma.$transaction(async (tx) => {
         const created = await tx.towTruck.create({
           data: {
             slug: dto.slug,
-            driverName: `${request.firstName} ${request.lastName}`,
-            companyName: request.companyName,
-            phone: request.phone,
-            secondaryPhone: request.secondaryPhone,
-            // NOT `?? request.phone`. Defaulting it meant every approved truck
+            driverName: `${dto.firstName} ${dto.lastName}`,
+            companyName: dto.companyName,
+            phone: dto.phone,
+            secondaryPhone: dto.secondaryPhone,
+            // NOT `?? dto.phone`. Defaulting it meant every approved truck
             // had a WhatsApp number whether or not the driver uses WhatsApp, so
             // the button showed on every card and profile — sending customers
             // to a chat nobody reads, and firing a "someone opened your
             // WhatsApp" Telegram notice at a driver who has none. An empty
             // field in the registration form means "I don't use WhatsApp";
             // that is the answer, and it is the one we store.
-            whatsapp: request.whatsapp ?? null,
-            telegram: request.telegram,
-            email: request.email,
-            // Derived from the services the driver picked — see service-slugs.ts.
-            // RegistrationRequest never stores this as its own column.
-            works24Hours: request.services.includes(AVAILABLE_24_7_SLUG),
-            workingHoursText: request.workingHoursText,
+            whatsapp: dto.whatsapp ?? null,
+            telegram: dto.telegram,
+            email: dto.email,
+            // Derived from the services on the approved profile — see
+            // service-slugs.ts. Never stored as its own column anywhere, so
+            // un-ticking «24/7» on the review page has to be enough to clear it.
+            works24Hours: dto.services.includes(AVAILABLE_24_7_SLUG),
+            workingHoursText: dto.workingHoursText,
             description: dto.description ?? DEFAULT_DESCRIPTION(dto.locationName),
-            vehicleBrand: request.vehicleBrand,
-            vehicleModel: request.vehicleModel,
-            vehicleYear: request.vehicleYear,
-            vehicleType: request.vehicleType,
+            vehicleBrand: dto.vehicleBrand,
+            vehicleModel: dto.vehicleModel,
+            vehicleYear: dto.vehicleYear,
+            vehicleType: dto.vehicleType,
             capacityTons: dto.capacityTons,
-            // Straight copy, same as winch/manipulator — the request stores these
-            // as the same two Float columns. They used to be one free-text field
-            // that approval never read at all, so the driver's answer was
-            // collected and silently thrown away.
-            platformLengthM: request.platformLengthM,
-            platformWidthM: request.platformWidthM,
-            winch: request.winch,
+            // Two Floats, the same shape the TowTruck stores. They used to be
+            // one free-text field that approval never read at all, so the
+            // driver's answer was collected and silently thrown away.
+            platformLengthM: dto.platformLengthM,
+            platformWidthM: dto.platformWidthM,
+            winch: dto.winch,
             // Derived, not copied — see vehicle-types.ts. Picking the
             // «Մանիպուլյատորով էվակուատոր» type already answers this, and a
             // driver who answered only that way used to be invisible to the
-            // «Մանիպուլյատոր» filter. Same treatment works24Hours gets above.
-            manipulator: derivesManipulator(request.vehicleType, request.manipulator),
-            wheelSkates: request.wheelSkates,
+            // «Մանիպուլյատոր» filter. Same treatment works24Hours gets above,
+            // and derived from the APPROVED answers so that a moderator
+            // changing the vehicle type changes this with it.
+            manipulator: derivesManipulator(dto.vehicleType, dto.manipulator),
+            wheelSkates: dto.wheelSkates,
             // NOT derived, unlike `manipulator` directly above — and the
             // asymmetry is deliberate. This column stores *only what an admin
             // decided*; whether a truck appears on /tsanr-tehnika is the union
@@ -262,13 +321,13 @@ export class AdminService {
             // timestamp for a location that was never set would be a lie —
             // `locationUpdatedAt` is null exactly when the pair is.
             locationUpdatedAt: coordinates.latitude !== null ? new Date() : null,
-            services: request.services,
+            services: dto.services,
             serviceAreas,
-            priceCityCallout: request.priceCityCallout,
-            pricePerKm: request.pricePerKm,
-            priceWaitingPerHour: request.priceWaitingPerHour,
-            priceNightSurchargePercent: request.priceNightSurchargePercent,
-            priceExtraLoading: request.priceExtraLoading,
+            priceCityCallout: dto.priceCityCallout,
+            pricePerKm: dto.pricePerKm,
+            priceWaitingPerHour: dto.priceWaitingPerHour,
+            priceNightSurchargePercent: dto.priceNightSurchargePercent,
+            priceExtraLoading: dto.priceExtraLoading,
           },
         })
 

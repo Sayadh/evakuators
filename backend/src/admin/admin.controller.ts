@@ -40,6 +40,19 @@ export class AdminController {
     return this.adminService.listRegistrations(query)
   }
 
+  /**
+   * One request by id — what the review page loads.
+   *
+   * Declared AFTER the collection route above but before the `:id/approve`
+   * POST, which is only a readability choice: Nest matches on method and full
+   * path, so `GET registration-requests` and `GET registration-requests/:id`
+   * cannot shadow each other the way two same-method patterns could.
+   */
+  @Get('registration-requests/:id')
+  getRegistration(@Param('id', ParseIntPipe) id: number): Promise<AdminRegistrationSummary> {
+    return this.adminService.getRegistration(id)
+  }
+
   @Post('registration-requests/:id/approve')
   approve(
     @Param('id', ParseIntPipe) id: number,

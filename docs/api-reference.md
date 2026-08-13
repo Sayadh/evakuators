@@ -72,14 +72,15 @@ shape, the rating join and the row cap to drift.
 
 | Method | Path | Notes |
 | --- | --- | --- |
+| `GET` | `/admin/registration-requests/:id` | One request, by id — what the review page at `/admin/registrations/:id` loads. Same shape as one element of the list below (one mapper, so the page and the card cannot disagree about a field). Not served from the list endpoint, which is paginated and status-filtered: a request reached by URL, by bookmark or after a reload may be in no page of it |
 | `GET` | `/admin/registration-requests` | Query: `?status=PENDING\|APPROVED\|REJECTED`, `limit` (default 50, max 200), `offset`. Almost the raw Prisma row — the one mapped field is the coordinate pair: `latitude`/`longitude` are `Decimal`, which serialises to a **string** through decimal.js's own `toJSON()`, so they are converted to `number \| undefined` before they reach the wire (`admin-registration.mapper.ts`) |
-| `POST` | `/admin/registration-requests/:id/approve` | Body: `ApproveRegistrationDto` (see `docs/data-model.md`'s `TowTruck` section for what the admin frontend fills in vs. what carries over from the request). `regionSlug`, `platformLengthM`/`platformWidthM` and the `serviceAreas` names are all **resolved/parsed client-side** — the backend has no geography and no dimension parser. The **base** (`citySlug`/`districtSlug` + composed `locationName`) is now chosen by the moderator from that driver's own served areas, not inferred from the first one — see `docs/locations.md` § "The base". `latitude`/`longitude` are optional and mean "the moderator changed the pair": omitting both keeps whatever the driver submitted, which is the normal case; sending one of the two is a 400. → creates `TowTruck`, returns `{ towTruckId, telegramLinkUrl }` |
+| `POST` | `/admin/registration-requests/:id/approve` | Body: `ApproveRegistrationDto` — **the whole profile**, as the moderator last saw it. It extends the same `RegistrationProfileDto` the public form posts, and adds what only the platform can supply: `slug`, `capacityTons`, the base (`citySlug`/`districtSlug` + composed `locationName` + `regionSlug`), `description` and `serviceAreas`. `capacityTons`, `regionSlug` and the `serviceAreas` names are **resolved client-side** — the backend has no taxonomy and no geography. `latitude`/`longitude` are the box exactly as the moderator left it: omitting both means *no location*, not "keep the driver's" (the review page shows them the box), and sending one of the two is a 400. The coverage cap reads `regionSlugs` from **this body**, not the stored request, because the moderator can narrow the marzes on the page. → creates `TowTruck` from the body, re-points the request's photos at it, marks the request `APPROVED` and leaves every other stored column untouched as an audit trail. Returns `{ towTruckId, telegramLinkUrl }` |
 | `POST` | `/admin/registration-requests/:id/reject` | |
 | `GET` | `/admin/reviews` | Pending (`isApproved: false`) only. Query: `limit` (default 50, max 200), `offset` |
 | `POST` | `/admin/reviews/:id/approve` | |
 | `POST` | `/admin/reviews/:id/reject` | Deletes the review row outright |
 | `GET` | `/admin/tow-trucks` | Every truck, active or not (unlike the public `/tow-trucks` list). Query: `limit` (default 50, max 200), `offset` |
-| `GET` | `/admin/tow-trucks/count` | `{ total, active, inactive }` — totals across the **whole table**, independent of the pagination above. `inactive` is `total - active`, never a third `count()`, so the three numbers can't disagree with each other. Declared before every `tow-trucks/:id` route in `admin.controller.ts` so the literal segment `count` can never be swallowed by an `:id` param — see `backend/test/admin.controller.count-route.spec.ts`, which asserts that ordering as a general rule, not just for today's route list. Powers the total shown next to "Էվակուատորներ" in the admin panel (`pages/admin.vue`) |
+| `GET` | `/admin/tow-trucks/count` | `{ total, active, inactive }` — totals across the **whole table**, independent of the pagination above. `inactive` is `total - active`, never a third `count()`, so the three numbers can't disagree with each other. Declared before every `tow-trucks/:id` route in `admin.controller.ts` so the literal segment `count` can never be swallowed by an `:id` param — see `backend/test/admin.controller.count-route.spec.ts`, which asserts that ordering as a general rule, not just for today's route list. Powers the total shown next to "Էվակուատորներ" in the admin panel (`pages/admin/index.vue`) |
 | `PATCH` | `/admin/tow-trucks/:id/active` | Body: `{ isActive: boolean }` — reversible |
 | `PATCH` | `/admin/tow-trucks/:id/featured` | Body: `{ isFeatured: boolean }` — drives the public `GET /tow-trucks/featured` list and the homepage "featured" section |
 | `PATCH` | `/admin/tow-trucks/:id/heavy-equipment` | Body: `{ heavyEquipment: boolean }` — whether this truck appears on `/tsanr-tehnika` (`?vehicleType=heavy-duty` ORs the type with this flag). Unlike `/featured` it changes public listing results. **Admin-only with no driver counterpart** — see `docs/taxonomies.md` § «Ծանր տեխնիկա». The response echoes the **derived** value: a truck whose `vehicleType` is already `heavy-duty` answers `true` whatever was sent, and nothing is written — so the panel must assign what came back, not what it sent |
@@ -99,6 +100,40 @@ shape, the rating join and the row cap to drift.
 | `GET` | `/admin/tow-trucks/:id/analytics/reviews` | |
 | `GET` | `/admin/tow-trucks/:id/analytics/ratings` | |
 | `GET` | `/admin/site-analytics` | Site-wide traffic, no tow truck involved: visits + Free Routes views, each as distinct people and as daily-summed visits, for `?period=` and all time. Also `callers` — distinct people who pressed "Զանգահարել" on ANY truck's profile in the period, plus daily-summed and all-time call totals; read platform-wide from the per-truck analytics tables with no `towTruckId` filter, not from the site-visit tables above. The only report in the analytics module that isn't scoped to a driver, which is why it has its own controller. See `docs/analytics.md` § "Platform-wide active callers" |
+
+### Reviewing a registration
+
+Approval used to be a verdict on a stored record: the body carried four fields
+the registration could not contain (slug, base, coordinates, description) and
+`approve()` copied every other column straight off the `RegistrationRequest`. A
+moderator who spotted a misspelt surname or a phone with a digit missing could
+only approve it wrong and repair it afterwards through half a dozen separate
+PATCH endpoints, or reject a real driver and ask them to type the form again.
+
+It is now a form. `/admin/registrations/:id` renders the registration form
+pre-filled from the request, editable, and **what is submitted is what gets
+created**. Three things follow, and each looks like a bug if you do not know it:
+
+- **The stored request is never edited.** It keeps the driver's original
+  submission verbatim — the only surviving evidence of what was actually sent —
+  and approval changes exactly one field on it, `status`.
+- **There is no draft.** Nothing persists until approval, so leaving the page
+  discards the edits. A half-corrected request is not a state anyone should be
+  able to observe.
+- **Rejecting discards them too**, so a rejected request reads as what the
+  driver sent.
+
+The field parity between the two forms is structural on both sides, because
+nothing else would hold it: one `RegistrationProfileDto` that both
+`CreateRegistrationDto` and `ApproveRegistrationDto` extend, and one
+`RegistrationFormFields.vue` that both `/register` and the review page render.
+Adding a question to either side is one edit; adding it to one form only is not
+expressible. `frontend/tests/registrationFormParity.spec.ts` guards the frontend
+half.
+
+Photos are the one thing the review page cannot change — a moderator neither
+uploads nor replaces them — which is why `imageIds` is on
+`CreateRegistrationDto` alone.
 
 ## List vs detail — two different shapes on purpose
 

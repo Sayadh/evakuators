@@ -1,4 +1,5 @@
 import { apiFetch } from './apiClient'
+import type { RegistrationPayload } from './registration.repository'
 import { useAdminAuthStore } from '~/stores/adminAuth'
 
 /** Mirrors backend RegistrationWithImages (RegistrationRequest & images) */
@@ -45,9 +46,18 @@ export interface AdminRegistrationRequest {
   images: { id: number; url: string }[]
 }
 
-/** Mirrors backend ApproveRegistrationDto */
-export interface ApproveRegistrationPayload {
+/**
+ * Mirrors backend `ApproveRegistrationDto` — the **whole profile**, as the
+ * moderator last saw it on `/admin/registrations/:id`, not a handful of extra
+ * fields bolted onto a stored record.
+ *
+ * `RegistrationPayload` is the driver's half of the same shape (the backend's
+ * shared `RegistrationProfileDto`); this adds what only the platform can
+ * supply, and drops `imageIds`, since the review page cannot change photos.
+ */
+export interface ApproveRegistrationPayload extends Omit<RegistrationPayload, 'imageIds'> {
   slug: string
+  /** Resolved from `capacityRange` by `representativeCapacityTons` — the backend has no taxonomy */
   capacityTons: number
   locationName: string
   citySlug?: string
@@ -59,20 +69,15 @@ export interface ApproveRegistrationPayload {
    * Yerevan, same as before.
    */
   regionSlug?: string
-  // No `regionSlugs`: the coverage cap reads the marzes from the stored
-  // registration request on the backend, not from this payload — see
-  // ApproveRegistrationDto.
   description?: string
   /**
-   * Sent **only when the moderator changed the pair.** Omitting both keys means
-   * "keep what the driver submitted", which is the normal case — the backend
-   * copies the request's own coordinates across.
+   * The coverage list with Armenian names attached, which the inherited
+   * `citySlugs` cannot carry — the backend has no geography to resolve them
+   * with, so whatever is sent here is what a public profile shows forever.
    *
-   * Both or neither; the backend rejects half a pair.
+   * Built FROM `citySlugs` on the review page: one picker on screen produces
+   * both fields, so they cannot describe different sets.
    */
-  latitude?: number
-  longitude?: number
-  /** Resolved Armenian names — the backend has no geography data of its own */
   serviceAreas: { slug: string; name: string; type: 'city' | 'district' | 'route' }[]
 }
 
@@ -263,6 +268,19 @@ export const adminRepository = {
   ): Promise<AdminRegistrationRequest[]> {
     return apiFetch<AdminRegistrationRequest[]>('/admin/registration-requests', {
       query: { ...(status ? { status } : {}), limit: params.limit, offset: params.offset },
+      headers: authHeader(),
+    })
+  },
+
+  /**
+   * One request by id — what the review page loads.
+   *
+   * Not served out of `listRegistrations`: that endpoint is paginated and
+   * status-filtered, so a request an admin reached by URL, by bookmark, or
+   * after a page reload may simply not be in any page of it.
+   */
+  getRegistration(id: number): Promise<AdminRegistrationRequest> {
+    return apiFetch<AdminRegistrationRequest>(`/admin/registration-requests/${id}`, {
       headers: authHeader(),
     })
   },

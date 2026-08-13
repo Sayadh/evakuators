@@ -74,7 +74,7 @@ Two functions bridge them, both in `frontend/constants/vehicles.ts`:
 - `representativeCapacityTons(rangeValue)` — turns a driver's picked band into
   one concrete number (a driver only ever picks a band, never an exact figure).
   The band's `maxTons` if it has one, else `minTons + 2` for the open-ended top
-  band. Called from `frontend/pages/admin.vue`'s `submitApprove()` **and** from
+  band. Called from the admin review page's `approve()` **and** from
   `frontend/pages/dashboard.vue`'s `submit()` — a driver editing their own
   capacity must land on the same number an admin approval would produce, or a
   self-edited truck would start matching a different filter band than an
@@ -139,7 +139,7 @@ Now:
 | Layer | What it does |
 | --- | --- |
 | `hasManipulator()` — `frontend/constants/vehicles.ts` | The union. Used by BOTH `matchesFilters` and the profile's «Մանիպուլյատոր» row, so those two can never disagree again |
-| `register.vue` / `dashboard.vue` | Picking the manipulator type ticks the checkbox and **disables** it — the driver sees the answer instead of being asked twice |
+| `RegistrationFormFields.vue` (registration + admin review) / `dashboard.vue` | Picking the manipulator type ticks the checkbox and **disables** it — the driver sees the answer instead of being asked twice |
 | `derivesManipulator()` — `backend/src/tow-trucks/vehicle-types.ts` | The same union applied on every write (approval and dashboard save), exactly as `works24Hours` is derived from `AVAILABLE_24_7_SLUG`. A disabled checkbox is a hint; this is the boundary |
 
 The frontend union is **not** redundant once the backend derives the column:

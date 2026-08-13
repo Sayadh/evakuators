@@ -1,32 +1,13 @@
 <script setup lang="ts">
 import { imageRepository, isApiEnabled, registrationRepository } from '~/repositories'
 import { SITE_NAME } from '~/constants/site'
-import { SERVICE_CATEGORIES } from '~/constants/services'
-import { validateServiceAreaSelection } from '~/constants/serviceAreaLimits'
-import {
-  CAPACITY_RANGE_OPTIONS,
-  VEHICLE_TYPE_DESCRIPTIONS,
-  VEHICLE_TYPE_OPTIONS,
-} from '~/constants/vehicles'
-// VehicleType is a value import, not `import type`: the manipulator rule below
-// compares against the enum MEMBER, which does not exist at runtime under a
-// type-only import.
-import { ServiceType, VehicleType } from '~/types/enums'
-import type { SelectOption } from '~/types/common'
 import { trackRegistrationSubmit } from '~/utils/analytics'
-import { parseCoordinates, type Coordinates } from '~/utils/coordinates'
+import type { Coordinates } from '~/utils/coordinates'
 import { extractErrorMessage } from '~/utils/errors'
-import { armenianPhoneInputValue } from '~/utils/formatPhone'
 import {
-  isAmount,
-  isEmail,
-  isPercent,
-  isPhone,
-  isDimension,
-  isYear,
-  required,
-  validateField,
-} from '~/utils/validators'
+  createRegistrationFormState,
+  validateRegistrationForm,
+} from '~/utils/registrationForm'
 
 useSeoMetaData({
   title: `Գրանցել էվակուատոր | Միացեք հարթակին անվճար | ${SITE_NAME}`,
@@ -35,108 +16,22 @@ useSeoMetaData({
   path: '/register',
 })
 
-/** Factory (not a shared literal) so resetForm() below can get a fresh,
- * independent copy of the defaults after a successful submission. */
-function createInitialFormState() {
-  return {
-    firstName: '',
-    lastName: '',
-    companyName: '',
-    // Pre-filled and locked to the +374 prefix (see armenianPhoneModel below) —
-    // the driver only ever types the 8 local digits.
-    phone: '+374',
-    secondaryPhone: '',
-    whatsapp: '',
-    telegram: '',
-    email: '',
-    brand: '',
-    model: '',
-    year: '',
-    vehicleType: '' as VehicleType | '',
-    capacity: '' as string,
-    platformLengthM: '',
-    platformWidthM: '',
-    winch: false,
-    manipulator: false,
-    wheelSkates: false,
-    workingHoursStart: '',
-    workingHoursEnd: '',
-    regionSlugs: [] as string[],
-    citySlugs: [] as string[],
-    /** Raw text from the single coordinates box — parsed on submit, never sent as a string */
-    coordinates: '',
-    services: [] as ServiceType[],
-    priceCityCallout: '',
-    pricePerKm: '',
-    priceWaitingPerHour: '',
-    priceNightSurchargePercent: '',
-    priceExtraLoading: '',
-    mainImageName: '',
-    extraImageNames: [] as string[],
-  }
-}
-
-const form = reactive(createInitialFormState())
+/**
+ * The questions themselves live in `RegistrationFormFields.vue`, and their
+ * state and rules in `utils/registrationForm.ts` — both shared with the admin
+ * review page at `/admin/registrations/:id`, which renders this same form
+ * pre-filled and submits the moderator's corrections as the published profile.
+ *
+ * What is left in this page is only what a driver has and a moderator does not:
+ * the photo upload, and the thank-you dialog.
+ */
+const form = reactive(createRegistrationFormState())
 
 const errors = reactive<Record<string, string>>({})
 
-/** "Ծառայություններ" fieldset lets the driver pick 24/7 — hours only make
- * sense to ask about when that isn't selected. */
-const is247 = computed(() => form.services.includes(ServiceType.Available247))
-
-// If they switch to 24/7 after picking custom hours, clear them so a stale
-// value never gets left behind — buildRegistrationPayload ignores them while
-// is247 is true anyway, but empty fields are less confusing to look at.
-watch(is247, (value) => {
-  if (value) {
-    form.workingHoursStart = ''
-    form.workingHoursEnd = ''
-  }
-})
-
-/**
- * «Մանիպուլյատորով էվակուատոր» as a vehicle type already answers «Ունի
- * մանիպուլյատոր», so the checkbox is ticked and locked instead of being asked
- * again.
- *
- * Before this, the two could disagree — and they did: a driver picked the type,
- * left the redundant box alone, and became invisible to the «Մանիպուլյատոր»
- * filter, which is precisely the customer looking for them. `hasManipulator`
- * covers the rows already stored that way; this stops new ones being created.
- *
- * Only forced in one direction. Unticking is not re-enabled when the type
- * changes away, because a flatbed that also carries a crane is a real vehicle:
- * the driver's own `true` stays theirs to keep or clear.
- */
-const isManipulatorType = computed(() => form.vehicleType === VehicleType.Manipulator)
-
-watch(isManipulatorType, (value) => {
-  if (value) form.manipulator = true
-})
-
-const vehicleTypeOptions: SelectOption[] = VEHICLE_TYPE_OPTIONS.map((option) => ({
-  value: option.value as string,
-  label: option.label,
-}))
-
-const vehicleTypeHints = VEHICLE_TYPE_OPTIONS.map((option) => ({
-  label: option.label,
-  description: VEHICLE_TYPE_DESCRIPTIONS[option.value],
-}))
-
-/** v-model wrapper that keeps a phone field locked to +374 + up to 8 digits */
-function armenianPhoneModel(key: 'phone' | 'secondaryPhone' | 'whatsapp') {
-  return computed<string>({
-    get: () => form[key],
-    set: (value) => {
-      form[key] = armenianPhoneInputValue(value)
-    },
-  })
-}
-
-const phoneModel = armenianPhoneModel('phone')
-const secondaryPhoneModel = armenianPhoneModel('secondaryPhone')
-const whatsappModel = armenianPhoneModel('whatsapp')
+/** Photo filenames, page-local: they are not part of the shared form state
+ * because the review page has nothing to upload — see RegistrationFormFields. */
+const imageNames = reactive({ main: '', extra: [] as string[] })
 
 const MAX_EXTRA_IMAGES = 5
 
@@ -174,7 +69,7 @@ const extraImagePreviews = ref<string[]>([])
 function onMainImageChange(event: Event): void {
   const input = event.target as HTMLInputElement
   mainImageFile.value = input.files?.[0] ?? null
-  form.mainImageName = mainImageFile.value?.name ?? ''
+  imageNames.main = mainImageFile.value?.name ?? ''
   resetUploadedImages()
 
   if (mainImagePreview.value) URL.revokeObjectURL(mainImagePreview.value)
@@ -184,7 +79,7 @@ function onMainImageChange(event: Event): void {
 function onExtraImagesChange(event: Event): void {
   const input = event.target as HTMLInputElement
   extraImageFiles.value = Array.from(input.files ?? []).slice(0, MAX_EXTRA_IMAGES)
-  form.extraImageNames = extraImageFiles.value.map((file) => file.name)
+  imageNames.extra = extraImageFiles.value.map((file) => file.name)
   resetUploadedImages()
 
   extraImagePreviews.value.forEach((url) => URL.revokeObjectURL(url))
@@ -193,7 +88,7 @@ function onExtraImagesChange(event: Event): void {
 
 function removeMainImage(): void {
   mainImageFile.value = null
-  form.mainImageName = ''
+  imageNames.main = ''
   resetUploadedImages()
 
   if (mainImagePreview.value) URL.revokeObjectURL(mainImagePreview.value)
@@ -212,7 +107,7 @@ function removeExtraImage(index: number): void {
 
   extraImageFiles.value = extraImageFiles.value.filter((_, i) => i !== index)
   extraImagePreviews.value = extraImagePreviews.value.filter((_, i) => i !== index)
-  form.extraImageNames = form.extraImageNames.filter((_, i) => i !== index)
+  imageNames.extra = imageNames.extra.filter((_, i) => i !== index)
   resetUploadedImages()
 }
 
@@ -222,73 +117,22 @@ onBeforeUnmount(() => {
 })
 
 /**
- * The parsed pair from the last successful `validate()`.
- *
- * Held here rather than re-parsed at submit time so the string is read exactly
- * once: the same result that decided whether to show an error under the field
- * is the one that ends up in the payload, and there is no second parse that
- * could disagree with the first.
+ * The parsed pair from the last successful `validate()` — see
+ * `validateRegistrationForm`, which does the parsing and hands it back so the
+ * string is read exactly once.
  */
 const parsedCoordinates = ref<Coordinates | null>(null)
 
 function validate(): boolean {
-  errors.firstName = validateField(form.firstName, [required()]) ?? ''
-  errors.lastName = validateField(form.lastName, [required()]) ?? ''
-  errors.phone = validateField(form.phone, [required(), isPhone()]) ?? ''
-  errors.secondaryPhone = validateField(form.secondaryPhone, [isPhone()]) ?? ''
-  errors.whatsapp = validateField(form.whatsapp, [isPhone()]) ?? ''
-  errors.email = validateField(form.email, [isEmail()]) ?? ''
-  errors.brand = validateField(form.brand, [required()]) ?? ''
-  errors.year = validateField(form.year, [required(), isYear()]) ?? ''
-  errors.vehicleType = validateField(form.vehicleType, [required('Ընտրեք մեքենայի տեսակը')]) ?? ''
-  errors.capacity =
-    validateField(form.capacity, [required('Ընտրեք առավելագույն բեռնատարողությունը')]) ?? ''
-  // Optional, but both-or-neither: half a size is not a size. Same rule the
-  // working-hours pair uses.
-  errors.platformDimensions =
-    validateField(form.platformLengthM, [isDimension()]) ??
-    validateField(form.platformWidthM, [isDimension()]) ??
-    (Boolean(form.platformLengthM.trim()) !== Boolean(form.platformWidthM.trim())
-      ? 'Լրացրեք և՛ երկարությունը, և՛ լայնությունը, կամ թողեք երկուսն էլ դատարկ'
-      : '')
-  errors.regionSlugs = form.regionSlugs.length === 0 ? 'Ընտրեք 1-2 մարզ' : ''
-  errors.citySlugs = validateServiceAreaSelection(form.regionSlugs, form.citySlugs)
-  errors.services = form.services.length === 0 ? 'Ընտրեք առնվազն մեկ ծառայություն' : ''
-  // Optional: an empty box submits, and the driver adds it later from their
-  // dashboard. Anything actually typed still has to parse — "half a
-  // coordinate" is a mistake worth catching, "no coordinate" is a choice.
-  //
-  // This is the one field whose difficulty could cost the whole registration
-  // (copying a value out of Google Maps, on a phone), which is why it gives way
-  // rather than blocking. See CreateRegistrationDto for the same argument on
-  // the API side.
-  if (form.coordinates.trim()) {
-    const coordinates = parseCoordinates(form.coordinates)
-    parsedCoordinates.value = coordinates.ok
-      ? { latitude: coordinates.latitude, longitude: coordinates.longitude }
-      : null
-    errors.coordinates = coordinates.ok ? '' : coordinates.error
-  } else {
-    parsedCoordinates.value = null
-    errors.coordinates = ''
-  }
-  // Fully optional — driver may leave both 24/7 unselected and hours unset.
-  // Only flag it when exactly one of the two times got filled in, since
-  // that combination can't be saved as a valid range either way.
-  errors.workingHours =
-    Boolean(form.workingHoursStart) !== Boolean(form.workingHoursEnd)
-      ? 'Լրացրեք և՛ սկիզբը, և՛ ավարտը, կամ թողեք երկուսն էլ դատարկ'
-      : ''
-  errors.mainImage = form.mainImageName ? '' : 'Ավելացրեք գլխավոր նկարը'
-  errors.priceCityCallout = validateField(form.priceCityCallout, [isAmount()]) ?? ''
-  errors.pricePerKm =
-    validateField(form.pricePerKm, [isAmount('Մուտքագրեք 1 կմ-ի գինը թվերով (օր.՝ 300)')]) ?? ''
-  errors.priceWaitingPerHour = validateField(form.priceWaitingPerHour, [isAmount()]) ?? ''
-  errors.priceNightSurchargePercent =
-    validateField(form.priceNightSurchargePercent, [isPercent()]) ?? ''
-  errors.priceExtraLoading = validateField(form.priceExtraLoading, [isAmount()]) ?? ''
+  const shared = validateRegistrationForm(form, errors)
+  parsedCoordinates.value = shared.coordinates
 
-  return Object.values(errors).every((error) => !error)
+  // The one question this page asks that the shared form does not: a driver
+  // must attach a main photo. The moderator's copy has no upload at all, which
+  // is why it is checked here rather than in the shared validator.
+  errors.mainImage = imageNames.main ? '' : 'Ավելացրեք գլխավոր նկարը'
+
+  return shared.ok && !errors.mainImage
 }
 
 const isSuccessOpen = ref(false)
@@ -300,13 +144,15 @@ const submitError = ref('')
  * inputs themselves (clearing those needs a direct DOM reset, resetting the
  * reactive state alone doesn't change what the browser shows in the input). */
 function resetForm(): void {
-  Object.assign(form, createInitialFormState())
+  Object.assign(form, createRegistrationFormState())
   Object.keys(errors).forEach((key) => {
     errors[key] = ''
   })
 
   mainImageFile.value = null
   extraImageFiles.value = []
+  imageNames.main = ''
+  imageNames.extra = []
   // Those ids now belong to the submitted request — a second registration
   // must upload its own photos, not try to reattach already-attached ones.
   resetUploadedImages()
@@ -396,235 +242,11 @@ async function onSubmit(): Promise<void> {
     </p>
 
     <form class="register__form" novalidate @submit.prevent="onSubmit">
-      <fieldset class="register__section">
-        <legend class="register__legend">Անձնական տվյալներ</legend>
-        <div class="register__grid">
-          <AppInput v-model="form.firstName" label="Անուն" required :error="errors.firstName" />
-          <AppInput v-model="form.lastName" label="Ազգանուն" required :error="errors.lastName" />
-          <AppInput v-model="form.companyName" label="Կազմակերպության անուն (եթե կա)" />
-          <div class="register__phone-field">
-            <AppInput
-              v-model="phoneModel"
-              label="Հիմնական հեռախոսահամար"
-              type="tel"
-              placeholder="+37491000001"
-              required
-              :maxlength="12"
-              :error="errors.phone"
-            />
-            <!-- Wrapped with the field rather than dropped straight into
-                 register__grid: a bare <p> there would become its own grid
-                 cell and push every field after it into the wrong column. -->
-            <p class="register__phone-hint">
-              Այս հեռախոսահամարով գրանցվել հնարավոր է միայն մեկ անգամ։ Կրկնակի հայտը
-              ադմինիստրատորի կողմից կմերժվի։
-            </p>
-          </div>
-          <AppInput
-            v-model="secondaryPhoneModel"
-            label="Երկրորդ հեռախոսահամար (ոչ պարտադիր)"
-            type="tel"
-            placeholder="+37499000001"
-            :maxlength="12"
-            :error="errors.secondaryPhone"
-          />
-          <AppInput
-            v-model="whatsappModel"
-            label="WhatsApp"
-            type="tel"
-            placeholder="+37491000001"
-            :maxlength="12"
-            :error="errors.whatsapp"
-          />
-          <AppInput v-model="form.telegram" label="Telegram (username)" placeholder="@username" />
-          <AppInput
-            v-model="form.email"
-            label="Email"
-            type="email"
-            placeholder="name@example.com"
-            :error="errors.email"
-          />
-        </div>
-      </fieldset>
-
-      <fieldset class="register__section">
-        <legend class="register__legend">Մեքենայի տվյալներ</legend>
-        <div class="register__grid">
-          <AppInput
-            v-model="form.brand"
-            label="Մակնիշ"
-            placeholder="Isuzu"
-            required
-            :error="errors.brand"
-          />
-          <AppInput v-model="form.model" label="Մոդել (ոչ պարտադիր)" placeholder="NPR 75" />
-          <AppInput
-            v-model="form.year"
-            label="Տարեթիվ"
-            type="number"
-            placeholder="2018"
-            required
-            :error="errors.year"
-          />
-          <AppSelect
-            v-model="form.vehicleType"
-            :options="vehicleTypeOptions"
-            label="Տեսակ"
-            :error="errors.vehicleType"
-          >
-            <template #label-suffix>
-              <AppTooltip label="Էվակուատորի տեսակների բացատրություն">
-                <span
-                  v-for="hint in vehicleTypeHints"
-                  :key="hint.label"
-                  class="register__type-hint"
-                >
-                  <strong>{{ hint.label }}</strong>
-                  {{ hint.description }}
-                </span>
-              </AppTooltip>
-            </template>
-          </AppSelect>
-          <AppSelect
-            v-model="form.capacity"
-            :options="CAPACITY_RANGE_OPTIONS"
-            label="Առավելագույն բեռնատարողություն *"
-            :error="errors.capacity"
-          />
-          <PlatformDimensionsInput
-            v-model:length="form.platformLengthM"
-            v-model:width="form.platformWidthM"
-            :error="errors.platformDimensions"
-          />
-        </div>
-        <div class="register__checks">
-          <AppCheckbox v-model="form.winch" label="Ունի ճախարակ (winch, лебедка)" />
-          <!-- Locked, not hidden: a driver who picked the manipulator type
-               should still SEE that the answer is yes, rather than wonder
-               where the question went. -->
-          <AppCheckbox
-            v-model="form.manipulator"
-            label="Ունի մանիպուլյատոր"
-            :disabled="isManipulatorType"
-          />
-          <AppCheckbox v-model="form.wheelSkates" label="Առկա են անիվային ռոլիկներ">
-            <template #label-suffix>
-              <AppTooltip label="Անիվային ռոլիկների բացատրություն">
-                Անիվային ռոլիկներն օգտագործվում են արգելափակված կամ չպտտվող անիվներով մեքենան
-                անվտանգ հարթակ բարձրացնելու և տեղափոխելու համար։
-              </AppTooltip>
-            </template>
-          </AppCheckbox>
-        </div>
-      </fieldset>
-
-      <fieldset class="register__section">
-        <legend class="register__legend">Տարածքներ</legend>
-        <p class="register__note">
-          Խնդրում ենք ընտրել միայն այն քաղաքներն, որտեղ պատրաստ եք մոտենալ և բարձել
-          մեքենան։ Խորհուրդ ենք տալիս չընտրել հիմնական վայրից ավելի քան 30 կմ հեռու տարածքներ, քանի
-          որ նման պատվերները կարող են շահավետ չլինել։
-        </p>
-        <p class="register__note">
-          Ընտրված տարածքը վերաբերում է միայն բարձման վայրին․ տեղափոխման վերջնակետը կարող է լինել ՀՀ
-          ցանկացած բնակավայր։
-        </p>
-        <!-- Same component the dashboard uses, so what a driver can pick here
-             and what they can change later can never drift apart. -->
-        <ServiceAreaPicker
-          v-model:regions="form.regionSlugs"
-          v-model:cities="form.citySlugs"
-          :regions-error="errors.regionSlugs"
-          :cities-error="errors.citySlugs"
-        />
-      </fieldset>
-
-      <!-- Its own section rather than a field inside "Տարածքներ": the areas
-           above are where a driver is willing to GO, this is where they
-           actually ARE, and the two answers get confused when they share a
-           heading. Same component the dashboard and admin dialogs use. -->
-      <fieldset class="register__section">
-        <legend class="register__legend">Տեղադիրք</legend>
-        <!-- The one section a driver may skip. It asks them to copy a value out
-             of Google Maps on a phone, which is the step most likely to end a
-             registration — and the value is editable from their dashboard the
-             moment they are approved, so blocking on it trades a whole driver
-             for one field. `required: false` also switches the note at the
-             bottom of the block from "paste the example number" to "leave it
-             blank", which is the only honest advice once it is optional. -->
-        <CoordinatesInput
-          v-model="form.coordinates"
-          heading="Նշեք Ձեր էվակուատորի հիմնական տեղադիրքի կոորդինատները (ոչ պարտադիր)"
-          :required="false"
-          :error="errors.coordinates"
-        />
-      </fieldset>
-
-      <fieldset class="register__section">
-        <legend class="register__legend">Ծառայություններ</legend>
-        <p v-if="errors.services" class="register__error" role="alert">{{ errors.services }}</p>
-        <ServiceCategoryPicker
-          v-model="form.services"
-          :categories="SERVICE_CATEGORIES"
-          mode="form"
-        />
-
-        <div v-if="!is247" class="register__working-hours">
-          <p class="register__working-hours-label">Աշխատանքային ժամեր (ոչ պարտադիր)</p>
-          <div class="register__working-hours-grid">
-            <AppInput v-model="form.workingHoursStart" type="time" label="Սկիզբ" />
-            <AppInput v-model="form.workingHoursEnd" type="time" label="Ավարտ" />
-          </div>
-          <p v-if="errors.workingHours" class="register__error" role="alert">
-            {{ errors.workingHours }}
-          </p>
-        </div>
-      </fieldset>
-
-      <fieldset class="register__section">
-        <legend class="register__legend">Գներ (ոչ պարտադիր)</legend>
-        <p class="register__note">
-          Այս հատվածը լրացնելով և մրցունակ գին նշելով՝ կարող եք ավելացնել ձեր պատվերների քանակը։ Ձեր
-          էջում կցուցադրվեն միայն լրացված դաշտերը։
-        </p>
-        <div class="register__grid">
-          <AppInput
-            v-model="form.priceCityCallout"
-            label="Քաղաքում կանչ (Դ)"
-            type="number"
-            placeholder="10000"
-            :error="errors.priceCityCallout"
-          />
-          <AppInput
-            v-model="form.pricePerKm"
-            label="Միջքաղաքային տեղափոխում (Դ/կմ)"
-            type="number"
-            placeholder="300"
-            :error="errors.pricePerKm"
-          />
-          <AppInput
-            v-model="form.priceWaitingPerHour"
-            label="Սպասում (Դ/ժամ)"
-            type="number"
-            placeholder="3000"
-            :error="errors.priceWaitingPerHour"
-          />
-          <AppInput
-            v-model="form.priceNightSurchargePercent"
-            label="Գիշերային ծառայություն (+%)"
-            type="number"
-            placeholder="20"
-            :error="errors.priceNightSurchargePercent"
-          />
-          <AppInput
-            v-model="form.priceExtraLoading"
-            label="Բարդ բեռնում (+Դ)"
-            type="number"
-            placeholder="5000"
-            :error="errors.priceExtraLoading"
-          />
-        </div>
-      </fieldset>
+      <!-- Every question below is shared, verbatim, with the moderator's copy
+           of this form at /admin/registrations/:id — one component so the two
+           can never come to ask different things. See the component's own
+           header for why that matters. -->
+      <RegistrationFormFields v-model="form" :errors="errors" />
 
       <fieldset class="register__section">
         <legend class="register__legend">Նկարներ</legend>
@@ -640,8 +262,8 @@ async function onSubmit(): Promise<void> {
               accept="image/*"
               @change="onMainImageChange"
             >
-            <span v-if="form.mainImageName" class="register__file-name">{{
-              form.mainImageName
+            <span v-if="imageNames.main" class="register__file-name">{{
+              imageNames.main
             }}</span>
             <div v-if="mainImagePreview" class="register__image-preview-wrap">
               <img :src="mainImagePreview" alt="" class="register__image-preview" >
@@ -668,8 +290,8 @@ async function onSubmit(): Promise<void> {
               multiple
               @change="onExtraImagesChange"
             >
-            <span v-if="form.extraImageNames.length" class="register__file-name">
-              {{ form.extraImageNames.length }}/{{ MAX_EXTRA_IMAGES }} ֆայլ ընտրված է
+            <span v-if="imageNames.extra.length" class="register__file-name">
+              {{ imageNames.extra.length }}/{{ MAX_EXTRA_IMAGES }} ֆայլ ընտրված է
             </span>
             <div v-if="extraImagePreviews.length" class="register__image-preview-grid">
               <div
@@ -717,6 +339,14 @@ async function onSubmit(): Promise<void> {
 </template>
 
 <style scoped lang="scss">
+/*
+ * Only what is left in this page after the questions moved into
+ * RegistrationFormFields.vue: the heading, the photo upload, the submit
+ * button. Every rule for a field — the two-column grid inside a fieldset, the
+ * phone hint, the checkbox row, the working-hours pair — lives with the markup
+ * it styles, in that component, so a layout change cannot land on one of the
+ * two forms and not the other.
+ */
 .register {
   padding-bottom: var(--space-7);
   max-width: 860px;
@@ -759,103 +389,21 @@ async function onSubmit(): Promise<void> {
     }
   }
 
-  &__phone-field {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-  }
 
-  &__phone-hint {
-    margin: 0;
-    font-size: 0.8rem;
-    line-height: 1.5;
-    color: var(--color-text-muted);
-  }
 
-  &__checks {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: var(--space-1);
-    margin-top: var(--space-4);
 
-    @media (min-width: 640px) {
-      grid-template-columns: 1fr 1fr;
-    }
-  }
 
-  &__working-hours {
-    margin-top: var(--space-4);
-    max-width: 360px;
-  }
 
-  &__working-hours-label {
-    font-size: 0.9rem;
-    font-weight: 600;
-    margin: 0 0 var(--space-2);
-  }
 
-  &__working-hours-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--space-3);
-  }
 
-  &__services {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: var(--space-1);
 
-    @media (min-width: 640px) {
-      grid-template-columns: 1fr 1fr;
-    }
-  }
-
-  &__cities {
-    margin-top: var(--space-4);
-  }
-
-  &__cities-label {
-    font-size: 0.9rem;
-    font-weight: 600;
-    margin-bottom: var(--space-2);
-  }
 
   &__required {
     color: var(--color-danger);
   }
 
-  &__all-cities {
-    padding-bottom: var(--space-2);
-    margin-bottom: var(--space-2);
-    border-bottom: 1px solid var(--color-border);
-    font-weight: 700;
-  }
 
-  &__cities-grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: var(--space-1);
 
-    @media (min-width: 640px) {
-      grid-template-columns: repeat(2, 1fr);
-    }
-
-    @media (min-width: 1024px) {
-      grid-template-columns: repeat(3, 1fr);
-    }
-  }
-
-  &__type-hint {
-    display: block;
-
-    strong {
-      display: block;
-    }
-
-    & + & {
-      margin-top: var(--space-2);
-    }
-  }
 
   &__file {
     display: flex;
@@ -919,11 +467,6 @@ async function onSubmit(): Promise<void> {
     gap: var(--space-3);
   }
 
-  &__note {
-    margin: calc(-1 * var(--space-2)) 0 var(--space-4);
-    font-size: 1rem;
-    color: var(--color-text-muted);
-  }
 
   &__error {
     color: var(--color-danger);

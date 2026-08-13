@@ -50,7 +50,7 @@ Notable fields beyond the obvious:
   shown to users directly.
 - `serviceAreas: Json` — `[{ slug, name, type: "city" | "district" }]`. The
   `name` is resolved to a real Armenian label **by whichever frontend is
-  writing** — `pages/admin.vue` at approval, `pages/dashboard.vue` when the
+  writing** — the admin review page at approval, `pages/dashboard.vue` when the
   driver edits their own coverage — and sent as-is; the backend just stores
   what it is given, because it has no geography data to resolve names with.
   Both paths validate against the shared `ServiceAreaDto`

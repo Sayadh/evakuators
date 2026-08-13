@@ -181,78 +181,70 @@ describe('setTowTruckPrimaryArea', () => {
 
 describe('coordinates at approval', () => {
   /**
-   * Approval copies the driver's own pair across. The moderator may override
-   * it, which is what the coordinate box in the approval dialog is for — but
-   * the override has to survive the same two checks a driver's pair does, and
-   * "no override" must remain byte-identical to the old copy-through.
+   * The pair an approval writes is the one the moderator submitted, full stop —
+   * the review page shows them the box (pre-filled when the driver answered),
+   * so there is nothing left for the backend to fall back to.
+   *
+   * That is deliberately narrower than the old behaviour, which read the stored
+   * request whenever both keys were absent. It had to: while approval was a
+   * yes/no on a record, "absent" could not be distinguished from "the moderator
+   * never saw it". Now it can, and absent means the box was empty.
    *
    * Reached through the private resolver rather than through `approve()`: the
    * surrounding method opens a transaction, writes images and calls Telegram,
    * none of which says anything about which coordinate pair wins.
    */
-  const resolve = (
-    dtoFields: { latitude?: number; longitude?: number },
-    request: { latitude: unknown; longitude: unknown },
-  ): { latitude: unknown; longitude: unknown } => {
+  const resolve = (dtoFields: {
+    latitude?: number
+    longitude?: number
+  }): { latitude: unknown; longitude: unknown } => {
     const { service } = buildService()
     return (
       service as unknown as {
-        resolveApprovalCoordinates: (
-          d: unknown,
-          r: unknown,
-        ) => { latitude: unknown; longitude: unknown }
+        resolveApprovalCoordinates: (d: unknown) => { latitude: unknown; longitude: unknown }
       }
-    ).resolveApprovalCoordinates(dtoFields, request)
+    ).resolveApprovalCoordinates(dtoFields)
   }
 
-  /** Stands in for a Prisma Decimal — only identity matters here */
-  const STORED_LAT = { toNumber: () => 40.1792 }
-  const STORED_LNG = { toNumber: () => 44.4991 }
-
-  it("keeps the driver's pair when the moderator sends neither", () => {
-    // The overwhelmingly common path, and the one that must not change.
-    expect(resolve({}, { latitude: STORED_LAT, longitude: STORED_LNG })).toEqual({
-      latitude: STORED_LAT,
-      longitude: STORED_LNG,
-    })
-  })
-
-  it('keeps null when the driver skipped the question', () => {
+  it('writes no location when the box was left empty', () => {
     // `locationUpdatedAt` is derived from this being null, so a stray default
     // here would stamp a timestamp on a location nobody ever set.
-    expect(resolve({}, { latitude: null, longitude: null })).toEqual({
-      latitude: null,
-      longitude: null,
-    })
+    expect(resolve({})).toEqual({ latitude: null, longitude: null })
   })
 
-  it("takes the moderator's pair when both are sent", () => {
+  it('does NOT reach back to the stored request when both keys are absent', () => {
+    // The guard for the behaviour change above. The resolver takes one argument
+    // now; if a future edit reintroduced a `request` fallback, an empty body
+    // would silently start publishing a pair the moderator was looking at an
+    // empty box for.
     expect(
-      resolve({ latitude: 40.2, longitude: 44.5 }, { latitude: STORED_LAT, longitude: STORED_LNG }),
-    ).toEqual({ latitude: 40.2, longitude: 44.5 })
+      (
+        service_resolveArity() as { length: number }
+      ).length,
+    ).toBe(1)
   })
 
-  it('fills in a pair the driver never gave', () => {
-    expect(resolve({ latitude: 40.2, longitude: 44.5 }, { latitude: null, longitude: null })).toEqual(
-      { latitude: 40.2, longitude: 44.5 },
-    )
+  it('writes the pair the moderator submitted', () => {
+    expect(resolve({ latitude: 40.2, longitude: 44.5 })).toEqual({
+      latitude: 40.2,
+      longitude: 44.5,
+    })
   })
 
   it('rejects half a pair', () => {
     // Half a coordinate is neither "has a location" nor "has none" downstream.
-    expect(() => resolve({ latitude: 40.2 }, { latitude: null, longitude: null })).toThrow(
-      BadRequestException,
-    )
-    expect(() => resolve({ longitude: 44.5 }, { latitude: null, longitude: null })).toThrow(
-      BadRequestException,
-    )
+    expect(() => resolve({ latitude: 40.2 })).toThrow(BadRequestException)
+    expect(() => resolve({ longitude: 44.5 })).toThrow(BadRequestException)
   })
 
   it('rejects a point outside Armenia, admin or not', () => {
     // A transposed pair from an admin lands a truck in the Indian Ocean just as
     // readily as one from a driver.
-    expect(() =>
-      resolve({ latitude: 44.4991, longitude: 40.1792 }, { latitude: null, longitude: null }),
-    ).toThrow(BadRequestException)
+    expect(() => resolve({ latitude: 44.4991, longitude: 40.1792 })).toThrow(BadRequestException)
   })
+
+  function service_resolveArity(): unknown {
+    const { service } = buildService()
+    return (service as unknown as Record<string, unknown>).resolveApprovalCoordinates
+  }
 })

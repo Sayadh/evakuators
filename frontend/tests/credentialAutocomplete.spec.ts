@@ -22,7 +22,7 @@ import { describe, expect, it } from 'vitest'
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const read = (path: string): string => readFileSync(`${ROOT}${path}`, 'utf8')
 
-const adminPage = read('pages/admin.vue')
+const adminPage = read('pages/admin/index.vue')
 const loginPage = read('pages/login.vue')
 const changePassword = read('components/common/ChangePasswordForm.vue')
 const appInput = read('components/common/AppInput.vue')

@@ -499,7 +499,7 @@ frontend/
 Also touched: `TowTrucksRepository.findStatusById()` (lean existence probe),
 `ReviewsRepository` (three grouped-query methods), `usePhoneActions` (fires
 both trackers), `pages/tow-trucks/[slug].vue`, `pages/dashboard.vue`,
-`pages/admin.vue`.
+`pages/admin/index.vue`.
 
 Dependencies are inbound only — nothing outside `backend/src/analytics/`
 depends on it, so the whole feature can be removed by deleting the folder and

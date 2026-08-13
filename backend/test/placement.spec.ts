@@ -34,12 +34,43 @@ describe('assertPlacementIsServed', () => {
     )
   })
 
-  it('rejects a road corridor', () => {
-    // Nobody is "based in" «Գառնի–Գեղարդ», and a corridor slug in citySlug
-    // would file the driver under a city page that does not exist.
+  it('still rejects a corridor sent as a city', () => {
+    // A corridor base is expressible now, but NOT like this: `citySlug` is what
+    // the city pages filter on and there is no «Գառնի–Գեղարդ» page to be filed
+    // under. It has to arrive as `routeSlug` with the two slugs empty.
     expect(() => assertPlacementIsServed(AREAS, { citySlug: 'garni-geghard' })).toThrow(
       /ուղղություն է/,
     )
+  })
+
+  it('accepts a served corridor as the base, with no city and no district', () => {
+    // Some drivers really do wait on a road rather than in a town. Stored as an
+    // empty placement plus the corridor's name in `locationName`: the card says
+    // where they are, and they appear on their marz page but on no city page —
+    // which is true of them.
+    expect(() =>
+      assertPlacementIsServed(AREAS, { routeSlug: 'garni-geghard' }),
+    ).not.toThrow()
+  })
+
+  it('rejects a corridor the driver does not serve', () => {
+    expect(() => assertPlacementIsServed(AREAS, { routeSlug: 'sevan-dilijan' })).toThrow(
+      BadRequestException,
+    )
+  })
+
+  it('rejects a settlement sent as a corridor', () => {
+    // Otherwise an empty placement would be stored for a truck that has a real
+    // city page to rank on, and it would lose that ranking silently.
+    expect(() => assertPlacementIsServed(AREAS, { routeSlug: 'abovyan' })).toThrow(
+      /բնակավայր է/,
+    )
+  })
+
+  it('rejects a corridor combined with a settlement', () => {
+    expect(() =>
+      assertPlacementIsServed(AREAS, { routeSlug: 'garni-geghard', citySlug: 'abovyan' }),
+    ).toThrow(BadRequestException)
   })
 
   it('rejects a district sent as a city, and a city sent as a district', () => {
@@ -154,11 +185,36 @@ describe('setTowTruckPrimaryArea', () => {
 
   it('refuses an empty choice', async () => {
     // Unlike the removal path, where an empty placement is a real outcome, an
-    // admin here has opened a picker whose whole purpose is to choose one.
+    // admin here has opened a picker whose whole purpose is to choose.
     const { service, setPrimaryArea } = buildService()
 
     await expect(service.setTowTruckPrimaryArea(7, dto({}))).rejects.toThrow(BadRequestException)
     expect(setPrimaryArea).not.toHaveBeenCalled()
+  })
+
+  it('treats a corridor as a choice, and stores it as an empty placement', async () => {
+    // The distinction the endpoint could not make before: "based on a road" and
+    // "forgot to pick" were the same body. `routeSlug` says which — and is
+    // never written, because a corridor base IS the empty placement.
+    const { service, setPrimaryArea } = buildService()
+
+    await service.setTowTruckPrimaryArea(
+      7,
+      dto({
+        routeSlug: 'garni-geghard',
+        regionSlug: 'kotayk',
+        locationName: 'Գառնի–Գեղարդ',
+      }),
+    )
+
+    expect(setPrimaryArea.mock.calls[0]![1]).toEqual({
+      citySlug: null,
+      districtSlug: null,
+      // Kept: the truck is genuinely in that marz and belongs on its page. Only
+      // the city half has no answer.
+      regionSlug: 'kotayk',
+      locationName: 'Գառնի–Գեղարդ',
+    })
   })
 
   it("refuses a place outside the truck's coverage", async () => {

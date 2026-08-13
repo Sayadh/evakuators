@@ -3,6 +3,7 @@ import { LocationType } from '~/types/enums'
 import {
   cityOrDistrictLabel,
   findCityLocation,
+  findServiceZoneLocation,
   findStaticRegion,
   resolveAreaType,
   YEREVAN_REGION_SLUG,
@@ -52,9 +53,9 @@ export function composeLocationName(placeName: string, settlementName?: string):
  * driver's OWN areas rather than from `staticRegions`, so the first select can
  * never offer a marz whose second select would then be empty.
  *
- * Road corridors are dropped before this, so a driver covering «Գառնի–Գեղարդ»
- * and nothing else contributes no marz at all — which is correct: they have no
- * base to pick.
+ * Corridors contribute their own marz like anything else — a driver based on
+ * «Արագած–Ծաղկահովիտ» is in Aragatsotn, and that is the marz page they belong
+ * on.
  */
 export function primaryRegionOptions(areas: readonly PrimaryAreaCandidate[]): SelectOption[] {
   const slugs = new Set<string>()
@@ -86,18 +87,31 @@ export function primaryPlaceOptions(
 }
 
 /**
- * Areas that could be a base at all.
+ * Areas that could be a base at all — which is now all of them.
  *
- * Corridors are excluded here, once, rather than at each call site — a truck
- * cannot be "based in" a road corridor, and a corridor slug written into
- * `citySlug` would file the driver under a city page that does not exist. The
- * backend refuses one too (`assertPlacementIsServed`); this is what stops it
- * ever being offered.
+ * ## Corridors used to be filtered out here
+ *
+ * The reasoning was that nobody is "based in" a road. That turned out to be
+ * wrong about the actual drivers: some of them do wait on «Արագած–Ծաղկահովիտ»
+ * rather than in a town, and a moderator reviewing such a driver was shown two
+ * selects with no honest answer in them.
+ *
+ * What was right in that reasoning is narrower, and still holds: a corridor
+ * slug must never reach `citySlug`, because that column is what the city pages
+ * filter on and there is no «Արագած–Ծաղկահովիտ» page to be filed under. So a
+ * corridor base is stored as an EMPTY placement plus the corridor's name in
+ * `locationName` — see `placementFor` below, and `assertPlacementIsServed` on
+ * the backend, which still refuses a corridor sent as a city.
  */
 export function basePlaceCandidates(
   areas: readonly PrimaryAreaCandidate[],
 ): PrimaryAreaCandidate[] {
-  return areas.filter((area) => resolveAreaType(area.slug) !== LocationType.Route)
+  return [...areas]
+}
+
+/** Whether a chosen base is a road corridor rather than a settlement */
+export function isRouteBase(slug: string): boolean {
+  return resolveAreaType(slug) === LocationType.Route
 }
 
 /**
@@ -105,7 +119,11 @@ export function basePlaceCandidates(
  * only Yerevan has districts — and cities go through the static data.
  */
 export function regionOfCandidate(area: PrimaryAreaCandidate): string | undefined {
-  if (resolveAreaType(area.slug) === LocationType.District) return YEREVAN_REGION_SLUG
+  const type = resolveAreaType(area.slug)
+  if (type === LocationType.District) return YEREVAN_REGION_SLUG
+  // A corridor belongs to a marz too, and it is the marz page the truck should
+  // stay on — the city half is the only one a corridor has no answer for.
+  if (type === LocationType.Route) return findServiceZoneLocation(area.slug)?.regionSlug
   return findCityLocation(area.slug)?.regionSlug
 }
 
@@ -122,10 +140,26 @@ export function placementFor(slug: string): {
   citySlug?: string
   districtSlug?: string
   regionSlug?: string
+  routeSlug?: string
 } {
-  if (resolveAreaType(slug) === LocationType.District) {
+  const type = resolveAreaType(slug)
+
+  if (type === LocationType.District) {
     // No regionSlug: Yerevan is a pseudo-region and its districts carry no marz.
     return { districtSlug: slug }
   }
+
+  if (type === LocationType.Route) {
+    // Deliberately NO citySlug and NO districtSlug. Those two columns are what
+    // the city and district pages filter on, and there is no page for a road —
+    // so a truck based on one appears on its marz page and nowhere narrower,
+    // which is exactly true of where it is.
+    //
+    // `routeSlug` is validation-only and is never stored: it is how the backend
+    // is told that the empty placement is an answer rather than an omission.
+    // See `assertPlacementIsServed`.
+    return { routeSlug: slug, regionSlug: findServiceZoneLocation(slug)?.regionSlug }
+  }
+
   return { citySlug: slug, regionSlug: findCityLocation(slug)?.regionSlug }
 }

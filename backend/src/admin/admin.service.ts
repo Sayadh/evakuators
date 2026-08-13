@@ -982,12 +982,17 @@ export class AdminService {
     const towTruck = await this.towTrucksRepository.findById(id)
     if (!towTruck) throw new NotFoundException(`Էվակուատոր #${id}-ը չի գտնվել`)
 
-    // Required here, unlike in the removal path. There the empty placement is a
-    // real outcome (nothing left that could be one); here an admin has opened a
-    // picker whose entire purpose is to choose one, so an empty submission is a
-    // mistake rather than an answer.
-    if (!dto.citySlug && !dto.districtSlug) {
-      throw new BadRequestException('Ընտրեք հիմնական քաղաքը կամ Երևանի շրջանը։')
+    // A choice is required here, unlike in the removal path. There the empty
+    // placement is a real outcome (nothing left that could be one); here an
+    // admin has opened a picker whose entire purpose is to choose, so a body
+    // naming nothing is a mistake rather than an answer.
+    //
+    // `routeSlug` counts as a choice even though it stores nothing: a truck
+    // based on «Արագած–Ծաղկահովիտ» has no city and no district by design, and
+    // without this the two selects would have no way to express the answer the
+    // driver actually gave. See assertPlacementIsServed.
+    if (!dto.citySlug && !dto.districtSlug && !dto.routeSlug) {
+      throw new BadRequestException('Ընտրեք հիմնական քաղաքը, Երևանի շրջանը կամ ուղղությունը։')
     }
 
     const areas = (towTruck.serviceAreas as unknown as ServiceAreaJson[]) ?? []
@@ -999,6 +1004,10 @@ export class AdminService {
       // Yerevan is a pseudo-region and its districts have no marz, so a district
       // placement nulls this — otherwise a truck moving into Yerevan would stay
       // listed on the marz page it left.
+      //
+      // A corridor base keeps its marz: the truck is genuinely in that region
+      // and should stay on its page, it is only the city half that has no
+      // answer.
       regionSlug: dto.districtSlug ? null : (dto.regionSlug ?? null),
       locationName: dto.locationName.trim(),
     })

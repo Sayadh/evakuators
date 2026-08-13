@@ -427,8 +427,9 @@ never agreed to go there. `assertPlacementIsServed` is the single copy, used by
 all three write paths (approval, the primary-area editor, and the area-removal
 endpoint when it re-points a placement it just deleted). It also rejects:
 
-- a **road corridor** — nobody is "based in" «Գառնի–Գեղարդ», and a corridor
-  slug in `citySlug` files the driver under a city page that does not exist;
+- a **road corridor sent as a city** — `citySlug` is what the city pages filter
+  on and there is no «Գառնի–Գեղարդ» page to be filed under. A corridor base is
+  expressible, but not like this — see below;
 - a **district sent as a city** or the reverse — the two are matched by
   different columns, so a crossed pair means the row is never found at all.
 
@@ -436,6 +437,40 @@ It deliberately does *not* check that `regionSlug` is the marz that city
 belongs to, or that a `city` slug is really a city. Both need geography, which
 this backend does not have (CLAUDE.md); the panel resolves them from the static
 data and sends them, exactly like `ServiceAreaDto.name`.
+
+### A driver can be based on a road
+
+Corridors used to be filtered out of the base picker entirely, on the reasoning
+that nobody is "based in" a road. The drivers disagreed: some of them wait on
+«Արագած–Ծաղկահովիտ» rather than in a town, and a moderator reviewing one saw two
+selects with no honest answer in either.
+
+A corridor base is stored as an **empty placement**:
+
+| Column | Value |
+| --- | --- |
+| `citySlug` | `null` |
+| `districtSlug` | `null` |
+| `regionSlug` | the corridor's marz |
+| `locationName` | the corridor's name, e.g. «Արագած–Ծաղկահովիտ» |
+
+So the card says where the driver really is, the truck appears on its **marz**
+page, and it appears on **no city page** — which is true of it, because it is
+not in a city. The picker says that out loud before the choice is made, since it
+costs the truck a city listing.
+
+The wire carries `routeSlug` alongside, and it is **validation-only, never
+stored** — the same shape as `regionSlugs` on the coverage endpoints. It exists
+because "based on a corridor" and "forgot to choose" are otherwise the same
+request, and `setTowTruckPrimaryArea` has to refuse the second while accepting
+the first. `assertPlacementIsServed` checks the corridor is actually served and
+actually a corridor; a settlement sent as `routeSlug` is refused, or the truck
+would silently lose the city ranking it was entitled to.
+
+One consequence worth knowing: a truck with an empty placement is now two
+different things — a corridor-based driver, and a driver whose coverage is
+corridors only and who has no base at all. The columns cannot tell them apart,
+and nothing needs to: both belong on a marz page and on no city page.
 
 ### `locationName` is composed, never typed
 

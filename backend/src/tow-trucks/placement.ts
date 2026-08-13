@@ -26,20 +26,65 @@ import type { ServiceAreaJson } from './tow-truck.types'
  * frontend's responsibility, resolved from the static data and sent, exactly
  * like `ServiceAreaDto.name`.
  *
- * A road corridor is rejected as a placement even though it is a served area:
- * nobody is "based in" «Գառնի–Գեղարդ», and writing a corridor slug into
- * `citySlug` would file the driver under a city listing that does not exist.
+ * ## A corridor base is an EMPTY placement, not a corridor in `citySlug`
+ *
+ * A driver really can be based on a road — «Արագած–Ծաղկահովիտ» is where some of
+ * them wait, and refusing to record that left an admin with two selects and no
+ * honest answer in them.
+ *
+ * It is expressed by leaving `citySlug` and `districtSlug` **null** and putting
+ * the corridor's name in `locationName`. That is the whole trick: the label on
+ * the card is truthful, and the columns the browsing pages filter on stay empty,
+ * so the truck simply does not appear on any city page — which is correct,
+ * because it is not in a city. Writing the corridor slug into `citySlug`
+ * instead would file it under a listing that does not exist, which is why that
+ * is still refused below.
+ *
+ * `routeSlug` is how a caller says "the empty placement is deliberate, and this
+ * is the road". It is validated here and **never stored** — same shape as
+ * `regionSlugs` on the coverage endpoints. Without it, "based on a corridor" and
+ * "forgot to choose" are the same request, and `setTowTruckPrimaryArea` could
+ * not tell them apart.
  */
 export function assertPlacementIsServed(
   areas: readonly ServiceAreaJson[],
-  placement: { citySlug?: string | null; districtSlug?: string | null },
+  placement: {
+    citySlug?: string | null
+    districtSlug?: string | null
+    /** Validation-only: the served corridor the truck is based on. Never stored. */
+    routeSlug?: string | null
+  },
 ): void {
-  const { citySlug, districtSlug } = placement
+  const { citySlug, districtSlug, routeSlug } = placement
 
   if (citySlug && districtSlug) {
     throw new BadRequestException(
       'Հիմնական տեղակայումը կարող է լինել կա՛մ քաղաք, կա՛մ Երևանի շրջան, ոչ թե երկուսը միասին։',
     )
+  }
+
+  if (routeSlug) {
+    if (citySlug || districtSlug) {
+      throw new BadRequestException(
+        'Հիմնական տեղակայումը կարող է լինել կա՛մ բնակավայր, կա՛մ ուղղություն, ոչ թե երկուսը միասին։',
+      )
+    }
+
+    const route = areas.find((candidate) => candidate.slug === routeSlug)
+    if (!route) {
+      throw new BadRequestException(
+        `«${routeSlug}»-ը էվակուատորի սպասարկվող տարածքների մեջ չէ, ուստի չի կարող լինել նրա հիմնական տեղակայումը։`,
+      )
+    }
+    // Checked rather than assumed: a caller sending a city slug here would
+    // otherwise store an empty placement for a truck that has a real city page
+    // to rank on, and lose that ranking silently.
+    if (route.type !== 'route') {
+      throw new BadRequestException(
+        `«${route.name}»-ը բնակավայր է, ոչ թե ուղղություն — նշեք այն citySlug-ով կամ districtSlug-ով։`,
+      )
+    }
+    return
   }
 
   const slug = citySlug ?? districtSlug

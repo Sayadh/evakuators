@@ -56,6 +56,26 @@ export class SetPrimaryAreaDto {
   districtSlug?: string
 
   /**
+   * The served road corridor the truck is based on — «Արագած–Ծաղկահովիտ» and
+   * the like. Some drivers really do wait on a road rather than in a town.
+   *
+   * **Validation-only. Never stored**, the same way `regionSlugs` is on the
+   * coverage endpoints. A corridor base IS an empty placement: `citySlug` and
+   * `districtSlug` both stay null so the truck appears on no city page (it is
+   * in no city), and the corridor's name goes into `locationName` so the card
+   * still says where the driver is.
+   *
+   * It has to be sent, rather than inferred from "both slugs absent", because
+   * those two cases are otherwise the same request — and one of them is a
+   * moderator who simply did not choose. `assertPlacementIsServed` checks the
+   * corridor is actually served and actually a corridor.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  routeSlug?: string
+
+  /**
    * The marz the chosen city belongs to — resolved by the panel from the static
    * geography, since the backend cannot look it up. Omitted for a Yerevan
    * district, which has no marz (CLAUDE.md), and the service nulls the column

@@ -63,6 +63,15 @@ export interface ApproveRegistrationPayload extends Omit<RegistrationPayload, 'i
   citySlug?: string
   districtSlug?: string
   /**
+   * The served road corridor the truck is based on, when it is based on one.
+   *
+   * Validation-only and never stored: a corridor base IS an empty
+   * `citySlug`/`districtSlug` with the corridor's name as `locationName`, and
+   * this is how the backend is told that emptiness was a choice. See
+   * `placementFor`, which produces all of these together.
+   */
+  routeSlug?: string
+  /**
    * The truck's "best-effort" browsing region (TowTruck.regionSlug) —
    * resolved here (not on the backend, which has no geography data) from
    * whichever region citySlug/districtSlug actually belongs to. Omitted for
@@ -209,6 +218,8 @@ export interface AdminServiceArea {
 export type SetPrimaryAreaPayload = {
   citySlug?: string
   districtSlug?: string
+  /** Validation-only corridor base — see ApproveRegistrationPayload.routeSlug */
+  routeSlug?: string
   regionSlug?: string
   locationName: string
 }

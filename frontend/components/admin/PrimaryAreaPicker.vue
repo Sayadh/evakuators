@@ -2,6 +2,7 @@
 import {
   basePlaceCandidates,
   composeLocationName,
+  isRouteBase,
   primaryPlaceOptions,
   primaryRegionOptions,
   regionOfCandidate,
@@ -11,11 +12,22 @@ import {
 /**
  * Picks a tow truck's **base**: marz → settlement, plus an optional village.
  *
- * Shared by the two admin surfaces that set it — the approval modal and the
+ * Shared by the two admin surfaces that set it — the review page and the
  * per-truck editor — for the same reason `ServiceAreaPicker` is shared between
  * registration and the dashboard: two copies of this would be two places for
- * the label composition and the corridor exclusion to drift, and the label is
- * the one thing the backend can never rebuild.
+ * the label composition and the corridor rule to drift, and the label is the
+ * one thing the backend can never rebuild.
+ *
+ * ## Road corridors are offered
+ *
+ * They were filtered out at first, on the reasoning that nobody is "based in" a
+ * road. Real drivers disagreed: some wait on «Արագած–Ծաղկահովիտ» rather than in
+ * a town, and a moderator reviewing one of them saw two selects with no honest
+ * answer in either. Picking one stores an **empty** `citySlug`/`districtSlug`
+ * with the corridor's name as the label — see `placementFor` — so the truck
+ * shows where it really is and appears on its marz page but on no city page,
+ * which is true of it. The warning below says so before the choice is made,
+ * because it costs the truck its place in a city listing.
  *
  * ## Only the driver's own areas are offered
  *
@@ -29,7 +41,7 @@ import {
  * offer a marz whose settlement select would then be empty.
  */
 const props = defineProps<{
-  /** The truck's served areas — corridors are filtered out internally */
+  /** The truck's served areas — settlements and corridors alike */
   candidates: PrimaryAreaCandidate[]
   /** Chosen settlement slug, '' when nothing is picked yet */
   slug: string
@@ -89,18 +101,23 @@ const preview = computed(() =>
 )
 
 /**
- * A driver whose entire coverage is road corridors has no possible base. Said
- * out loud rather than rendered as two empty selects, which would read as a
- * loading bug.
+ * A driver with no served areas at all has nothing to pick from. Said out loud
+ * rather than rendered as two empty selects, which would read as a loading bug.
+ *
+ * Corridor-only coverage no longer lands here — that driver now has a base to
+ * choose, which is the point of the change.
  */
 const hasNoCandidates = computed(() => places.value.length === 0)
+
+/** Whether the chosen base is a road corridor, which costs the city listing */
+const chosenIsRoute = computed(() => Boolean(props.slug) && isRouteBase(props.slug))
 </script>
 
 <template>
   <div class="primary-area">
     <p v-if="hasNoCandidates" class="primary-area__empty">
-      Այս վարորդի սպասարկվող տարածքները միայն ուղղություններ են, ուստի հիմնական
-      բնակավայր հնարավոր չէ նշել։ Նախ ավելացրեք քաղաք կամ շրջան։
+      Այս վարորդը սպասարկվող տարածք չունի, ուստի հիմնական վայր հնարավոր չէ նշել։
+      Նախ ավելացրեք քաղաք, շրջան կամ ուղղություն։
     </p>
 
     <template v-else>
@@ -132,6 +149,14 @@ const hasNoCandidates = computed(() => places.value.length === 0)
       <p v-if="preview" class="primary-area__preview">
         Քարտի վրա կերևա՝ <strong>{{ preview }}</strong>
       </p>
+
+      <!-- Stated before the save, not discovered after it. Choosing a corridor
+           is a legitimate answer and a real trade-off: the truck keeps its marz
+           page and loses its city one, because it is not in a city. -->
+      <p v-if="chosenIsRoute" class="primary-area__note">
+        Ուղղությունը հիմնական վայր ընտրելիս էվակուատորը կերևա մարզի էջում, բայց
+        ոչ մի քաղաքի էջում — քանի որ քաղաքում չէ։
+      </p>
     </template>
   </div>
 </template>
@@ -152,6 +177,16 @@ const hasNoCandidates = computed(() => places.value.length === 0)
     margin: 0;
     font-size: 0.85rem;
     color: var(--color-text-secondary);
+  }
+
+  &__note {
+    margin: 0;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: var(--color-text-muted);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    background: var(--color-bg);
   }
 }
 </style>

@@ -87,6 +87,20 @@ export class ApproveRegistrationDto extends RegistrationProfileDto {
   districtSlug?: string
 
   /**
+   * The served road corridor the truck is based on, when it is based on one.
+   *
+   * **Validation-only, never stored** — see `SetPrimaryAreaDto.routeSlug` and
+   * `assertPlacementIsServed` for the whole argument. In short: a corridor base
+   * is an empty `citySlug`/`districtSlug` plus the corridor's name in
+   * `locationName`, and this field is what tells the backend that emptiness was
+   * a choice rather than an omission.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  routeSlug?: string
+
+  /**
    * The truck's "best-effort" browsing region (see TowTruck.regionSlug in
    * schema.prisma) — null/omitted for Yerevan, since Yerevan trucks are
    * placed via `districtSlug` instead. Since a request can carry up to 2

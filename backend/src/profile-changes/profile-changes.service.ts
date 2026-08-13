@@ -175,6 +175,9 @@ export class ProfileChangesService {
       await this.myTowTruck.applyUpdate(
         request.towTruckId,
         profileChanges as UpdateMyTowTruckDto,
+        // This request's own photos are owned by it while it waits, so the
+        // claim check has to admit them — and only them.
+        { fromProfileChangeRequestId: request.id },
       )
     }
 

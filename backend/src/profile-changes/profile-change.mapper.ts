@@ -1,5 +1,4 @@
 import type { ProfileChangeRequest } from '@prisma/client'
-import { ALWAYS_CARRIED_FIELDS } from './profile-change-diff'
 import type {
   DriverProfileChangeStatusApi,
   ProfileChangeApi,
@@ -19,10 +18,16 @@ import type { ProfileChangeWithTruck } from './profile-changes.repository'
  * the response say exactly what the review is — a list of «this field, was
  * that, now this».
  *
- * `regionSlugs` is dropped. It rides along on every coverage change so the
- * backend can tell one marz from two (see the diff), is never stored, and has
- * no "before" — showing it would put a line in front of a moderator that
- * describes nothing the driver changed.
+ * ## Driven by `before`, not by `changes`
+ *
+ * `changes` additionally carries the context an approval needs to be
+ * applicable: the marz list for the coverage cap, and the base placement
+ * whenever `serviceAreas` moved (see `CARRY_WITH` in the diff). None of that is
+ * something the driver edited, and a moderator reading four lines for a
+ * one-line coverage change would be reading the machinery rather than the edit.
+ *
+ * `before` holds exactly the genuine changes, so iterating it IS the rule —
+ * rather than a second list of exclusions that could drift from the first.
  */
 export function toProfileChangeFields(request: {
   changes: unknown
@@ -31,13 +36,11 @@ export function toProfileChangeFields(request: {
   const changes = (request.changes ?? {}) as Record<string, unknown>
   const before = (request.before ?? {}) as Record<string, unknown>
 
-  return Object.keys(changes)
-    .filter((field) => !ALWAYS_CARRIED_FIELDS.has(field))
-    .map((field) => ({
-      field,
-      before: before[field] ?? null,
-      after: changes[field] ?? null,
-    }))
+  return Object.keys(before).map((field) => ({
+    field,
+    before: before[field] ?? null,
+    after: changes[field] ?? null,
+  }))
 }
 
 export function toProfileChangeApi(request: ProfileChangeWithTruck): ProfileChangeApi {

@@ -45,13 +45,20 @@ export class ImagesRepository {
             createdAt: { lt: uploadedBefore },
           },
           {
-            // A refused edit's photos, on the same delay a refused
+            // A DECIDED edit's leftover photos, on the same delay a refused
             // registration's get: long enough that a moderator who rejected by
             // mistake can still change their mind, short enough that a bucket
             // does not accumulate them.
+            //
+            // `not: PENDING` rather than `REJECTED`, and the difference is a
+            // leak: an APPROVED request can also leave photos behind — the ones
+            // the driver dropped from the gallery before the moderator looked.
+            // Those have no towTruckId (never applied) and a non-null
+            // profileChangeRequestId (so the "never attached" branch above
+            // skips them), and would sit in Storage forever.
             towTruckId: null,
             profileChangeRequest: {
-              status: ProfileChangeStatus.REJECTED,
+              status: { not: ProfileChangeStatus.PENDING },
               reviewedAt: { lt: rejectedBefore },
             },
           },
@@ -77,10 +84,44 @@ export class ImagesRepository {
     return this.prisma.towTruckImage.findMany({ where: { towTruckId }, orderBy: IMAGE_ORDER })
   }
 
-  findUnattachedByIds(ids: number[]): Promise<TowTruckImage[]> {
+  /**
+   * The images among `ids` that this caller is allowed to claim.
+   *
+   * "Unclaimed" means owned by nobody: no truck, no registration request, no
+   * queued profile edit. All three have to be checked, because an image with
+   * any one of them set already belongs to somebody, and an id is a small
+   * sequential integer — guessing one is not an attack that needs skill.
+   *
+   * `profileChangeRequestId` was the gap. When queued profile edits became a
+   * third owner, a photo sitting in one driver's pending edit still had
+   * `towTruckId: null` and `registrationRequestId: null`, so another driver
+   * could name that id in their own save and have it attached to their gallery
+   * on approval — while the first driver's edit then failed on an image that
+   * was no longer theirs.
+   *
+   * `allowProfileChangeRequestId` is how an approval gets its own photos back:
+   * at that moment they are legitimately owned by the request being applied,
+   * and by nothing else. Any other request's photos stay out of reach.
+   */
+  findUnattachedByIds(
+    ids: number[],
+    allowProfileChangeRequestId?: number,
+  ): Promise<TowTruckImage[]> {
     if (ids.length === 0) return Promise.resolve([])
     return this.prisma.towTruckImage.findMany({
-      where: { id: { in: ids }, towTruckId: null, registrationRequestId: null },
+      where: {
+        id: { in: ids },
+        towTruckId: null,
+        registrationRequestId: null,
+        // `in: [null, id]` rather than a bare id, because at submission time
+        // the photos are fresh uploads owned by nobody, and at approval time
+        // they are owned by the request being applied. Both are legitimate;
+        // every other value is somebody else's.
+        profileChangeRequestId:
+          allowProfileChangeRequestId === undefined
+            ? null
+            : ({ in: [null, allowProfileChangeRequestId] } as Prisma.IntNullableFilter),
+      },
     })
   }
 

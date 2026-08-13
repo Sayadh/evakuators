@@ -371,6 +371,18 @@ function fillFormFromTruck(data: TowTruck): void {
   form.priceNightSurchargePercent = data.pricing?.nightSurchargePercent?.toString() ?? ''
   form.priceExtraLoading = data.pricing?.extraLoading?.toString() ?? ''
   existingImages.value = data.imageDetails ? [...data.imageDetails] : []
+
+  // The picked-but-not-yet-published photos, cleared here and only here.
+  //
+  // A queued save keeps them, so that saving twice does not drop the photo out
+  // of the pending edit (see onSubmit). This runs when the profile is loaded
+  // fresh, which is the one moment the server's copy is authoritative: whatever
+  // was approved is now in `existingImages`, and whatever was not is a choice
+  // the driver can make again.
+  newImageFiles.value = []
+  resetUploadedNewImages()
+  newImagePreviews.value.forEach((url) => URL.revokeObjectURL(url))
+  newImagePreviews.value = []
 }
 
 async function load(): Promise<void> {
@@ -531,9 +543,14 @@ async function submit(): Promise<void> {
       const image = await imageRepository.upload(file)
       uploadedNewImageIds.value = [...uploadedNewImageIds.value, image.id]
     }
+    // Deduplicated, because a newly uploaded id can legitimately appear on both
+    // sides: once an edit is approved the photo joins `existingImages`, while
+    // `uploadedNewImageIds` still remembers uploading it (see below for why
+    // that memory is kept). Sending it twice would put the same photo in the
+    // gallery twice and make the diff look like a change on a save that
+    // changed nothing.
     payload.imageIds = [
-      ...existingImages.value.map((i) => i.id),
-      ...uploadedNewImageIds.value,
+      ...new Set([...existingImages.value.map((i) => i.id), ...uploadedNewImageIds.value]),
     ]
 
     // The response is the queue status, not a profile: nothing was published,
@@ -541,14 +558,30 @@ async function submit(): Promise<void> {
     // Refilling it from a profile that has not changed would silently discard
     // the driver's own edits the instant they submitted them.
     const status = await myTowTruckRepository.updateMine(payload)
-    profileChange.value = status
     saveOutcome.value = status.pending ? 'queued' : 'unchanged'
-    newImageFiles.value = []
-    // Attached to the profile now — a later save must not resend these ids
-    // as if they were still unattached uploads.
-    resetUploadedNewImages()
-    newImagePreviews.value.forEach((url) => URL.revokeObjectURL(url))
-    newImagePreviews.value = []
+    if (status.pending) {
+      profileChange.value = status
+    } else {
+      // Nothing was queued, so this response says nothing about the queue — its
+      // `lastReviewed` is null because the endpoint that answers a submission
+      // has no reason to look one up. Assigning it would wipe a rejection
+      // banner the driver still needs to read, on a save that changed nothing.
+      await loadProfileChange()
+    }
+
+    // The picked files and their ids are deliberately NOT cleared here.
+    //
+    // They used to be, with a comment saying they were "attached to the profile
+    // now" — which was true while a save was a write and is false now that it
+    // queues. Nothing is attached until a moderator approves, so a driver who
+    // added a photo, saved, then fixed a typo and saved again would have sent a
+    // second payload without those ids: the queued edit would be replaced by
+    // one that had lost the photo, the upload would become an orphan, and
+    // nothing on screen would have said so.
+    //
+    // Keeping them means the next save resubmits the same edit, which is what
+    // the driver expects, and `uploadedNewImageIds` still prevents re-uploading
+    // the same file. `load()` clears the lot once the page is opened again.
   } catch (error) {
     saveError.value = extractErrorMessage(error, 'Պահպանել չհաջողվեց, ստուգիր դաշտերը։')
   } finally {
@@ -993,8 +1026,13 @@ async function logout(): Promise<void> {
           <!-- Only the success line lives out here. The failure message stays
                inside the dialog, next to the field that caused it and the text
                the driver would have to correct. -->
+          <!-- Never «պահպանվեցին»: nothing was. The pair is moderated like
+               every other public claim, so the marker above still shows the
+               live one until an admin approves — and a driver told their
+               location was saved would go looking for it on their profile. -->
           <p v-if="coordinatesSuccess" class="dashboard-success">
-            Կոորդինատները հաջողությամբ պահպանվեցին ✓
+            Ուղարկվեց հաստատման ✓ — քարտեզի վրա կթարմացվի ադմինիստրատորի
+            հաստատումից հետո։
           </p>
         </div>
       </details>

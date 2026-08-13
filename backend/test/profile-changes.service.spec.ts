@@ -180,10 +180,13 @@ describe('approving an edit', () => {
 
     await service.approve(99)
 
-    expect(applyUpdate).toHaveBeenCalledWith(7, {
-      driverName: 'Աշոտ Ուղղված',
-      services: ['towing', 'available-24-7'],
-    })
+    expect(applyUpdate).toHaveBeenCalledWith(
+      7,
+      { driverName: 'Աշոտ Ուղղված', services: ['towing', 'available-24-7'] },
+      // Its own photos are owned by this request while it waits, so the claim
+      // check has to admit them — and only them. See ImagesRepository.
+      { fromProfileChangeRequestId: 99 },
+    )
     expect(markReviewed.mock.calls[0]![1]).toBe('APPROVED')
   })
 

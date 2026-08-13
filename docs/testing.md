@@ -142,6 +142,42 @@ in particular exists specifically to catch a new `tow-trucks/:id`-shaped
 route added above `tow-trucks/count` — a mistake that compiles cleanly,
 passes `tsc --noEmit`, and only breaks at request time in production.
 
+## One test does talk to a real database
+
+`backend/test/migrations.pglite.spec.ts` applies **every migration, in order,
+against real Postgres** — PGlite, which is Postgres itself compiled to WASM and
+running in-process, so it needs no server, no container and no credentials.
+
+It exists because the rest of this suite structurally cannot see the failures
+that only exist in SQL: a migration that does not apply, a constraint that does
+not constrain, a foreign key whose `ON DELETE` does something other than what
+the schema comment claims. Those surface during `prisma migrate deploy` on the
+VPS, with the app already stopped.
+
+So it deliberately asserts only on things **Prisma's schema cannot express**,
+and that therefore have no other guard anywhere:
+
+- the partial unique index behind "one pending profile change per truck"
+  (`WHERE status = 'PENDING'`, hand-written in the migration),
+- `ON DELETE SET NULL` on a queued edit's photos versus `ON DELETE CASCADE` on
+  the truck's,
+- which rows the image-ownership predicate can actually see,
+- that the `heavyEquipment` migration still has no backfill.
+
+Two limitations, both deliberate:
+
+- **PostGIS is not available in PGlite**, so the three PostGIS statements in the
+  nearest-search migration are stripped before it runs. That one migration is
+  the one this test does not prove — it is also the one that already needs a
+  superuser and a host package by hand (see the file). Everything after it *is*
+  proved, so a later migration depending on the spatial column would fail here
+  loudly.
+- **It does not go through Prisma.** It runs the DDL and raw SQL, not the
+  client, so it says nothing about whether a query in a repository is spelled
+  correctly. Where that matters, the same test file also reads the repository
+  source and asserts the predicate is still there — both halves are needed, and
+  the file says so where it does it.
+
 ## What "senior-level" means for tests in this repo, going forward
 
 - Test the **general rule**, not today's fixture, wherever the rule is

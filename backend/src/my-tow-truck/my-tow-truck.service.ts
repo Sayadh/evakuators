@@ -82,7 +82,21 @@ export class MyTowTruckService {
    * rule runs again at the moment of the write, and an approval can legitimately
    * fail — which the panel surfaces rather than swallowing.
    */
-  async applyUpdate(towTruckId: number, dto: UpdateMyTowTruckDto): Promise<TowTruckApi> {
+  async applyUpdate(
+    towTruckId: number,
+    dto: UpdateMyTowTruckDto,
+    options: {
+      /**
+       * The queued edit being applied, when this is an approval.
+       *
+       * Its own photos are owned by it and by nothing else, so the claim check
+       * below has to admit them — while still refusing every other request's.
+       * Absent on the two paths that are not an approval (the tests, and any
+       * future direct write), which then accept only genuinely unowned images.
+       */
+      fromProfileChangeRequestId?: number
+    } = {},
+  ): Promise<TowTruckApi> {
     // Also the isActive + existence check. Kept rather than discarded because
     // the manipulator rule below is a cross-field derivation and this is a
     // PATCH: an update that changes only the vehicle type still has to be
@@ -105,7 +119,10 @@ export class MyTowTruckService {
       // what stops one driver from pulling another driver's photo (or an
       // already-attached one) into their own gallery by id.
       if (newImageIds.length > 0) {
-        const available = await this.imagesRepository.findUnattachedByIds(newImageIds)
+        const available = await this.imagesRepository.findUnattachedByIds(
+          newImageIds,
+          options.fromProfileChangeRequestId,
+        )
         if (available.length !== newImageIds.length) {
           throw new BadRequestException('Նկարներից մեկը կամ մի քանիսը վավեր չեն կամ արդեն օգտագործված են։')
         }

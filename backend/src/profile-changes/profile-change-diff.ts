@@ -101,6 +101,35 @@ export const ALWAYS_CARRIED_FIELDS = new Set<string>(['regionSlugs'])
 const ALWAYS_CARRIED = ALWAYS_CARRIED_FIELDS
 
 /**
+ * Fields that must ride along with a change to another field, even when they
+ * did not change themselves.
+ *
+ * ## The bug this exists for
+ *
+ * `MyTowTruckService.applyUpdate` treats coverage as **one decision, not four
+ * fields**: the JSON list the public profile renders and the
+ * `citySlug`/`districtSlug`/`regionSlug` the browsing pages filter on have to
+ * describe the same geography, so it refuses a `serviceAreas` update that does
+ * not also say where the truck is based, and it writes
+ * `citySlug: rest.citySlug ?? null` — a placement field that is merely absent
+ * is not left alone, it is actively nulled.
+ *
+ * The dashboard sends all four together for exactly that reason. A driver
+ * adding one city while keeping the same base changes only `serviceAreas`, so a
+ * diff that kept strictly what differed dropped the placement — and every such
+ * edit became **permanently unapprovable**, failing with a message about a
+ * field the driver had in fact sent. It is the commonest coverage edit there
+ * is.
+ *
+ * Carried fields are applied but not *displayed*: they never get a `before`
+ * entry, and the review UI shows only fields that have one. So a moderator
+ * still sees one line («Սպասարկվող տարածքներ»), not four.
+ */
+const CARRY_WITH: Record<string, readonly string[]> = {
+  serviceAreas: ['citySlug', 'districtSlug', 'regionSlug'],
+}
+
+/**
  * Compares like with like across the shapes these values arrive in.
  *
  * Arrays are compared **in order**: `serviceAreas` and `imageIds` are ordered
@@ -138,9 +167,21 @@ function isSame(a: unknown, b: unknown): boolean {
 }
 
 export interface ProfileDiff {
-  /** Only the keys that differ — the thing a moderator reads and an approval applies */
+  /**
+   * What an approval **applies**: the keys that differ, plus the context those
+   * keys need to be applicable at all (see `ALWAYS_CARRIED_FIELDS` and
+   * `CARRY_WITH`).
+   */
   changes: ProfileChanges
-  /** The same keys as they were, for rendering «was → now» without a second query */
+  /**
+   * What a moderator **reads**: the keys that genuinely differ, as they were.
+   *
+   * This is the narrower of the two, and the difference is load-bearing rather
+   * than incidental — `before` is the definition of "a real change". A carried
+   * field has no entry here, so the review UI can render exactly the driver's
+   * edit by iterating this rather than `changes`, and the two can never come
+   * apart the way two hand-maintained lists would.
+   */
   before: ProfileChanges
 }
 
@@ -171,19 +212,42 @@ export function diffProfile(
     if (isSame(value, current[key])) continue
 
     changes[key] = value
+    // Only here. `before` is the definition of "a real change" — see ProfileDiff.
     before[key] = current[key] ?? null
   }
 
-  // A diff that carries only the always-carried keys is not a change. Without
-  // this, a driver re-saving an untouched coverage section would queue a
-  // request whose entire content is the marz list the cap needs.
-  const hasRealChange = Object.keys(changes).some((key) => !ALWAYS_CARRIED.has(key))
-  if (!hasRealChange) return { changes: {}, before: {} }
+  // Nothing genuinely differed, so there is nothing to review. Measured on
+  // `before`, not `changes`: the carried keys below have no `before` entry, so
+  // a driver re-saving an untouched coverage section cannot queue a request
+  // whose entire content is context.
+  if (Object.keys(before).length === 0) return { changes: {}, before: {} }
+
+  // Context the apply step needs. Added AFTER the loop so it cannot itself
+  // count as a change and cannot be overwritten by one: a field that really did
+  // change is already in `changes` with the submitted value, and re-reading it
+  // from `submitted` here would write the same value again.
+  for (const [trigger, companions] of Object.entries(CARRY_WITH)) {
+    if (!(trigger in changes)) continue
+    for (const companion of companions) {
+      if (companion in changes) continue
+      if (!EDITABLE.has(companion)) continue
+      // `?? null` rather than skipping an absent key: `applyUpdate` nulls a
+      // placement field it is not given, so "the driver has no districtSlug"
+      // has to be said out loud rather than left to a default.
+      changes[companion] = submitted[companion] ?? current[companion] ?? null
+    }
+  }
 
   return { changes, before }
 }
 
-/** Whether a diff is worth queueing — see the note above about an empty save */
+/**
+ * Whether a diff is worth queueing.
+ *
+ * Reads `before`, which holds only genuine changes — `changes` additionally
+ * carries context (the marz list, the base placement) that is meaningless to
+ * review on its own. See `ProfileDiff`.
+ */
 export function isEmptyDiff(diff: ProfileDiff): boolean {
-  return Object.keys(diff.changes).length === 0
+  return Object.keys(diff.before).length === 0
 }

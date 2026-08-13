@@ -141,6 +141,51 @@ describe('diffProfile keeps only what changed', () => {
     expect(diff.before.regionSlugs).toBeUndefined()
   })
 
+  it('carries the base placement with a coverage change, unchanged or not', () => {
+    // `applyUpdate` treats coverage as one decision: it refuses a `serviceAreas`
+    // update that does not say where the truck is based, and writes
+    // `citySlug: rest.citySlug ?? null` — an absent placement field is not left
+    // alone, it is nulled.
+    //
+    // A driver adding one city while keeping the same base changes only
+    // `serviceAreas`. Without this, the placement was dropped as "unchanged"
+    // and the edit became permanently unapprovable, failing with a message
+    // about a field the driver had in fact sent. It is the commonest coverage
+    // edit there is. See test/profile-change-roundtrip.spec.ts for the same
+    // property proved end to end.
+    const diff = diffProfile(
+      {
+        serviceAreas: [
+          { slug: 'abovyan', name: 'Աբովյան', type: 'city' },
+          { slug: 'hrazdan', name: 'Հրազդան', type: 'city' },
+        ],
+        citySlug: 'abovyan',
+        regionSlugs: ['kotayk'],
+      },
+      { ...CURRENT, regionSlug: 'kotayk', districtSlug: null },
+    )
+
+    expect(diff.changes.citySlug).toBe('abovyan')
+    expect(diff.changes.regionSlug).toBe('kotayk')
+    expect(diff.changes.districtSlug).toBeNull()
+  })
+
+  it('does not show a carried field as a change', () => {
+    // Carried fields never get a `before` entry, and the review UI iterates
+    // `before` — so a moderator reads one line («Սպասարկվող տարածքներ»), not
+    // four. One rule, rather than a second list of exclusions that could drift.
+    const diff = diffProfile(
+      {
+        serviceAreas: [{ slug: 'hrazdan', name: 'Հրազդան', type: 'city' }],
+        citySlug: 'abovyan',
+        regionSlugs: ['kotayk'],
+      },
+      { ...CURRENT, regionSlug: 'kotayk', districtSlug: null },
+    )
+
+    expect(Object.keys(diff.before)).toEqual(['serviceAreas'])
+  })
+
   it('does not queue an edit whose only content is the carried marz list', () => {
     // A driver re-saving an untouched coverage section would otherwise create a
     // request containing nothing a moderator could look at.

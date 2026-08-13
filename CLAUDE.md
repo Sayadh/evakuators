@@ -210,7 +210,7 @@ assume one is unused:
 | Test a change against a real backend before it reaches production | `docs/deployment.md` § "Staging environment" — separate checkout, ports `3003`/`4003`, `staging.evakuators.am` |
 | Look up an endpoint | `docs/api-reference.md` |
 | Add a field to a tow truck response | `docs/api-reference.md` § "List vs detail" — decide card vs detail first |
-| Run or add a test, either project | `docs/testing.md` |
+| Run or add a test, either project | `docs/testing.md` — and note the one exception to "nothing talks to a real database": `backend/test/migrations.pglite.spec.ts` applies every migration against real Postgres (PGlite, in-process) to check the things Prisma's schema cannot express — the partial unique index, the `ON DELETE` behaviours, the absence of a backfill |
 | Add a "how many X exist" total next to a paginated admin list | `docs/api-reference.md` § "Pagination" — follow the `/admin/tow-trucks/count` shape, don't bolt a `total` onto the paginated response |
 | Add a sidebar/content layout gated by `isDesktop` or another client-only check | `docs/architecture.md` § "A CSS grid with a viewport-conditional child is an SSR bug waiting to happen" |
 | Show a date, a time, a price or any grouped number | `docs/architecture.md` § "Never ask the runtime to localise a string" — `toLocaleDateString`/`toLocaleString`/`Intl.NumberFormat` are banned on anything that reaches the page; use `frontend/utils/formatters.ts` and `formatPrice.ts`, which are pinned to `Asia/Yerevan` and an explicit Armenian month table so SSR and the browser cannot disagree |

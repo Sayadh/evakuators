@@ -384,6 +384,28 @@ re-running it is how you reset a forgotten password. Auth is
 `admin-auth`/`AdminJwtGuard`, plus the Telegram-based 2FA described in
 `docs/auth-and-security.md`.
 
+## `ProfileChangeRequest` — a driver's edit, before it is live
+
+A dashboard save creates one of these instead of writing to `TowTruck`. See
+`docs/api-reference.md` § "Driver edits are moderated" for the flow; the parts
+that are specifically about the data:
+
+- **`changes` and `before` are `Json`, not columns.** The set of keys is the
+  DTO's, not a table's. Thirty nullable columns would be null for every row, and
+  there would be no way to tell "not changed" from "changed to null".
+- **`before` is a snapshot, not a join.** It holds the same keys as they were at
+  submission, so the panel renders «was → now» without a second query — and so a
+  diff already under review still reads correctly if the live row moves
+  underneath it.
+- **One pending row per truck**, enforced by a partial unique index
+  (`WHERE status = 'PENDING'`) written by hand in the migration, because Prisma
+  cannot express one. A resubmission replaces the row.
+- **`TowTruckImage.profileChangeRequestId` is a third owner** alongside
+  `towTruckId` and `registrationRequestId`. Without it the nightly orphan purge
+  (24h TTL, `ImagesService`) would delete the photos of a request that had been
+  waiting longer than a day, and approving it would fail on images that no
+  longer exist.
+
 ## Migrations
 
 Hand-authored SQL files in `backend/prisma/migrations/`, matching Prisma's

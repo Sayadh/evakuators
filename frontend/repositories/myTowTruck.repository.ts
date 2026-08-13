@@ -60,6 +60,31 @@ export interface UpdateMyTowTruckPayload {
   imageIds?: number[]
 }
 
+/** One field that differs between the live profile and a queued edit */
+export interface ProfileChangeField {
+  field: string
+  before: unknown
+  after: unknown
+}
+
+/**
+ * What the dashboard needs to know about the moderation queue.
+ *
+ * Two mutually exclusive halves, mirroring backend `DriverProfileChangeStatusApi`:
+ * something is waiting, or the last thing that was waiting got a verdict.
+ * Never both — a driver who has resubmitted is looking at the new attempt, and
+ * showing the previous refusal beside it would read as a verdict on it.
+ */
+export interface DriverProfileChangeStatus {
+  pending: { id: number; fields: ProfileChangeField[]; createdAt: string } | null
+  lastReviewed: {
+    id: number
+    status: 'APPROVED' | 'REJECTED'
+    rejectionReason?: string
+    reviewedAt?: string
+  } | null
+}
+
 /** Driver self-service — always operates on the caller's own profile (JWT-scoped) */
 export const myTowTruckRepository = {
   getMine(): Promise<TowTruck> {
@@ -68,10 +93,38 @@ export const myTowTruckRepository = {
     })
   },
 
-  updateMine(payload: UpdateMyTowTruckPayload): Promise<TowTruck> {
-    return apiFetch<TowTruck>('/my/tow-truck', {
+  /**
+   * Submits the profile form **for review**. It does not save.
+   *
+   * Every field a driver can change is moderated, so this queues a diff and the
+   * live listing is untouched until an admin approves — which is why it answers
+   * with the queue status rather than the profile. Returning `TowTruck` here
+   * was the old shape and would now be actively misleading: it would be the
+   * profile as it still is, right after telling the driver their save
+   * succeeded.
+   *
+   * `pending: null` means nothing differed. The form submits every field
+   * whether or not it was touched, so that is a normal outcome, not an error.
+   */
+  updateMine(payload: UpdateMyTowTruckPayload): Promise<DriverProfileChangeStatus> {
+    return apiFetch<DriverProfileChangeStatus>('/my/tow-truck', {
       method: 'PATCH',
       body: payload as unknown as Record<string, unknown>,
+      headers: useDriverAuthStore().authHeader,
+    })
+  },
+
+  /** What is queued for this driver, or why the last attempt was refused */
+  getProfileChange(): Promise<DriverProfileChangeStatus> {
+    return apiFetch<DriverProfileChangeStatus>('/my/tow-truck/profile-change', {
+      headers: useDriverAuthStore().authHeader,
+    })
+  },
+
+  /** Withdraws the queued edit — nothing was applied, so it simply disappears */
+  withdrawProfileChange(): Promise<{ withdrawn: boolean }> {
+    return apiFetch<{ withdrawn: boolean }>('/my/tow-truck/profile-change', {
+      method: 'DELETE',
       headers: useDriverAuthStore().authHeader,
     })
   },
@@ -86,11 +139,13 @@ export const myTowTruckRepository = {
    * be holding. The backend's DTO has exactly these two fields for the same
    * reason (see backend `SetCoordinatesDto`).
    *
-   * Returns the full refreshed profile, so the caller can re-render from the
-   * response instead of guessing what was stored.
+   * Moderated like every other field: this queues, it does not write. A base
+   * location is as public a claim as a service area, and leaving it
+   * self-service would make it the obvious way around the review — so the
+   * response is the queue status, not a refreshed profile.
    */
-  updateCoordinates(latitude: number, longitude: number): Promise<TowTruck> {
-    return apiFetch<TowTruck>('/my/tow-truck/coordinates', {
+  updateCoordinates(latitude: number, longitude: number): Promise<DriverProfileChangeStatus> {
+    return apiFetch<DriverProfileChangeStatus>('/my/tow-truck/coordinates', {
       method: 'PATCH',
       body: { latitude, longitude },
       headers: useDriverAuthStore().authHeader,

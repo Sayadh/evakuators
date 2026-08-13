@@ -9,7 +9,12 @@ import {
   VEHICLE_TYPE_DESCRIPTIONS,
   VEHICLE_TYPE_OPTIONS,
 } from '~/constants/vehicles'
-import { imageRepository, myTowTruckRepository, type UpdateMyTowTruckPayload } from '~/repositories'
+import {
+  imageRepository,
+  myTowTruckRepository,
+  type DriverProfileChangeStatus,
+  type UpdateMyTowTruckPayload,
+} from '~/repositories'
 import { useDriverAuthStore } from '~/stores/driverAuth'
 // VehicleType is a value import, not `import type` — see the manipulator rule
 // below, which compares against the enum member itself.
@@ -18,6 +23,8 @@ import type { SelectOption } from '~/types/common'
 import type { TowTruck } from '~/types/towTruck'
 import { formatCoordinates, type Coordinates } from '~/utils/coordinates'
 import { extractErrorMessage } from '~/utils/errors'
+import { formatDateNumeric } from '~/utils/formatters'
+import { formatProfileValue, profileFieldLabel } from '~/utils/profileChangeLabels'
 import { armenianPhoneInputValue } from '~/utils/formatPhone'
 import {
   cityOrDistrictLabel,
@@ -150,7 +157,68 @@ const errors = reactive<Record<string, string>>({
 
 const saving = ref(false)
 const saveError = ref('')
-const saveSuccess = ref(false)
+/**
+ * A save no longer publishes anything — it queues an edit for review, and this
+ * is what says so.
+ *
+ * Three outcomes, and they are genuinely different things to tell a driver:
+ * `'queued'` (a moderator will look at it), `'unchanged'` (nothing differed, so
+ * nothing was queued — the form submits every field whether or not it was
+ * touched, so this is easy to reach by accident), and `false` (nothing has been
+ * submitted yet this session).
+ */
+const saveOutcome = ref<'queued' | 'unchanged' | false>(false)
+
+/* ── The moderation queue ─────────────────────────────────────────────────
+ *
+ * Every field on this page is moderated. A driver's save used to go straight
+ * into the public listing; it now creates a `ProfileChangeRequest` holding only
+ * what differs, and the live profile is untouched until an admin approves.
+ *
+ * This page therefore has to answer three questions it never had before: is
+ * something waiting, what exactly is in it, and — if the last attempt was
+ * refused — why.
+ */
+const profileChange = ref<DriverProfileChangeStatus | null>(null)
+const withdrawing = ref(false)
+
+const pendingFields = computed(() => profileChange.value?.pending?.fields ?? [])
+const lastRejection = computed(() =>
+  profileChange.value?.lastReviewed?.status === 'REJECTED'
+    ? profileChange.value.lastReviewed
+    : null,
+)
+
+async function loadProfileChange(): Promise<void> {
+  try {
+    profileChange.value = await myTowTruckRepository.getProfileChange()
+  } catch {
+    // Never surfaced. The banner is extra context on a page whose real job is
+    // the form, and a failed status read must not look like a failed save.
+  }
+}
+
+/**
+ * Withdraws the queued edit.
+ *
+ * The live profile was never touched, so there is nothing to roll back — this
+ * only frees the one pending slot. Offered because the alternative for a driver
+ * who queued something by mistake is to wait for a rejection.
+ */
+async function withdrawProfileChange(): Promise<void> {
+  if (!confirm('Հետ վերցնե՞լ ուղարկված փոփոխությունները։')) return
+
+  withdrawing.value = true
+  try {
+    await myTowTruckRepository.withdrawProfileChange()
+    saveOutcome.value = false
+    await loadProfileChange()
+  } catch (error) {
+    saveError.value = extractErrorMessage(error, 'Հետ վերցնել չհաջողվեց։')
+  } finally {
+    withdrawing.value = false
+  }
+}
 
 const existingImages = ref<{ id: number; url: string }[]>([])
 const newImageFiles = shallowRef<File[]>([])
@@ -319,7 +387,9 @@ async function load(): Promise<void> {
 }
 
 onMounted(() => {
-  if (driverAuth.isLoggedIn) void load()
+  if (!driverAuth.isLoggedIn) return
+  void load()
+  void loadProfileChange()
 })
 
 const is247 = computed(() => form.services.includes(ServiceType.Available247))
@@ -374,7 +444,7 @@ function validate(): boolean {
 
 async function submit(): Promise<void> {
   saveError.value = ''
-  saveSuccess.value = false
+  saveOutcome.value = false
 
   if (!validate()) {
     saveError.value = 'Ստուգիր նշված դաշտերը'
@@ -466,9 +536,13 @@ async function submit(): Promise<void> {
       ...uploadedNewImageIds.value,
     ]
 
-    truck.value = await myTowTruckRepository.updateMine(payload)
-    fillFormFromTruck(truck.value)
-    saveSuccess.value = true
+    // The response is the queue status, not a profile: nothing was published,
+    // so `truck` is deliberately NOT reassigned and the form is not refilled.
+    // Refilling it from a profile that has not changed would silently discard
+    // the driver's own edits the instant they submitted them.
+    const status = await myTowTruckRepository.updateMine(payload)
+    profileChange.value = status
+    saveOutcome.value = status.pending ? 'queued' : 'unchanged'
     newImageFiles.value = []
     // Attached to the profile now — a later save must not resend these ids
     // as if they were still unattached uploads.
@@ -526,18 +600,15 @@ async function saveCoordinates(coordinates: Coordinates): Promise<void> {
   savingCoordinates.value = true
   coordinatesError.value = ''
   try {
-    // The response is the full refreshed profile, so the displayed pair comes
-    // from what Postgres stored rather than from what was sent.
-    //
-    // Deliberately NOT followed by fillFormFromTruck() the way the main save
-    // is: that would overwrite the big edit form with the server's copy, and a
-    // driver who was halfway through rewriting their description when they
-    // stopped to fix their coordinates would silently lose it. Nothing in that
-    // form depends on the coordinates, so there is nothing to re-sync.
-    truck.value = await myTowTruckRepository.updateCoordinates(
+    // Queued, not saved — the base location is as public a claim as a service
+    // area, so it goes through the same review. `truck` is therefore NOT
+    // reassigned: the marker on this page still shows the pair that is live,
+    // which is the honest thing to show while a new one waits.
+    const status = await myTowTruckRepository.updateCoordinates(
       coordinates.latitude,
       coordinates.longitude,
     )
+    profileChange.value = status
     coordinatesDialogOpen.value = false
     coordinatesSuccess.value = true
   } catch (error) {
@@ -585,6 +656,44 @@ async function logout(): Promise<void> {
         <strong>{{ truck.driverName }}</strong> · {{ truck.vehicle.brand }}
         {{ truck.vehicle.model }} · <NuxtLink :to="`/tow-trucks/${truck.slug}`">Տեսնել պրոֆիլը կայքում</NuxtLink>
       </p>
+
+      <!-- The state of the queue, above the form rather than beside the save
+           button. A driver who has something waiting needs to know it before
+           they start editing again — the second save replaces the first, and
+           finding that out afterwards is finding it out too late. -->
+      <section v-if="profileChange?.pending" class="dashboard-review dashboard-review--pending">
+        <h2 class="dashboard-review__title">Փոփոխությունները սպասում են հաստատման</h2>
+        <p class="dashboard-review__text">
+          Ուղարկվել է {{ formatDateNumeric(profileChange.pending.createdAt) }}։ Կայքում դեռ
+          երևում է նախորդ տարբերակը — ադմինիստրատորը կստուգի և կհաստատի։
+        </p>
+        <ul class="dashboard-review__fields">
+          <li v-for="entry in pendingFields" :key="entry.field">
+            <span class="dashboard-review__field-name">{{ profileFieldLabel(entry.field) }}</span>
+            <span class="dashboard-review__before">
+              {{ formatProfileValue(entry.field, entry.before) }}
+            </span>
+            →
+            <span class="dashboard-review__after">
+              {{ formatProfileValue(entry.field, entry.after) }}
+            </span>
+          </li>
+        </ul>
+        <AppButton variant="outline" size="sm" :disabled="withdrawing" @click="withdrawProfileChange">
+          {{ withdrawing ? 'Հետ է վերցվում…' : 'Հետ վերցնել' }}
+        </AppButton>
+      </section>
+
+      <!-- Shown only when nothing is waiting: a driver who has resubmitted is
+           looking at the new attempt, and the previous refusal beside it would
+           read as a verdict on that. -->
+      <section v-else-if="lastRejection" class="dashboard-review dashboard-review--rejected">
+        <h2 class="dashboard-review__title">Վերջին փոփոխությունները չեն հաստատվել</h2>
+        <p class="dashboard-review__text">{{ lastRejection.rejectionReason }}</p>
+        <p class="dashboard-review__text dashboard-review__text--muted">
+          Ուղղեք և կրկին ուղարկեք։
+        </p>
+      </section>
 
       <!-- Analytics first: it's what a driver opens the dashboard to check -->
       <details class="dashboard-section">
@@ -842,10 +951,18 @@ async function logout(): Promise<void> {
 
 
         <p v-if="saveError" class="dashboard-error">{{ saveError }}</p>
-        <p v-if="saveSuccess" class="dashboard-success">Հաջողությամբ պահպանվեց ✓</p>
+        <!-- Never «պահպանվեց»: nothing was. Saying so would be the one message
+             on this page that is actively false, and the driver would go and
+             look at their public profile for a change that is not there yet. -->
+        <p v-if="saveOutcome === 'queued'" class="dashboard-success">
+          Ուղարկվեց հաստատման ✓ — կայքում կերևա ադմինիստրատորի հաստատումից հետո։
+        </p>
+        <p v-else-if="saveOutcome === 'unchanged'" class="dashboard-hint">
+          Փոփոխություն չկար։
+        </p>
 
         <AppButton type="submit" variant="success" block :disabled="saving">
-          {{ saving ? 'Պահպանվում է…' : 'Պահպանել' }}
+          {{ saving ? 'Ուղարկվում է…' : 'Ուղարկել հաստատման' }}
         </AppButton>
       </form>
 
@@ -1219,6 +1336,71 @@ details[open] .dashboard-summary::after {
   
   label {
     font-size: 0.9rem;
+    font-weight: 600;
+  }
+}
+
+/* The moderation banner. Two variants of one block rather than two blocks: they
+   occupy the same slot, say the same kind of thing about the same queue, and
+   are mutually exclusive by construction (see getStatusForDriver). */
+.dashboard-review {
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+
+  &--pending {
+    background: rgba(240, 173, 78, 0.12);
+    border: 1px solid rgba(240, 173, 78, 0.4);
+  }
+
+  &--rejected {
+    background: rgba(217, 83, 79, 0.1);
+    border: 1px solid rgba(217, 83, 79, 0.35);
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 1.05rem;
+  }
+
+  &__text {
+    margin: 0;
+    font-size: 0.9rem;
+    line-height: 1.6;
+
+    &--muted {
+      color: var(--color-text-muted);
+    }
+  }
+
+  &__fields {
+    margin: 0;
+    padding-left: var(--space-4);
+    font-size: 0.88rem;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  &__field-name {
+    font-weight: 600;
+
+    &::after {
+      content: ':';
+      margin-right: 4px;
+    }
+  }
+
+  &__before {
+    color: var(--color-text-muted);
+    text-decoration: line-through;
+  }
+
+  &__after {
     font-weight: 600;
   }
 }

@@ -8,6 +8,7 @@ import {
   adminAuthRepository,
   adminRepository,
   isApiEnabled,
+  type AdminProfileChange,
   type AdminRegistrationRequest,
   type AdminReview,
   type AdminServiceArea,
@@ -77,7 +78,7 @@ function isUnauthorized(error: unknown): boolean {
 
 async function afterLogin(token: string): Promise<void> {
   adminAuth.login(token)
-  await Promise.all([loadRegistrations(), loadReviews(), loadTowTrucks()])
+  await Promise.all([loadRegistrations(), loadProfileChanges(), loadReviews(), loadTowTrucks()])
 }
 
 async function submitCredentials(): Promise<void> {
@@ -159,6 +160,16 @@ const statusOptions = [
  * each visit. One page at a time, "load more" for the rest.
  */
 const ADMIN_PAGE_SIZE = 50
+
+/**
+ * Mirrors `RejectProfileChangeDto`'s own floor.
+ *
+ * A manual sync point, and a shallow one: the backend rejects a shorter reason
+ * outright, so the only thing this buys is that a moderator learns it while
+ * typing rather than from a failed request. Raising it here alone is advisory;
+ * raising it there alone means the textarea accepts what the API refuses.
+ */
+const REJECT_REASON_MIN_LENGTH = 10
 
 const statusFilter = ref<StatusFilter>('PENDING')
 const registrations = ref<AdminRegistrationRequest[]>([])
@@ -1001,9 +1012,89 @@ async function deleteTowTruck(truck: AdminTowTruck): Promise<void> {
   }
 }
 
+/* ── Driver profile edits awaiting review ── */
+
+/**
+ * A second queue, beside the registration one.
+ *
+ * They are deliberately not merged: one decides whether a driver joins the
+ * platform, the other whether a change to an already-published listing goes
+ * live. Different bodies, different consequences, different urgency — and a
+ * moderator reading both in one list would have no way to work through either.
+ */
+const profileChanges = ref<AdminProfileChange[]>([])
+const loadingProfileChanges = ref(false)
+const profileChangesError = ref('')
+
+async function loadProfileChanges(): Promise<void> {
+  loadingProfileChanges.value = true
+  profileChangesError.value = ''
+  try {
+    profileChanges.value = await adminRepository.listProfileChanges({ limit: ADMIN_PAGE_SIZE })
+  } catch (error) {
+    profileChangesError.value = extractErrorMessage(error, 'Փոփոխությունները բեռնել չհաջողվեց։')
+  } finally {
+    loadingProfileChanges.value = false
+  }
+}
+
+async function approveProfileChange(change: AdminProfileChange): Promise<void> {
+  actioningId.value = change.id
+  profileChangesError.value = ''
+  try {
+    await adminRepository.approveProfileChange(change.id)
+    // Refetched rather than filtered out locally: approving runs the driver's
+    // own write path, which can legitimately fail on a rule that only holds at
+    // write time — so the list has to come back from the server rather than
+    // being assumed correct.
+    await loadProfileChanges()
+  } catch (error) {
+    profileChangesError.value = extractErrorMessage(error, 'Հաստատել չհաջողվեց։')
+  } finally {
+    actioningId.value = null
+  }
+}
+
+const rejectModalOpen = ref(false)
+const rejectTarget = ref<AdminProfileChange | null>(null)
+const rejectReason = ref('')
+const rejectError = ref('')
+const rejectSubmitting = ref(false)
+
+function openReject(change: AdminProfileChange): void {
+  rejectTarget.value = change
+  rejectReason.value = ''
+  rejectError.value = ''
+  rejectModalOpen.value = true
+}
+
+async function submitReject(): Promise<void> {
+  if (!rejectTarget.value) return
+  // Mirrors the backend's own floor. Checked here too so a moderator learns it
+  // before the round trip, not from a validation error afterwards — the reason
+  // is the only thing that tells a driver which change was the problem.
+  if (rejectReason.value.trim().length < REJECT_REASON_MIN_LENGTH) {
+    rejectError.value = `Գրեք մերժման պատճառը (առնվազն ${REJECT_REASON_MIN_LENGTH} նիշ)`
+    return
+  }
+
+  rejectSubmitting.value = true
+  rejectError.value = ''
+  try {
+    await adminRepository.rejectProfileChange(rejectTarget.value.id, rejectReason.value.trim())
+    rejectModalOpen.value = false
+    await loadProfileChanges()
+  } catch (error) {
+    rejectError.value = extractErrorMessage(error, 'Մերժել չհաջողվեց։')
+  } finally {
+    rejectSubmitting.value = false
+  }
+}
+
 onMounted(() => {
   if (!apiEnabled || !adminAuth.isLoggedIn) return
   void loadRegistrations()
+  void loadProfileChanges()
   void loadReviews()
   void loadTowTrucks()
 })
@@ -1254,6 +1345,51 @@ async function rejectReview(review: AdminReview): Promise<void> {
           <AppButton variant="outline" :disabled="loadingRegistrations" @click="loadRegistrations(true)">
             {{ loadingRegistrations ? 'Բեռնվում է…' : 'Ցույց տալ ավելին' }}
           </AppButton>
+        </div>
+      </section>
+
+      <!-- ── Driver profile edits ── -->
+      <section class="admin-section">
+        <div class="admin-section__header">
+          <h2>
+            Պրոֆիլի փոփոխություններ
+            <span v-if="profileChanges.length" class="admin-section__count">
+              ({{ profileChanges.length }})
+            </span>
+          </h2>
+        </div>
+
+        <p class="admin-section__note">
+          Վարորդների ուղարկած փոփոխությունները։ Կայքում ոչինչ չի փոխվել՝ մինչև հաստատումը։
+          Ցուցադրվում է միայն այն, ինչ փոխվել է։
+        </p>
+
+        <p v-if="profileChangesError" class="admin-error" role="alert">{{ profileChangesError }}</p>
+
+        <!-- Same skeleton rule as the lists above: only while there is nothing
+             on screen yet. Replacing a populated list mid-refresh collapses the
+             document and the browser clamps the scroll position to the top. -->
+        <LoadingSkeleton
+          v-if="loadingProfileChanges && profileChanges.length === 0"
+          variant="text"
+          :count="3"
+        />
+
+        <EmptyState
+          v-else-if="profileChanges.length === 0"
+          title="Սպասող փոփոխություններ չկան"
+          icon="truck"
+        />
+
+        <div v-else class="admin-cards">
+          <ProfileChangeCard
+            v-for="change in profileChanges"
+            :key="change.id"
+            :change="change"
+            :busy="actioningId === change.id"
+            @approve="approveProfileChange(change)"
+            @reject="openReject(change)"
+          />
         </div>
       </section>
 
@@ -1840,6 +1976,31 @@ async function rejectReview(review: AdminReview): Promise<void> {
       </p>
     </AppModal>
 
+    <!-- The reason is required, and the driver is shown it verbatim in Telegram
+         and on their dashboard. An unexplained refusal leaves them to guess
+         which change was the problem, and the likeliest next move is to submit
+         the same thing again. -->
+    <AppModal v-model="rejectModalOpen" title="Մերժել փոփոխությունը">
+      <form class="reject-form" @submit.prevent="submitReject">
+        <p class="admin-card__muted">
+          {{ rejectTarget?.driverName }} — վարորդը կստանա այս պատճառը Telegram-ով և իր էջում։
+        </p>
+        <label for="reject-reason" class="reject-form__label">Մերժման պատճառը</label>
+        <textarea
+          id="reject-reason"
+          v-model="rejectReason"
+          class="reject-form__textarea"
+          rows="4"
+          maxlength="500"
+          placeholder="Օր.՝ Նշված բեռնատարողությունը չի համապատասխանում մեքենային։"
+        />
+        <p v-if="rejectError" class="admin-error" role="alert">{{ rejectError }}</p>
+        <AppButton type="submit" variant="danger" block :disabled="rejectSubmitting">
+          {{ rejectSubmitting ? 'Ուղարկվում է…' : 'Մերժել և ուղարկել պատճառը' }}
+        </AppButton>
+      </form>
+    </AppModal>
+
     <AdminImageLightbox
       v-model="lightboxOpen"
       :images="lightboxImages"
@@ -2002,6 +2163,32 @@ async function rejectReview(review: AdminReview): Promise<void> {
 .broadcast-picker {
   &__field {
     margin-bottom: var(--space-4);
+  }
+
+  &__textarea {
+    width: 100%;
+    padding: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    font-size: 1rem;
+    font-family: inherit;
+    color: var(--color-text);
+    background: var(--color-surface);
+    resize: vertical;
+  }
+}
+
+/* The rejection reason. A bare <textarea> for the same reason the broadcast box
+   above is one: AppInput is a single-line control, and the two places in this
+   panel that need several lines do not justify a component between them. */
+.reject-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+
+  &__label {
+    font-size: 0.9rem;
+    font-weight: 600;
   }
 
   &__textarea {

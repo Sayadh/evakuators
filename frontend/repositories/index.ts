@@ -1,6 +1,7 @@
 export { apiFetch, getApiBase, isApiEnabled, isNotFoundError } from './apiClient'
 export { adminRepository } from './admin.repository'
 export type {
+  AdminProfileChange,
   AdminRegistrationRequest,
   AdminReview,
   AdminServiceArea,
@@ -31,7 +32,11 @@ export type { UploadedImage } from './image.repository'
 export { myFreeRoutesRepository } from './myFreeRoutes.repository'
 export type { FreeRoutePayload } from './myFreeRoutes.repository'
 export { myTowTruckRepository } from './myTowTruck.repository'
-export type { UpdateMyTowTruckPayload } from './myTowTruck.repository'
+export type {
+  DriverProfileChangeStatus,
+  ProfileChangeField,
+  UpdateMyTowTruckPayload,
+} from './myTowTruck.repository'
 export { nearestRepository } from './nearest.repository'
 export { registrationRepository } from './registration.repository'
 export type { RegistrationPayload, RegistrationResult } from './registration.repository'

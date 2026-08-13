@@ -22,6 +22,17 @@ enum UserRole {
   ADMIN
 }
 
+/// Lifecycle of a driver's proposed edit to their own live profile.
+///
+/// Deliberately the same three words as RegistrationStatus: a moderator is
+/// doing the same job in both queues, and two vocabularies for one workflow is
+/// how a status ends up compared against the wrong string.
+enum ProfileChangeStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum FreeRouteStatus {
   /// Shown on the public listing, still open for a customer to grab
   ACTIVE
@@ -210,6 +221,11 @@ model TowTruck {
   reviews    Review[]
   freeRoutes FreeRoute[]
 
+  /// Edits this driver has proposed to their own profile — see
+  /// ProfileChangeRequest. Cascades on delete like everything else here, so
+  /// AdminService.deleteTowTruck() needs no extra cleanup step.
+  profileChanges ProfileChangeRequest[]
+
   // Provider analytics — see docs/analytics.md. Both cascade on delete, so
   // AdminService.deleteTowTruck() needs no extra cleanup step.
   analyticsDailyStats  AnalyticsDailyStat[]
@@ -292,8 +308,87 @@ model TowTruckImage {
   registrationRequestId Int?
   registrationRequest   RegistrationRequest? @relation(fields: [registrationRequestId], references: [id], onDelete: SetNull)
 
+  /// The pending profile edit that wants to add this photo to a gallery.
+  ///
+  /// A third owner, for exactly the same reason the second one exists: an image
+  /// belonging to no truck and no request is an orphan and the nightly purge
+  /// deletes it after 24 hours (ImagesService). A driver's photo change can sit
+  /// in the moderation queue for longer than that, so without this column the
+  /// new photos would be deleted out from under a request nobody had reviewed
+  /// yet — and approving it would then fail on images that no longer exist.
+  ///
+  /// SetNull rather than Cascade: when a change request is deleted the photos
+  /// become ordinary orphans and the purge collects them on its own schedule,
+  /// which is the one place that deletes a Storage object and a row in the
+  /// right order.
+  profileChangeRequestId Int?
+  profileChangeRequest   ProfileChangeRequest? @relation(fields: [profileChangeRequestId], references: [id], onDelete: SetNull)
+
   @@index([towTruckId])
   @@index([registrationRequestId])
+  @@index([profileChangeRequestId])
+}
+
+/// One edit a driver has proposed to their own already-published profile.
+///
+/// ## Why a request rather than a write
+///
+/// Everything on a driver's dashboard used to save straight to `TowTruck`.
+/// Approval reviewed a listing once, at registration, and after that a driver
+/// could raise their stated capacity, add coverage they do not really serve, or
+/// rewrite their description to anything at all, and nothing looked at it again
+/// — a trade-off `UpdateMyTowTruckDto` documented at the time and pointed at
+/// this exact place as where to undo it.
+///
+/// Now a save queues. The live profile is untouched until a moderator approves,
+/// so what the public sees is always something a human has seen.
+///
+/// ## What is stored, and what is not
+///
+/// `changes` holds **only the fields that actually differ** from the live
+/// profile at the moment of submission — not the whole form. That is what makes
+/// the review a diff rather than a re-read of the entire listing: a driver who
+/// only fixed a phone number produces a one-key object, and the moderator sees
+/// one line. `before` is a snapshot of those same keys as they were, so the
+/// panel can render «was → now» without a second query, and so a diff already
+/// under review still reads correctly if the live row moves underneath it.
+///
+/// Both are `Json` because the set of keys is the DTO's, not a table's — giving
+/// each field a nullable column would mean ~30 columns that are null for every
+/// row, and no way to tell "not changed" from "changed to null".
+///
+/// ## One pending request per truck
+///
+/// Enforced by a partial unique index (see the migration), not just by the
+/// service: two queued edits to one profile cannot be applied in a defined
+/// order, and the second would silently overwrite the first's fields. A driver
+/// who saves again while one is pending REPLACES it — same row, new diff — which
+/// is also why `createdAt` is refreshed on resubmission.
+model ProfileChangeRequest {
+  id         Int      @id @default(autoincrement())
+  towTruckId Int
+  towTruck   TowTruck @relation(fields: [towTruckId], references: [id], onDelete: Cascade)
+
+  status ProfileChangeStatus @default(PENDING)
+
+  /// Only what differs, in `UpdateMyTowTruckDto` shape (plus `latitude`/`longitude`)
+  changes Json
+  /// The same keys as they were when the driver pressed save
+  before  Json
+
+  /// Required when rejecting — the driver is shown this verbatim, in Telegram
+  /// and on their dashboard, so "no" is never an unexplained no.
+  rejectionReason String?
+
+  createdAt  DateTime  @default(now())
+  reviewedAt DateTime?
+
+  /// Photos this edit wants to add, kept alive while it waits — see
+  /// TowTruckImage.profileChangeRequestId.
+  images TowTruckImage[]
+
+  @@index([towTruckId])
+  @@index([status, createdAt])
 }
 
 model Review {

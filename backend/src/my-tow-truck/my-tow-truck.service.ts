@@ -57,7 +57,32 @@ export class MyTowTruckService {
     return toTowTruckApi(towTruck, { includeCoordinates: true })
   }
 
-  async updateMine(towTruckId: number, dto: UpdateMyTowTruckDto): Promise<TowTruckApi> {
+  /**
+   * Applies an already-approved set of changes to the live profile.
+   *
+   * ## This used to be the endpoint
+   *
+   * `PATCH /my-tow-truck` called this directly, and a driver's save went
+   * straight into the public listing. It now goes through moderation
+   * (`submitChange` below), and this is what an approval runs — unchanged, on
+   * purpose. Re-implementing the write on the admin side would mean two places
+   * that derive `manipulator`, two that reject a half-changed coverage list, and
+   * two that decide what an empty string means, which is how an approved edit
+   * ends up stored differently from the same edit written directly.
+   *
+   * It stays `public` for that reason and for no other: `ProfileChangesService`
+   * is its only caller besides the tests.
+   *
+   * ## Everything is re-checked here, not just at submission
+   *
+   * The DTO validated the shape when the driver pressed save, and the coverage
+   * cap and image ownership were checked then too. Time passes before a
+   * moderator looks at it, and the world moves: a photo can be claimed by
+   * another profile, an admin can remove one of the driver's areas. So every
+   * rule runs again at the moment of the write, and an approval can legitimately
+   * fail — which the panel surfaces rather than swallowing.
+   */
+  async applyUpdate(towTruckId: number, dto: UpdateMyTowTruckDto): Promise<TowTruckApi> {
     // Also the isActive + existence check. Kept rather than discarded because
     // the manipulator rule below is a cross-field derivation and this is a
     // PATCH: an update that changes only the vehicle type still has to be
@@ -198,7 +223,7 @@ export class MyTowTruckService {
   /**
    * The driver's own base parking coordinates.
    *
-   * ## Why a separate endpoint rather than two more fields on updateMine()
+   * ## Why a separate endpoint rather than two more fields on the profile PATCH
    *
    * The dashboard edits these in a dialog with its own Save button, separate
    * from the big profile form — so the request that saves them should be
@@ -216,7 +241,7 @@ export class MyTowTruckService {
    * `isActive` checks unchanged — a deactivated driver holding a still-valid
    * 30-day token cannot write here either.
    */
-  async updateCoordinates(towTruckId: number, dto: SetCoordinatesDto): Promise<TowTruckApi> {
+  async applyCoordinates(towTruckId: number, dto: SetCoordinatesDto): Promise<TowTruckApi> {
     await this.getMine(towTruckId)
 
     // The DTO proved these are real numbers in range; this is the geography

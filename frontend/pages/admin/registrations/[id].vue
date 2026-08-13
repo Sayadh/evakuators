@@ -386,7 +386,7 @@ async function reject(): Promise<void> {
             Հայտ #{{ request.id }} · {{ formatDateNumeric(request.createdAt) }}
           </p>
         </div>
-        <AppBadge :variant="isPending ? 'warning' : 'neutral'">
+        <AppBadge :variant="isPending ? 'accent' : 'neutral'">
           {{ isPending ? 'Սպասում է' : request.status === 'APPROVED' ? 'Հաստատված' : 'Մերժված' }}
         </AppBadge>
       </header>

@@ -10,10 +10,13 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common'
-import { RegistrationStatus } from '@prisma/client'
+import { ProfileChangeStatus, RegistrationStatus } from '@prisma/client'
 import { AdminJwtGuard } from '../admin-auth/admin-jwt.guard'
 import { SetCoordinatesDto } from '../common/set-coordinates.dto'
 import type { AdminRegistrationSummary } from './admin-registration.mapper'
+import { toProfileChangeApi } from '../profile-changes/profile-change.mapper'
+import type { ProfileChangeApi } from '../profile-changes/profile-change.types'
+import { ProfileChangesService } from '../profile-changes/profile-changes.service'
 import type { ReviewWithTruck } from '../reviews/reviews.repository'
 import type { ServiceAreaJson } from '../tow-trucks/tow-truck.types'
 import type { AdminTowTruckSummary } from './admin-tow-truck.mapper'
@@ -22,6 +25,7 @@ import { AdminListQuery, AdminRegistrationsQuery } from './dto/admin-list.query'
 import { ApproveRegistrationDto } from './dto/approve-registration.dto'
 import { BroadcastMessageDto } from './dto/broadcast-message.dto'
 import { IssuePasswordsDto } from './dto/issue-passwords.dto'
+import { RejectProfileChangeDto } from './dto/reject-profile-change.dto'
 import { RemoveServiceAreaDto } from './dto/remove-service-area.dto'
 import { SetPrimaryAreaDto } from './dto/set-primary-area.dto'
 import { SetTowTruckActiveDto } from './dto/set-tow-truck-active.dto'
@@ -33,7 +37,60 @@ import { SetTowTruckPhoneDto } from './dto/set-tow-truck-phone.dto'
 @UseGuards(AdminJwtGuard)
 @Controller('admin')
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly profileChanges: ProfileChangesService,
+  ) {}
+
+  /* ── Driver profile edits awaiting review ─────────────────────────────── */
+
+  /**
+   * The moderation queue for edits drivers made to their own live profiles.
+   *
+   * A separate queue from `registration-requests`, deliberately: one decides
+   * whether a driver joins the platform, the other whether a change to an
+   * already-published listing goes live. They have different bodies, different
+   * consequences and different urgency, and merging them would mean a moderator
+   * reading two kinds of thing in one list with no way to filter.
+   */
+  @Get('profile-changes')
+  async listProfileChanges(@Query() query: AdminListQuery): Promise<ProfileChangeApi[]> {
+    const requests = await this.profileChanges.list(
+      ProfileChangeStatus.PENDING,
+      query.limit,
+      query.offset,
+    )
+    return requests.map(toProfileChangeApi)
+  }
+
+  /** How many are waiting — shown next to the section heading */
+  @Get('profile-changes/count')
+  async countProfileChanges(): Promise<{ pending: number }> {
+    return { pending: await this.profileChanges.countPending() }
+  }
+
+  /**
+   * Applies the queued edit to the live profile.
+   *
+   * Runs the driver's own write path (`MyTowTruckService.applyUpdate`), so an
+   * approved edit is stored exactly as a direct save would have stored it. It
+   * can legitimately fail — a photo may have been claimed elsewhere, an admin
+   * may have changed the truck's coverage while this waited — and the error
+   * surfaces rather than being swallowed.
+   */
+  @Post('profile-changes/:id/approve')
+  approveProfileChange(@Param('id', ParseIntPipe) id: number): Promise<{ id: number }> {
+    return this.profileChanges.approve(id)
+  }
+
+  /** Refuses it, with a reason the driver is shown verbatim — see RejectProfileChangeDto */
+  @Post('profile-changes/:id/reject')
+  rejectProfileChange(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: RejectProfileChangeDto,
+  ): Promise<{ id: number }> {
+    return this.profileChanges.reject(id, dto.reason)
+  }
 
   @Get('registration-requests')
   list(@Query() query: AdminRegistrationsQuery): Promise<AdminRegistrationSummary[]> {

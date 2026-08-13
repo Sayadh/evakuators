@@ -51,12 +51,23 @@ const CURRENT_YEAR = new Date().getFullYear()
  * Both are still *shown* on the dashboard, read-only, so nothing a driver
  * entered at registration is invisible to them — they just point at support.
  *
- * The trade-off of everything else being self-service, stated plainly: vehicle
- * facts and service areas are no longer re-reviewed after approval. A driver
- * can raise their stated capacity or add coverage they don't really serve, and
- * nothing catches it. Approval reviews the listing once, at the start; after
- * that this is a trust-the-driver marketplace. If that ever needs to change,
- * the place to add re-moderation is here, not in the UI.
+ * ## Nothing here is applied directly any more
+ *
+ * This DTO used to describe a write. It now describes a **submission**: the
+ * endpoint queues a diff and a moderator approves it, at which point
+ * `MyTowTruckService.applyUpdate` runs this exact shape against the row. See
+ * `docs/api-reference.md` § "Driver edits are moderated".
+ *
+ * That closed the gap this comment used to name out loud — vehicle facts and
+ * service areas were self-service and never re-reviewed, so a driver could
+ * raise their stated capacity or add coverage they do not serve and nothing
+ * caught it. The note said the place to add re-moderation was here rather than
+ * in the UI, and that is where it went.
+ *
+ * The practical consequence for anything added below: a new field must also be
+ * added to `EDITABLE_PROFILE_FIELDS`
+ * (`backend/src/profile-changes/profile-change-diff.ts`), or it will validate,
+ * reach the queue, and be silently dropped from the diff.
  *
  * Every field is optional: this is a PATCH, and an omitted key means "leave it
  * alone". Only `companyName` distinguishes omitted from empty — see below.
@@ -189,9 +200,10 @@ export class UpdateMyTowTruckDto {
   description?: string
 
   /**
-   * Bounded exactly like CreateRegistrationDto.services, and for the same
-   * reason — this is the self-service path, so whatever a driver sends here is
-   * never re-moderated. The cap had the same off-by-taxonomy bug: at 40 it
+   * Bounded exactly like the registration DTO's `services`, and for the same
+   * reason — a payload guard on a list a client controls. It IS re-moderated
+   * now, but a cap that only a human enforces is not a cap. The number had the
+   * same off-by-taxonomy bug there: at 40 it
    * rejected any driver who ticked all 45 services, which the form's
    * "select all" buttons make a single click away.
    */

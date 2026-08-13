@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common'
-import { RegistrationStatus, type Prisma, type TowTruckImage } from '@prisma/client'
+import { ProfileChangeStatus, RegistrationStatus, type Prisma, type TowTruckImage } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 import { IMAGE_ORDER } from './image-order'
 
@@ -35,7 +35,25 @@ export class ImagesRepository {
           {
             towTruckId: null,
             registrationRequestId: null,
+            // A third owner: a driver's queued profile edit. Without this
+            // clause the photos of a change request that had been waiting
+            // longer than the TTL would be deleted out from under a moderator
+            // who had not looked at it yet, and approving it would then fail on
+            // images that no longer exist. See
+            // TowTruckImage.profileChangeRequestId.
+            profileChangeRequestId: null,
             createdAt: { lt: uploadedBefore },
+          },
+          {
+            // A refused edit's photos, on the same delay a refused
+            // registration's get: long enough that a moderator who rejected by
+            // mistake can still change their mind, short enough that a bucket
+            // does not accumulate them.
+            towTruckId: null,
+            profileChangeRequest: {
+              status: ProfileChangeStatus.REJECTED,
+              reviewedAt: { lt: rejectedBefore },
+            },
           },
           {
             towTruckId: null,

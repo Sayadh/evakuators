@@ -1,9 +1,12 @@
-import { Body, Controller, Get, HttpCode, Patch, Req, UseGuards } from '@nestjs/common'
+import { Body, Controller, Delete, Get, HttpCode, Patch, Req, UseGuards } from '@nestjs/common'
 import { Throttle } from '@nestjs/throttler'
 import { SetCoordinatesDto } from '../common/set-coordinates.dto'
 import { DriverAuthService } from '../driver-auth/driver-auth.service'
 import { ChangePasswordDto } from '../driver-auth/dto/change-password.dto'
 import { AuthenticatedDriverRequest, DriverJwtGuard } from '../driver-auth/driver-jwt.guard'
+import { ProfileChangesService } from '../profile-changes/profile-changes.service'
+import type { DriverProfileChangeStatusApi } from '../profile-changes/profile-change.types'
+import { toDriverProfileChangeStatus } from '../profile-changes/profile-change.mapper'
 import type { TowTruckApi } from '../tow-trucks/tow-truck.types'
 import { UpdateMyTowTruckDto } from './dto/update-my-tow-truck.dto'
 import { MyTowTruckService } from './my-tow-truck.service'
@@ -15,6 +18,7 @@ export class MyTowTruckController {
   constructor(
     private readonly myTowTruckService: MyTowTruckService,
     private readonly driverAuthService: DriverAuthService,
+    private readonly profileChanges: ProfileChangesService,
   ) {}
 
   @Get()
@@ -22,12 +26,48 @@ export class MyTowTruckController {
     return this.myTowTruckService.getMine(request.towTruckId)
   }
 
+  /**
+   * Submits the profile form **for review**. It does not write.
+   *
+   * This used to save straight to the live listing. Every field a driver can
+   * change is now moderated, so what this does is queue a diff — see
+   * `ProfileChangesService`. The response says what is now waiting rather than
+   * echoing a profile that has not changed, which is also why it is no longer
+   * `TowTruckApi`: returning the old profile after a "successful" save is how a
+   * dashboard ends up telling a driver their edit went through.
+   *
+   * `pending: null` means nothing differed. The form submits every field
+   * whether or not it was touched, so opening it and pressing save is a normal
+   * way to reach that, and it is not an error.
+   */
   @Patch()
-  updateMine(
+  async updateMine(
     @Req() request: AuthenticatedDriverRequest,
     @Body() dto: UpdateMyTowTruckDto,
-  ): Promise<TowTruckApi> {
-    return this.myTowTruckService.updateMine(request.towTruckId, dto)
+  ): Promise<DriverProfileChangeStatusApi> {
+    const pending = await this.profileChanges.submitProfileChange(request.towTruckId, dto)
+    return toDriverProfileChangeStatus({ pending, lastReviewed: null })
+  }
+
+  /** What is queued for this driver, or why the last attempt was refused */
+  @Get('profile-change')
+  async getProfileChange(
+    @Req() request: AuthenticatedDriverRequest,
+  ): Promise<DriverProfileChangeStatusApi> {
+    const status = await this.profileChanges.getStatusForDriver(request.towTruckId)
+    return toDriverProfileChangeStatus(status)
+  }
+
+  /**
+   * Withdraws the queued edit. Nothing was ever applied, so it is simply
+   * deleted rather than marked cancelled — a withdrawn edit is not a decision
+   * anyone needs a record of, and keeping it would occupy the one pending slot.
+   */
+  @Delete('profile-change')
+  withdrawProfileChange(
+    @Req() request: AuthenticatedDriverRequest,
+  ): Promise<{ withdrawn: boolean }> {
+    return this.profileChanges.withdraw(request.towTruckId)
   }
 
   /**
@@ -35,16 +75,21 @@ export class MyTowTruckController {
    *
    * Its own route rather than two more keys on the PATCH above, because the
    * dashboard edits it in a dialog with its own Save button — see
-   * MyTowTruckService.updateCoordinates for the full argument. The truck id
+   * MyTowTruckService.applyCoordinates for the full argument. The truck id
    * comes from the JWT like every other route here, so a driver cannot even
    * express a request to move someone else's marker.
+   *
+   * Moderated like everything else: this queues, it does not write. A base
+   * location is as public a claim as a service area, and leaving it as the one
+   * self-service field would make it the obvious way around the review.
    */
   @Patch('coordinates')
-  updateCoordinates(
+  async updateCoordinates(
     @Req() request: AuthenticatedDriverRequest,
     @Body() dto: SetCoordinatesDto,
-  ): Promise<TowTruckApi> {
-    return this.myTowTruckService.updateCoordinates(request.towTruckId, dto)
+  ): Promise<DriverProfileChangeStatusApi> {
+    const pending = await this.profileChanges.submitCoordinatesChange(request.towTruckId, dto)
+    return toDriverProfileChangeStatus({ pending, lastReviewed: null })
   }
 
   /**

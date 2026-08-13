@@ -150,6 +150,16 @@ assume one is unused:
   the dashboard. If you add a field to the registration form, add it there too.
   `ServiceAreaPicker.vue` and `PlatformDimensionsInput.vue` are shared by both
   forms for exactly that reason.
+- **A field a driver can edit is a field a moderator has to be able to read.**
+  Dashboard saves are queued as a diff and reviewed
+  (`docs/api-reference.md` § "Driver edits are moderated"), so a new editable
+  field needs three things, not one: an entry in `EDITABLE_PROFILE_FIELDS`
+  (`backend/src/profile-changes/profile-change-diff.ts` — an allow-list,
+  because the diff is spread into a Prisma update on approval), a label in
+  `frontend/utils/profileChangeLabels.ts`, and a formatting branch there if its
+  raw value is a slug, a boolean or a list. Miss the first and the field is
+  silently dropped from every edit; miss the second and a moderator reads a
+  column name.
 - **Registration and the admin review page are the same form, and that one is
   NOT a manual sync point** — it is the only pair here held by construction
   rather than by discipline, and it should stay that way. One
@@ -183,6 +193,8 @@ assume one is unused:
 | Touch the platform-wide "active callers" number in `/admin` | `docs/analytics.md` § "Platform-wide active callers" — it is a per-truck `PHONE_CLICK` read with the `towTruckId` filter deliberately left out, not a new event type; the two `AnalyticsRepository` methods behind it are the only ones in that class with no truck scope, on purpose |
 | Add or change a question on the registration form | `frontend/components/registration/RegistrationFormFields.vue` + `frontend/utils/registrationForm.ts` + `backend/src/registration/dto/registration-profile.dto.ts` — three files, and both the public form and the admin review page get it. Never add a field to `register.vue` or to the review page directly |
 | Change how a registration is approved | `docs/api-reference.md` § "Reviewing a registration" — approval carries the **whole profile** as the moderator last saw it, not a stored record plus extras; the request row is left untouched as an audit trail; there is no draft, so leaving the page discards the edits |
+| Touch what a driver may change about their own profile | `docs/api-reference.md` § "Driver edits are moderated" — a dashboard save **queues** a diff, it does not write; approval runs `MyTowTruckService.applyUpdate`, the driver's own write path, so there is exactly one implementation of the write |
+| Add a field to the moderation diff, or label one | `backend/src/profile-changes/profile-change-diff.ts` (`EDITABLE_PROFILE_FIELDS` — an allow-list, because the diff is spread into a Prisma update on approval) + `frontend/utils/profileChangeLabels.ts` (the Armenian words, which the backend has no taxonomy to produce) |
 | Decide whether a field is driver-editable or admin-only | `backend/src/my-tow-truck/dto/update-my-tow-truck.dto.ts` — the boundary and its two exceptions are argued there |
 | Touch a driver's base (`citySlug`/`districtSlug`/`locationName`) or the order of a city listing | `docs/locations.md` § "The base" — the base must be one of the served areas (`backend/src/tow-trucks/placement.ts`, one copy for all three write paths), the label is composed on the frontend because the backend has no geography, and city pages rank locally-based drivers above everyone else in the Recommended order **only** |
 | Change a driver's coverage from `/admin` | `docs/locations.md` § "An admin can remove a single area" — the endpoint takes the slug to REMOVE, never the new list, which is what lets it skip the coverage cap; re-read that before making it a general editor |

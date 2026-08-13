@@ -81,6 +81,28 @@ export interface ApproveRegistrationPayload extends Omit<RegistrationPayload, 'i
   serviceAreas: { slug: string; name: string; type: 'city' | 'district' | 'route' }[]
 }
 
+/**
+ * A queued driver edit, as the panel lists it — mirrors backend
+ * `ProfileChangeApi`.
+ *
+ * `fields` carries only what differs, with raw values on both sides. The words
+ * for a service, a city or a vehicle type live in this app's static data and
+ * the backend has none of them (CLAUDE.md), so translating them is the
+ * frontend's job — see `utils/profileChangeLabels.ts`.
+ */
+export interface AdminProfileChange {
+  id: number
+  towTruckId: number
+  towTruckSlug: string
+  driverName: string
+  companyName?: string
+  status: 'PENDING' | 'APPROVED' | 'REJECTED'
+  fields: { field: string; before: unknown; after: unknown }[]
+  rejectionReason?: string
+  createdAt: string
+  reviewedAt?: string
+}
+
 /** Mirrors backend ReviewWithTruck */
 export interface AdminReview {
   id: number
@@ -281,6 +303,37 @@ export const adminRepository = {
    */
   getRegistration(id: number): Promise<AdminRegistrationRequest> {
     return apiFetch<AdminRegistrationRequest>(`/admin/registration-requests/${id}`, {
+      headers: authHeader(),
+    })
+  },
+
+  /* ── Driver profile edits awaiting review ─────────────────────────────── */
+
+  listProfileChanges(params: AdminListParams = {}): Promise<AdminProfileChange[]> {
+    return apiFetch<AdminProfileChange[]>('/admin/profile-changes', {
+      query: { limit: params.limit, offset: params.offset },
+      headers: authHeader(),
+    })
+  },
+
+  countProfileChanges(): Promise<{ pending: number }> {
+    return apiFetch<{ pending: number }>('/admin/profile-changes/count', {
+      headers: authHeader(),
+    })
+  },
+
+  approveProfileChange(id: number): Promise<{ id: number }> {
+    return apiFetch<{ id: number }>(`/admin/profile-changes/${id}/approve`, {
+      method: 'POST',
+      headers: authHeader(),
+    })
+  },
+
+  /** The reason is required and is shown to the driver verbatim — see the backend DTO */
+  rejectProfileChange(id: number, reason: string): Promise<{ id: number }> {
+    return apiFetch<{ id: number }>(`/admin/profile-changes/${id}/reject`, {
+      method: 'POST',
+      body: { reason },
       headers: authHeader(),
     })
   },

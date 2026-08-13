@@ -15,6 +15,7 @@ import { HealthModule } from './health/health.module'
 import { ImagesModule } from './images/images.module'
 import { MyTowTruckModule } from './my-tow-truck/my-tow-truck.module'
 import { NearestModule } from './nearest/nearest.module'
+import { ProfileChangesModule } from './profile-changes/profile-changes.module'
 import { PrismaModule } from './prisma/prisma.module'
 import { RegistrationModule } from './registration/registration.module'
 import { ReviewsModule } from './reviews/reviews.module'
@@ -53,6 +54,7 @@ import { TowTrucksModule } from './tow-trucks/tow-trucks.module'
     FreeRoutesModule,
     AnalyticsModule,
     NearestModule,
+    ProfileChangesModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: SsrAwareThrottlerGuard }],
 })

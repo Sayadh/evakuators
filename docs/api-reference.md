@@ -36,9 +36,11 @@ from the server itself (Nuxt SSR over loopback) skip throttling entirely — see
 | Method | Path | Notes |
 | --- | --- | --- |
 | `GET` | `/my/tow-truck` | Own profile; throws if `isActive: false` even with a valid token |
-| `PATCH` | `/my/tow-truck` | Partial update covering **everything the registration form asks**, except `slug` and the main `phone` (both admin-only — see `UpdateMyTowTruckDto`). `works24Hours` auto-recomputed if `services` is included. `companyName: ""` **clears** it — the one field where empty differs from omitted. `serviceAreas` must be sent together with `citySlug`/`districtSlug` or the request is rejected. `imageIds` is the **full replacement list** — omit it to leave photos alone; sending it accepts 1-6 ids (never 0: a listing with no photo renders a broken image everywhere it appears) and its order becomes the gallery order |
+| `PATCH` | `/my/tow-truck` | Body: `UpdateMyTowTruckDto`. **Does not write.** Queues a diff for moderation and answers with the queue status (`DriverProfileChangeStatusApi`), not a profile — see § "Driver edits are moderated". `pending: null` means nothing differed, which is normal: the dashboard submits every field whether or not it was touched |
 | `PATCH` | `/my/tow-truck/password` | Body `{ currentPassword, newPassword }` (min 8, max 72 — bcrypt truncates past that). 10/60s, stricter than the global default because the request itself is a guess at `currentPassword`. Answers **204** with no body, and a wrong current password answers **400, not 401**: `apiFetch` logs the driver out on any 401 from a `/my/*` path, so a 401 here would eject them for a typo. Clears `mustChangePassword`. Does not invalidate any session, including the caller's |
-| `PATCH` | `/my/tow-truck/coordinates` | Body `{ latitude, longitude }`, both required numbers — the driver's own base parking point. Its own route rather than two more keys on the PATCH above, because the dashboard edits it in a dialog with its own Save: a two-field DTO cannot touch another column even in principle, and the dialog never resubmits half-finished profile-form state. No id in the path (it comes from the JWT), so a driver cannot express a request to move someone else's marker. Returns the full refreshed profile |
+| `PATCH` | `/my/tow-truck/coordinates` | Body: `SetCoordinatesDto`. Also queues — a base location is as public a claim as a service area, and leaving it self-service would make it the way around the review. Same response shape |
+| `GET` | `/my/tow-truck/profile-change` | What is queued for this driver, or why the last attempt was refused. Never both |
+| `DELETE` | `/my/tow-truck/profile-change` | Withdraws the queued edit. Nothing was applied, so it is deleted rather than marked cancelled |
 | `GET` | `/my/free-routes` | Own routes, any status |
 | `POST` | `/my/free-routes` | Requires `isActive` profile |
 | `PATCH` | `/my/free-routes/:id` | Ownership-checked; force-reactivates to `ACTIVE` |
@@ -76,6 +78,10 @@ shape, the rating join and the row cap to drift.
 | `GET` | `/admin/registration-requests` | Query: `?status=PENDING\|APPROVED\|REJECTED`, `limit` (default 50, max 200), `offset`. Almost the raw Prisma row — the one mapped field is the coordinate pair: `latitude`/`longitude` are `Decimal`, which serialises to a **string** through decimal.js's own `toJSON()`, so they are converted to `number \| undefined` before they reach the wire (`admin-registration.mapper.ts`) |
 | `POST` | `/admin/registration-requests/:id/approve` | Body: `ApproveRegistrationDto` — **the whole profile**, as the moderator last saw it. It extends the same `RegistrationProfileDto` the public form posts, and adds what only the platform can supply: `slug`, `capacityTons`, the base (`citySlug`/`districtSlug` + composed `locationName` + `regionSlug`), `description` and `serviceAreas`. `capacityTons`, `regionSlug` and the `serviceAreas` names are **resolved client-side** — the backend has no taxonomy and no geography. `latitude`/`longitude` are the box exactly as the moderator left it: omitting both means *no location*, not "keep the driver's" (the review page shows them the box), and sending one of the two is a 400. The coverage cap reads `regionSlugs` from **this body**, not the stored request, because the moderator can narrow the marzes on the page. → creates `TowTruck` from the body, re-points the request's photos at it, marks the request `APPROVED` and leaves every other stored column untouched as an audit trail. Returns `{ towTruckId, telegramLinkUrl }` |
 | `POST` | `/admin/registration-requests/:id/reject` | |
+| `GET` | `/admin/profile-changes` | Driver edits awaiting review. Each carries `fields`: **only what differs**, with raw values on both sides — the words for a service, a city or a vehicle type live in the frontend's static data (CLAUDE.md), so labelling is `utils/profileChangeLabels.ts`'s job |
+| `GET` | `/admin/profile-changes/count` | `{ pending }` — shown next to the section heading |
+| `POST` | `/admin/profile-changes/:id/approve` | Applies it by running the driver's own write path (`MyTowTruckService.applyUpdate`). Can legitimately fail: a photo may have been claimed elsewhere, an admin may have changed the truck's coverage while it waited |
+| `POST` | `/admin/profile-changes/:id/reject` | Body: `RejectProfileChangeDto` — the reason is **required** (min 10 chars) and is shown to the driver verbatim |
 | `GET` | `/admin/reviews` | Pending (`isApproved: false`) only. Query: `limit` (default 50, max 200), `offset` |
 | `POST` | `/admin/reviews/:id/approve` | |
 | `POST` | `/admin/reviews/:id/reject` | Deletes the review row outright |
@@ -134,6 +140,44 @@ half.
 Photos are the one thing the review page cannot change — a moderator neither
 uploads nor replaces them — which is why `imageIds` is on
 `CreateRegistrationDto` alone.
+
+### Driver edits are moderated
+
+A driver's dashboard used to write straight to `TowTruck`. Approval reviewed a
+listing once, at registration, and never again — so a driver could raise their
+stated capacity, claim coverage they do not serve, or rewrite their description,
+and it was live before anyone saw it. `UpdateMyTowTruckDto` documented that
+trade-off and named this as the place to undo it.
+
+A save now **queues**. `PATCH /my/tow-truck` creates a `ProfileChangeRequest`
+holding only the fields that differ, and the live profile is untouched until a
+moderator approves.
+
+Four properties are worth knowing before changing anything here:
+
+- **Approval runs the driver's own write path.** `MyTowTruckService.applyUpdate`
+  is the exact code that used to run on save. Re-implementing the write on the
+  admin side would mean two places that derive `manipulator`, two that decide
+  what an empty string means, and two that check the coverage cap — and an
+  approved edit would end up stored differently from the same edit written
+  directly.
+- **Only the diff is stored, and only the diff is shown.** A corrected phone
+  number is a one-key object and one line in the panel. Queuing the whole form
+  would also mean approving it rewrote thirty columns to values they already
+  held, silently clobbering anything an admin had changed in the meantime.
+- **One pending request per truck**, enforced by a partial unique index
+  (`WHERE status = 'PENDING'`). Saving again replaces it: two queued edits have
+  no defined order, and applying them in arrival order produces a profile
+  neither describes.
+- **Everything is re-checked at approval**, not trusted from submission time.
+
+The queue is deliberately separate from `registration-requests`: one decides
+whether a driver joins the platform, the other whether a change to a published
+listing goes live.
+
+Rejection requires a reason, which the driver receives in Telegram and sees on
+their dashboard. An unexplained refusal leaves them to guess which change was
+the problem, and the likeliest next move is to submit the same thing again.
 
 ## List vs detail — two different shapes on purpose
 

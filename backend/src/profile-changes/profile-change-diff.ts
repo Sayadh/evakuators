@@ -134,15 +134,35 @@ const CARRY_WITH: Record<string, readonly string[]> = {
  *
  * Arrays are compared **in order**: `serviceAreas` and `imageIds` are ordered
  * lists (coverage display order, gallery order), so a reorder is a real change
- * a driver may well have meant. Objects inside them are compared by their JSON
- * text rather than key-by-key, which is exact for the two shapes that occur
- * here (`{slug,name,type}`) and cheap.
+ * a driver may well have meant.
  *
- * Empty string and null are treated as **equal**, because they mean the same
- * thing for every clearable contact field: the form renders a null as an empty
- * box, so a driver who never touched it submits `''` against a stored `null`.
- * Reading that as a change would put a phantom line in front of a moderator on
- * every single save.
+ * Objects inside them are compared **key by key, ignoring key order** — and
+ * that is not a refinement, it is the whole point.
+ *
+ * ## Why not `JSON.stringify`
+ *
+ * It was `JSON.stringify` on both sides, which is exact for two objects built
+ * in the same order and wrong for these. `TowTruck.serviceAreas` is a Postgres
+ * **`jsonb`** column, and jsonb does not preserve key order: it stores keys
+ * sorted by length and then bytewise. `{slug, name, type}` goes in and
+ * `{name, slug, type}` comes back out, forever.
+ *
+ * So the stored value and the value the dashboard rebuilds — which are the same
+ * coverage, field for field — produced different JSON text, `isSame` said
+ * "changed", and **every single driver save queued a phantom coverage change**:
+ * a moderator saw «Սևան, Գավառ, Մարտունի» → «Սևան, Գավառ, Մարտունի» and had
+ * nothing to approve. It also meant a driver could never save anything without
+ * dragging their whole coverage list through review with it.
+ *
+ * `backend/test/profile-change-jsonb.spec.ts` proves the round trip against a
+ * real Postgres, because nothing short of one can see this.
+ *
+ * ## The two value rules that were already here, and still are
+ *
+ * Empty string and null are **equal**: the form renders a null as an empty box,
+ * so a driver who never touched a clearable contact field submits `''` against
+ * a stored `null`. Numbers are compared by value, because the DTO sends numbers
+ * while Prisma can return a Decimal.
  */
 function isSame(a: unknown, b: unknown): boolean {
   if (a === b) return true
@@ -153,7 +173,18 @@ function isSame(a: unknown, b: unknown): boolean {
   if (aEmpty !== bEmpty) return false
 
   if (Array.isArray(a) && Array.isArray(b)) {
-    return a.length === b.length && JSON.stringify(a) === JSON.stringify(b)
+    return a.length === b.length && a.every((item, index) => isSame(item, b[index]))
+  }
+  // One array and one not — a shape change, and never equal.
+  if (Array.isArray(a) !== Array.isArray(b)) return false
+
+  if (isPlainObject(a) && isPlainObject(b)) {
+    const aKeys = definedKeys(a)
+    const bKeys = definedKeys(b)
+    if (aKeys.length !== bKeys.length) return false
+    // Sorted, so the comparison cannot depend on the order the keys happen to
+    // be in — which is exactly what jsonb changes underneath us.
+    return aKeys.every((key, index) => key === bKeys[index] && isSame(a[key], b[key]))
   }
 
   // Numbers arrive as numbers from the DTO and can come back from Prisma as
@@ -164,6 +195,23 @@ function isSame(a: unknown, b: unknown): boolean {
   }
 
   return false
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * An object's keys, sorted, with `undefined` values dropped.
+ *
+ * `undefined` is dropped because `JSON.stringify` drops it too, so a DTO
+ * instance carrying an unset optional property must still equal the stored
+ * object that simply does not have that key.
+ */
+function definedKeys(value: Record<string, unknown>): string[] {
+  return Object.keys(value)
+    .filter((key) => value[key] !== undefined)
+    .sort()
 }
 
 export interface ProfileDiff {

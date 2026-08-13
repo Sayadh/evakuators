@@ -161,6 +161,14 @@ Four properties are worth knowing before changing anything here:
   what an empty string means, and two that check the coverage cap — and an
   approved edit would end up stored differently from the same edit written
   directly.
+- **Comparing a stored value is not `JSON.stringify`.** `TowTruck.serviceAreas`
+  is a `jsonb` column, and jsonb does not preserve key order — it stores keys
+  sorted by length then bytewise, so `{slug, name, type}` goes in and
+  `{name, slug, type}` comes out. Comparing the JSON text therefore reported a
+  coverage change on **every** save, with a before and after that read
+  identically to a moderator. The comparison is key-order-insensitive, and
+  `backend/test/profile-change-jsonb.spec.ts` proves the round trip against a
+  real Postgres, because nothing short of one can see it.
 - **Only the diff is stored, and only the diff is shown.** A corrected phone
   number is a one-key object and one line in the panel. Queuing the whole form
   would also mean approving it rewrote thirty columns to values they already

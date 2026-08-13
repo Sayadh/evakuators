@@ -164,6 +164,13 @@ and that therefore have no other guard anywhere:
 - which rows the image-ownership predicate can actually see,
 - that the `heavyEquipment` migration still has no backfill.
 
+A second file drives the same engine for a different reason:
+`profile-change-jsonb.spec.ts` compares a value that has actually been through a
+`jsonb` column. Postgres reorders object keys there, so a diff built on
+`JSON.stringify` reported a change on every driver save — and no unit test could
+see it, because both sides of a unit test are built in JavaScript, in the same
+order, and a mocked Prisma returns the object it was handed.
+
 Two limitations, both deliberate:
 
 - **PostGIS is not available in PGlite**, so the three PostGIS statements in the

@@ -145,6 +145,19 @@ describe('the configuration itself', () => {
     expect(connectSrc).toContain("'https://*.analytics.google.com'")
   })
 
+  it('allows the GA4 Google Signals stats host in connect-src only', () => {
+    // stats.g.doubleclick.net/j/collect (and /r/collect) — a distinct
+    // doubleclick.net subdomain from ad.doubleclick.net above (a CSP host
+    // match is exact, so one does not cover the other), reported as a
+    // connect-src violation only — no image variant, so this stays out of
+    // img-src rather than being added there on the pattern of the Ads hosts.
+    expect(directive('connect-src')).toContain('https://stats.g.doubleclick.net')
+  })
+
+  it('does not admit doubleclick.net subdomains by wildcard either', () => {
+    expect(read('nuxt.config.ts')).not.toContain("'https://*.g.doubleclick.net'")
+  })
+
   it('allows the Google Ads conversion host in connect-src', () => {
     // `/pagead/conversion/<id>/` — the conversion tag's own ping, sent as a
     // fetch. A distinct host from the remarketing/Analytics ones above and not
@@ -159,6 +172,27 @@ describe('the configuration itself', () => {
     // Google host but not this one, so every page view logged two blocked-image
     // errors even though the tags themselves ran fine.
     expect(directive('img-src')).toContain('https://www.googletagmanager.com')
+  })
+
+  it('leaves gtag in manual init mode, so nothing auto-loads it on /admin', () => {
+    // nuxt-gtag's default ("auto") injects the script tag unconditionally on
+    // mount, on every route. `plugins/gtag-admin-skip.client.ts` is the only
+    // caller of initialize() precisely because this is 'manual' — if this
+    // regresses to 'auto' (or is removed), the plugin's admin check becomes
+    // decoration: gtag.js loads on /admin regardless of what it decides.
+    const config = read('nuxt.config.ts')
+    const gtag = config.slice(config.indexOf('gtag: {'), config.indexOf('},', config.indexOf('gtag: {')))
+    expect(gtag).toContain("initMode: 'manual'")
+  })
+
+  it('never adds unsafe-inline to script-src or any unsafe-eval, anywhere', () => {
+    // The two escape hatches that would undo the point of the nonce +
+    // strict-dynamic setup above — asserted globally since either one
+    // appearing in ANY directive weakens the policy the same way.
+    const config = read('nuxt.config.ts')
+    expect(config).not.toContain('unsafe-eval')
+    const scriptSrc = directive('script-src')
+    expect(scriptSrc).not.toContain('unsafe-inline')
   })
 
   it('resolves the origin from the public base URL, not the internal one', () => {

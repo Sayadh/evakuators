@@ -296,6 +296,14 @@ export default defineNuxtConfig({
           // rather than to Analytics or remarketing, and not covered by any
           // entry above.
           'https://www.googleadservices.com',
+          // `stats.g.doubleclick.net/j/collect` (and `/r/collect`) — GA4
+          // Google Signals again, but a fourth distinct host: neither the
+          // `google-analytics.com` pair above nor `ad.doubleclick.net` covers
+          // a `doubleclick.net` SUBDOMAIN, since the entry for that family is
+          // deliberately the exact `ad.` host rather than a wildcard (see the
+          // comment above it). Same reasoning applies here: add this host by
+          // name, don't widen `ad.doubleclick.net` into `*.doubleclick.net`.
+          'https://stats.g.doubleclick.net',
         ],
 
         'object-src': ["'none'"],
@@ -351,9 +359,20 @@ export default defineNuxtConfig({
     },
   },
 
+  /**
+   * `initMode: 'manual'` — the default ("auto") has nuxt-gtag's own client
+   * plugin inject the `gtag.js` script tag unconditionally, the moment the
+   * app mounts, on every route including `/admin`. There is no reason for an
+   * internal, login-gated admin panel to load public-site analytics or Ads
+   * conversion tracking at all, so `plugins/gtag-admin-skip.client.ts` is the
+   * only thing that ever calls `initialize()`, and it simply never does on an
+   * admin route — see that file for the exact behavior (including the rarer
+   * case of navigating into or out of `/admin` mid-session).
+   */
   gtag: {
     id: 'G-HEN3RVMTRG',
     enabled: true,
+    initMode: 'manual',
   },
 
   typescript: {

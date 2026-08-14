@@ -228,6 +228,12 @@ export default defineNuxtConfig({
          * calls from the visitor's own country domain. `ad.doubleclick.net` is
          * the same family; see the note in `connect-src` for why it is its own
          * entry.
+         *
+         * `googletagmanager.com` here too — GTM sends its own container-health
+         * pings as 1×1 image beacons (`/a`, `/td`), separate from the loader
+         * script the container itself pulls in (that one is `script-src`, see
+         * above). Without it every page view logged two blocked-image console
+         * errors; nothing about the actual tags was affected.
          */
         'img-src': [
           "'self'",
@@ -237,6 +243,7 @@ export default defineNuxtConfig({
           'https://www.google.com',
           'https://www.google.am',
           'https://ad.doubleclick.net',
+          'https://www.googletagmanager.com',
         ],
 
         'font-src': ["'self'", 'data:'],
@@ -284,6 +291,11 @@ export default defineNuxtConfig({
           // beacon we are unblocking. If Google ever moves the beacon, the
           // right response is to add that host too, not to widen this one.
           'https://ad.doubleclick.net',
+          // Google Ads conversion tracking (`/pagead/conversion/<id>/`) — a
+          // third Google host, this one specific to the Ads conversion tag
+          // rather than to Analytics or remarketing, and not covered by any
+          // entry above.
+          'https://www.googleadservices.com',
         ],
 
         'object-src': ["'none'"],

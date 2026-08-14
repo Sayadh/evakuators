@@ -145,6 +145,22 @@ describe('the configuration itself', () => {
     expect(connectSrc).toContain("'https://*.analytics.google.com'")
   })
 
+  it('allows the Google Ads conversion host in connect-src', () => {
+    // `/pagead/conversion/<id>/` — the conversion tag's own ping, sent as a
+    // fetch. A distinct host from the remarketing/Analytics ones above and not
+    // covered by any of them, so it was refused on every page load with a
+    // connect-src console error until listed explicitly.
+    expect(directive('connect-src')).toContain('https://www.googleadservices.com')
+  })
+
+  it('allows GTM’s own image beacons in img-src', () => {
+    // GTM ships container-health pings (`/a`, `/td`) as 1×1 image requests,
+    // separate from the loader script in script-src. img-src had every other
+    // Google host but not this one, so every page view logged two blocked-image
+    // errors even though the tags themselves ran fine.
+    expect(directive('img-src')).toContain('https://www.googletagmanager.com')
+  })
+
   it('resolves the origin from the public base URL, not the internal one', () => {
     // internalApiBaseUrl is SSR's loopback address. It is never a browser
     // connection, and publishing it in a response header would leak an

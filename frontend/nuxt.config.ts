@@ -360,17 +360,34 @@ export default defineNuxtConfig({
   },
 
   /**
+   * `id: ''` by default — same "off unless a real environment says
+   * otherwise" default as `apiBaseUrl` above. Nuxt auto-replaces this with
+   * `NUXT_PUBLIC_GTAG_ID` at runtime (nuxt-gtag's own documented mechanism,
+   * `runtimeConfig.public.gtag.id`), so production's real measurement id
+   * (`G-HEN3RVMTRG`) lives in `ecosystem.config.js`, never here — and
+   * staging's own file sets it to `''` (or a separate test id, if staging
+   * analytics is ever wanted) rather than inheriting production's by
+   * accident. One build, two answers, exactly like the API base URL.
+   *
+   * `AW-18328135826` (Google Ads conversion) is not a second id anywhere in
+   * this codebase — it fires through the SAME `gtag('config', 'G-...')`
+   * call, via a Google-side link between the GA4 property and the Ads
+   * account (configured in Google's own UI, not here). Whatever this file
+   * decides for the GA4 id decides both at once.
+   *
    * `initMode: 'manual'` — the default ("auto") has nuxt-gtag's own client
    * plugin inject the `gtag.js` script tag unconditionally, the moment the
-   * app mounts, on every route including `/admin`. There is no reason for an
-   * internal, login-gated admin panel to load public-site analytics or Ads
-   * conversion tracking at all, so `plugins/gtag-admin-skip.client.ts` is the
-   * only thing that ever calls `initialize()`, and it simply never does on an
-   * admin route — see that file for the exact behavior (including the rarer
-   * case of navigating into or out of `/admin` mid-session).
+   * app mounts, on every route including `/admin`, and on every hostname
+   * this same build happens to be served from. `plugins/gtag-gate.client.ts`
+   * is the only thing that ever calls `initialize()`, and it gates on BOTH
+   * a real id being configured AND (belt and suspenders, see
+   * `utils/shouldLoadGtag.ts`) production's specific id never firing from
+   * anywhere but `evakuators.am` — see that file for the exact rules,
+   * including the rarer case of navigating into or out of `/admin`
+   * mid-session.
    */
   gtag: {
-    id: 'G-HEN3RVMTRG',
+    id: '',
     enabled: true,
     initMode: 'manual',
   },

@@ -40,6 +40,15 @@ module.exports = {
         // nginx+TLS hop per SSR render, keeps server-rendered pages out of
         // the public per-IP rate limit).
         NUXT_INTERNAL_API_BASE_URL: 'http://127.0.0.1:4003/api/v1',
+        // Deliberately empty, not production's id copied over. Production's
+        // real G-HEN3RVMTRG (and, through it, Google Ads conversion tracking
+        // AW-18328135826 — see the comment in ecosystem.config.js) must never
+        // receive a hit from anywhere but evakuators.am; `shouldLoadGtag()`
+        // (frontend/utils/shouldLoadGtag.ts) refuses to load that specific id
+        // from any other hostname even if this line is ever set wrong. If
+        // staging analytics is genuinely needed, put a SEPARATE GA4
+        // property's test id here — never production's.
+        NUXT_PUBLIC_GTAG_ID: '',
       },
       instances: 1,
       autorestart: true,

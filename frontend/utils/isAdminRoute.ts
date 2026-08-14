@@ -1,7 +1,7 @@
 /**
  * Whether a path is inside the admin panel.
  *
- * Pulled out as its own pure function — used by `plugins/gtag-admin-skip.client.ts`
+ * Pulled out as its own pure function — used by `plugins/gtag-gate.client.ts`
  * to decide whether to load Google's gtag.js at all — so the actual boundary
  * decision has a direct test rather than only being reachable through a Nuxt
  * plugin this repo has no runtime to mount (`docs/testing.md`).

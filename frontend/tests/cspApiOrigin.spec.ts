@@ -176,13 +176,27 @@ describe('the configuration itself', () => {
 
   it('leaves gtag in manual init mode, so nothing auto-loads it on /admin', () => {
     // nuxt-gtag's default ("auto") injects the script tag unconditionally on
-    // mount, on every route. `plugins/gtag-admin-skip.client.ts` is the only
+    // mount, on every route. `plugins/gtag-gate.client.ts` is the only
     // caller of initialize() precisely because this is 'manual' — if this
     // regresses to 'auto' (or is removed), the plugin's admin check becomes
     // decoration: gtag.js loads on /admin regardless of what it decides.
     const config = read('nuxt.config.ts')
     const gtag = config.slice(config.indexOf('gtag: {'), config.indexOf('},', config.indexOf('gtag: {')))
     expect(gtag).toContain("initMode: 'manual'")
+  })
+
+  it('does not hardcode the production gtag id in the static config', () => {
+    // Same regression class as "does not hardcode any API hostname" above:
+    // baking the real id in here would mean every environment building from
+    // this file gets production's id unless something DELETES it (staging's
+    // actual bug, before this), rather than every environment getting
+    // nothing unless `NUXT_PUBLIC_GTAG_ID` explicitly ADDS it. The real id
+    // belongs only in ecosystem.config.js and in the constant
+    // `shouldLoadGtag()` checks against.
+    const config = read('nuxt.config.ts')
+    const gtag = config.slice(config.indexOf('gtag: {'), config.indexOf('},', config.indexOf('gtag: {')))
+    expect(gtag).not.toContain('G-HEN3RVMTRG')
+    expect(gtag).toContain("id: ''")
   })
 
   it('never adds unsafe-inline to script-src or any unsafe-eval, anywhere', () => {

@@ -25,6 +25,13 @@ module.exports = {
         // limit, which every visitor would otherwise share through this one
         // process. See backend/src/common/ssr-aware-throttler.guard.ts.
         NUXT_INTERNAL_API_BASE_URL: 'http://127.0.0.1:4002/api/v1',
+        // Google Analytics 4 measurement id. Read at runtime by nuxt-gtag
+        // (frontend/nuxt.config.ts defaults `gtag.id` to '' — off — so this
+        // is the only place the real one is written). Google Ads conversion
+        // tracking (AW-18328135826) is not a separate id here — it fires
+        // through this same tag via a link made in Google's own UI, so
+        // setting/unsetting this one line controls both.
+        NUXT_PUBLIC_GTAG_ID: 'G-HEN3RVMTRG',
       },
       instances: 1,
       autorestart: true,

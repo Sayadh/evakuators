@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { isAdminRoute } from '~/utils/isAdminRoute'
 
 /**
- * The boundary `plugins/gtag-admin-skip.client.ts` decides on: whether the
+ * The boundary `plugins/gtag-gate.client.ts` decides on: whether the
  * current path is inside the admin panel, and therefore whether gtag.js
  * should ever load at all.
  */

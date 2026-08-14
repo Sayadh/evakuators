@@ -102,6 +102,23 @@ export class ImagesRepository {
    * `allowProfileChangeRequestId` is how an approval gets its own photos back:
    * at that moment they are legitimately owned by the request being applied,
    * and by nothing else. Any other request's photos stay out of reach.
+   *
+   * ## The bug this exists for
+   *
+   * This used to read `profileChangeRequestId: { in: [null, allowId] } }`. In
+   * Prisma, `null` inside an `in` array is not "match a null row" — SQL's own
+   * `IN` never matches `NULL` either way, `x IN (NULL, 5)` is `x = NULL OR
+   * x = 5`, and `x = NULL` is neither true nor false. Prisma's own client-side
+   * validation goes further and rejects `null` as an `in` array element
+   * outright, which is what actually happened here: every approval whose
+   * request had touched its photos' `profileChangeRequestId` — which is every
+   * approval that changes `imageIds` at all — threw a
+   * `PrismaClientValidationError` that nothing in this codebase turns into an
+   * HTTP error, so the admin panel showed a bare "Internal server error" on
+   * the Approve button and the request stayed stuck pending forever.
+   *
+   * `applyGallery`, two methods below, already avoids exactly this with an
+   * explicit `OR`; this now does the same.
    */
   findUnattachedByIds(
     ids: number[],
@@ -113,14 +130,14 @@ export class ImagesRepository {
         id: { in: ids },
         towTruckId: null,
         registrationRequestId: null,
-        // `in: [null, id]` rather than a bare id, because at submission time
-        // the photos are fresh uploads owned by nobody, and at approval time
-        // they are owned by the request being applied. Both are legitimate;
-        // every other value is somebody else's.
-        profileChangeRequestId:
+        // OR, not `in: [null, id]` — see the doc comment above.
+        OR:
           allowProfileChangeRequestId === undefined
-            ? null
-            : ({ in: [null, allowProfileChangeRequestId] } as Prisma.IntNullableFilter),
+            ? [{ profileChangeRequestId: null }]
+            : [
+                { profileChangeRequestId: null },
+                { profileChangeRequestId: allowProfileChangeRequestId },
+              ],
       },
     })
   }

@@ -282,6 +282,17 @@ accepts a profile but not the reverse.
   `npx prisma generate` must be re-run before `npm run build`, or the build
   will reference a stale Prisma Client and fail with confusing "property does
   not exist" TypeScript errors.
+- **Prisma's `in` filter never matches `null`, and putting `null` inside the
+  array is worse than a no-op — it throws `PrismaClientValidationError`.**
+  `field: { in: [null, 5] }` is not "match null or 5"; SQL's own `IN` cannot
+  express "or null" either way (`x IN (NULL, 5)` is `x = NULL OR x = 5`, and
+  `x = NULL` is neither true nor false). Want either: use `OR: [{ field: null
+  }, { field: { in: [...] } }]` — see `ImagesRepository.applyGallery` and
+  `findUnattachedByIds` for the pattern. The latter got this wrong once (see
+  `backend/test/images.repository.spec.ts`): every profile-change approval
+  that touched `imageIds` threw an uncaught `PrismaClientValidationError`,
+  surfaced to the admin panel as a bare "Internal server error" with no
+  detail, for as long as the feature existed.
 - **The logo is `frontend/public/evakuators-logo.svg`** (gold truck mark +
   white/gold wordmark, for dark surfaces), with a light-surface companion at
   `evakuators-logo-light-bg.svg` (navy truck + navy wordmark, gold accent

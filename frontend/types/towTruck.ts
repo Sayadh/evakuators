@@ -14,9 +14,31 @@ export interface TowTruckVehicle extends TowTruckCardVehicle {
   year: number
   platformLengthM?: number
   platformWidthM?: number
+  /**
+   * The specialist technical figures — see `SPECIALIST_SPEC_FIELDS` in
+   * `constants/vehicles.ts`, which is what decides who is asked for which.
+   *
+   * Optional and genuinely absent, never zero: only «Մանիպուլյատոր» is asked
+   * for a crane rating and only «Ծանր տեխնիկայի էվակուատոր» for a loading
+   * height, so most trucks legitimately have none, and the profile renders a
+   * missing figure as no line at all rather than as «0 տ».
+   */
+  craneCapacityTons?: number
+  craneReachM?: number
+  maxLoadTons?: number
+  platformLoadHeightCm?: number
   winch: boolean
   /** Wheel skates — for loading a vehicle with locked/non-rotating wheels */
   wheelSkates: boolean
+  /**
+   * «Ծանր տեխնիկայի տեղափոխում», as approved by a moderator.
+   *
+   * Present ONLY on `/my/tow-truck` — the public profile deliberately omits it
+   * (it is what puts a truck on `/tsanr-tehnika`, a page filter rather than a
+   * badge). The dashboard needs it back because a driver may now propose it.
+   * Mirrors `includeOwnerFields` on the backend mapper.
+   */
+  heavyEquipment?: boolean
   /** Absent when the driver chose not to publish it — the backend withholds it */
   plateNumber?: string
   showPlateNumber: boolean
@@ -97,7 +119,7 @@ export interface TowTruckCoverage extends TowTruckGeography {
  * What list endpoints return — mirrors the backend's `TowTruckCardApi`.
  *
  * Deliberately smaller than `TowTruck`. A listing response used to carry every
- * driver's secondary phone, WhatsApp, Telegram and email, so a single
+ * driver's secondary phone, WhatsApp and Telegram, so a single
  * unauthenticated `GET /tow-trucks` handed out the platform's entire contact
  * database; it also shipped descriptions, price tables, plate numbers and every
  * photo URL that no card renders.
@@ -149,23 +171,22 @@ export interface TowTruckCard {
 
 /**
  * Anything the contact buttons can act on. A card carries the main phone; a
- * full profile adds WhatsApp, Telegram, email and the secondary phone. Typing
+ * full profile adds WhatsApp, Telegram and the secondary phone. Typing
  * `usePhoneActions` against this is what lets one composable serve both the card
  * and the profile without pretending a card has fields it doesn't — every extra
  * channel is `Partial`, so the composable's `value.whatsapp ? … : null` guards
  * are the same code path a card takes.
  */
 export type TowTruckContactable = TowTruckCard &
-  Partial<Pick<TowTruck, 'secondaryPhone' | 'whatsapp' | 'telegram' | 'email'>>
+  Partial<Pick<TowTruck, 'secondaryPhone' | 'whatsapp' | 'telegram'>>
 
 /** The full profile — only ever returned by `GET /tow-trucks/:slug` and `/my/tow-truck` */
 export interface TowTruck extends TowTruckCard {
   /** Optional secondary phone — shown only on the profile page */
   secondaryPhone?: string
-  /** Profile-page contact button, like `telegram`/`email` — never on a card */
+  /** Profile-page contact button, like `telegram` — never on a card */
   whatsapp?: string
   telegram?: string
-  email?: string
   /** Raw driver-entered value, used by the dashboard edit form */
   workingHoursText?: string
   /**
@@ -176,6 +197,16 @@ export interface TowTruck extends TowTruckCard {
   locationUpdatedAt?: string
   description: string
   vehicle: TowTruckVehicle
+  /**
+   * «Ամբողջ Հայաստան» — the coverage answer that replaces a city list rather
+   * than adding to it.
+   *
+   * Public, unlike `vehicle.heavyEquipment`: it answers "where do you work",
+   * which is the whole purpose of `serviceAreas`, and a profile showing one
+   * city for a driver who covers the country loses them the job. Offered only
+   * to crane trucks and machinery transporters — see `hasUncappedCoverage`.
+   */
+  servesAllArmenia: boolean
   pricing?: TowTruckPricing
   imageDetails?: { id: number; url: string }[]
 }

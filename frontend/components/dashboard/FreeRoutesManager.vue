@@ -174,6 +174,7 @@ async function removeRoute(route: MyFreeRoute): Promise<void> {
           v-model="start.regionSlug.value"
           :options="start.regionOptions.value"
           label="Մեկնարկի մարզ"
+          hint="Այստեղից եք մեկնում դատարկ, դեռ առանց հաճախորդի"
           :error="errors.startRegionSlug"
         />
         <AppSelect
@@ -187,6 +188,7 @@ async function removeRoute(route: MyFreeRoute): Promise<void> {
           v-model="end.regionSlug.value"
           :options="end.regionOptions.value"
           label="Վերջնակետի մարզ"
+          hint="Իսկ այստեղ եք ուղևորվում՝ ուր և կարող եք վերցնել հաճախորդ ճանապարհին"
           :error="errors.endRegionSlug"
         />
         <AppSelect
@@ -197,8 +199,21 @@ async function removeRoute(route: MyFreeRoute): Promise<void> {
           :error="errors.endCitySlug"
         />
         <AppInput v-model="departureDate" type="date" label="Մեկնման օր" required />
-        <AppInput v-model="departureTime" type="time" label="Մեկնման ժամ" required />
+        <AppInput
+          v-model="departureTime"
+          type="time"
+          label="Մեկնման ժամ"
+          hint="Այս ժամից հետո երթուղին ինքնաշխատ հեռացվում է կայքից"
+          required
+        />
       </div>
+
+      <p class="free-routes-manager__note">
+        <AppIcon name="info" :size="14" />
+        Նշված օրն ու ժամը միաժամանակ երթուղու վավերականության ժամկետն են՝ դրանից հետո այն ինքնաշխատ հեռացվում է
+        համակարգից։ Ընտրեք ժամը այնպես, որ ընդգրկի ամբողջ ճանապարհի տևողությունը, որպեսզի հայտարարությունը մնա
+        գտնելի ողջ ուղու ընթացքում։
+      </p>
 
       <p v-if="errors.departure" class="free-routes-manager__error" role="alert">
         {{ errors.departure }}
@@ -297,6 +312,21 @@ async function removeRoute(route: MyFreeRoute): Promise<void> {
   &__actions {
     display: flex;
     gap: var(--space-2);
+  }
+
+  &__note {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+
+    svg {
+      flex-shrink: 0;
+      margin-top: 2px;
+      color: var(--color-text-muted);
+    }
   }
 
   &__error {

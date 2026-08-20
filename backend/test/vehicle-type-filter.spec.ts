@@ -5,6 +5,7 @@ import type { TowTruckFilters, TowTruckWhere } from '../src/tow-trucks/tow-truck
 import {
   HEAVY_DUTY_VEHICLE_TYPE,
   MANIPULATOR_VEHICLE_TYPE,
+  SPECIALIST_VEHICLE_TYPES,
 } from '../src/tow-trucks/vehicle-types'
 
 /**
@@ -23,6 +24,32 @@ function buildWhere(filters: TowTruckFilters): TowTruckWhere {
     repository as unknown as { buildWhere: (f: TowTruckFilters) => TowTruckWhere }
   ).buildWhere(filters)
 }
+
+/**
+ * The WHERE a repository method actually hands to Prisma.
+ *
+ * `buildWhere` above only covers `findManyCards`. The other general read paths
+ * — coverage, featured, the nearest search's card fetch — each write their own
+ * WHERE inline, which is precisely why they are the ones that can forget the
+ * exclusion. Captured through a stub client rather than asserted as source
+ * text, so a refactor that moves the clause somewhere else still passes.
+ */
+function capturedWhere(call: (repository: TowTrucksRepository) => unknown): TowTruckWhere {
+  let captured: TowTruckWhere = {}
+  const prisma = {
+    towTruck: {
+      findMany: (args: { where: TowTruckWhere }) => {
+        captured = args.where
+        return Promise.resolve([])
+      },
+    },
+  }
+  void call(new TowTrucksRepository(prisma as never))
+  return captured
+}
+
+/** What every general listing must carry — see SPECIALIST_VEHICLE_TYPES */
+const HIDDEN = { notIn: [MANIPULATOR_VEHICLE_TYPE, HEAVY_DUTY_VEHICLE_TYPE] }
 
 describe('vehicle type narrows, never widens', () => {
   it('ANDs with the geography clause instead of joining it', () => {
@@ -55,10 +82,31 @@ describe('vehicle type narrows, never widens', () => {
     expect(buildWhere({ vehicleType: HEAVY_DUTY_VEHICLE_TYPE }).isActive).toBe(true)
   })
 
-  it('adds nothing when no type is asked for', () => {
+  it('hides the specialist types when no type is asked for', () => {
+    // A city page is general discovery: «Մանիպուլյատոր» and «Ծանր տեխնիկա» have
+    // pages of their own and appear nowhere else. Before this, someone browsing
+    // Աբովյան was offered a crane truck for a broken hatchback.
     const where = buildWhere({ citySlug: 'abovyan' })
-    expect(where.vehicleType).toBeUndefined()
+    expect(where.vehicleType).toEqual(HIDDEN)
     expect(where.AND).toBeUndefined()
+  })
+
+  it('excludes by TYPE, never by the equipment flags', () => {
+    // The distinction the whole rule rests on. A flatbed that ticked «Ունի
+    // մանիպուլյատոր», or one an admin marked as heavy-equipment capable, is an
+    // ordinary evacuator that ALSO does the specialist job — it stays in every
+    // city listing. Excluding on the union would delete real supply.
+    const serialised = JSON.stringify(buildWhere({ citySlug: 'abovyan' }))
+    expect(serialised).not.toContain('manipulator\":')
+    expect(serialised).not.toContain('heavyEquipment')
+  })
+
+  it('narrows the geography instead of joining it', () => {
+    // Same trap as the vehicle-type filter itself: an exclusion pushed into
+    // `or` would answer "trucks in Abovyan OR every non-specialist truck in the
+    // country", i.e. the whole fleet on one town's page.
+    const where = buildWhere({ citySlug: 'abovyan' })
+    expect(JSON.stringify(where.OR)).not.toContain('notIn')
   })
 })
 
@@ -146,5 +194,63 @@ describe('an unknown slug answers honestly', () => {
     // better than silently returning the whole fleet.
     const where = buildWhere({ vehicleType: 'no-such-type' })
     expect(where.vehicleType).toBe('no-such-type')
+  })
+})
+
+describe('the specialist types are landing-page-only', () => {
+  /**
+   * «Մանիպուլյատոր» and «Ծանր տեխնիկա» are listed on their own pages and
+   * nowhere else. Everything below is invisible in a result list — the trucks
+   * simply are or are not there — so it is asserted on the WHERE.
+   */
+  it('names both types and nothing else', () => {
+    expect([...SPECIALIST_VEHICLE_TYPES]).toEqual([
+      MANIPULATOR_VEHICLE_TYPE,
+      HEAVY_DUTY_VEHICLE_TYPE,
+    ])
+  })
+
+  it('is lifted by naming the type — both landing pages keep their union', () => {
+    // The rule is about GENERAL discovery. An explicit `?vehicleType=` is not
+    // general discovery, and if the exclusion applied there too both pages
+    // would render empty — the loudest possible version of this bug, and the
+    // reason it is the last branch in buildWhere rather than the first line.
+    for (const type of [MANIPULATOR_VEHICLE_TYPE, HEAVY_DUTY_VEHICLE_TYPE]) {
+      const where = buildWhere({ vehicleType: type })
+      expect(where.vehicleType).toBeUndefined()
+      expect(Array.isArray(where.AND)).toBe(true)
+    }
+  })
+
+  it('still hides them from every other named type', () => {
+    // Not by an extra clause — `vehicleType = 'flatbed'` already cannot match
+    // a specialist truck. Asserted so a future refactor that replaces the
+    // equality with something looser has to think about it.
+    expect(buildWhere({ vehicleType: 'flatbed' }).vehicleType).toBe('flatbed')
+  })
+
+  it('hides them from the per-area counters', () => {
+    // The counters have to count what the listing lists, or a «3 վարորդ» badge
+    // opens a page with two — and the badge is what the visitor clicked.
+    const where = capturedWhere((repository) => repository.findCoverage())
+    expect(where.isActive).toBe(true)
+    expect(where.vehicleType).toEqual(HIDDEN)
+  })
+
+  it('hides them from the homepage featured picks', () => {
+    // An admin ticking `isFeatured` on a crane truck does not put it on the
+    // homepage — the homepage is the most general listing there is.
+    const where = capturedWhere((repository) => repository.findFeaturedCards())
+    expect(where.isFeatured).toBe(true)
+    expect(where.vehicleType).toEqual(HIDDEN)
+  })
+
+  it('hides them from the nearest-driver card fetch', () => {
+    // Belt and braces: the PostGIS query already filters them before LIMIT (see
+    // NearestRepository), and this states the rule again the way `isActive`
+    // is stated again — every public read path in the repository says it.
+    const where = capturedWhere((repository) => repository.findCardsByIds([1, 2]))
+    expect(where.isActive).toBe(true)
+    expect(where.vehicleType).toEqual(HIDDEN)
   })
 })

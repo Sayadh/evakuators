@@ -31,7 +31,6 @@ const STORED = {
   secondaryPhone: '+37499000001',
   whatsapp: '+37491000001',
   telegram: '@old',
-  email: 'old@example.com',
   vehicleBrand: 'Isuzu',
   vehicleModel: 'NPR 75',
   vehicleYear: 2015,
@@ -74,7 +73,6 @@ function approveDto(overrides: Partial<ApproveRegistrationDto> = {}): ApproveReg
     secondaryPhone: '+37499000002',
     whatsapp: undefined,
     telegram: '@new',
-    email: 'new@example.com',
     vehicleBrand: 'Hino',
     vehicleModel: '300',
     vehicleYear: 2020,
@@ -124,6 +122,15 @@ function buildService(storedOverrides: Partial<typeof STORED> = {}) {
 
   const telegram = { buildLinkUrl: vi.fn(() => 'https://t.me/bot?start=token') }
 
+  /**
+   * Approval re-points the registration's consent onto the truck it creates.
+   * Stubbed rather than asserted here — this file is about what an approval
+   * PUBLISHES, and the consent hand-off has its own coverage in
+   * `privacy-consent.spec.ts`. It still has to exist, because `approve()` calls
+   * it inside the transaction.
+   */
+  const privacyConsent = { attachToTowTruck: vi.fn().mockResolvedValue(undefined) }
+
   const service = new AdminService(
     prisma as never,
     {} as never,
@@ -131,9 +138,10 @@ function buildService(storedOverrides: Partial<typeof STORED> = {}) {
     telegram as never,
     {} as never,
     {} as never,
+    privacyConsent as never,
   )
 
-  return { service, create, towTrucksRepository, tx }
+  return { service, create, towTrucksRepository, tx, privacyConsent }
 }
 
 /** The single `towTruck.create({ data })` payload an approval produced */
@@ -155,7 +163,6 @@ describe('approve() publishes the submitted profile', () => {
     expect(data.phone).toBe('+37491000002')
     expect(data.secondaryPhone).toBe('+37499000002')
     expect(data.telegram).toBe('@new')
-    expect(data.email).toBe('new@example.com')
   })
 
   it('stores the corrected vehicle', async () => {
@@ -229,23 +236,42 @@ describe('approve() publishes the submitted profile', () => {
     expect(towTrucksRepository.findByMainPhoneAnyStatus).toHaveBeenCalledWith('+37491000002')
   })
 
+  const fourAreas = [
+    { slug: 'abovyan', name: 'Աբովյան', type: 'city' as const },
+    { slug: 'hrazdan', name: 'Հրազդան', type: 'city' as const },
+    { slug: 'charentsavan', name: 'Չարենցավան', type: 'city' as const },
+    { slug: 'nor-hachn', name: 'Նոր Հաճն', type: 'city' as const },
+  ]
+
   it('applies the coverage cap to the SUBMITTED regions', async () => {
     // Narrowed to one marz on the page, so the one-marz budget (3) applies —
     // reading the stored two-marz list would hand out the looser bound (5) for
     // a selection that no longer exists.
-    const fourAreas = [
-      { slug: 'abovyan', name: 'Աբովյան', type: 'city' as const },
-      { slug: 'hrazdan', name: 'Հրազդան', type: 'city' as const },
-      { slug: 'charentsavan', name: 'Չարենցավան', type: 'city' as const },
-      { slug: 'nor-hachn', name: 'Նոր Հաճն', type: 'city' as const },
-    ]
-
+    //
+    // `manipulator: false` is load-bearing now: the shared fixture describes a
+    // flatbed that carries a crane, and such a truck is EXEMPT from the cap
+    // (`hasUncappedCoverage`). Leaving it true would have made this case pass
+    // for the wrong reason, testing the exemption while claiming to test the
+    // cap.
     await expect(
       buildService().service.approve(
         42,
-        approveDto({ regionSlugs: ['kotayk'], serviceAreas: fourAreas }),
+        approveDto({ manipulator: false, regionSlugs: ['kotayk'], serviceAreas: fourAreas }),
       ),
     ).rejects.toThrow(BadRequestException)
+  })
+
+  it('lifts the cap for a truck that travels to booked jobs', async () => {
+    // The other half of the same rule. A crane truck or a machinery transporter
+    // is dispatched against a booked job at an agreed price, so a wide coverage
+    // claim is one it can actually keep — the 2/3/5 budget was written for a
+    // roadside evacuator, which this is not. See `hasUncappedCoverage`.
+    await expect(
+      buildService().service.approve(
+        42,
+        approveDto({ manipulator: true, regionSlugs: ['kotayk'], serviceAreas: fourAreas }),
+      ),
+    ).resolves.toBeDefined()
   })
 
   it('leaves the stored request untouched apart from its status', async () => {

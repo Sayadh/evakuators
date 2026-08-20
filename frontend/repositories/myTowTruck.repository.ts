@@ -17,7 +17,6 @@ export interface UpdateMyTowTruckPayload {
   secondaryPhone?: string
   whatsapp?: string
   telegram?: string
-  email?: string
 
   vehicleBrand?: string
   vehicleModel?: string
@@ -27,9 +26,25 @@ export interface UpdateMyTowTruckPayload {
   capacityTons?: number
   platformLengthM?: number
   platformWidthM?: number
+  /** The specialist technical answers — see SPECIALIST_SPEC_FIELDS */
+  craneCapacityTons?: number
+  craneReachM?: number
+  maxLoadTons?: number
+  platformLoadHeightCm?: number
   winch?: boolean
   manipulator?: boolean
   wheelSkates?: boolean
+  /**
+   * «Ծանր տեխնիկայի տեղափոխում», proposed by the driver.
+   *
+   * A save queues a diff rather than writing, so this is a request a moderator
+   * approves — which is what lets the field be driver-editable at all without
+   * reopening the self-promotion hole `TowTruck.heavyEquipment` was made
+   * admin-only to close.
+   */
+  heavyEquipment?: boolean
+  /** «Ամբողջ Հայաստան» — see `TowTruck.servesAllArmenia` */
+  servesAllArmenia?: boolean
 
   description?: string
   services?: string[]
@@ -38,7 +53,12 @@ export interface UpdateMyTowTruckPayload {
 
   locationName?: string
   /** Full replacement list, with Armenian names already resolved by the client */
-  serviceAreas?: { slug: string; name: string; type: 'city' | 'district' | 'route' }[]
+  serviceAreas?: {
+    slug: string
+    name: string
+    /** `region` only ever comes from an uncapped driver — see ServiceAreaDto */
+    type: 'city' | 'district' | 'route' | 'region'
+  }[]
   /**
    * The marzes the driver ticked — sent for the coverage cap only, never
    * stored. It is what lets the backend apply 3-for-one-marz instead of the

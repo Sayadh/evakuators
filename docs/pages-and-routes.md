@@ -14,7 +14,9 @@ and what auth (if any) gates it.
 | `/yerevan/[district]` | `pages/yerevan/[district].vue` | Tow trucks serving one district | Mock or API | Public |
 | `/tow-trucks/[slug]` | `pages/tow-trucks/[slug].vue` | Single tow truck profile — gallery (click-to-open lightbox with swipe/arrow-key navigation between photos, see `TowTruckGallery.vue`), pricing, service areas, reviews (list + submission form), similar trucks, JSON-LD business schema. Also the only page that records analytics: a `PAGE_VIEW` in `onMounted` and contact clicks via `usePhoneActions` (see `docs/analytics.md`) | Mock or API; 404s (fatal `createError`) if slug not found | Public |
 | `/evakuator` | `pages/evakuator.vue` | "Գտնել մոտակա էվակուատորները" — one-shot browser geolocation, then the nearest drivers with a road distance and a driving estimate. **Nothing happens until the button is pressed**: no geolocation on mount, no SSR fetch, no `useAsyncData`, because a permission prompt that appears because a page loaded is one the visitor did not ask for. Results render through the ordinary `TowTruckCard`, so the call button and its analytics are unchanged. The search is gated by `NEAREST_SEARCH_ENABLED` (`constants/features.ts`), currently off — the button then reports that the feature is being worked on and never prompts for a position. The nav link, the CTA banners and the sitemap entry deliberately stay up regardless: they are how visitors learn it is coming, so the page reads as an announcement rather than an error. See `docs/nearest-search.md` | Real API only (mock mode says so instead of prompting) | Public |
-| `/manipulator` | `pages/manipulator.vue` | Every «Մանիպուլյատորով էվակուատոր» in the country — heading, cards, "show more", and deliberately nothing else. Both vehicle-type pages are thin files rendering `VehicleTypeListing` from a `VEHICLE_TYPE_PAGES` entry — see § "Vehicle-type landing pages" | Mock or API | Public |
+| `/manipulator/[geo]` | `pages/manipulator/[geo].vue` | One marz or Yerevan — «Մանիպուլյատորով էվակուատոր Կոտայքի մարզում». Same component as the parent, `noindex` while it has no drivers, 404 for an unknown area — see § "The area pages" | Mock or API | Public |
+| `/tsanr-tehnika/[geo]` | `pages/tsanr-tehnika/[geo].vue` | The heavy-duty half of the same eleven areas | Mock or API | Public |
+| `/manipulator` | `pages/manipulator/index.vue` | Every «Մանիպուլյատորով էվակուատոր» in the country — heading, cards, "show more", and deliberately nothing else. Both vehicle-type pages are thin files rendering `VehicleTypeListing` from a `VEHICLE_TYPE_PAGES` entry — see § "Vehicle-type landing pages" | Mock or API | Public |
 | `/tsanr-tehnika` | `pages/tsanr-tehnika.vue` | Every «Ծանր տեխնիկայի էվակուատոր» in the country, same shape | Mock or API | Public |
 | `/free-routes` | `pages/free-routes/index.vue` | Public "Ազատ երթուղիներ" listing | Mock or API; only `ACTIVE` routes | Public |
 | `/register` | `pages/register.vue` | Driver registration form. Every question lives in `RegistrationFormFields.vue`, shared verbatim with the admin review page — only the photo upload and the thank-you dialog are page-local. Sections: identity, vehicle, capacity range, services by category, **base parking coordinates**, pricing, image upload). The coordinates section is its own fieldset rather than part of "Տարածքներ" — service areas are where a driver is willing to *go*, the coordinates are where they *are*, and the two answers get confused under one heading. It is also the only **optional** section: copying a coordinate out of Google Maps on a phone is the step most likely to end a registration, and the value is editable from the dashboard the moment the driver is approved. A typed value must still parse; an empty box submits | Submits to `registrationRepository` (needs a real backend to actually persist — meaningless in pure mock mode beyond UI preview) | Public |
@@ -84,6 +86,76 @@ terms people actually type, including transliterated forms
 geography pages. Each page's questions are its own; two landing pages sharing
 an FAQ would be duplicate content, and copy-paste is the obvious way to add a
 third.
+
+### The area pages — `/manipulator/yerevan`, `/tsanr-tehnika/kotayk`
+
+Eleven areas per type: Yerevan and the ten marzes (`VEHICLE_TYPE_GEOS`). One
+component serves all twenty-four URLs — `VehicleTypeListing` with an optional
+`geo` prop — so the parent and its areas cannot drift.
+
+**Why they exist.** «մանիպուլյատոր Երևան» is a different query from
+«մանիպուլյատոր», and one country-wide page answers it weakly: it is about the
+country and its heading says so. This is the same reason
+`/regions/:region/:city` exists on the geography axis — a page per question
+people actually ask.
+
+**Why marzes and not cities.** Supply. There are far fewer cranes than flatbeds,
+so 46 city pages per type would mostly be empty, and empty pages at that volume
+are the doorway farm this document already refuses for the 300 settlements.
+Eleven areas is the coarsest split that still matches how people search.
+
+**Thin-page rule, same as the landing settlements.** An area page with no
+drivers sends `noindex, follow` and stays out of the sitemap — reachable, never
+announced. The day a driver registers there it becomes indexable with no code
+change. The parent page is never noindexed: it is what the nav links to.
+
+**`[geo]` must 404 what it does not know.** The param matches any string, so
+without `findVehicleTypeGeo` the URL `/manipulator/anything` would render
+«undefined» in an `<h1>` over the whole country's list and return 200 — a soft
+404, which is both what search engines punish and what a crawler finds by
+following a stale link.
+
+**Which URLs the sitemap announces is computed from the walk it already does.**
+`/tow-trucks/coverage` cannot answer "does Kotayk have a crane" — it is general
+discovery and excludes these trucks by construction (`docs/taxonomies.md`). So
+the sitemap reuses the per-vehicle-type listing walk and runs `servesRegion` /
+`servesYerevan` over the cards, which are the same predicates the pages
+themselves filter with. Zero extra requests, and a page cannot be announced here
+and render empty there.
+
+### Below the listing is where the words live
+
+These pages were built with **no prose at all**, and the rule was written as
+"the pages stay bare". That was a proxy for the real constraint and eventually
+contradicted it: a page whose only text is its `<h1>` is thin content, so it
+could not rank for the query it existed to answer, so the visitor never arrived
+to be un-delayed.
+
+The constraint that actually matters is **order**: nothing between someone who
+already knows what they need and a phone number. So the pages now carry, in
+this order and strictly after the cards — the area links
+(`VehicleTypeGeoLinks`), the body copy (`SeoTextSection`, built by
+`utils/vehicleTypeSeo.ts`) and the FAQ. Controls are still banned outright,
+above the fold or below it: a filter or a sort would change what the visitor
+sees, which is a different thing from text they can ignore.
+`frontend/tests/vehicleTypePages.spec.ts` asserts every text block sits after
+`TowTruckList`.
+
+The copy itself is composed, not written twice: vocabulary per vehicle type
+(`VehicleTypeSeoVocabulary`) plus a place (`VehicleTypeGeo`). Each area page
+opens on its own place-specific paragraph and only then shares the explainer
+with its siblings — which is the line between one service documented per area
+and eleven near-duplicates.
+
+**These pages are the only place their trucks appear.** `manipulator` and
+`heavy-duty` are excluded from every geography listing, from the homepage's
+featured picks, from the per-area counters and from `/evakuator` — so a page
+that is empty here is a driver who is findable nowhere but their own profile
+URL. That raises the stakes on the `?vehicleType=` round trip
+(`VEHICLE_TYPE_PAGES` entry → query parameter → `buildWhere`): a drift in one
+of those slugs used to mean a thin page, and now means an invisible driver. It
+is also why the sitemap walks these listings separately —
+`docs/taxonomies.md` § "Landing-page-only vehicle types".
 
 With no `v-if="isDesktop"` child and no grid, these pages also sidestep the SSR
 auto-placement trap the city pages pin around (`docs/architecture.md`); if a

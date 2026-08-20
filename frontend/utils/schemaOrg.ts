@@ -1,3 +1,4 @@
+import type { VehicleTypeGeo, VehicleTypePage } from '~/constants/vehicleTypePages'
 import type { BreadcrumbItem, FaqItem } from '~/types/common'
 import type { Review } from '~/types/review'
 import type { TowTruck, TowTruckCard } from '~/types/towTruck'
@@ -10,7 +11,7 @@ import {
   SITE_URL_ROOT,
   SOCIAL_LINKS,
 } from '~/constants/site'
-import { getTowTruckRoute } from './routeHelpers'
+import { getTowTruckRoute, getVehicleTypePageRoute } from './routeHelpers'
 
 type JsonLd = Record<string, unknown>
 
@@ -203,5 +204,63 @@ export function buildSiteIdentitySchema(): JsonLd {
         inLanguage: 'hy-AM',
       },
     ],
+  }
+}
+
+/**
+ * What a vehicle-type page is *offering*, as `Service`.
+ *
+ * ## Why this and not another business type
+ *
+ * `AutomotiveBusiness` is what a driver's own profile publishes
+ * (`buildTowTruckBusinessSchema`), and it must stay that way: a second
+ * business-shaped entity on a listing page is how a phone number or a rating
+ * gets attributed to the wrong party. A listing page is not a business — it is
+ * a directory of one kind of service in one area, which is exactly `Service`
+ * with an `areaServed` and a `provider`.
+ *
+ * ## Why `provider` is a reference and not an inline Organization
+ *
+ * `@id` points at the Organization node the homepage publishes
+ * (`buildSiteIdentitySchema`). Repeating the organisation inline on twenty-two
+ * pages would be twenty-two chances to describe a slightly different entity —
+ * and telling this brand apart from a domain one letter away is the whole
+ * reason that node has a stable id.
+ *
+ * ## No `offers`, no price
+ *
+ * Prices belong to drivers, vary per call and are shown on the cards. A
+ * `priceRange` invented at the page level would be a claim the platform cannot
+ * keep, and Google treats a price that contradicts the page as a violation.
+ */
+export function buildVehicleTypeServiceSchema(
+  page: VehicleTypePage,
+  geo?: VehicleTypeGeo,
+): JsonLd {
+  const path = geo
+    ? `${getVehicleTypePageRoute(page.slug)}/${geo.slug}`
+    : getVehicleTypePageRoute(page.slug)
+
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Service',
+    '@id': `${SITE_URL}${path}#service`,
+    name: `${page.heading} ${geo ? geo.locative : 'Հայաստանում'}`,
+    description: page.seo.serviceSummary,
+    serviceType: page.seo.keyword,
+    url: `${SITE_URL}${path}`,
+    // `AdministrativeArea` rather than `City`: ten of the eleven are marzes,
+    // and Yerevan is administered as one too. Claiming `City` for a marz is a
+    // smaller error than it looks — it is what a consumer uses to decide which
+    // local query this page answers.
+    areaServed: {
+      '@type': geo ? 'AdministrativeArea' : 'Country',
+      name: geo ? geo.name : 'Հայաստան',
+    },
+    provider: { '@id': ORGANIZATION_ID },
+    availableChannel: {
+      '@type': 'ServiceChannel',
+      serviceUrl: `${SITE_URL}${path}`,
+    },
   }
 }

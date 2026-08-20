@@ -30,11 +30,23 @@ export class ServiceAreaDto {
    * matches on its own slug only — the backend never expands it to the places
    * along it, and there is nothing here to expand it with anyway.
    *
+   * `region` is a whole marz, and it is the newest and narrowest of the four:
+   * only an uncapped driver (`hasUncappedCoverage`) is offered it, and only
+   * because "I cover Syunik" is the honest answer for a crane truck that
+   * travels to a booked job anywhere in it. An ordinary evacuator is still
+   * asked for cities, because the whole point of that cap is that a marz-wide
+   * claim from a roadside evacuator is not one they can keep.
+   *
+   * It is matched literally by `buildWhere`, and ONLY inside the branches that
+   * name a specialist vehicle type — a marz-wide area must never widen a
+   * general city listing.
+   *
    * MANUAL SYNC POINT: must equal `LocationType` in
-   * `frontend/types/enums.ts`. These values travel in both directions inside
-   * `TowTruck.serviceAreas` and are matched literally by
-   * `TowTrucksRepository.buildWhere`, so a mismatch silently returns nothing.
+   * `frontend/types/enums.ts` — which has carried `Region = 'region'` all
+   * along; this is the first writer of it. These values travel in both
+   * directions inside `TowTruck.serviceAreas` and are matched literally, so a
+   * mismatch silently returns nothing.
    */
-  @IsIn(['city', 'district', 'route'])
-  type!: 'city' | 'district' | 'route'
+  @IsIn(['city', 'district', 'route', 'region'])
+  type!: 'city' | 'district' | 'route' | 'region'
 }

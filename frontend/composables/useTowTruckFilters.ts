@@ -2,23 +2,20 @@ import { useTowTruckFiltersStore } from '~/stores/towTruckFilters'
 import type { TowTruckCard } from '~/types/towTruck'
 import { trackFilterApply } from '~/utils/analytics'
 import { buildFilterQueryParams, parseFilterQueryParams } from '~/utils/queryParams'
-import { applyTowTruckFilters, type BasePlace } from '~/utils/towTruckFilters'
+import { applyTowTruckFilters } from '~/utils/towTruckFilters'
 
-const FILTER_QUERY_KEYS = ['24h', 'manipulator', 'services', 'capacity', 'sort']
+const FILTER_QUERY_KEYS = ['24h', 'vehicleType', 'services', 'capacity', 'sort']
 
 /**
  * Connects the filter store to a tow truck list:
  * restores state from the URL, keeps the URL in sync and returns the filtered list.
  *
- * `basePlace` is the city or Yerevan district this page is about, if it is
- * about one. Passing it puts the drivers *based* there above the ones who
- * merely also cover it, in the Recommended order only — see `sortTowTrucks`.
- * A page with no single place (a road corridor) omits it and nothing changes.
+ * The only two pages that call this — the city and Yerevan district search
+ * pages — show the Recommended order fully random: no rating, no "based here"
+ * boost, every driver an equal shot at the top on every page load. See
+ * `applyTowTruckFilters`.
  */
-export function useTowTruckFilters(
-  towTrucks: Ref<TowTruckCard[]>,
-  basePlace?: MaybeRefOrGetter<BasePlace | undefined>,
-) {
+export function useTowTruckFilters(towTrucks: Ref<TowTruckCard[]>) {
   // Read once, in setup: `useState` cannot be reached from inside a computed's
   // getter, and the value must be the same one the SSR pass used anyway.
   const seed = useListingShuffleSeed()
@@ -47,7 +44,7 @@ export function useTowTruckFilters(
   }
 
   const filteredTowTrucks = computed(() =>
-    applyTowTruckFilters(towTrucks.value, store.$state, toValue(basePlace), seed),
+    applyTowTruckFilters(towTrucks.value, store.$state, seed),
   )
   const activeFiltersCount = computed(() => store.activeFiltersCount)
 

@@ -1,11 +1,15 @@
-import { validateServiceAreaSelection } from '~/constants/serviceAreaLimits'
+import {
+  hasUncappedCoverage,
+  validateServiceAreaSelection,
+} from '~/constants/serviceAreaLimits'
+import { servicesAllowedFor } from '~/constants/services'
+import { asksWheelSkates, specialistSpecFieldsFor, usesExactCapacity } from '~/constants/vehicles'
 import { ServiceType, VehicleType } from '~/types/enums'
 import { parseCoordinates, type Coordinates } from './coordinates'
 import type { RegistrationFormState } from './registrationPayload'
 import {
   isAmount,
   isDimension,
-  isEmail,
   isPercent,
   isPhone,
   isYear,
@@ -54,7 +58,6 @@ export function createRegistrationFormState(): RegistrationFormState {
     secondaryPhone: '',
     whatsapp: '',
     telegram: '',
-    email: '',
     brand: '',
     model: '',
     year: '',
@@ -62,9 +65,15 @@ export function createRegistrationFormState(): RegistrationFormState {
     capacity: '',
     platformLengthM: '',
     platformWidthM: '',
+    craneCapacityTons: '',
+    craneReachM: '',
+    maxLoadTons: '',
+    platformLoadHeightCm: '',
     winch: false,
     manipulator: false,
     wheelSkates: false,
+    heavyEquipment: false,
+    servesAllArmenia: false,
     workingHoursStart: '',
     workingHoursEnd: '',
     regionSlugs: [],
@@ -149,12 +158,22 @@ export function validateRegistrationForm(
   errors.phone = validateField(form.phone, [required(), isPhone()]) ?? ''
   errors.secondaryPhone = validateField(form.secondaryPhone, [isPhone()]) ?? ''
   errors.whatsapp = validateField(form.whatsapp, [isPhone()]) ?? ''
-  errors.email = validateField(form.email, [isEmail()]) ?? ''
   errors.brand = validateField(form.brand, [required()]) ?? ''
   errors.year = validateField(form.year, [required(), isYear()]) ?? ''
   errors.vehicleType = validateField(form.vehicleType, [required('Ընտրեք մեքենայի տեսակը')]) ?? ''
-  errors.capacity =
-    validateField(form.capacity, [required('Ընտրեք առավելագույն բեռնատարողությունը')]) ?? ''
+
+  // The capacity band and the exact tonnage are the SAME question asked two
+  // ways, so exactly one of them is required — never both, never neither.
+  // «Մանիպուլյատոր» and «Ծանր տեխնիկայի էվակուատոր» state a real figure
+  // (`maxLoadTons`); everyone else picks a band. Requiring the band from a
+  // specialist as well would be asking a driver to answer twice and then
+  // storing the vaguer of the two answers.
+  const exactCapacity = usesExactCapacity(form.vehicleType)
+  errors.capacity = exactCapacity
+    ? ''
+    : validateField(form.capacity, [required('Ընտրեք առավելագույն բեռնատարողությունը')]) ?? ''
+
+  validateSpecialistSpecs(form, errors)
 
   // Optional, but both-or-neither: half a size is not a size. Same rule the
   // working-hours pair uses.
@@ -165,8 +184,21 @@ export function validateRegistrationForm(
       ? 'Լրացրեք և՛ երկարությունը, և՛ լայնությունը, կամ թողեք երկուսն էլ դատարկ'
       : '')
 
-  errors.regionSlugs = form.regionSlugs.length === 0 ? 'Ընտրեք 1-2 մարզ' : ''
-  errors.citySlugs = validateServiceAreaSelection(form.regionSlugs, form.citySlugs)
+  // An uncapped driver may pick as many marzes as they work in, and one who
+  // answered «Ամբողջ Հայաստան» has answered the question already — so the
+  // "1-2 marzes" wording is wrong for both, and the region rule moves inside
+  // `validateServiceAreaSelection`, which can see who is being asked.
+  const coverage = {
+    vehicleType: form.vehicleType,
+    manipulator: form.manipulator,
+    heavyEquipment: form.heavyEquipment,
+    servesAllArmenia: form.servesAllArmenia,
+  }
+  const uncapped = hasUncappedCoverage(coverage)
+
+  errors.regionSlugs =
+    uncapped || form.regionSlugs.length > 0 ? '' : 'Ընտրեք 1-2 մարզ'
+  errors.citySlugs = validateServiceAreaSelection(form.regionSlugs, form.citySlugs, coverage)
   errors.services = form.services.length === 0 ? 'Ընտրեք առնվազն մեկ ծառայություն' : ''
 
   // Optional: an empty box submits, and the driver adds it later from their
@@ -213,13 +245,77 @@ export function validateRegistrationForm(
  * moderator's unfilled `slug` would otherwise make the shared fields report
  * themselves invalid, and the page could never say which half was wrong.
  */
+/**
+ * The technical questions this vehicle type is actually shown.
+ *
+ * Only the visible ones are validated, and that is the whole rule: a driver
+ * who typed a crane reach, then switched to «Հարթակով էվակուատոր», still has
+ * the string on the state (deliberately — switching back must not lose it), but
+ * an error on a field that is no longer on screen is an unsubmittable form with
+ * no visible cause. `buildRegistrationPayload` sends whatever is there;
+ * `AdminService.approve` writes it to a column nothing reads for that type.
+ *
+ * Errors are keyed by the field name, so `errors.craneReachM` lands under the
+ * input that produced it without the component needing a mapping table.
+ */
+export function validateSpecialistSpecs(
+  form: SpecialistSpecFields & { vehicleType: string },
+  errors: RegistrationFormErrors,
+): void {
+  // Clear every key first: a field that stopped being shown must stop
+  // reporting, and `SPECIALIST_SPEC_KEYS` is the closed list of what can.
+  for (const key of SPECIALIST_SPEC_KEYS) errors[key] = ''
+
+  for (const field of specialistSpecFieldsFor(form.vehicleType)) {
+    const raw = form[field.key].trim()
+
+    if (!raw) {
+      if (field.required) errors[field.key] = `Լրացրեք՝ ${field.label}`
+      continue
+    }
+
+    // Comma-tolerant for the same reason `toOptionalFloat` is: an Armenian
+    // keyboard puts «,» where a number needs «.», and "5,5" means 5.5.
+    const value = Number(raw.replace(',', '.'))
+    if (!Number.isFinite(value) || value < field.min || value > field.max) {
+      errors[field.key] = `Մուտքագրեք ${field.min}–${field.max} ${field.unit} միջակայքում`
+    }
+  }
+}
+
+/**
+ * Every key `validateSpecialistSpecs` may set.
+ *
+ * Listed rather than derived from the currently-shown fields, because the
+ * clearing pass has to reach a key belonging to the type the driver just
+ * switched AWAY from — which is precisely the one no longer in that list.
+ */
+const SPECIALIST_SPEC_KEYS = [
+  'craneCapacityTons',
+  'craneReachM',
+  'maxLoadTons',
+  'platformLoadHeightCm',
+] as const
+
+/**
+ * The four raw inputs, as a structural type rather than a slice of
+ * `RegistrationFormState`.
+ *
+ * The driver dashboard keeps its own form object — it asks a different set of
+ * questions (one `driverName` instead of two names, no phone, a description)
+ * and always has. Typing these helpers structurally is what lets that page
+ * reuse the exact same rules instead of growing a second copy of them, which is
+ * the failure mode CLAUDE.md's registration/dashboard parity rule is about.
+ */
+export type SpecialistSpecFields = Record<(typeof SPECIALIST_SPEC_KEYS)[number], string>
+
 const SHARED_ERROR_KEYS = [
+  ...SPECIALIST_SPEC_KEYS,
   'firstName',
   'lastName',
   'phone',
   'secondaryPhone',
   'whatsapp',
-  'email',
   'brand',
   'year',
   'vehicleType',
@@ -257,4 +353,70 @@ export function isManipulatorVehicleType(vehicleType: string): boolean {
 /** Whether «24/7» is among the selected services — hides the working-hours pair */
 export function isAvailable247(services: readonly string[]): boolean {
   return services.includes(ServiceType.Available247)
+}
+
+/**
+ * Puts the form back into a state that matches the vehicle just chosen.
+ *
+ * Changing the vehicle type changes which questions exist, and every answer to
+ * a question that no longer exists is a hazard rather than a saving: it is
+ * invisible, so nobody can correct it, and it still reaches the public profile.
+ * Concretely, without this:
+ *
+ * - a flatbed that ticked «անվադողի փոխարինում» and then became a manipulator
+ *   would advertise roadside repair from a crane truck, with no checkbox
+ *   anywhere to untick;
+ * - a driver who chose «Ամբողջ Հայաստան» and then went back to «Հարթակով
+ *   էվակուատոր» would keep nationwide coverage the capped form cannot show
+ *   them, and the API would reject the save with a message about a field they
+ *   cannot see.
+ *
+ * Called from a watcher on both forms rather than from the pickers, so it runs
+ * once per change wherever the change came from — including the admin review
+ * page, where the person changing the type is not the person who answered.
+ *
+ * Widening only where the existing code widens: picking the manipulator TYPE
+ * ticks «Ունի մանիպուլյատոր» and picking `heavy-duty` ticks «Ծանր տեխնիկայի
+ * տեղափոխում», but changing away unticks neither — a flatbed with a crane, or
+ * one that really does carry machinery, is a real vehicle and that `true` is
+ * the driver's own answer to keep.
+ */
+export function syncVehicleDependentFields<TService extends string>(
+  form: SpecialistSpecFields & {
+    vehicleType: string
+    manipulator: boolean
+    heavyEquipment: boolean
+    wheelSkates: boolean
+    servesAllArmenia: boolean
+    services: TService[]
+    capacity: string
+  },
+): void {
+  if (isManipulatorVehicleType(form.vehicleType)) form.manipulator = true
+  if (form.vehicleType === VehicleType.HeavyDuty) form.heavyEquipment = true
+
+  // The cast is safe by construction: `servicesAllowedFor` only ever FILTERS
+  // the array it is given, so every surviving element is one TypeScript already
+  // proved is a `TService`. It exists because the dashboard types this field as
+  // `ServiceType[]` and the registration form as `string[]`.
+  form.services = servicesAllowedFor(form.vehicleType, form.services) as TService[]
+
+  // Same reasoning as the services above: an answer whose question is gone is
+  // invisible, uncorrectable, and still reaches the public profile. A crane
+  // truck advertising wheel skates is equipment it does not carry.
+  if (!asksWheelSkates(form.vehicleType)) form.wheelSkates = false
+
+  if (!hasUncappedCoverage(form)) form.servesAllArmenia = false
+
+  // The band and the exact figure are one question (see `usesExactCapacity`).
+  // Whichever is not being asked is cleared, so a stale answer can never be the
+  // one that gets submitted — `buildRegistrationPayload` reads both.
+  if (usesExactCapacity(form.vehicleType)) {
+    form.capacity = ''
+  } else {
+    form.craneCapacityTons = ''
+    form.craneReachM = ''
+    form.maxLoadTons = ''
+    form.platformLoadHeightCm = ''
+  }
 }

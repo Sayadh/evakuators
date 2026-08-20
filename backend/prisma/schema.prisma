@@ -33,6 +33,22 @@ enum ProfileChangeStatus {
   REJECTED
 }
 
+/// Which flow produced a consent record — see DriverPrivacyConsent.
+///
+/// An enum rather than a boolean because the two are not opposites of one
+/// thing: REGISTRATION is consent given *before* a profile exists, attached to
+/// a request that may never be approved, and EXISTING_DRIVER is consent given
+/// by someone whose profile has been public for months. Which one a row is
+/// changes what it proves, so it must be stored, not inferred from whichever
+/// foreign key happens to be null.
+enum PrivacyConsentSource {
+  /// Ticked in the dialog on /register, stored with the RegistrationRequest
+  REGISTRATION
+  /// Ticked in the blocking dialog on the dashboard by an already-published
+  /// driver — the ~100 who signed up before consent was asked for at all
+  EXISTING_DRIVER
+}
+
 enum FreeRouteStatus {
   /// Shown on the public listing, still open for a customer to grab
   ACTIVE
@@ -108,6 +124,33 @@ model TowTruck {
   capacityTons    Float
   platformLengthM Float?
   platformWidthM  Float?
+
+  /// Crane rating and reach — asked only of «Մանիպուլյատոր», which is the only
+  /// type that has a crane to rate. Null on every other truck and on every row
+  /// written before the specialist forms existed; the public profile renders
+  /// nothing for a null rather than inventing a zero.
+  craneCapacityTons Float?
+  craneReachM       Float?
+
+  /// The exact platform tonnage, for the two specialist types only.
+  ///
+  /// Those two are asked this INSTEAD of the capacity band picker, and
+  /// `capacityTons` is written from it verbatim rather than from
+  /// `representativeCapacityTons()`. A band is the right question for an
+  /// ordinary evacuator (nobody knows their exact rating, and the customer only
+  /// needs to know a saloon fits) and the wrong one for a machinery
+  /// transporter, where «10 տոննայից ավելի» is the only band that ever applies
+  /// and the entire decision is whether a 22-tonne excavator goes on.
+  ///
+  /// Kept as its own column rather than reusing `capacityTons`: that one is a
+  /// derived filter index every truck has, this one is a stated figure only
+  /// some trucks have, and only the second may be displayed as a specification.
+  maxLoadTons Float?
+
+  /// Deck height in centimetres — whether a low-clearance machine can be driven
+  /// onto the platform at all. Asked only of «Ծանր տեխնիկայի էվակուատոր».
+  platformLoadHeightCm Float?
+
   winch           Boolean @default(true)
   manipulator     Boolean @default(false)
   /// Equipment for loading a vehicle whose wheels are locked/won't roll
@@ -136,6 +179,24 @@ model TowTruck {
   citySlug     String?
   districtSlug String?
   locationName String
+
+  /// «Ամբողջ Հայաստան» — coverage stated as one decision rather than as a list.
+  ///
+  /// Only the specialist vehicles are offered it, and only because the coverage
+  /// cap (`service-area-limits.ts`) does not apply to them: a crane truck
+  /// genuinely does drive the country for a booked job, which is the opposite
+  /// of the roadside evacuator the 2/3/5-area budget was written for.
+  ///
+  /// Deliberately NOT eleven `serviceAreas` rows. "Everywhere" and "all eleven
+  /// marzes, ticked one by one" would then be the same stored value, so the
+  /// form could never show a driver back the choice they actually made — and
+  /// adding a marz would silently shrink the first group's coverage.
+  ///
+  /// It does NOT replace the base: `regionSlug`/`citySlug`/`locationName` and
+  /// the coordinates stay required exactly as before, because "where are you"
+  /// and "where will you go" are different questions and the nearest-driver
+  /// search only answers the first.
+  servesAllArmenia Boolean @default(false)
 
   /// Where the truck is actually parked, as a point — the input for the
   /// "nearest evacuator to the customer" distance calculation. This is a base
@@ -226,6 +287,13 @@ model TowTruck {
   /// AdminService.deleteTowTruck() needs no extra cleanup step.
   profileChanges ProfileChangeRequest[]
 
+  /// Every time this driver consented to (or withdrew consent for) the
+  /// processing and publication of their data — see DriverPrivacyConsent. An
+  /// append-only history, not a flag: a driver with no rows here has simply
+  /// never been asked, which is exactly true of everyone published before the
+  /// dialog existed.
+  privacyConsents DriverPrivacyConsent[]
+
   // Provider analytics — see docs/analytics.md. Both cascade on delete, so
   // AdminService.deleteTowTruck() needs no extra cleanup step.
   analyticsDailyStats  AnalyticsDailyStat[]
@@ -240,7 +308,7 @@ model TowTruck {
   /// also the only channel we have for delivering it — so "no hash" and "never
   /// linked" are two views of the same state rather than two states to
   /// reconcile.
-  passwordHash               String?
+  passwordHash       String?
   /// True while `passwordHash` still holds a password WE generated, false once
   /// the driver has replaced it with their own.
   ///
@@ -254,15 +322,15 @@ model TowTruck {
   /// Defaults false so every row that existed before this column did reads as
   /// "not holding a temporary password", which is true: they held no password
   /// at all.
-  mustChangePassword         Boolean     @default(false)
+  mustChangePassword Boolean @default(false)
 
   // Telegram — login-code delivery until password login replaced it, now the
   // channel for contact notices and for the one-time password handover.
   /// Telegram numeric chat id, captured once the driver taps the bot deep-link.
   /// Null until linked; until then there is no way to hand them a password.
-  telegramChatId             BigInt?     @unique
+  telegramChatId             BigInt?   @unique
   /// One-time token embedded in the t.me/<bot>?start=<token> link. Cleared once used.
-  telegramLinkToken          String?     @unique
+  telegramLinkToken          String?   @unique
   telegramLinkTokenExpiresAt DateTime?
 
   /// When the one-time "here is why you get these" explanation was delivered
@@ -391,6 +459,117 @@ model ProfileChangeRequest {
   @@index([status, createdAt])
 }
 
+/// One act of consenting to the processing and publication of personal data.
+///
+/// ## Append-only history, not a flag on TowTruck
+///
+/// A `hasConsented` boolean would answer "does this driver consent" and nothing
+/// else — not when, not to which version, not to what text, and a withdrawal
+/// would erase the fact that consent was ever given. The obligation is the
+/// opposite: to be able to show, later, that a specific person agreed to a
+/// specific wording on a specific date. So every acceptance and every
+/// withdrawal is a row, rows are never rewritten, and "does this driver
+/// consent right now" is a query over them (see `hasCurrentConsent`).
+///
+/// ## Nothing was backfilled, and that is the point
+///
+/// ~100 drivers were already published when this was introduced. The migration
+/// creates an empty table and touches nobody: inventing an `acceptedAt` for a
+/// driver who never saw a dialog would be manufacturing the exact evidence this
+/// table exists to hold honestly. They are asked on their next login instead —
+/// `requiresPrivacyConsent` is simply "no row matching the current version",
+/// which is true of all of them until each one actually ticks the box.
+///
+/// ## Two owners, one at a time
+///
+/// Consent given at registration has no TowTruck to point at — the profile does
+/// not exist until a moderator approves the request, and may never exist at
+/// all. So it attaches to the `RegistrationRequest`, and `AdminService.approve`
+/// re-points it at the truck it created, in the same transaction. The row is
+/// the same row throughout: `acceptedAt` still says when the driver actually
+/// agreed, not when an admin got round to reviewing them.
+///
+/// Both columns are nullable because a row has exactly one owner at a time, and
+/// the check constraint in the migration enforces that it is exactly one.
+model DriverPrivacyConsent {
+  id Int @id @default(autoincrement())
+
+  /// Set once the profile exists — at approval for a registration consent,
+  /// immediately for an existing driver's. Cascades like every other child of
+  /// TowTruck, so deleting a driver deletes their consent history with them:
+  /// keeping it would mean retaining personal data about someone whose whole
+  /// point in being deleted was that we stop.
+  towTruckId Int?
+  towTruck   TowTruck? @relation(fields: [towTruckId], references: [id], onDelete: Cascade)
+
+  /// Set instead of `towTruckId` while the request is still pending. Cascade
+  /// again: a rejected request is eventually deleted, and consent to publish a
+  /// profile that was never published protects nobody and is nobody's record.
+  registrationRequestId Int?
+  registrationRequest   RegistrationRequest? @relation(fields: [registrationRequestId], references: [id], onDelete: Cascade)
+
+  /// The policy this consent is against — matched literally against
+  /// PRIVACY_POLICY_VERSION. A row for '1.1' stops counting the moment that
+  /// constant becomes '1.2', which is the whole re-consent mechanism.
+  policyVersion String
+
+  /// sha256 of the canonical consent text, hex, computed by the SERVER from its
+  /// own copy — never from anything the client sent. 64 hex characters, fixed
+  /// width, hence VarChar(64) rather than an unbounded String: the same choice
+  /// and the same reasoning as AnalyticsVisitorDay.visitorKey.
+  ///
+  /// Stored per row rather than derived from `policyVersion` at read time
+  /// because the constant will change and the record must not: this column is
+  /// what lets a 2026 consent still be checked against the 2026 wording after
+  /// the file holding it has moved on.
+  consentTextHash String @db.VarChar(64)
+
+  acceptedAt DateTime @default(now())
+
+  /// Set when the driver withdraws. The row is NOT deleted — a withdrawal is
+  /// itself a fact worth being able to show, and deleting the acceptance would
+  /// destroy the record of the period during which publication was consented
+  /// to. A withdrawn row stops satisfying `hasCurrentConsent`, so the driver is
+  /// asked again exactly as if they had never consented.
+  revokedAt DateTime?
+
+  /// HMAC-SHA256 of the client IP with a server-side secret, hex — never the
+  /// address itself. An IP is personal data, and a plain column would mean this
+  /// table (whose entire purpose is data-protection compliance) is itself a
+  /// store of unnecessary personal data. The keyed hash keeps the only property
+  /// that matters for an audit — two consents from the same address match —
+  /// while being useless to anyone who obtains a dump without the secret.
+  ///
+  /// HMAC rather than the plain `sha256(value + pepper)` used for analytics
+  /// visitor keys, and the difference matters here: the IPv4 space is 2^32,
+  /// small enough to enumerate exhaustively against an unkeyed digest, so a
+  /// leaked table plus a leaked pepper would still be reversible in minutes. A
+  /// visitor id is a 122-bit random UUID with no such space to search.
+  ///
+  /// Nullable: a request can legitimately arrive with no resolvable address.
+  /// A null means "not captured", which is honest, rather than a fabricated
+  /// zero that would look like a real observation.
+  ipHash String? @db.VarChar(64)
+
+  /// Truncated to 512 characters before storing — a User-Agent is a client-
+  /// controlled string and an unbounded one is an invitation to write megabytes
+  /// into an audit table.
+  userAgent String? @db.VarChar(512)
+
+  source PrivacyConsentSource
+
+  createdAt DateTime @default(now())
+
+  /// The read this table exists for: "the current, unrevoked consent for this
+  /// truck, at this version". `revokedAt` is not in the index because it is
+  /// null for almost every row — Postgres reaches the heap for it either way,
+  /// and including it would only widen the index.
+  @@index([towTruckId, policyVersion])
+  /// The same read on the registration side, used by approve() to find the
+  /// consent it has to re-point.
+  @@index([registrationRequestId])
+}
+
 model Review {
   id         Int      @id @default(autoincrement())
   towTruckId Int
@@ -418,30 +597,47 @@ model RegistrationRequest {
   telegram       String?
   email          String?
 
-  vehicleBrand     String
-  vehicleModel     String?
-  vehicleYear      Int
-  vehicleType      String
+  vehicleBrand         String
+  vehicleModel         String?
+  vehicleYear          Int
+  vehicleType          String
   /// CAPACITY_RANGE_OPTIONS value from frontend constants (e.g. "2-3.5") — required
-  capacityRange    String
+  capacityRange        String
   /// Same two typed columns as TowTruck, so approve() is a straight copy.
   /// These replaced a single free-text `platformDimensions` ("5.5 մ × 2.2 մ"):
   /// that asked the driver to produce a format instead of two numbers, and
   /// forced a parse step on the way to the live profile — which for a while
   /// simply wasn't there, silently dropping the answer at approval.
-  platformLengthM  Float?
-  platformWidthM   Float?
-  winch            Boolean @default(false)
-  manipulator      Boolean @default(false)
+  platformLengthM      Float?
+  platformWidthM       Float?
+  /// The four specialist technical answers — see the identically-named columns
+  /// on TowTruck, which these are copied straight into at approval.
+  craneCapacityTons    Float?
+  craneReachM          Float?
+  maxLoadTons          Float?
+  platformLoadHeightCm Float?
+  winch                Boolean @default(false)
+  manipulator          Boolean @default(false)
   /// See TowTruck.wheelSkates — carried over as-is by AdminService.approve()
-  wheelSkates      Boolean @default(false)
+  wheelSkates          Boolean @default(false)
+  /// The driver's own claim to «Ծանր տեխնիկայի տեղափոխում».
+  ///
+  /// This is a REQUEST, not the flag. `TowTruck.heavyEquipment` still means
+  /// "what a moderator decided" — approval submits the whole profile as the
+  /// reviewer last saw it, so whatever they leave ticked is what goes live, and
+  /// a driver's answer never reaches a public page unreviewed. That is what
+  /// keeps the self-promotion hole closed now that the question is asked at
+  /// sign-up (see backend/src/tow-trucks/vehicle-types.ts).
+  heavyEquipment       Boolean @default(false)
+  /// See TowTruck.servesAllArmenia — «Ամբողջ Հայաստան» as one answer
+  servesAllArmenia     Boolean @default(false)
   // No works24Hours column here — it's just one of the `services` slugs the
   // driver picks (see backend/src/tow-trucks/service-slugs.ts). TowTruck
   // below keeps a real boolean column, but only as a derived sort/filter index.
   /// Same free-form field as TowTruck.workingHoursText — carried over as-is
   /// by AdminService.approve(). Only relevant when "available-24-7" isn't
   /// among `services` (see above).
-  workingHoursText String?
+  workingHoursText     String?
 
   /// Up to 2 marzes (see CreateRegistrationDto's ArrayMaxSize(2)) — a driver
   /// who covers e.g. Yerevan + Kotayk picks both here, and `citySlugs` then
@@ -471,6 +667,15 @@ model RegistrationRequest {
   updatedAt DateTime @updatedAt
 
   images TowTruckImage[]
+
+  /// The consent ticked in the dialog when this request was submitted, written
+  /// in the same transaction as the request itself — a request without one
+  /// cannot exist, because `RegistrationService.submit` refuses to create it.
+  ///
+  /// An array rather than a single relation only because Prisma needs one for
+  /// the other side to be optional; in practice there is exactly one row, and
+  /// `approve()` re-points it at the TowTruck it creates.
+  privacyConsents DriverPrivacyConsent[]
 
   @@index([status])
 }

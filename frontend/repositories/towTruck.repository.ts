@@ -6,7 +6,7 @@ import { apiFetch, isNotFoundError } from './apiClient'
  *
  * Note the return types: every **list** endpoint yields `TowTruckCard`, not
  * `TowTruck`. The backend serves a deliberately smaller shape for lists — no
- * secondary phone, Telegram, email, description, price table, plate number or
+ * secondary phone, Telegram, description, price table, plate number or
  * extra photos — so a listing response can no longer be used to harvest every
  * driver's contact details. Only `getBySlug` returns a full profile.
  */
@@ -46,23 +46,35 @@ export const towTruckRepository = {
    * `regionCitySlugs` and `regionZoneSlugs` both come from the frontend static
    * data — the backend has no geography and cannot work out which cities or
    * corridors belong to a marz.
+   *
+   * `vehicleType` is what `/manipulator/kotayk` adds. The backend ANDs it with
+   * the geography rather than replacing it (see its `ListTowTrucksQuery`), and
+   * naming a type is also what lifts the landing-page-only exclusion — so this
+   * one parameter is the difference between "every driver in Kotayk" and
+   * "every crane in Kotayk", which is a set the general listing cannot return
+   * at all.
    */
   getByRegion(
     regionSlug: string,
     regionCitySlugs: string[],
     regionZoneSlugs: string[],
+    vehicleType?: string,
   ): Promise<TowTruckCard[]> {
     return apiFetch<TowTruckCard[]>('/tow-trucks', {
       query: {
         region: regionSlug,
         regionCities: regionCitySlugs.join(','),
         ...(regionZoneSlugs.length ? { regionZones: regionZoneSlugs.join(',') } : {}),
+        ...(vehicleType ? { vehicleType } : {}),
       },
     })
   },
 
-  getYerevan(): Promise<TowTruckCard[]> {
-    return apiFetch<TowTruckCard[]>('/tow-trucks', { query: { yerevan: true } })
+  /** `vehicleType` narrows this to `/manipulator/yerevan` — see getByRegion */
+  getYerevan(vehicleType?: string): Promise<TowTruckCard[]> {
+    return apiFetch<TowTruckCard[]>('/tow-trucks', {
+      query: { yerevan: true, ...(vehicleType ? { vehicleType } : {}) },
+    })
   },
 
   /** Admin-curated "best tow trucks" — empty array when the admin hasn't marked any */

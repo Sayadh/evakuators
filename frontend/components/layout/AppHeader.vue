@@ -67,7 +67,10 @@ watch(
   }
 
   &__logo-img {
-    height: 34px;
+    // Scaled down with `--header-height` (64px → 56px) so the logo keeps the
+    // same margin above/below it inside the shorter bar, instead of nearly
+    // touching the top/bottom edges.
+    height: 30px;
     width: auto;
     display: block;
   }

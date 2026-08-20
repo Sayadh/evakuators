@@ -1,17 +1,27 @@
 <script setup lang="ts">
-import { SERVICE_CATEGORIES } from '~/constants/services'
-import { validateServiceAreaSelection } from '~/constants/serviceAreaLimits'
+import { serviceCategoriesFor, withService } from '~/constants/services'
+import {
+  COVERAGE_MODE_OPTIONS,
+  hasUncappedCoverage,
+  uncappedCoverageReason,
+  validateServiceAreaSelection,
+  type CoverageMode,
+} from '~/constants/serviceAreaLimits'
 import { SITE_NAME } from '~/constants/site'
 import {
+  asksWheelSkates,
   CAPACITY_RANGE_OPTIONS,
-  matchesCapacityRange,
+  capacityRangeFromTons,
   representativeCapacityTons,
+  specialistSpecFieldsFor,
+  usesExactCapacity,
   VEHICLE_TYPE_DESCRIPTIONS,
   VEHICLE_TYPE_OPTIONS,
 } from '~/constants/vehicles'
 import {
   imageRepository,
   myTowTruckRepository,
+  privacyConsentRepository,
   type DriverProfileChangeStatus,
   type UpdateMyTowTruckPayload,
 } from '~/repositories'
@@ -27,13 +37,17 @@ import { formatDateNumeric } from '~/utils/formatters'
 import { formatProfileValue, profileFieldLabel } from '~/utils/profileChangeLabels'
 import { armenianPhoneInputValue } from '~/utils/formatPhone'
 import {
-  cityOrDistrictLabel,
   findCityLocation,
   findServiceZoneLocation,
   resolveAreaType,
   YEREVAN_REGION_SLUG,
 } from '~/utils/geography'
-import { numberFieldText } from '~/utils/registrationForm'
+import {
+  numberFieldText,
+  syncVehicleDependentFields,
+  validateSpecialistSpecs,
+} from '~/utils/registrationForm'
+import { baseCandidatesFor, buildServiceAreas } from '~/utils/serviceAreas'
 import { toOptionalFloat } from '~/utils/registrationPayload'
 import { isDimension, isPhone, isYear, required, validateField } from '~/utils/validators'
 import { formatWorkingHoursRange, splitWorkingHoursRange } from '~/utils/workingHours'
@@ -68,7 +82,6 @@ const form = reactive({
   secondaryPhone: '',
   whatsapp: '',
   telegram: '',
-  email: '',
 
   vehicleBrand: '',
   vehicleModel: '',
@@ -78,9 +91,22 @@ const form = reactive({
   capacity: '',
   platformLengthM: '',
   platformWidthM: '',
+  /** The specialist technical answers — see SPECIALIST_SPEC_FIELDS */
+  craneCapacityTons: '',
+  craneReachM: '',
+  maxLoadTons: '',
+  platformLoadHeightCm: '',
   winch: false,
   manipulator: false,
   wheelSkates: false,
+  /**
+   * «Ծանր տեխնիկայի տեղափոխում», proposed here and approved by a moderator —
+   * a dashboard save queues a diff, it does not write (see
+   * `docs/api-reference.md` § "Driver edits are moderated"), which is what
+   * keeps this a request rather than a self-granted listing.
+   */
+  heavyEquipment: false,
+  servesAllArmenia: false,
 
   description: '',
   services: [] as ServiceType[],
@@ -114,10 +140,49 @@ const form = reactive({
  * driver's own answer.
  */
 const isManipulatorType = computed(() => form.vehicleType === VehicleType.Manipulator)
+const isHeavyDutyType = computed(() => form.vehicleType === VehicleType.HeavyDuty)
 
-watch(isManipulatorType, (value) => {
-  if (value) form.manipulator = true
+/**
+ * Which questions this vehicle gets — the same three resolvers the registration
+ * form uses, imported rather than re-derived. That is the parity rule made
+ * mechanical: a service added to `MANIPULATOR_SERVICES` or a field added to
+ * `SPECIALIST_SPEC_FIELDS` appears on both forms without either page changing.
+ */
+const serviceCategories = computed(() => serviceCategoriesFor(form.vehicleType))
+const specFields = computed(() => specialistSpecFieldsFor(form.vehicleType))
+const showCapacityBand = computed(() => !usesExactCapacity(form.vehicleType))
+const showWheelSkates = computed(() => asksWheelSkates(form.vehicleType))
+
+/** «Հաշիվ-ապրանքագիր» as a plain boolean over one slug in `services` */
+const providesInvoice = computed<boolean>({
+  get: () => form.services.includes(ServiceType.InvoiceProvided),
+  set: (value) => {
+    form.services = withService(form.services, ServiceType.InvoiceProvided, value)
+  },
 })
+
+const uncapped = computed(() => hasUncappedCoverage(form))
+const uncappedReason = computed(() => uncappedCoverageReason(form))
+
+const coverageMode = computed<CoverageMode>({
+  get: () => (form.servesAllArmenia ? 'all-armenia' : 'regions'),
+  set: (value) => {
+    form.servesAllArmenia = value === 'all-armenia'
+  },
+})
+
+const coverageModeOptions: SelectOption[] = COVERAGE_MODE_OPTIONS.map((option) => ({
+  value: option.value,
+  label: option.label,
+}))
+
+// One watcher, one shared rule set — see `syncVehicleDependentFields` for what
+// each consequence is for, and why all three inputs are watched rather than
+// just the type.
+watch(
+  () => [form.vehicleType, form.manipulator, form.heavyEquipment],
+  () => syncVehicleDependentFields(form),
+)
 
 const vehicleTypeOptions: SelectOption[] = VEHICLE_TYPE_OPTIONS.map((option) => ({
   value: option.value as string,
@@ -151,9 +216,17 @@ const errors = reactive<Record<string, string>>({
   vehicleType: '',
   capacity: '',
   platformDimensions: '',
+  // Set by the shared `validateSpecialistSpecs`, which clears every one of
+  // them first — a field that stopped being shown must stop reporting.
+  craneCapacityTons: '',
+  craneReachM: '',
+  maxLoadTons: '',
+  platformLoadHeightCm: '',
   locationName: '',
   regionSlugs: '',
   citySlugs: '',
+  /** Only an uncapped driver picks a base explicitly — see `basePlaceSlug` */
+  baseSlug: '',
 })
 
 const saving = ref(false)
@@ -273,7 +346,13 @@ function onNewImagesChange(event: Event): void {
     files = files.slice(0, allowed)
   }
 
-  newImageFiles.value.push(...files)
+  // Reassigning `.value` rather than mutating in place — `newImageFiles` is a
+  // `shallowRef` (deliberately: File objects should not go through Vue's
+  // reactive() proxy), so an in-place `.push()` never notifies. `canRemoveImage`
+  // read `newImageFiles.value.length` and stayed stuck at its last computed
+  // value, leaving the remove buttons disabled even after more photos were
+  // added right after hitting the 1-photo floor.
+  newImageFiles.value = [...newImageFiles.value, ...files]
   // Appending is safe for already-uploaded ids (they keep their indexes), but
   // resetting keeps the invariant trivially true rather than subtly true.
   resetUploadedNewImages()
@@ -287,7 +366,9 @@ function onNewImagesChange(event: Event): void {
 function removeNewImage(index: number): void {
   if (!canRemoveImage.value) return
   URL.revokeObjectURL(newImagePreviews.value[index])
-  newImageFiles.value.splice(index, 1)
+  // Same reassignment reason as onNewImagesChange above — .splice() on a
+  // shallowRef's array would not notify canRemoveImage's dependents either.
+  newImageFiles.value = newImageFiles.value.filter((_, i) => i !== index)
   newImagePreviews.value.splice(index, 1)
   resetUploadedNewImages()
 }
@@ -296,42 +377,36 @@ onBeforeUnmount(() => {
   newImagePreviews.value.forEach((url) => URL.revokeObjectURL(url))
 })
 
-/**
- * Turns the profile back into the band slug the driver originally picked.
- *
- * The DB stores an exact float, but the form has to offer the same five bands
- * registration does — showing a raw `5` where the driver chose «3.5–5 տոննա»
- * would be a different question than the one they answered. `matchesCapacityRange`
- * is the same predicate the public filter uses, so a truck always lands back in
- * the band a customer would find it under. See docs/taxonomies.md.
- */
-function capacityRangeFromTons(capacityTons: number): string {
-  return (
-    CAPACITY_RANGE_OPTIONS.find((option) => matchesCapacityRange(capacityTons, option.value))
-      ?.value ?? ''
-  )
-}
-
 function fillFormFromTruck(data: TowTruck): void {
   form.driverName = data.driverName
   form.companyName = data.companyName ?? ''
   form.secondaryPhone = data.secondaryPhone ?? ''
   form.whatsapp = data.whatsapp ?? ''
   form.telegram = data.telegram ?? ''
-  form.email = data.email ?? ''
 
   form.vehicleBrand = data.vehicle.brand
   form.vehicleModel = data.vehicle.model
   form.vehicleYear = data.vehicle.year.toString()
   form.vehicleType = data.vehicle.type
+  // The band, for the drivers who are asked for a band. A specialist is asked
+  // for `maxLoadTons` above instead, and `syncVehicleDependentFields` clears
+  // this the moment the type says so — see `usesExactCapacity`.
   form.capacity = capacityRangeFromTons(data.vehicle.capacityTons)
   // See `numberFieldText`: a stored 0 rendered as "0", which `isDimension`
   // then rejected — so a driver in that state could never save their profile.
   form.platformLengthM = numberFieldText(data.vehicle.platformLengthM)
   form.platformWidthM = numberFieldText(data.vehicle.platformWidthM)
+  form.craneCapacityTons = numberFieldText(data.vehicle.craneCapacityTons)
+  form.craneReachM = numberFieldText(data.vehicle.craneReachM)
+  form.maxLoadTons = numberFieldText(data.vehicle.maxLoadTons)
+  form.platformLoadHeightCm = numberFieldText(data.vehicle.platformLoadHeightCm)
   form.winch = data.vehicle.winch
   form.manipulator = data.vehicle.manipulator
   form.wheelSkates = data.vehicle.wheelSkates
+  // Owner-only field — the public profile withholds it, `/my/tow-truck` sends
+  // it back so the driver can see the state of their own request.
+  form.heavyEquipment = data.vehicle.heavyEquipment ?? false
+  form.servesAllArmenia = data.servesAllArmenia
 
   form.description = data.description
   form.services = [...data.services]
@@ -340,7 +415,16 @@ function fillFormFromTruck(data: TowTruck): void {
   form.workingHoursEnd = end
 
   form.locationName = data.location.name
-  form.citySlugs = data.serviceAreas.map((area) => area.slug)
+  // The stored placement, so an uncapped driver sees their own base selected
+  // rather than an empty select they have to re-answer. Ignored for a capped
+  // driver, whose base is inferred from their coverage list as it always was.
+  chosenBaseSlug.value = data.location.citySlug ?? data.location.districtSlug ?? ''
+  // A `region` entry is coverage, not a city — an uncapped driver's marz list
+  // lives in `regionSlugs` below, and putting its slugs in `citySlugs` would
+  // put a marz slug through `cityOrDistrictLabel` and render the raw slug.
+  form.citySlugs = data.serviceAreas
+    .filter((area) => area.type !== LocationType.Region)
+    .map((area) => area.slug)
   // Regions aren't stored — they're implied by the areas. Yerevan districts map
   // to the pseudo-region, real cities to their own marz, and road corridors to
   // theirs (static lookups, no request). Deduped because two cities of one marz
@@ -358,6 +442,11 @@ function fillFormFromTruck(data: TowTruck): void {
     ...new Set(
       data.serviceAreas
         .map((area) => {
+          // A marz-wide area IS the region — an uncapped driver's whole answer.
+          // Without this branch `findCityLocation('syunik')` returns null, the
+          // filter below drops it, and the driver loads with no regions ticked
+          // and no way to see or change coverage they definitely have.
+          if (area.type === LocationType.Region) return area.slug
           if (area.type === LocationType.District) return YEREVAN_REGION_SLUG
           if (area.type === LocationType.Route) {
             return findServiceZoneLocation(area.slug)?.regionSlug
@@ -401,10 +490,91 @@ async function load(): Promise<void> {
   }
 }
 
+/**
+ * The privacy-consent block, for drivers who were published before consent was
+ * ever asked for.
+ *
+ * ## Why the API is asked, when the session already carries a flag
+ *
+ * `driverAuth.requiresPrivacyConsent` is cached in `localStorage` at login and
+ * a driver's session lasts 30 days, so it goes stale in both directions: a
+ * policy bumped to 1.2 leaves a cached `false` that would let a driver past a
+ * block they now owe, and a consent given in another tab leaves a cached `true`
+ * that would keep showing the dialog to somebody who already answered it. This
+ * read is the authority; the cached flag exists only so the first paint is
+ * right.
+ *
+ * ## Why it starts from the cached flag rather than from `false`
+ *
+ * Initialising to `false` would render the whole dashboard for the moment
+ * between mount and the response — a driver who owes a consent would see, and
+ * could start typing into, the profile they are not yet allowed to manage. The
+ * cached value is usually correct, so starting there means the common case
+ * never flashes and the rare stale case corrects itself a moment later.
+ */
+const requiresConsent = ref(false)
+const consentSubmitting = ref(false)
+const consentError = ref('')
+
+async function loadConsentStatus(): Promise<void> {
+  try {
+    const status = await privacyConsentRepository.getStatus()
+    requiresConsent.value = status.requiresPrivacyConsent
+    driverAuth.syncPrivacyConsent(status.requiresPrivacyConsent)
+  } catch {
+    // Deliberately silent, and deliberately NOT falling back to "blocked".
+    //
+    // A network blip must not lock a driver out of their own dashboard behind a
+    // dialog whose confirm button would also fail. The cached flag from login
+    // is left standing, which is the best answer available: it was correct at
+    // login and is wrong only across a version bump. A driver who slips through
+    // one failed read is asked again on their next load, and the backend still
+    // holds the record either way.
+  }
+}
+
+async function onConsentConfirmed(): Promise<void> {
+  if (consentSubmitting.value) return
+
+  consentSubmitting.value = true
+  consentError.value = ''
+  try {
+    const status = await privacyConsentRepository.accept()
+    requiresConsent.value = status.requiresPrivacyConsent
+    driverAuth.syncPrivacyConsent(status.requiresPrivacyConsent)
+  } catch (error) {
+    consentError.value = extractErrorMessage(
+      error,
+      'Համաձայնությունը պահպանել չհաջողվեց։ Ստուգեք կապը և փորձեք կրկին։',
+    )
+  } finally {
+    consentSubmitting.value = false
+  }
+}
+
+/**
+ * «Չեղարկել» on the mandatory dialog ends the session.
+ *
+ * Nothing is recorded — there is no "declined" row, because a refusal is not a
+ * consent and storing it would be keeping data about someone who just told us
+ * not to. What happens instead is the honest consequence: without consent we
+ * cannot let them manage a published profile, so the session ends and they land
+ * on the login page, exactly as `logout()` does everywhere else on this page.
+ *
+ * `replace`, for the same reason `logout()` uses it: Back must not return to a
+ * dashboard they no longer have a session for.
+ */
+async function onConsentCancelled(): Promise<void> {
+  driverAuth.logout()
+  await navigateTo('/login', { replace: true })
+}
+
 onMounted(() => {
   if (!driverAuth.isLoggedIn) return
+  requiresConsent.value = driverAuth.requiresPrivacyConsent
   void load()
   void loadProfileChange()
+  void loadConsentStatus()
 })
 
 const is247 = computed(() => form.services.includes(ServiceType.Available247))
@@ -429,6 +599,41 @@ function findPlaceSlug(slugs: string[]): string | undefined {
   return slugs.find((slug) => resolveAreaType(slug) !== LocationType.Route)
 }
 
+/**
+ * The places this driver may be based in — their coverage list, or (uncapped)
+ * the settlements of the marzes they cover. Shared with the admin review page.
+ */
+const baseCandidates = computed(() => baseCandidatesFor(form))
+
+/**
+ * The base the profile is filed under.
+ *
+ * A capped driver's base is inferred from their own coverage list, exactly as
+ * before — the first non-corridor entry. An uncapped one has no such list, so
+ * they name it explicitly (`chosenBaseSlug`), and it must stay one of the
+ * candidates: `assertPlacementIsServed` rejects anything else, and a base the
+ * driver no longer covers is a truck ranking first on a town's page while being
+ * the one driver who never agreed to go there.
+ */
+const chosenBaseSlug = ref('')
+
+const basePlaceSlug = computed(() =>
+  uncapped.value ? chosenBaseSlug.value || undefined : findPlaceSlug(form.citySlugs),
+)
+
+const baseOptions = computed<SelectOption[]>(() =>
+  baseCandidates.value.map((candidate) => ({ value: candidate.slug, label: candidate.name })),
+)
+
+// Clears a base that has fallen out of the candidate list — otherwise the
+// select renders blank while still holding a value, and the save is rejected
+// with a message about an area the driver can no longer see on screen.
+watch(baseCandidates, (candidates) => {
+  if (chosenBaseSlug.value && !candidates.some((c) => c.slug === chosenBaseSlug.value)) {
+    chosenBaseSlug.value = ''
+  }
+})
+
 function validate(): boolean {
   errors.driverName = validateField(form.driverName, [required('Լրացրեք Անուն Ազգանունը')]) ?? ''
   errors.secondaryPhone = validateField(form.secondaryPhone, [isPhone()]) ?? ''
@@ -436,8 +641,13 @@ function validate(): boolean {
   errors.vehicleBrand = validateField(form.vehicleBrand, [required('Լրացրեք մեքենայի մակնիշը')]) ?? ''
   errors.vehicleYear = validateField(form.vehicleYear, [required(), isYear()]) ?? ''
   errors.vehicleType = validateField(form.vehicleType, [required('Ընտրեք մեքենայի տեսակը')]) ?? ''
-  errors.capacity =
-    validateField(form.capacity, [required('Ընտրեք առավելագույն բեռնատարողությունը')]) ?? ''
+  // The band OR the exact figure, never both — the same single rule
+  // registration applies (see `usesExactCapacity`), imported rather than
+  // restated so the two forms cannot start disagreeing about which is required.
+  errors.capacity = usesExactCapacity(form.vehicleType)
+    ? ''
+    : validateField(form.capacity, [required('Ընտրեք առավելագույն բեռնատարողությունը')]) ?? ''
+  validateSpecialistSpecs(form, errors)
   // Optional, but both-or-neither — same rule as the working-hours pair
   errors.platformDimensions =
     validateField(form.platformLengthM, [isDimension()]) ??
@@ -446,13 +656,24 @@ function validate(): boolean {
       ? 'Լրացրեք և՛ երկարությունը, և՛ լայնությունը, կամ թողեք երկուսն էլ դատարկ'
       : '')
   errors.locationName = validateField(form.locationName, [required('Լրացրեք հիմնական վայրը')]) ?? ''
-  errors.regionSlugs = form.regionSlugs.length === 0 ? 'Ընտրեք 1-2 մարզ' : ''
+  // The «1-2 մարզ» wording is wrong for an uncapped driver, who may pick as
+  // many as they work in, and for one who answered «Ամբողջ Հայաստան», who has
+  // answered already — so the region rule moves inside the shared validator,
+  // which can see who is being asked.
+  errors.regionSlugs =
+    uncapped.value || form.regionSlugs.length > 0 ? '' : 'Ընտրեք 1-2 մարզ'
   // Same rule and same message as registration — a driver must be able to fix
   // afterwards exactly what they were allowed to choose at sign-up. This is
   // also the check a driver approved before the cap existed meets on their next
   // save: their stored coverage is left alone, but changing anything means
   // bringing it within the limit first.
-  errors.citySlugs = validateServiceAreaSelection(form.regionSlugs, form.citySlugs)
+  errors.citySlugs = validateServiceAreaSelection(form.regionSlugs, form.citySlugs, form)
+  // The base is required for everyone (`TowTruck.locationName` always was), but
+  // only an uncapped driver picks it explicitly — for everyone else it is
+  // derived from the coverage list, so an error here would name a control that
+  // is not on their screen.
+  errors.baseSlug =
+    uncapped.value && !chosenBaseSlug.value ? 'Ընտրեք մեքենայի հիմնական վայրը' : ''
 
   return Object.values(errors).every((error) => !error)
 }
@@ -478,23 +699,25 @@ async function submit(): Promise<void> {
   try {
     const hasFullHours = Boolean(form.workingHoursStart) && Boolean(form.workingHoursEnd)
 
-    // Resolved here, not on the backend, which has no geography at all — the
-    // same contract the admin approval flow follows (see ServiceAreaDto).
-    const serviceAreas = form.citySlugs.map((slug) => ({
-      slug,
-      name: cityOrDistrictLabel(slug),
-      type: resolveAreaType(slug),
-    }))
-
     // Structural placement, derived exactly as approve() derives it: a Yerevan
     // district truck has a districtSlug and no region, a real city has both —
     // and a corridor is skipped entirely (see findPlaceSlug).
-    const primarySlug = findPlaceSlug(form.citySlugs)
+    //
+    // For an uncapped driver the candidates come from the marzes they cover
+    // rather than from a city list they were never asked for; `basePlaceSlug`
+    // keeps whichever of the two applies.
+    const primarySlug = basePlaceSlug.value
+
+    // Resolved here, not on the backend, which has no geography at all — the
+    // same contract the admin approval flow follows (see ServiceAreaDto), and
+    // the same builder the review page uses so a marz-wide coverage answer
+    // cannot be stored two different ways.
+    const serviceAreas = buildServiceAreas({ ...form, baseSlug: primarySlug })
     const primaryType = primarySlug ? resolveAreaType(primarySlug) : undefined
 
     const payload: UpdateMyTowTruckPayload = {
       driverName: form.driverName.trim(),
-      // All five are sent even when empty — '' is how the backend is told to
+      // All four are sent even when empty — '' is how the backend is told to
       // clear the field, while omitting the key means "leave it alone".
       // Sending `undefined` for a box the driver just emptied is how a value
       // became impossible to remove: they cleared WhatsApp, saved, and the old
@@ -503,18 +726,30 @@ async function submit(): Promise<void> {
       secondaryPhone: form.secondaryPhone.trim(),
       whatsapp: form.whatsapp.trim(),
       telegram: form.telegram.trim(),
-      email: form.email.trim(),
 
       vehicleBrand: form.vehicleBrand.trim(),
       vehicleModel: form.vehicleModel.trim() || undefined,
       vehicleYear: Number(form.vehicleYear),
       vehicleType: form.vehicleType || undefined,
-      capacityTons: representativeCapacityTons(form.capacity),
+      // The exact figure wins when there is one — the same preference
+      // `AdminService.approve` applies, so a self-edited specialist truck and
+      // an approved one land on identical values and keep matching the same
+      // capacity filter. See `usesExactCapacity`.
+      capacityTons:
+        toOptionalFloat(form.maxLoadTons) ?? representativeCapacityTons(form.capacity),
       platformLengthM: toOptionalFloat(form.platformLengthM),
       platformWidthM: toOptionalFloat(form.platformWidthM),
+      craneCapacityTons: toOptionalFloat(form.craneCapacityTons),
+      craneReachM: toOptionalFloat(form.craneReachM),
+      maxLoadTons: toOptionalFloat(form.maxLoadTons),
+      platformLoadHeightCm: toOptionalFloat(form.platformLoadHeightCm),
       winch: form.winch,
       manipulator: form.manipulator,
       wheelSkates: form.wheelSkates,
+      // Queued for moderation like everything else on this form — a save does
+      // not write (see `docs/api-reference.md` § "Driver edits are moderated").
+      heavyEquipment: form.heavyEquipment,
+      servesAllArmenia: form.servesAllArmenia,
 
       description: form.description.trim(),
       services: form.services,
@@ -673,12 +908,30 @@ async function logout(): Promise<void> {
       <AppButton variant="outline" size="sm" @click="logout">Դուրս գալ</AppButton>
     </header>
 
+    <!-- The consent gate comes FIRST, above the password gate, and the order is
+         deliberate: permission to publish this person's data is a precondition
+         for us holding it at all, whereas the password is about how they reach
+         it. A driver who has not consented should not be asked to invest in an
+         account first.
+
+         Rendered INSTEAD of the page — same structural block the password gate
+         uses, for the same reason stated below it — with the dialog on top. The
+         placeholder behind it is deliberately empty of anything actionable, so
+         the dialog is not merely covering a dashboard that is still there. -->
+    <section v-if="requiresConsent" class="dashboard-consent-gate">
+      <h2>Անհրաժեշտ է Ձեր համաձայնությունը</h2>
+      <p>
+        Ձեր էջը կառավարելը շարունակելու համար խնդրում ենք ծանոթանալ և հաստատել տվյալների
+        օգտագործման և հրապարակման համաձայնությունը։
+      </p>
+    </section>
+
     <!-- Before the loading state, and before anything else on the page: a
          driver still holding the password we generated has one thing to do
          here, and the rest of the dashboard is not it. Rendered INSTEAD of the
          page rather than over it, so there is nothing behind to tab into and
          no dialog to dismiss — the block is structural, not a z-index. -->
-    <section v-if="driverAuth.mustChangePassword" class="dashboard-password-gate">
+    <section v-else-if="driverAuth.mustChangePassword" class="dashboard-password-gate">
       <h2>Սահմանեք Ձեր գաղտնաբառը</h2>
       <ChangePasswordForm forced />
     </section>
@@ -796,7 +1049,6 @@ async function logout(): Promise<void> {
               :error="errors.whatsapp"
             />
             <AppInput v-model="form.telegram" label="Telegram username" />
-            <AppInput v-model="form.email" type="email" label="Email" />
           </div>
         </details>
 
@@ -836,11 +1088,23 @@ async function logout(): Promise<void> {
                 </AppTooltip>
               </template>
             </AppSelect>
+            <!-- The band, or the exact tonnage below — never both. Same rule,
+                 same resolver as registration (`usesExactCapacity`). -->
             <AppSelect
+              v-if="showCapacityBand"
               v-model="form.capacity"
               :options="CAPACITY_RANGE_OPTIONS"
               label="Առավելագույն բեռնատարողություն"
               :error="errors.capacity"
+            />
+            <AppInput
+              v-for="field in specFields"
+              :key="field.key"
+              v-model="form[field.key]"
+              :label="`${field.label} (${field.unit})${field.required ? ' *' : ''}`"
+              type="number"
+              :placeholder="field.placeholder"
+              :error="errors[field.key]"
             />
             <PlatformDimensionsInput
               v-model:length="form.platformLengthM"
@@ -858,7 +1122,31 @@ async function logout(): Promise<void> {
                 label="Ունի մանիպուլյատոր"
                 :disabled="isManipulatorType"
               />
-              <AppCheckbox v-model="form.wheelSkates" label="Առկա են անիվային ռոլիկներ">
+              <!-- Same field, same lock rule, same wording as registration —
+                   see RegistrationFormFields.vue. A tick here is a request: the
+                   save is queued as a diff and a moderator approves it, which
+                   is what keeps /tsanr-tehnika something a driver can ask for
+                   and not something they can grant themselves. -->
+              <AppCheckbox
+                v-model="form.heavyEquipment"
+                label="Ծանր տեխնիկայի տեղափոխում"
+                :disabled="isHeavyDutyType"
+              >
+                <template #label-suffix>
+                  <AppTooltip label="Ծանր տեխնիկայի տեղափոխման բացատրություն">
+                    Նշեք սա, եթե ձեր մեքենան կարող է տեղափոխել էքսկավատոր, բուլդոզեր,
+                    բեռնիչ կամ այլ ծանր տեխնիկա։ Փոփոխությունը հաստատվելուց հետո
+                    կհայտնվեք նաև ծանր տեխնիկայի որոնման արդյունքներում։
+                  </AppTooltip>
+                </template>
+              </AppCheckbox>
+              <!-- Hidden for a manipulator and a transporter, same rule as
+                   registration — see `asksWheelSkates`. -->
+              <AppCheckbox
+                v-if="showWheelSkates"
+                v-model="form.wheelSkates"
+                label="Առկա են անիվային ռոլիկներ"
+              >
                 <template #label-suffix>
                   <AppTooltip label="Անիվային ռոլիկների բացատրություն">
                     Անիվային ռոլիկներն օգտագործվում են արգելափակված կամ չպտտվող անիվներով
@@ -880,10 +1168,40 @@ async function logout(): Promise<void> {
               required
               :error="errors.locationName"
             />
+            <!-- Two coverage questions, the same split registration makes and
+                 for the same reason — see RegistrationFormFields.vue. -->
+            <template v-if="uncapped">
+              <p class="dashboard-note">{{ uncappedReason }}</p>
+              <!-- Chips rather than a dropdown, same call as registration —
+                   the choice decides whether a marz picker exists below it. -->
+              <AppChoiceChips
+                v-model="coverageMode"
+                :options="coverageModeOptions"
+                label="Սպասարկման տարածք"
+                name="dashboard-coverage-mode"
+              />
+              <ServiceRegionPicker
+                v-if="!form.servesAllArmenia"
+                v-model="form.regionSlugs"
+                :error="errors.regionSlugs || errors.citySlugs"
+              />
+              <!-- Explicit here, unlike for a capped driver whose base is the
+                   first entry of their own city list. The base is required
+                   whatever the coverage answer is: it decides which marz and
+                   city page the truck is filed under, and the nearest-driver
+                   search reads it. -->
+              <AppSelect
+                v-model="chosenBaseSlug"
+                :options="baseOptions"
+                label="Մեքենայի հիմնական վայրը *"
+                :error="errors.baseSlug"
+              />
+            </template>
             <!-- The very same component the registration form uses — what a
                  driver could pick at sign-up is exactly what they can change
                  here, by construction rather than by remembering to. -->
             <ServiceAreaPicker
+              v-else
               v-model:regions="form.regionSlugs"
               v-model:cities="form.citySlugs"
               :regions-error="errors.regionSlugs"
@@ -902,7 +1220,19 @@ async function logout(): Promise<void> {
         <details class="dashboard-section">
           <summary class="dashboard-summary">Ծառայություններ</summary>
           <div class="dashboard-details-content">
-            <ServiceCategoryPicker v-model="form.services" :categories="SERVICE_CATEGORIES" mode="form" />
+            <ServiceCategoryPicker v-model="form.services" :categories="serviceCategories" mode="form" />
+            <!-- Its own checkbox, same as registration — an invoice is a
+                 document, not a way of paying. See `STANDALONE_SERVICES`. -->
+            <div class="dashboard-standalone">
+              <AppCheckbox v-model="providesInvoice" label="Տրամադրում եմ հաշիվ-ապրանքագիր">
+                <template #label-suffix>
+                  <AppTooltip label="Հաշիվ-ապրանքագրի բացատրություն">
+                    Կազմակերպությունների պատվերների համար հաճախ պարտադիր է։ Նշեք սա, եթե
+                    կարող եք տրամադրել հաշիվ-ապրանքագիր։
+                  </AppTooltip>
+                </template>
+              </AppCheckbox>
+            </div>
             <div v-if="!is247" class="dashboard-working-hours">
               <p class="dashboard-working-hours__label">Աշխատանքային ժամեր (ոչ պարտադիր)</p>
               <div class="dashboard-working-hours__grid">
@@ -1071,6 +1401,19 @@ async function logout(): Promise<void> {
         </div>
       </details>
     </template>
+
+    <!-- Outside the `v-if` chain above, so it renders over whichever branch is
+         showing. `mandatory`, unlike the registration page's copy: cancelling
+         here signs the driver out, so a stray backdrop click must not be able
+         to trigger it. -->
+    <PrivacyConsentDialog
+      v-model="requiresConsent"
+      mandatory
+      :submitting="consentSubmitting"
+      :error="consentError"
+      @confirm="onConsentConfirmed"
+      @cancel="onConsentCancelled"
+    />
   </div>
 </template>
 
@@ -1240,6 +1583,34 @@ details[open] .dashboard-summary::after {
   }
 }
 
+/* What sits behind the mandatory consent dialog.
+ *
+ * Same card as the password gate, but deliberately containing nothing to do:
+ * the action is in the dialog on top of it. It exists so the page is not blank
+ * behind a modal (which reads as a broken load) and so a driver who somehow
+ * dismisses the dialog still sees why they are stuck rather than an empty
+ * dashboard. */
+.dashboard-consent-gate {
+  max-width: 480px;
+  margin-top: var(--space-5);
+  padding: var(--space-6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+
+  h2 {
+    margin: 0 0 var(--space-3);
+    font-size: 1.2rem;
+  }
+
+  p {
+    margin: 0;
+    color: var(--color-text-secondary);
+    line-height: 1.6;
+  }
+}
+
 /* Base parking coordinates — same column width as the form and the routes
    block, so the three read as one stack rather than three widths. */
 .dashboard-section--location {
@@ -1296,6 +1667,16 @@ details[open] .dashboard-summary::after {
       }
     }
   }
+}
+
+.dashboard-standalone {
+  margin-top: var(--space-4);
+}
+
+.dashboard-note {
+  margin: 0 0 var(--space-3);
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
 }
 
 .dashboard-working-hours {

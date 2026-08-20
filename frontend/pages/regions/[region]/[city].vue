@@ -83,17 +83,7 @@ const seoSectionTitle = computed(() =>
       : `Էվակուատորի ծառայություններ ${areaName.value}ում`,
 )
 
-/**
- * Which city's own drivers rank first. Mirrors the three cases above: a
- * landing settlement borrows its target city's list, so it borrows that city's
- * "based here" test too, and a corridor has none at all — nobody is *based* in
- * «Գառնի–Գեղարդ», so on that page rating alone decides.
- */
-const basePlace = computed(() =>
-  isZone ? undefined : { citySlug: isLanding ? landingCity!.slug : citySlug },
-)
-
-const { filteredTowTrucks, activeFiltersCount } = useTowTruckFilters(towTrucks, basePlace)
+const { filteredTowTrucks, activeFiltersCount } = useTowTruckFilters(towTrucks)
 const { visibleItems, hasMore, loadMore } = usePagination(filteredTowTrucks, 9)
 const { isDesktop, isDrawerOpen, openDrawer } = useResponsiveFilters()
 
@@ -171,10 +161,6 @@ useJsonLd([
         Այս ցանկում միայն այն վարորդներն են, ովքեր նշել են «{{ areaName }}» ուղղությունը որպես
         սպասարկվող տարածք։ Ցանկը չի ներառում ճանապարհին գտնվող առանձին բնակավայրերը՝ դրանք
         փնտրեք համապատասխան քաղաքի էջում։
-      </p>
-      <p v-else class="city-page__description">
-        Գտեք {{ areaName }}ում և հարակից բնակավայրերում աշխատող էվակուատորներ։ Դիտեք մեքենաների
-        նկարները, ծառայությունների տեսակները և անմիջապես զանգահարեք վարորդին։
       </p>
       <div v-if="city" class="city-page__stats">
         <AppBadge variant="primary">
@@ -274,6 +260,16 @@ useJsonLd([
     <SeoTextSection
       :title="seoSectionTitle"
       :paragraphs="seoParagraphs"
+      class="city-page__section"
+    />
+
+    <!-- The listing above deliberately excludes cranes and heavy-duty trucks
+         (docs/taxonomies.md), so this is the only place a visitor who needs one
+         learns they exist. Links to the marz-level page, not the country one —
+         it is the closer answer. -->
+    <SpecialVehicleCrossLinks
+      :region-slug="regionSlug"
+      :area-label="region?.name ? `${region.name}ի մարզում` : undefined"
       class="city-page__section"
     />
   </div>

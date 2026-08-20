@@ -21,9 +21,6 @@ const faqItems = buildAllRegionsFaq()
     <AppBreadcrumbs :items="forRegions()" />
 
     <h1>Հայաստանի մարզեր</h1>
-    <p class="regions-page__intro">
-      Ընտրեք մարզը՝ քաղաքների ցանկը և հասանելի էվակուատորները տեսնելու համար։
-    </p>
 
     <NearestTowTrucksCta class="regions-page__nearest" />
 
@@ -50,11 +47,6 @@ const faqItems = buildAllRegionsFaq()
 .regions-page {
   &__nearest {
     margin-bottom: var(--space-5);
-  }
-
-  &__intro {
-    color: var(--color-text-secondary);
-    max-width: 600px;
   }
 
   &__yerevan {

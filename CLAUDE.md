@@ -58,6 +58,10 @@ cannot look it up itself. See `docs/data-model.md` and the `serviceAreas`
 handling in `backend/src/admin/admin.service.ts` for a concrete example (and
 a bug that happened when this rule was violated).
 
+A second consequence, newer and easier to trip over: `GET /tow-trucks` is
+**general discovery**, and two vehicle types are deliberately not part of it —
+see "Two vehicle types are landing-page-only" below.
+
 See `docs/architecture.md` for the full layering and the mock/API switch.
 
 ## Manual sync points (no compile-time enforcement)
@@ -77,12 +81,41 @@ assume one is unused:
   ↔ `backend/src/tow-trucks/vehicle-types.ts` `HEAVY_DUTY_VEHICLE_TYPE`, and
   ↔ `HEAVY_DUTY_PAGE.vehicleType` in `frontend/constants/vehicleTypePages.ts`,
   which is what actually travels as `?vehicleType=`. `/tsanr-tehnika` is the
-  same union shape as «Մանիպուլյատոր» — the type OR a boolean — but the boolean
-  (`TowTruck.heavyEquipment`) is **admin-set, never driver-set**: there is no
-  registration field and no dashboard field for it, so it is one of the very
-  few fields exempt from the registration/dashboard parity rule below. A drift
-  here empties the page rather than mis-filling it. See `docs/taxonomies.md`
-  § «Ծանր տեխնիկա».
+  same union shape as «Մանիպուլյատոր» — the type OR a boolean — and the boolean
+  (`TowTruck.heavyEquipment`) is now **driver-proposed, moderator-decided**: it
+  is asked on the registration form and the dashboard, but neither writes it.
+  Registration lands in the review queue, and a dashboard save queues a diff, so
+  the column still holds only what a human with the whole profile in front of
+  them approved — which was always the property that mattered, rather than "no
+  driver may write it". It is therefore no longer exempt from the
+  registration/dashboard parity rule below. A drift here empties the page rather
+  than mis-filling it. See `docs/taxonomies.md` § «Ծանր տեխնիկա». Note the
+  stakes changed: those two types are now listed **only** on their own pages, so
+  a drift here hides a driver from the whole site rather than from one page.
+- `hasUncappedCoverage` in `backend/src/tow-trucks/service-area-limits.ts`
+  ↔ the same function in `frontend/constants/serviceAreaLimits.ts`. It decides
+  who the coverage cap does NOT apply to — a crane truck or a machinery
+  transporter, which is dispatched against a booked job rather than to a
+  roadside. The backend copy is the boundary; the frontend copy decides whether
+  the driver is ever OFFERED «Ամբողջ Հայաստան» and a free marz list. A drift is
+  one-sided and silent in the worst way: a picker that offers a choice the API
+  then refuses produces a save that fails over a control the driver used
+  correctly. `backend/test/uncapped-coverage.spec.ts` reads the frontend file as
+  text. Both sides must be a **union** of the two capability answers, never the
+  vehicle type alone — a flatbed with a crane travels for the same jobs.
+- `ServiceAreaDto.type`'s fourth member `'region'`
+  ↔ `LocationType.Region` in `frontend/types/enums.ts`. Marz-wide coverage,
+  written only by an uncapped driver and matched only inside the two specialist
+  branches of `buildWhere` — a marz-wide area must never widen a city listing.
+- `SPECIALIST_VEHICLE_TYPES` in `backend/src/tow-trucks/vehicle-types.ts`
+  ↔ the same constant in `frontend/constants/vehicles.ts`. The backend copy is
+  the real boundary (it is what Postgres filters on); the frontend copy is what
+  mock mode filters on, so the two modes list the same drivers. A drift means
+  local/design work is done against a fleet production does not have.
+  `frontend/tests/specialistVehicleTypes.spec.ts` reads the backend file as
+  text, and also asserts the list matches `VEHICLE_TYPE_PAGE_LIST` — a type
+  listed nowhere but a page that does not exist is a driver hidden from the
+  entire site.
 - `frontend/constants/vehicles.ts` `CAPACITY_RANGE_OPTIONS` slugs ↔ nothing
   stored on the backend directly, but `representativeCapacityTons()` in the
   same file is the only place a range slug becomes a real `capacityTons`
@@ -174,6 +207,20 @@ assume one is unused:
   answer discarded at the moment a profile goes live.
   `frontend/tests/registrationFormParity.spec.ts` fails if either page stops
   using the shared component, state or validator.
+- **The privacy-consent text is owned by the backend and mirrored on the
+  frontend.** `backend/src/privacy-consent/privacy-consent.text.ts` is the
+  canonical wording; it hashes its own copy and stores that hash in every
+  consent record, so that string is what a driver's consent legally attests to.
+  `frontend/constants/privacyConsent.ts` exists only so the dialog can render
+  without a round-trip. A drift between them is a real defect — the driver would
+  tick a box next to text that is not the text being recorded — so
+  `backend/test/privacy-consent-sync.spec.ts` reads the frontend file as text
+  and fails on any paragraph, label or version that moved on one side only.
+  **`PRIVACY_POLICY_VERSION` must be bumped in both files together**: bumping
+  the frontend alone tells every driver to reload forever, bumping the backend
+  alone re-asks them and then rejects their answers. Bumping it at all re-asks
+  every driver (that IS the mechanism), so change it when the meaning changes,
+  not for a typo fix. See `docs/auth-and-security.md` § "Privacy consent".
 
 ## Quick map: "I need to..."
 
@@ -203,7 +250,12 @@ assume one is unused:
 | Touch `/evakuator`, PostGIS, or the route-matrix provider | `docs/nearest-search.md` — the two-step design, why the results reuse `TowTruckCard` untouched, the rule that a straight-line distance never gets a time next to it, and `NEAREST_SEARCH_ENABLED` (currently **on**) — while `false` it pauses the search itself and nothing else, the nav link, the CTA banners and the sitemap entry stay up on purpose, so the page acts as an announcement |
 | Change how often a visitor may run the nearest search | `docs/nearest-search.md` § "How often one person may search" — 2/day per browser (`NEAREST_DAILY_SEARCH_LIMIT`) buys **road distances and times**, not searches: past it the page keeps searching, unlimited, sending `skipRouting: true` for a straight-line-only answer, because the PostGIS half is free and an empty screen is the wrong thing to hand someone next to a broken car. **Nothing on this page ever refuses to answer** — a test asserts there is no early exit between reading the limit and calling the API. It is unrelated to `NEAREST_ORS_DAILY_QUOTA` (500, `backend/src/nearest/nearest.constants.ts`), the real daily cap on the OpenRouteService key, tracked **globally, not per IP** — a former per-IP ceiling was removed because a modest number of distinct addresses could collectively exceed a platform-wide budget that a per-IP number couldn't see. Running out of the ORS budget silently degrades the search to straight-line distances (`routed: false`); it never refuses a request or returns a 429. Both the browser allowance and the ORS budget charge for *work done*, never requests received, so a cache hit is free. The browser stores the **answer** and a counter, never the coordinates |
 | Find what a specific page/route does | `docs/pages-and-routes.md` |
+| Hide a vehicle type from the listings, or work out why one is missing | `docs/taxonomies.md` § "Landing-page-only vehicle types" — `manipulator` and `heavy-duty` are excluded from every general listing, and the exclusion is by the **type column only**, never by `hasManipulator`/`heavyEquipment`; naming a type in `?vehicleType=` is what lifts it |
+| Add a general listing, counter or search over tow trucks | It must exclude `SPECIALIST_VEHICLE_TYPES`, the same way it must state `isActive` — see the section above and the five existing call sites |
 | Change who appears on `/tsanr-tehnika` | `docs/taxonomies.md` § «Ծանր տեխնիկա» — the page is a **union**: `vehicleType === 'heavy-duty'` OR the admin-set `TowTruck.heavyEquipment` flag, so a long-platform flatbed or a big manipulator can be listed there too. The flag is admin-only (`PATCH /admin/tow-trucks/:id/heavy-equipment`), deliberately never driver-editable, and **derived** — a `heavy-duty` truck is always `true` and the admin checkbox is ticked-and-disabled. The union must stay inside `AND` in `buildWhere`, never joined to the geography `OR` |
+| Add or change the SEO copy of a vehicle-type page | `frontend/utils/vehicleTypeSeo.ts` builds every title, description, keyword list, `<h1>` and paragraph for all 24 URLs from two inputs: the type's `seo` vocabulary in `vehicleTypePages.ts` and a `VehicleTypeGeo`. Change the words in the config, never in the builder — the builder knows the shape of a title, only the config knows what a manipulator is |
+| Add a marz (or change how one is named on a vehicle-type page) | `VEHICLE_TYPE_GEOS` + `REGION_LOCATIVES` in `frontend/constants/vehicleTypePages.ts`. The list is derived from `staticRegions`, so a new marz appears automatically — but its **locative** («Լոռու մարզում», not «Լոռիի») is hand-written, and a missing entry silently falls back to concatenation in an `<h1>`. Guarded by `tests/vehicleTypeGeoPages.spec.ts` |
+| Add a vehicle-type area page, or work out why one is `noindex` | `docs/pages-and-routes.md` § "The area pages" — an area with no drivers is `noindex, follow` and absent from the sitemap, same thin-page rule as the landing settlements; the sitemap decides from the listing walk it already does, never from `/tow-trucks/coverage` (which excludes these trucks by construction) |
 | Add or change a vehicle-type landing page (`/manipulator`, `/tsanr-tehnika`) | `docs/pages-and-routes.md` § "Vehicle-type landing pages" — slug, nav label, SEO copy and sitemap entry all come from one entry in `frontend/constants/vehicleTypePages.ts`; these pages show the cards and, below them, an FAQ — and nothing else (no filters, no sort, no CTA, no intro prose — the URL is the filter); the FAQ is there purely for search, so it stays below the listing and its `FAQPage` JSON-LD comes from the same array `FaqSection` renders; the backend filter is `?vehicleType=` on the existing listing endpoint and it must AND with the geography, never join its `OR` |
 | Run the app on a local machine | `docs/local-development.md` |
 | Make local behave exactly like staging | `docs/local-development.md` § "Mirroring staging locally" — `scripts/refresh-local-db.sh` copies staging (never production), `backend/.env.local.example` lists the four variables that must differ and why |
@@ -214,7 +266,7 @@ assume one is unused:
 | Run or add a test, either project | `docs/testing.md` — and note the one exception to "nothing talks to a real database": `backend/test/migrations.pglite.spec.ts` applies every migration against real Postgres (PGlite, in-process) to check the things Prisma's schema cannot express — the partial unique index, the `ON DELETE` behaviours, the absence of a backfill |
 | Add a "how many X exist" total next to a paginated admin list | `docs/api-reference.md` § "Pagination" — follow the `/admin/tow-trucks/count` shape, don't bolt a `total` onto the paginated response |
 | Add a sidebar/content layout gated by `isDesktop` or another client-only check | `docs/architecture.md` § "A CSS grid with a viewport-conditional child is an SSR bug waiting to happen" |
-| Change the order drivers appear in on a listing | `docs/architecture.md` § "The listing order is random" — inside a town the order is **shuffled**, not ranked, because a rating-ordered list gave every town one fixed queue and the drivers below it were never called. Two coarse groups still decide something (based here, then a half-point rating band). The randomness comes from one `useState` seed per page load, so SSR and the browser agree; shuffle first and sort second, never a random comparator |
+| Change the order drivers appear in on a listing | `docs/architecture.md` § "The listing order is random" — the order is **shuffled**, not ranked, because a rating-ordered list gave every listing one fixed queue and the drivers below it were never called. Most listings still keep a half-point rating band on top of the shuffle; the city/district search pages (`docs/locations.md` § "The city/district listing order") drop the band too and are fully flat-random, rating included. The randomness comes from one `useState` seed per page load, so SSR and the browser agree; shuffle first and sort second, never a random comparator |
 | Show a date, a time, a price or any grouped number | `docs/architecture.md` § "Never ask the runtime to localise a string" — `toLocaleDateString`/`toLocaleString`/`Intl.NumberFormat` are banned on anything that reaches the page; use `frontend/utils/formatters.ts` and `formatPrice.ts`, which are pinned to `Asia/Yerevan` and an explicit Armenian month table so SSR and the browser cannot disagree |
 | Add or change an allowed CSP host (Google Ads/Analytics/GTM beacon, any third-party script/beacon) | `frontend/nuxt.config.ts` `security.headers.contentSecurityPolicy` — exact host, never a wildcard wider than the one beacon being unblocked (see the comments on `ad.doubleclick.net` and `stats.g.doubleclick.net` for why they're separate entries from each other despite sharing a suffix), and in BOTH `connect-src` and `img-src` if the beacon can be sent either way. Guarded in `frontend/tests/cspApiOrigin.spec.ts` |
 | Change whether analytics/Ads tracking loads on a given route | `frontend/plugins/gtag-gate.client.ts` + `frontend/utils/isAdminRoute.ts` — `gtag.initMode: 'manual'` in `nuxt.config.ts` means nuxt-gtag's own plugin never auto-injects the script tag; this plugin is the only caller of `initialize()`, and currently skips it (and calls `disableAnalytics()`) on every `/admin` route. Extending the skip to another route means widening `isAdminRoute`'s equivalent, not editing this plugin's route check inline |
@@ -262,6 +314,46 @@ that reason. See `docs/api-reference.md` § "List vs detail".
 The same rule shows up on the frontend as `TowTruckCard` vs `TowTruck`
 (`frontend/types/towTruck.ts`); `TowTruck extends TowTruckCard`, so a card type
 accepts a profile but not the reverse.
+
+## Two vehicle types are landing-page-only
+
+`manipulator` and `heavy-duty` (`SPECIALIST_VEHICLE_TYPES`) appear on
+`/manipulator` and `/tsanr-tehnika` and **nowhere else** — not on a city, marz,
+Yerevan or corridor listing, not in the homepage's featured picks, not in the
+per-area counters, not in `/evakuator`'s nearest search. Someone browsing a town
+or stranded by the roadside is describing an ordinary car, and a truck built to
+lift an excavator is not an answer to it.
+
+Three things to hold on to before touching any listing:
+
+- **The rule is the `vehicleType` column alone.** Never
+  `derivesManipulator`/`derivesHeavyEquipment` — those ask "can it ALSO do the
+  specialist job", which is what the landing pages want and is why a flatbed
+  carrying a crane belongs on `/manipulator` *and* on every town page it covers.
+  Excluding on the union deletes real supply from the listings.
+- **Naming a type lifts the exclusion.** `?vehicleType=` is not general
+  discovery, so both landing pages keep their union. That is why the exclusion
+  is the LAST branch of `TowTrucksRepository.buildWhere` rather than a line at
+  the top.
+- **A new general read path has to state it**, the same way it has to state
+  `isActive`. There are five today (`buildWhere`, `findCoverage`,
+  `findFeaturedCards`, `findCardsByIds`, and the PostGIS query in
+  `NearestRepository` — that last one *inside* the SQL, before `LIMIT`, or the
+  search silently returns fewer than N drivers). `GET /tow-trucks/:slug` and
+  everything under `/admin` are deliberately exempt.
+
+The knock-on nobody expects: the sitemap used to walk `GET /tow-trucks` once,
+which would now quietly deindex every specialist profile. It walks the general
+listing plus one listing per `VEHICLE_TYPE_PAGE_LIST` entry and dedupes by slug.
+
+The second knock-on is a dead end for the visitor: someone who searched
+«էվակուատոր Աբովյան» but needs a crane now sees a listing with no answer in it
+and no hint the answer exists. `SpecialVehicleCrossLinks` on every city, marz
+and district page is what closes that — and, not by coincidence, is what gives
+the 24 vehicle-type URLs their internal links.
+
+Full reasoning in `docs/taxonomies.md` § "Landing-page-only vehicle types"; the
+pages themselves in `docs/pages-and-routes.md` § "Vehicle-type landing pages".
 
 ## Non-obvious things worth knowing up front
 

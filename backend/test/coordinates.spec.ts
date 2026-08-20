@@ -15,6 +15,7 @@ import {
 import { SetCoordinatesDto } from '../src/common/set-coordinates.dto'
 import { DriverJwtGuard } from '../src/driver-auth/driver-jwt.guard'
 import { MyTowTruckController } from '../src/my-tow-truck/my-tow-truck.controller'
+import { PRIVACY_POLICY_VERSION } from '../src/privacy-consent/privacy-consent.text'
 import { CreateRegistrationDto } from '../src/registration/dto/create-registration.dto'
 import { RegistrationService } from '../src/registration/registration.service'
 
@@ -196,9 +197,17 @@ describe('CreateRegistrationDto coordinates', () => {
 describe('RegistrationService coordinate pairing', () => {
   function submitWith(latitude?: number, longitude?: number): Promise<unknown> {
     const service = new RegistrationService(
-      { countUnattachedImages: async () => 0, create: async () => ({}) } as never,
+      {
+        countUnattachedImages: async () => 0,
+        // `create` now takes the consent callback and is expected to invoke it
+        // inside its transaction. Ignored here — this file is about coordinate
+        // pairing — but it must be accepted, or the third argument would go
+        // unnoticed if it were ever dropped.
+        create: async () => ({}),
+      } as never,
       { notifyNewRegistration: async () => undefined } as never,
       { findByMainPhoneAnyStatus: async () => null } as never,
+      { acceptForRegistration: async () => undefined } as never,
     )
     // `regionSlugs`/`citySlugs` are not decoration: `submit()` now also
     // enforces the coverage cap, and the service is entitled to assume the
@@ -206,14 +215,24 @@ describe('RegistrationService coordinate pairing', () => {
     // without them is a DTO the real pipeline would never produce, so it is
     // filled in here rather than the service being made defensive about a
     // contract that is already guaranteed upstream.
-    return service.submit({
-      phone: '+37491000001',
-      imageIds: [],
-      regionSlugs: ['kotayk'],
-      citySlugs: ['abovyan'],
-      latitude,
-      longitude,
-    } as never)
+    return service.submit(
+      {
+        phone: '+37491000001',
+        imageIds: [],
+        regionSlugs: ['kotayk'],
+        citySlugs: ['abovyan'],
+        latitude,
+        longitude,
+        // Same reasoning as the slugs above: `submit()` now also gates on the
+        // policy version, and is entitled to assume the ValidationPipe proved
+        // these two are present. A fixture without them is a DTO the real
+        // pipeline could never produce — and would fail here for a reason that
+        // has nothing to do with coordinates.
+        privacyConsentAccepted: true,
+        privacyPolicyVersion: PRIVACY_POLICY_VERSION,
+      } as never,
+      { ipHash: null, userAgent: null },
+    )
   }
 
   it.each([

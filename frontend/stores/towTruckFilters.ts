@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { ServiceType, SortOption } from '~/types/enums'
+import type { ServiceType, SortOption, VehicleType } from '~/types/enums'
 import type { TowTruckFilterState } from '~/types/filters'
 import { countActiveFilters, createDefaultFilterState } from '~/utils/towTruckFilters'
 
@@ -14,8 +14,8 @@ export const useTowTruckFiltersStore = defineStore('towTruckFilters', {
     toggleWorks24Hours() {
       this.works24Hours = !this.works24Hours
     },
-    toggleManipulator() {
-      this.manipulator = !this.manipulator
+    setVehicleType(vehicleType: VehicleType | null) {
+      this.vehicleType = this.vehicleType === vehicleType ? null : vehicleType
     },
     toggleService(service: ServiceType) {
       this.services = this.services.includes(service)

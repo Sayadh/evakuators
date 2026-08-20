@@ -1,3 +1,4 @@
+import type { VehicleTypeGeo } from '~/constants/vehicleTypePages'
 import { servesYerevan, towTrucksService } from '~/services'
 import { SortOption, type VehicleType } from '~/types/enums'
 import type { TowTruck, TowTruckCard } from '~/types/towTruck'
@@ -48,7 +49,7 @@ import { sortTowTrucks } from '~/utils/towTruckFilters'
  */
 function recommendedWith(seed: number) {
   return (trucks: TowTruckCard[]): TowTruckCard[] =>
-    sortTowTrucks(trucks, SortOption.Recommended, undefined, seed)
+    sortTowTrucks(trucks, SortOption.Recommended, seed)
 }
 
 export function useTowTrucksByCity(citySlug: string) {
@@ -129,6 +130,33 @@ export function useTowTrucksByVehicleType(vehicleType: VehicleType) {
   return useAsyncData(
     `tow-trucks-vehicle-type-${vehicleType}`,
     () => towTrucksService.getByVehicleType(vehicleType),
+    { default: () => [], transform: recommendedWith(useListingShuffleSeed()) },
+  )
+}
+
+/**
+ * One vehicle type in one area — `/manipulator/kotayk`, `/manipulator/yerevan`.
+ *
+ * Branches on `geo.isYerevan` because Yerevan is not a marz anywhere in this
+ * system: it is the `yerevan=true` filter, exactly as `/yerevan` is (CLAUDE.md
+ * § geography). Hiding that branch here rather than in the page keeps the two
+ * page files identical and keeps `VehicleTypeListing` free of geography rules.
+ *
+ * The key carries both halves, so `/manipulator/kotayk` and
+ * `/tsanr-tehnika/kotayk` cannot share a payload — they are different lists
+ * that happen to be about the same marz, and `useAsyncData` dedupes by key.
+ *
+ * No filter-page tiering involved here — this listing keeps the rating band
+ * (`sortTowTrucks`'s default `tiered: true`), the same as every listing except
+ * the city/district search pages.
+ */
+export function useTowTrucksByVehicleTypeInGeo(vehicleType: VehicleType, geo: VehicleTypeGeo) {
+  return useAsyncData(
+    `tow-trucks-vehicle-type-${vehicleType}-geo-${geo.slug}`,
+    () =>
+      geo.isYerevan
+        ? towTrucksService.getYerevanTowTrucks(vehicleType)
+        : towTrucksService.getByRegionSlug(geo.slug, vehicleType),
     { default: () => [], transform: recommendedWith(useListingShuffleSeed()) },
   )
 }

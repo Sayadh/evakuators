@@ -101,6 +101,20 @@ function toggleService(service: ServiceType): void {
             @update:model-value="toggleService(service)"
           />
         </div>
+
+        <!-- A question that belongs UNDER a category without being one OF it.
+             «Տրամադրում եմ հաշիվ-ապրանքագիր» sits below the four payment
+             methods, because that is where a driver looks for it — but it is
+             not a fifth method, so it must stay out of `category.services`:
+             "Ընտրել բոլորը" would otherwise tick it, and the filter sidebar
+             would offer it as an alternative to cash.
+
+             A slot rather than a prop, so the picker never learns which extra
+             question goes where. The forms own that; this component owns the
+             layout. Named per category so `#after-payment` cannot accidentally
+             render under «Աշխատանքային պայմաններ» — which is exactly the bug
+             that made this slot necessary. -->
+        <slot :name="`after-${category.key}`" />
       </div>
     </div>
   </div>

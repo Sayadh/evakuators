@@ -38,6 +38,11 @@ export type {
   UpdateMyTowTruckPayload,
 } from './myTowTruck.repository'
 export { nearestRepository } from './nearest.repository'
+export { privacyConsentRepository } from './privacyConsent.repository'
+export type {
+  PrivacyConsentHistoryEntry,
+  PrivacyConsentStatus,
+} from './privacyConsent.repository'
 export { registrationRepository } from './registration.repository'
 export type { RegistrationPayload, RegistrationResult } from './registration.repository'
 export { reviewRepository } from './review.repository'

@@ -3,7 +3,11 @@ import type { Prisma, TowTruck } from '@prisma/client'
 import { IMAGE_ORDER } from '../images/image-order'
 import { PrismaService } from '../prisma/prisma.service'
 import type { TowTruckFilters, TowTruckWhere, TowTruckWithImages } from './tow-truck.types'
-import { HEAVY_DUTY_VEHICLE_TYPE, MANIPULATOR_VEHICLE_TYPE } from './vehicle-types'
+import {
+  HEAVY_DUTY_VEHICLE_TYPE,
+  MANIPULATOR_VEHICLE_TYPE,
+  SPECIALIST_VEHICLE_TYPES,
+} from './vehicle-types'
 
 /**
  * Exactly the columns a listing card renders — see TowTruckCardApi for why the
@@ -50,6 +54,24 @@ const COVERAGE_SELECT = {
   works24Hours: true,
 } satisfies Prisma.TowTruckSelect
 
+/**
+ * The vehicle-type half of "this is general discovery".
+ *
+ * «Մանիպուլյատոր» and «Ծանր տեխնիկա» are listed on their own landing pages and
+ * nowhere else — see SPECIALIST_VEHICLE_TYPES in `vehicle-types.ts` for why,
+ * and for why this is the TYPE alone rather than the two union predicates.
+ *
+ * Written once and spread into every general read path in this file rather
+ * than repeated: the failure mode is a new listing method that simply forgets
+ * it, which looks like nothing at all until a marz page shows a crane truck.
+ * `vehicleType` is a required column (schema.prisma), so `notIn` has no NULL
+ * to fall through — the trap described in CLAUDE.md § "Prisma's `in` filter"
+ * does not apply here.
+ */
+const GENERAL_DISCOVERY_VEHICLE_TYPE = {
+  notIn: [...SPECIALIST_VEHICLE_TYPES],
+} satisfies Prisma.StringFilter
+
 export type TowTruckCardRow = Prisma.TowTruckGetPayload<{ select: typeof CARD_SELECT }>
 export type TowTruckCoverageRow = Prisma.TowTruckGetPayload<{ select: typeof COVERAGE_SELECT }>
 
@@ -79,7 +101,10 @@ export class TowTrucksRepository {
    */
   findCoverage(): Promise<TowTruckCoverageRow[]> {
     return this.prisma.towTruck.findMany({
-      where: { isActive: true },
+      // The counters have to count what the listing lists. A coverage record
+      // for a truck the city page will not show is a «3 վարորդ» badge over a
+      // page with two — and the badge is what a visitor decides to click on.
+      where: { isActive: true, vehicleType: GENERAL_DISCOVERY_VEHICLE_TYPE },
       select: COVERAGE_SELECT,
     })
   }
@@ -104,15 +129,28 @@ export class TowTrucksRepository {
   findCardsByIds(ids: number[]): Promise<TowTruckCardRow[]> {
     if (ids.length === 0) return Promise.resolve([])
     return this.prisma.towTruck.findMany({
-      where: { id: { in: ids }, isActive: true },
+      where: { id: { in: ids }, isActive: true, vehicleType: GENERAL_DISCOVERY_VEHICLE_TYPE },
       select: CARD_SELECT,
     })
   }
 
-  /** Card columns for the admin-curated homepage picks */
+  /**
+   * Card columns for the admin-curated homepage picks.
+   *
+   * An admin ticking `isFeatured` on a specialist truck does not put it on the
+   * homepage: the homepage is the most general listing there is. The flag is
+   * left alone rather than refused at the write, because it is also what
+   * `/admin` reads back — and a truck that stops being `heavy-duty` should
+   * simply reappear here, the same way `derivesHeavyEquipment` is applied on
+   * read rather than baked in.
+   */
   findFeaturedCards(): Promise<TowTruckCardRow[]> {
     return this.prisma.towTruck.findMany({
-      where: { isActive: true, isFeatured: true },
+      where: {
+        isActive: true,
+        isFeatured: true,
+        vehicleType: GENERAL_DISCOVERY_VEHICLE_TYPE,
+      },
       select: CARD_SELECT,
       orderBy: { createdAt: 'desc' },
     })
@@ -572,10 +610,36 @@ export class TowTrucksRepository {
       or.push({ serviceAreas: { array_contains: [{ slug: filters.zoneSlug, type: 'route' }] } })
     }
 
+    // The two specialist pages are the only listings that honour a marz-wide
+    // service area or an «Ամբողջ Հայաստան» answer.
+    //
+    // Both are offered exclusively to crane trucks and machinery transporters
+    // (`hasUncappedCoverage`), whose whole premise is that they travel to a
+    // booked job — but the flag itself lives on the row, and a `flatbed` that
+    // ticked «Ունի մանիպուլյատոր» is exempt too. If these terms joined the
+    // geography `OR` unconditionally, that flatbed would appear on the listing
+    // of every town in the country: the exact "claims everywhere, comes
+    // nowhere" outcome the coverage cap exists to prevent, reintroduced through
+    // the exemption from it.
+    //
+    // So the widening is scoped to the pages the exemption was granted for.
+    // Same discipline as the vehicle-type branches below — a specialist
+    // condition NARROWS or applies within a specialist request; it never leaks
+    // into general discovery.
+    const specialistListing =
+      filters.vehicleType === MANIPULATOR_VEHICLE_TYPE ||
+      filters.vehicleType === HEAVY_DUTY_VEHICLE_TYPE
+
     if (filters.regionSlug) {
       or.push({ regionSlug: filters.regionSlug })
       for (const citySlug of filters.regionCitySlugs ?? []) {
         or.push({ serviceAreas: { array_contains: [{ slug: citySlug, type: 'city' }] } })
+      }
+      if (specialistListing) {
+        or.push({
+          serviceAreas: { array_contains: [{ slug: filters.regionSlug, type: 'region' }] },
+        })
+        or.push({ servesAllArmenia: true })
       }
       // Covering a corridor in a marz counts as serving that marz, exactly as
       // covering one of its cities does. Without this a driver whose only
@@ -628,6 +692,18 @@ export class TowTrucksRepository {
       ]
     } else if (filters.vehicleType) {
       where.vehicleType = filters.vehicleType
+    } else {
+      // Nobody named a type, so this is general discovery — a city, a marz,
+      // Yerevan, a corridor, or the sitemap walking the lot. The two
+      // specialist types are landing-page-only and drop out here.
+      //
+      // Deliberately the LAST branch and not a line at the top: naming a type
+      // is what lifts the exclusion, and the three branches above are exactly
+      // the ways to name one. Hoisting it would either delete both landing
+      // pages or need an exception carved back out for them — a rule and its
+      // own exception in the same function, which is how the manipulator
+      // union got its first bug.
+      where.vehicleType = GENERAL_DISCOVERY_VEHICLE_TYPE
     }
 
     return where

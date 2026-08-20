@@ -19,6 +19,34 @@ export enum ServiceType {
   ConstructionEquipmentTransport = 'construction-equipment-transport',
   AgriculturalEquipmentTransport = 'agricultural-equipment-transport',
 
+  // 1b. Մանիպուլյատորի ծառայություններ
+  //
+  // Only the answers the existing taxonomy could NOT already express are new
+  // slugs. «Ավտոմեքենաների բարձում», «վթարված/չշարժվող», «շինարարական
+  // տեխնիկա», «գյուղատնտեսական տեխնիկա» and «միջքաղաքային» are the same
+  // customer-facing services a flatbed offers — a crane is how the job is done,
+  // not a different job — so MANIPULATOR_SERVICES below reuses
+  // CarTransport / AccidentTransport / NonRunningTransport /
+  // ConstructionEquipmentTransport / AgriculturalEquipmentTransport /
+  // IntercityTransport / LongDistanceTransport rather than minting near-copies
+  // of them. Two slugs meaning one thing is what
+  // `docs/taxonomies.md` exists to prevent: the profile page, the filter and
+  // the card would each pick one of the pair and disagree.
+  MachineryTransport = 'machinery-transport',
+  ContainerCabinTransport = 'container-cabin-transport',
+  LoadingUnloadingWorks = 'loading-unloading-works',
+
+  // 1c. Ծանր տեխնիկայի փոխադրման ծառայություններ
+  //
+  // Same rule. A named machine class an evacuator taxonomy has no word for
+  // gets a slug; «գյուղատնտեսական տեխնիկա» and «միջքաղաքային» already have one.
+  ExcavatorTransport = 'excavator-transport',
+  BulldozerTransport = 'bulldozer-transport',
+  LoaderTransport = 'loader-transport',
+  RoadEquipmentTransport = 'road-equipment-transport',
+  IndustrialEquipmentTransport = 'industrial-equipment-transport',
+  OversizedCargoTransport = 'oversized-cargo-transport',
+
   // 2. Ճանապարհային օգնություն
   BatteryJumpstart = 'battery-jumpstart',
   BatteryReplacement = 'battery-replacement',
@@ -46,12 +74,27 @@ export enum ServiceType {
   CardPayment = 'card-payment',
   CashlessTransfer = 'cashless-transfer',
   BankTransfer = 'bank-transfer',
-  ReceiptProvided = 'receipt-provided',
+  // `receipt-provided` («ՀԴՄ կտրոն») was removed: it is not a way to pay, it is
+  // a piece of paper you get afterwards, and it sat in the payment list next to
+  // the four methods as if a customer had to choose between them. Stripped from
+  // every stored profile by `20260820150000_payment_methods_rework`.
+  //
+  // `invoice-provided` is the same kind of thing and survives for the opposite
+  // reason: businesses genuinely filter on it. It is asked as its own checkbox
+  // OUTSIDE the payment group — see `STANDALONE_SERVICES`.
   InvoiceProvided = 'invoice-provided',
 
   // 5. Աշխատանքային պայմաններ
   Available247 = 'available-24-7',
-  NightService = 'night-service',
+  // `night-service` was removed: «Գիշերային սպասարկում» and «24/7 սպասարկում»
+  // are the same claim said twice. A driver who works nights either works round
+  // the clock or has working hours that say so, and the pair could disagree —
+  // 24/7 ticked with nights unticked meant nothing anyone could act on. The
+  // slug is stripped from every stored profile by
+  // `20260820140000_drop_night_service_slug`; do not reintroduce it.
+  //
+  // Note this is unrelated to `priceNightSurchargePercent`, which is a price
+  // and survives: charging more after midnight is a real, separate answer.
   WeekendService = 'weekend-service',
 }
 

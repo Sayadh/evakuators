@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useTowTruckFiltersStore } from '~/stores/towTruckFilters'
 import { SERVICE_CATEGORIES } from '~/constants/services'
-import { CAPACITY_RANGE_OPTIONS } from '~/constants/vehicles'
+import { CAPACITY_RANGE_OPTIONS, GENERAL_LISTING_VEHICLE_TYPE_OPTIONS } from '~/constants/vehicles'
 import type { ServiceType } from '~/types/enums'
 
 const store = useTowTruckFiltersStore()
@@ -35,9 +35,11 @@ function onServicesUpdate(services: ServiceType[]): void {
     <fieldset class="filters__group">
       <legend class="filters__legend">Տեխնիկա</legend>
       <AppCheckbox
-        :model-value="store.manipulator"
-        label="Մանիպուլյատորով էվակուատոր"
-        @update:model-value="store.toggleManipulator()"
+        v-for="option in GENERAL_LISTING_VEHICLE_TYPE_OPTIONS"
+        :key="option.value"
+        :model-value="store.vehicleType === option.value"
+        :label="option.label"
+        @update:model-value="store.setVehicleType(option.value)"
       />
     </fieldset>
 

@@ -32,7 +32,11 @@
 <style scoped lang="scss">
 .hero {
   background: linear-gradient(160deg, var(--color-primary-dark) 0%, var(--color-primary) 60%, var(--color-primary-light) 100%);
-  padding: var(--space-7) 0;
+  // Top and bottom split rather than a shorthand: the gap ABOVE the heading is
+  // dead air a phone can't spare above the fold, while the bottom padding still
+  // needs to breathe before the next section. `--space-7` on both was fine on
+  // desktop's slower scroll pace, too tall on a phone that opens straight into it.
+  padding: var(--space-5) 0 var(--space-7);
   color: #fff;
 
   @media (min-width: 768px) {
@@ -48,6 +52,13 @@
   &__title {
     color: #fff;
     margin-bottom: var(--space-3);
+
+    // Overrides the global h1's `clamp(1.7rem, 4vw, 2.4rem)` — on a narrow
+    // phone the `vw` term is smaller than the 1.7rem floor, so it was already
+    // clamping to ~27px, still taller than this hero wants above the fold.
+    @media (max-width: 767px) {
+      font-size: 23px;
+    }
   }
 
   /* The brand reads as the subject of the sentence rather than as the first
@@ -61,6 +72,10 @@
     font-size: 1.05rem;
     color: rgba(255, 255, 255, 0.85);
     margin: 0;
+
+    @media (max-width: 767px) {
+      font-size: 14px;
+    }
   }
 
   &__search {

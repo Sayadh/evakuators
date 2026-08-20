@@ -54,7 +54,11 @@ export class MyTowTruckService {
     // a response — the dashboard has to show them back before they can be
     // edited. The public `GET /tow-trucks/:slug` calls the same mapper without
     // this flag and therefore never carries them; see tow-truck.mapper.ts.
-    return toTowTruckApi(towTruck, { includeCoordinates: true })
+    // `includeOwnerFields` for the same reason as the coordinates: the
+    // dashboard has to show a driver back what they may now change, and
+    // «Ծանր տեխնիկայի տեղափոխում» became one of those. Withheld from the
+    // public profile — see TowTruckApiOptions.
+    return toTowTruckApi(towTruck, { includeCoordinates: true, includeOwnerFields: true })
   }
 
   /**
@@ -154,7 +158,6 @@ export class MyTowTruckService {
       secondaryPhone,
       whatsapp,
       telegram,
-      email,
       ...rest
     } = updateData
 
@@ -174,7 +177,16 @@ export class MyTowTruckService {
     // a driver approved before the cap existed keeps their coverage and is
     // asked to trim it the first time they touch it, not retroactively.
     if (serviceAreas !== undefined) {
-      assertServiceAreasWithinLimit(serviceAreas, regionSlugs)
+      // The truck decides whether the cap applies at all (`hasUncappedCoverage`),
+      // and it is resolved against the STORED values for whichever half this
+      // PATCH omits — exactly as `derivesManipulator` is below, and for the same
+      // reason: a driver widening their coverage without re-sending their
+      // vehicle type would otherwise be measured as a truck they do not drive.
+      assertServiceAreasWithinLimit(serviceAreas, regionSlugs, {
+        vehicleType: rest.vehicleType ?? current.vehicle.type,
+        manipulator: rest.manipulator ?? current.vehicle.manipulator,
+        heavyEquipment: rest.heavyEquipment ?? current.vehicle.heavyEquipment ?? false,
+      })
     }
 
     const data: Prisma.TowTruckUpdateInput = {
@@ -189,7 +201,7 @@ export class MyTowTruckService {
       // offering a chat nobody read. Omitting the key means "leave it alone",
       // which is the right default for a PATCH — but then there has to be some
       // value that means "remove", and for a text field that value is "".
-      ...clearable({ companyName, secondaryPhone, whatsapp, telegram, email }),
+      ...clearable({ companyName, secondaryPhone, whatsapp, telegram }),
 
       // Yerevan is a pseudo-region with no regionSlug (see CLAUDE.md), so a
       // truck moving into or out of Yerevan has to be able to null the

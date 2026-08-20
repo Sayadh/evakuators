@@ -22,7 +22,6 @@ const TRUCK = {
   secondaryPhone: null,
   whatsapp: null,
   telegram: null,
-  email: null,
   vehicleBrand: 'Isuzu',
   vehicleModel: null,
   vehicleYear: 2018,

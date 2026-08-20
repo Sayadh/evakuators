@@ -153,6 +153,12 @@ describe('DriverAuthService', () => {
     return new DriverAuthService(
       repository as never,
       { signAsync: vi.fn().mockResolvedValue('signed-token') } as never,
+      // Login now also reports `requiresPrivacyConsent`. Stubbed `false` here
+      // because none of the tests in this file are about consent — they are
+      // about passwords, and a stub that returned `true` would put an
+      // irrelevant field in every assertion. The consent behaviour on login has
+      // its own coverage in `privacy-consent-flows.spec.ts`.
+      { requiresConsent: vi.fn().mockResolvedValue(false) } as never,
       { getOrThrow: () => 'test-driver-secret' } as never,
     )
   }

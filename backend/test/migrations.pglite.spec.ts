@@ -281,3 +281,111 @@ describe('a queued photo survives exactly as long as it should', () => {
     expect(Number(rows[0]!.count)).toBe(0)
   })
 })
+
+describe('DriverPrivacyConsent', () => {
+  /** A consent row for a truck, with only the columns a caller must supply */
+  const insertForTruck = (towTruckId: number, version = '1.1'): Promise<unknown> =>
+    db.query(
+      `INSERT INTO "DriverPrivacyConsent" ("towTruckId", "policyVersion", "consentTextHash", source)
+       VALUES ($1, $2, $3, 'EXISTING_DRIVER')`,
+      [towTruckId, version, 'a'.repeat(64)],
+    )
+
+  it('starts empty — nobody was backfilled into consenting', async () => {
+    // The single most important assertion about this migration. ~100 drivers
+    // were already published when it ran; inventing an `acceptedAt` for any of
+    // them would be fabricating the exact evidence the table exists to hold
+    // honestly, and would silently satisfy the check that is supposed to put
+    // the dialog in front of them.
+    //
+    // The migration has no INSERT and no UPDATE at all, which is what makes
+    // this true — the same argument, and the same test shape, as the
+    // heavyEquipment backfill check above.
+    const migration = readFileSync(
+      join(MIGRATIONS_DIR, '20260820170000_add_driver_privacy_consent', 'migration.sql'),
+      'utf8',
+    )
+
+    expect(migration).not.toMatch(/INSERT\s+INTO/i)
+    expect(migration).not.toMatch(/UPDATE\s+"/i)
+  })
+
+  it('requires exactly one owner', async () => {
+    await seedTruck(10, 'consent-one', '+37491000010')
+
+    // Neither: an orphan no query would ever find.
+    await expect(
+      db.query(
+        `INSERT INTO "DriverPrivacyConsent" ("policyVersion", "consentTextHash", source)
+         VALUES ('1.1', 'a', 'EXISTING_DRIVER')`,
+      ),
+    ).rejects.toThrow()
+
+    // Both: one act of consenting recorded twice — it would count for the
+    // truck AND for the request that produced it.
+    await db.query(
+      `INSERT INTO "RegistrationRequest" ("firstName", "lastName", phone, "vehicleBrand",
+         "vehicleYear", "vehicleType", "capacityRange", "regionSlugs", "citySlugs", services,
+         "updatedAt")
+       VALUES ('Ա', 'Բ', '+37491000099', 'Isuzu', 2018, 'flatbed', '2-3.5',
+         ARRAY['kotayk'], ARRAY['abovyan'], ARRAY['towing'], now())`,
+    )
+    await expect(
+      db.query(
+        `INSERT INTO "DriverPrivacyConsent" ("towTruckId", "registrationRequestId",
+           "policyVersion", "consentTextHash", source)
+         VALUES (10, 1, '1.1', 'a', 'EXISTING_DRIVER')`,
+      ),
+    ).rejects.toThrow()
+  })
+
+  it('allows only one LIVE consent per truck and version', async () => {
+    await seedTruck(11, 'consent-two', '+37491000011')
+    await insertForTruck(11)
+
+    // The service checks first so it can answer idempotently with a friendly
+    // result; this index is what makes the rule hold under a double-tapped
+    // button, where a check-then-write has a race window.
+    await expect(insertForTruck(11)).rejects.toThrow()
+  })
+
+  it('frees the slot once the consent is withdrawn', async () => {
+    await seedTruck(12, 'consent-three', '+37491000012')
+    await insertForTruck(12)
+    await db.query(`UPDATE "DriverPrivacyConsent" SET "revokedAt" = now() WHERE "towTruckId" = 12`)
+
+    // Partial on `revokedAt IS NULL`, so consenting again after a withdrawal is
+    // a legitimate second row — and BOTH stay in the history, which is the
+    // whole point of never deleting.
+    await expect(insertForTruck(12)).resolves.toBeDefined()
+
+    const { rows } = await db.query<{ count: string }>(
+      `SELECT count(*) FROM "DriverPrivacyConsent" WHERE "towTruckId" = 12`,
+    )
+    expect(Number(rows[0]!.count)).toBe(2)
+  })
+
+  it('treats a new policy version as a separate slot', async () => {
+    // The re-consent mechanism: bumping PRIVACY_POLICY_VERSION must not collide
+    // with the row the driver already has at the old version.
+    await seedTruck(13, 'consent-four', '+37491000013')
+    await insertForTruck(13, '1.1')
+
+    await expect(insertForTruck(13, '1.2')).resolves.toBeDefined()
+  })
+
+  it('goes away with the truck', async () => {
+    // Deleting a driver deletes their consent history with them: keeping it
+    // would mean retaining personal data about someone whose whole point in
+    // being deleted was that we stop.
+    await seedTruck(14, 'consent-five', '+37491000014')
+    await insertForTruck(14)
+
+    await db.query(`DELETE FROM "TowTruck" WHERE id = 14`)
+
+    const { rows } = await db.query<{ count: string }>(
+      `SELECT count(*) FROM "DriverPrivacyConsent" WHERE "towTruckId" = 14`,
+    )
+    expect(Number(rows[0]!.count)).toBe(0)
+  })
+})

@@ -1,5 +1,67 @@
-import { LocationType } from '~/types/enums'
+import { hasManipulator, VEHICLE_TYPE_LABELS } from '~/constants/vehicles'
+import { LocationType, VehicleType } from '~/types/enums'
 import { resolveAreaType, YEREVAN_REGION_SLUG } from '~/utils/geography'
+
+/**
+ * Who this whole file does NOT apply to.
+ *
+ * The budget below answers one question: a roadside evacuator claiming the
+ * whole country is useless to the person standing next to a broken car, because
+ * the driver 90 km away will not come. A crane truck or a machinery transporter
+ * is the opposite case — dispatched against a **booked job** at an agreed
+ * price, for which driving Yerevan → Kapan is normal — and there are few enough
+ * of them that capping their reach empties the pages they exist to fill.
+ *
+ * So those drivers are offered «Ամբողջ Հայաստան» or a free choice of marzes
+ * instead, with no city count and no distance guidance.
+ *
+ * Uses the two unions, not `isSpecialistVehicleType`: a flatbed carrying a
+ * crane travels for the same booked jobs, and it keeps every ordinary city
+ * listing it had, because general discovery excludes on the TYPE alone.
+ *
+ * MANUAL SYNC POINT: `hasUncappedCoverage` in
+ * `backend/src/tow-trucks/service-area-limits.ts` is the enforcing twin. This
+ * copy decides what the picker OFFERS; that one decides what is accepted.
+ */
+export function hasUncappedCoverage(vehicle: {
+  vehicleType: string
+  manipulator?: boolean
+  heavyEquipment?: boolean
+}): boolean {
+  return (
+    hasManipulator({ type: vehicle.vehicleType, manipulator: vehicle.manipulator ?? false }) ||
+    vehicle.heavyEquipment === true ||
+    vehicle.vehicleType === VehicleType.HeavyDuty
+  )
+}
+
+/** The two coverage answers an uncapped driver chooses between */
+export const COVERAGE_MODE_OPTIONS = [
+  { value: 'all-armenia', label: 'Ամբողջ Հայաստան' },
+  { value: 'regions', label: 'Ընտրված մարզերում' },
+] as const
+
+export type CoverageMode = (typeof COVERAGE_MODE_OPTIONS)[number]['value']
+
+/**
+ * Why an uncapped driver is being offered the nationwide choice, in their own
+ * words — «Դուք ընտրել եք "Մանիպուլյատորով էվակուատոր"», so the appearance of a
+ * different question is explained rather than just happening.
+ */
+export function uncappedCoverageReason(vehicle: {
+  vehicleType: string
+  manipulator?: boolean
+  heavyEquipment?: boolean
+}): string {
+  const typeLabel = VEHICLE_TYPE_LABELS[vehicle.vehicleType as VehicleType]
+  if (vehicle.vehicleType === VehicleType.Manipulator || vehicle.vehicleType === VehicleType.HeavyDuty) {
+    return `Քանի որ ընտրել եք «${typeLabel}», կարող եք սահմանել ավելի լայն սպասարկման տարածք։`
+  }
+  if (vehicle.manipulator) {
+    return 'Քանի որ նշել եք, որ ունեք մանիպուլյատոր, կարող եք սահմանել ավելի լայն սպասարկման տարածք։'
+  }
+  return 'Քանի որ նշել եք «Ծանր տեխնիկայի տեղափոխում», կարող եք սահմանել ավելի լայն սպասարկման տարածք։'
+}
 
 /**
  * How many places a driver may claim to serve.
@@ -129,7 +191,25 @@ export function tooManyAreasMessage(max: number): string {
 export function validateServiceAreaSelection(
   regionSlugs: readonly string[],
   areaSlugs: readonly string[],
+  /**
+   * The truck, when the caller knows it. Omitted means "apply the cap", which
+   * is the safe default: the exemption is a widening, so degrading to the
+   * stricter rule can only ever refuse something the API would have accepted,
+   * never accept something it will reject.
+   */
+  vehicle?: {
+    vehicleType: string
+    manipulator?: boolean
+    heavyEquipment?: boolean
+    servesAllArmenia?: boolean
+  },
 ): string {
+  if (vehicle && hasUncappedCoverage(vehicle)) {
+    // «Ամբողջ Հայաստան» is the complete answer — there is no list to check.
+    if (vehicle.servesAllArmenia) return ''
+    return regionSlugs.length === 0 ? 'Ընտրեք առնվազն մեկ մարզ' : ''
+  }
+
   if (areaSlugs.length === 0) return 'Ընտրեք առնվազն մեկ քաղաք կամ շրջան'
 
   const max = maxAreasFor(regionSlugs)

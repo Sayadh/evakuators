@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useRecentlyViewedStore } from '~/stores/recentlyViewed'
 import { SITE_NAME } from '~/constants/site'
+import { capacityDisplayText } from '~/constants/vehicles'
 import { trackTowTruckView } from '~/utils/analytics'
 import { getPhoneHref } from '~/utils/formatPhone'
 import { getTowTruckRoute } from '~/utils/routeHelpers'
@@ -33,7 +34,7 @@ const hoursSentence = truck.workingHours ? ` ${truck.workingHours}։` : ''
 
 useSeoMetaData({
   title: `${displayName} — էվակուատոր ${truck.location.name}ում | ${SITE_NAME}`,
-  description: `${displayName}. ${truck.vehicle.brand} ${truck.vehicle.model}, մինչև ${truck.vehicle.capacityTons} տ։${hoursSentence} Զանգահարեք հիմա՝ ${truck.phone}։`,
+  description: `${displayName}. ${truck.vehicle.brand} ${truck.vehicle.model}, ${capacityDisplayText(truck.vehicle.capacityTons)}։${hoursSentence} Զանգահարեք հիմա՝ ${truck.phone}։`,
   keywords: locationSlug
     ? buildLocationSeo(truck.location.name, locationSlug).keywords
     : undefined,
@@ -86,7 +87,11 @@ onMounted(() => {
 
         <TowTruckInfo :vehicle="towTruck.vehicle" class="profile__card" />
         <TowTruckServices :services="towTruck.services" class="profile__card" />
-        <TowTruckServiceAreas :areas="towTruck.serviceAreas" class="profile__card" />
+        <TowTruckServiceAreas
+          :areas="towTruck.serviceAreas"
+          :serves-all-armenia="towTruck.servesAllArmenia"
+          class="profile__card"
+        />
         <TowTruckPricing :pricing="towTruck.pricing" class="profile__card" />
         <TowTruckReviews :reviews="reviews" :pending="reviewsPending" class="profile__card" />
         <ReviewForm :tow-truck-id="towTruck.id" class="profile__card" />

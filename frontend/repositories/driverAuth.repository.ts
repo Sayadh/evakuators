@@ -11,6 +11,20 @@ export interface DriverSession {
    * see `ChangePasswordDialog.vue`.
    */
   mustChangePassword: boolean
+  /**
+   * True when this driver has no live consent at the current policy version.
+   *
+   * The dashboard blocks on it exactly as it does on `mustChangePassword`, and
+   * for the same reason it is returned here rather than fetched afterwards: the
+   * page must know before it renders, so a driver who owes a consent never sees
+   * a flash of the profile they cannot yet manage.
+   *
+   * It is NOT the last word. This value is cached in `localStorage` with the
+   * rest of the session, so it survives a policy version bump and a consent
+   * given in another tab. `privacyConsentRepository.getStatus()` is
+   * authoritative and the dashboard re-reads it on every load.
+   */
+  requiresPrivacyConsent: boolean
 }
 
 /**

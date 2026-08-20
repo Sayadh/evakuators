@@ -244,6 +244,11 @@ coverage is capped. The rule is one sentence: **Yerevan's districts never count;
 everything else costs one, and the budget for those depends on how many marzes
 were chosen** — counted across the whole selection, not per region.
 
+> **First, who this applies to.** Everything below describes a *roadside
+> evacuator*, and only that. A crane truck or a machinery transporter is exempt
+> — see "The exemption" at the end of this section. The predicate is
+> `hasUncappedCoverage`, and it is the first thing both assertions check.
+
 | Chosen regions | Districts | Cities + corridors |
 | --- | --- | --- |
 | Yerevan only | all 12, unlimited | — none available |
@@ -261,6 +266,51 @@ places, not on regions.
 **A road corridor costs exactly what a city costs.** «Գառնի–Գեղարդ» is one
 answer to "where do you work", and making it cheaper would reopen the hole the
 cap exists to close.
+
+### The exemption — who the cap was never written for
+
+The whole argument above is about a truck someone calls from the roadside: the
+driver 90 km away will not come, so a nationwide claim is a promise they cannot
+keep, and the listing is worse for containing it.
+
+None of that survives contact with a **crane truck or a machinery
+transporter**. Those are dispatched against a booked job at a price agreed in
+advance; driving Yerevan → Kapan for one is the normal case. There are also only
+a handful of them in the country, so capping their reach empties the very pages
+they exist to fill.
+
+So `hasUncappedCoverage(vehicle)` — the **union** `derivesManipulator ||
+derivesHeavyEquipment`, mirrored on both sides of the app — turns the question
+into a different one entirely:
+
+| | Capped driver | Uncapped driver |
+| --- | --- | --- |
+| Asked for | cities, with a budget and a 30 km hint | «Ամբողջ Հայաստան», or a free list of marzes |
+| Marz limit | `MAX_REGIONS` (2) | none |
+| Stored as | `type: 'city' \| 'district' \| 'route'` | `servesAllArmenia`, or `type: 'region'` entries |
+| Base | inferred from the coverage list | chosen explicitly |
+
+Three details that are easy to get wrong:
+
+- **It uses the unions, not `isSpecialistVehicleType`.** A flatbed carrying a
+  crane travels for the same booked jobs. It keeps every ordinary city listing
+  it had, because general discovery excludes on the TYPE alone — so the
+  exemption widens its specialist reach without touching anything else.
+- **«Ամբողջ Հայաստան» is a flag, not eleven region rows.** Otherwise
+  "everywhere" and "all eleven, ticked one by one" become the same stored value,
+  the form can never show a driver back their own choice, and adding a marz
+  silently shrinks the first group's coverage.
+- **The base is still required, and still has to be one of the served areas.**
+  «Where are you» and «where will you go» are different questions, and only the
+  first is what the nearest-driver search reads. `buildServiceAreas()` appends
+  the base rather than `assertPlacementIsServed` being relaxed — which is also
+  the honest reading: a crane truck parked in Աշտարակ does serve Աշտարակ.
+
+Marz-wide areas are matched **only** inside the two specialist branches of
+`buildWhere`. A `type: 'region'` entry must never widen a city listing, which is
+the same discipline the vehicle-type branches follow.
+
+`MANUAL SYNC POINT`: `hasUncappedCoverage` exists twice — see CLAUDE.md.
 
 ### Where it is enforced, and why in three different ways
 
@@ -490,26 +540,25 @@ would mean parsing a composed string back apart, and a legacy label that never
 followed the format would parse into nonsense — so the field starts empty and
 asks again, which is a question rather than a silent wrong answer.
 
-### Drivers based here rank first — `sortTowTrucks`
+### The city/district listing order — fully random, on request
 
-On a city or Yerevan district page the drivers **based** there are ordered above
-the ones who merely also cover it; within each tier the existing rating order is
-untouched. So being local wins a tie against a stranger but never rescues a
-badly-rated driver from the bottom of their own tier.
+A city or Yerevan district page (and the landing-settlement pages that borrow
+one) used to order the drivers **based** there above the ones who merely also
+cover it, with rating deciding inside each tier. Both tiers are gone now: these
+two pages show every matching driver in a flat, seeded-random order — see
+`sortTowTrucks`'s `tiered: false` mode and `applyTowTruckFilters`, its only
+caller.
 
-Three boundaries worth not crossing:
+Every other listing (marz pages, the Yerevan overview, the vehicle-type pages,
+the homepage's featured section, "similar trucks") is unaffected and still
+keeps the half-point rating band described in `docs/architecture.md` § "The
+listing order is random" — this change is scoped to the two search pages with
+a filter sidebar, nowhere else.
 
-- **Recommended only.** Price is the customer overriding the default with an
-  explicit instruction; a local driver above a cheaper one there reads as the
-  sort being broken.
-- **Matched on the placement, never on `serviceAreas`.** Every driver on a city
-  page already serves that city, so matching on coverage would be true for all
-  of them and rank nothing.
-- **Corridor pages pass no base place at all**, and the boost is then a no-op —
-  correct, not a gap, since nobody is based in a corridor. A landing settlement
-  borrows its target city's list, so it borrows that city's test too.
-
-`frontend/tests/basePlaceRanking.spec.ts` covers all three.
+`frontend/tests/listingShuffle.spec.ts` covers both modes; the driver's own
+**base place** — which city/district/corridor they picked at registration, and
+what a city page's listing is scoped to in the first place — is a separate,
+unaffected concept, covered by `frontend/tests/basePlaceRanking.spec.ts`.
 
 ### Coordinates are stated at approval too
 

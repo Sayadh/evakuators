@@ -54,7 +54,6 @@ export const EDITABLE_PROFILE_FIELDS = [
   'secondaryPhone',
   'whatsapp',
   'telegram',
-  'email',
   'vehicleBrand',
   'vehicleModel',
   'vehicleYear',
@@ -62,9 +61,20 @@ export const EDITABLE_PROFILE_FIELDS = [
   'capacityTons',
   'platformLengthM',
   'platformWidthM',
+  'craneCapacityTons',
+  'craneReachM',
+  'maxLoadTons',
+  'platformLoadHeightCm',
   'winch',
   'manipulator',
   'wheelSkates',
+  // Proposable, not self-granted: this list is an allow-list for a diff a
+  // MODERATOR approves, so putting «Ծանր տեխնիկայի տեղափոխում» on it is what
+  // lets a driver ask for /tsanr-tehnika without being able to put themselves
+  // there. See backend/src/tow-trucks/vehicle-types.ts for why that
+  // distinction is the whole point of the flag.
+  'heavyEquipment',
+  'servesAllArmenia',
   'description',
   'services',
   'workingHoursText',

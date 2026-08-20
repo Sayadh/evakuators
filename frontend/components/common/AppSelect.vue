@@ -8,6 +8,12 @@ interface Props {
   placeholder?: string
   disabled?: boolean
   error?: string
+  /**
+   * Short helper text rendered between the label and the field — for
+   * explaining what a field means, not for validation (that's `error`).
+   * Wired to the select via `aria-describedby` so screen readers announce it.
+   */
+  hint?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -15,6 +21,7 @@ const props = withDefaults(defineProps<Props>(), {
   placeholder: 'Ընտրել',
   disabled: false,
   error: undefined,
+  hint: undefined,
 })
 
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
@@ -32,6 +39,7 @@ function onChange(event: Event): void {
       {{ label }}
       <slot name="label-suffix" />
     </label>
+    <p v-if="hint" :id="`${id}-hint`" class="app-select__hint">{{ hint }}</p>
     <div class="app-select__wrap">
       <select
         :id="id"
@@ -39,6 +47,7 @@ function onChange(event: Event): void {
         :class="{ 'app-select__field--placeholder': !modelValue }"
         :value="modelValue"
         :disabled="disabled"
+        :aria-describedby="hint ? `${id}-hint` : undefined"
         @change="onChange"
       >
         <option value="" disabled>{{ placeholder }}</option>
@@ -65,6 +74,12 @@ function onChange(event: Event): void {
     font-size: 0.9rem;
     font-weight: 600;
     color: var(--color-text);
+  }
+
+  &__hint {
+    margin: 0;
+    font-size: 0.82rem;
+    color: var(--color-text-muted);
   }
 
   &__wrap {

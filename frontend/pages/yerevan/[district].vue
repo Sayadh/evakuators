@@ -16,8 +16,7 @@ if (!district.value) {
 const { data: towTrucks, pending } = await useTowTrucksByDistrict(districtSlug)
 const { data: nearbyDistricts } = useNearbyDistricts(districtSlug)
 
-/** Drivers based in this district rank above the ones who merely also cover it */
-const { filteredTowTrucks, activeFiltersCount } = useTowTruckFilters(towTrucks, { districtSlug })
+const { filteredTowTrucks, activeFiltersCount } = useTowTruckFilters(towTrucks)
 const { visibleItems, hasMore, loadMore } = usePagination(filteredTowTrucks, 9)
 const { isDesktop, isDrawerOpen, openDrawer } = useResponsiveFilters()
 
@@ -47,10 +46,6 @@ useJsonLd([
 
     <header class="district-page__header">
       <h1>Էվակուատորներ {{ district.name }}ում</h1>
-      <p class="district-page__description">
-        Գտեք Երևանի {{ district.name }} վարչական շրջանում աշխատող էվակուատորներ։ Դիտեք մեքենաների
-        նկարները, ծառայությունները և անմիջապես զանգահարեք վարորդին։
-      </p>
       <div class="district-page__stats">
         <AppBadge variant="primary">
           <AppIcon name="truck" :size="14" /> {{ district.towTruckCount }} հասանելի էվակուատոր
@@ -137,6 +132,16 @@ useJsonLd([
       :paragraphs="seoParagraphs"
       class="district-page__section"
     />
+
+    <!-- `yerevan` rather than a district slug: the vehicle-type pages split by
+         marz, and Yerevan is one area there (there is no
+         `/manipulator/ajapnyak`). See VEHICLE_TYPE_GEOS for why the split is
+         that coarse. -->
+    <SpecialVehicleCrossLinks
+      region-slug="yerevan"
+      area-label="Երևանում"
+      class="district-page__section"
+    />
   </div>
 </template>
 
@@ -150,11 +155,6 @@ useJsonLd([
 
   &__nearest {
     margin-bottom: var(--space-4);
-  }
-
-  &__description {
-    color: var(--color-text-secondary);
-    max-width: 680px;
   }
 
   &__stats {

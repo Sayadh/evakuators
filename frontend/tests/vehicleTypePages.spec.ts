@@ -91,8 +91,18 @@ describe('the config', () => {
 describe('every page exists everywhere it is promised', () => {
   it('has a page file per slug', () => {
     // Nuxt routes by filename, so a slug with no file is a 404 in the nav.
+    // A directory with an `index.vue`, not `<slug>.vue`: `[geo].vue` sits
+    // beside it and serves `/manipulator/yerevan`.
     for (const page of VEHICLE_TYPE_PAGE_LIST) {
-      expect(existsSync(`${ROOT}pages/${page.slug}.vue`), `pages/${page.slug}.vue`).toBe(true)
+      const index = `pages/${page.slug}/index.vue`
+      expect(existsSync(`${ROOT}${index}`), index).toBe(true)
+    }
+  })
+
+  it('has an area route per slug', () => {
+    for (const page of VEHICLE_TYPE_PAGE_LIST) {
+      const geo = `pages/${page.slug}/[geo].vue`
+      expect(existsSync(`${ROOT}${geo}`), geo).toBe(true)
     }
   })
 
@@ -111,13 +121,19 @@ describe('every page exists everywhere it is promised', () => {
   })
 })
 
-describe('the pages stay bare', () => {
+describe('nothing comes before the drivers', () => {
   /**
-   * These two show the drivers and nothing else — no filter sidebar, no sort,
-   * no active-filter chips, no "find the nearest" banner, no prose. Someone who
-   * lands here has already said what they need; the URL is the filter, and
-   * every control on top of it is one more thing between them and a phone
-   * number.
+   * The rule these pages are built on, stated precisely.
+   *
+   * It was once written as "the pages stay bare" and enforced as "no prose at
+   * all", which was a proxy for the real constraint and eventually contradicted
+   * it: a page whose only text is its `<h1>` is thin content that cannot rank
+   * for the query it was built to answer, so it stopped being found and the
+   * visitor never arrived to be un-delayed. The constraint that actually
+   * matters is ORDER — nothing between someone who already knows what they
+   * need and a phone number.
+   *
+   * So: no controls anywhere, and every block of text strictly after the cards.
    *
    * Asserted as source text because there is no component runtime here
    * (docs/testing.md). It is the kind of thing that gets re-added by copying
@@ -125,6 +141,7 @@ describe('the pages stay bare', () => {
    */
   const listing = readFileSync(`${ROOT}components/vehicle-type/VehicleTypeListing.vue`, 'utf8')
   const code = listing.replace(/<!--[\s\S]*?-->/g, '').replace(/\/\*[\s\S]*?\*\//g, '')
+  const template = code.slice(code.indexOf('<template>'))
 
   it('renders no filter or sort controls', () => {
     for (const banned of [
@@ -139,24 +156,27 @@ describe('the pages stay bare', () => {
     }
   })
 
-  it('renders no nearest-search banner and no intro prose', () => {
-    for (const banned of ['NearestTowTrucksCta', 'SeoTextSection']) {
-      expect(code, `${banned} is back on the vehicle-type pages`).not.toContain(banned)
-    }
+  it('renders no nearest-search banner', () => {
+    // A CTA to another page, above a list of the drivers this visitor asked
+    // for, is the clearest possible version of getting in the way.
+    expect(template).not.toContain('NearestTowTrucksCta')
   })
 
   it('still renders the cards', () => {
-    // The negative assertions above are only meaningful if the page still has
+    // The assertions above and below are only meaningful if the page still has
     // the one thing it is for.
-    expect(code).toContain('TowTruckList')
+    expect(template).toContain('TowTruckList')
   })
 
-  it('keeps the FAQ, and keeps it after the listing', () => {
-    // The one deliberate exception to "nothing else": it is there for search,
-    // so it must exist — and it must not come before the drivers, or it delays
-    // the visitor who already knows what they want.
-    expect(code).toContain('FaqSection')
-    expect(code.indexOf('FaqSection')).toBeGreaterThan(code.indexOf('TowTruckList'))
+  it('puts every text block after the listing', () => {
+    // The FAQ, the SEO copy and the area links all earn their place for search
+    // and for the visitor who did not find an answer in the cards — neither of
+    // which is a reason to appear first.
+    const cards = template.indexOf('TowTruckList')
+    for (const block of ['VehicleTypeGeoLinks', 'SeoTextSection', 'FaqSection']) {
+      expect(template).toContain(block)
+      expect(template.indexOf(block), `${block} is above the listing`).toBeGreaterThan(cards)
+    }
   })
 })
 

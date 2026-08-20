@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useTowTruckFiltersStore } from '~/stores/towTruckFilters'
 import { SERVICE_LABELS } from '~/constants/services'
-import { CAPACITY_RANGE_OPTIONS } from '~/constants/vehicles'
+import { CAPACITY_RANGE_OPTIONS, GENERAL_LISTING_VEHICLE_TYPE_OPTIONS } from '~/constants/vehicles'
 
 const store = useTowTruckFiltersStore()
 
@@ -16,12 +16,18 @@ const chips = computed<ActiveChip[]>(() => {
 
   if (store.works24Hours)
     result.push({ key: '24h', label: '24/7', remove: () => store.toggleWorks24Hours() })
-  if (store.manipulator)
-    result.push({
-      key: 'manipulator',
-      label: 'Մանիպուլյատոր',
-      remove: () => store.toggleManipulator(),
-    })
+
+  if (store.vehicleType !== null) {
+    const option = GENERAL_LISTING_VEHICLE_TYPE_OPTIONS.find(
+      (item) => item.value === store.vehicleType,
+    )
+    if (option)
+      result.push({
+        key: 'vehicleType',
+        label: option.label,
+        remove: () => store.setVehicleType(null),
+      })
+  }
 
   if (store.capacity !== null) {
     const option = CAPACITY_RANGE_OPTIONS.find((item) => item.value === store.capacity)

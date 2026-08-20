@@ -55,6 +55,14 @@ const envSchema = z.object({
   // makes every returning visitor look new from that point on.
   ANALYTICS_VISITOR_PEPPER: z.string().optional().default(''),
 
+  // HMAC key for the `ipHash` on a privacy-consent record (see
+  // ConsentRequestContextService). Optional, with the same DRIVER_JWT_SECRET
+  // fallback as ANALYTICS_VISITOR_PEPPER above — a deploy that has not set it
+  // records consent correctly, it just shares a secret with driver auth.
+  // Rotating it only breaks "same IP as before" comparisons across the
+  // rotation; it cannot affect who consented, to what, or when.
+  PRIVACY_CONSENT_IP_SECRET: z.string().optional().default(''),
+
   // Road distances/times for the "nearest evacuator" search (OpenRouteService).
   //
   // Optional, and empty by default, for the same reason the admin Telegram bot

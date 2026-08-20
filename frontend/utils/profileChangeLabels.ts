@@ -39,7 +39,6 @@ export const PROFILE_FIELD_LABELS: Record<string, string> = {
   secondaryPhone: 'Երկրորդ հեռախոսահամար',
   whatsapp: 'WhatsApp',
   telegram: 'Telegram',
-  email: 'Email',
 
   vehicleBrand: 'Մակնիշ',
   vehicleModel: 'Մոդել',
@@ -48,9 +47,20 @@ export const PROFILE_FIELD_LABELS: Record<string, string> = {
   capacityTons: 'Բեռնատարողություն',
   platformLengthM: 'Հարթակի երկարություն (մ)',
   platformWidthM: 'Հարթակի լայնություն (մ)',
+  // The specialist figures. `maxLoadTons` is worded neutrally rather than as
+  // «Հարթակի…»: the same column is «Հարթակի առավելագույն բեռնատարողություն» on
+  // a manipulator's form and plain «Առավելագույն բեռնատարողություն» on a
+  // transporter's, and a diff has no vehicle type in front of it to choose
+  // between them.
+  craneCapacityTons: 'Կռունկի բեռնատարողություն (տ)',
+  craneReachM: 'Կռունկի թևի հասանելիություն (մ)',
+  maxLoadTons: 'Առավելագույն բեռնատարողություն (տ)',
+  platformLoadHeightCm: 'Հարթակի բեռնման բարձրություն (սմ)',
   winch: 'Ճախարակ',
   manipulator: 'Մանիպուլյատոր',
   wheelSkates: 'Անիվային ռոլիկներ',
+  heavyEquipment: 'Ծանր տեխնիկայի տեղափոխում',
+  servesAllArmenia: 'Սպասարկում ամբողջ Հայաստանում',
 
   description: 'Նկարագրություն',
   services: 'Ծառայություններ',
@@ -108,6 +118,8 @@ export function formatProfileValue(field: string, value: unknown): string {
     case 'winch':
     case 'manipulator':
     case 'wheelSkates':
+    case 'heavyEquipment':
+    case 'servesAllArmenia':
       return value ? 'Այո' : 'Ոչ'
 
     case 'services':

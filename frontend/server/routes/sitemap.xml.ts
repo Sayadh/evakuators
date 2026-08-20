@@ -3,9 +3,9 @@ import { staticCities } from '~/data/cities'
 import { staticDistricts } from '~/data/districts'
 import { staticRegions } from '~/data/regions'
 import { staticServiceZones } from '~/data/serviceZones'
-import { VEHICLE_TYPE_PAGE_LIST } from '~/constants/vehicleTypePages'
-import { servesCity } from '~/services/towTrucks.service'
-import type { TowTruckCoverage } from '~/types/towTruck'
+import { VEHICLE_TYPE_GEOS, VEHICLE_TYPE_PAGE_LIST } from '~/constants/vehicleTypePages'
+import { servesCity, servesRegion, servesYerevan } from '~/services/towTrucks.service'
+import type { TowTruckCard, TowTruckCoverage } from '~/types/towTruck'
 import { findSettlementTargetCity, getLandingSettlements } from '~/utils/settlements'
 import { mockTowTrucks } from '~/mocks/towTrucks'
 
@@ -95,42 +95,136 @@ async function getIndexableLandingPaths(event: H3Event): Promise<string[]> {
   return paths
 }
 
-async function getTowTrucksForSitemap(event: H3Event): Promise<TowTruckSitemapEntry[]> {
-  const config = useRuntimeConfig(event)
-  if (!config.public.apiBaseUrl) {
-    return mockTowTrucks.map((truck) => ({ slug: truck.slug, updatedAt: truck.updatedAt }))
-  }
-  // Server-side call — prefer the loopback URL for the same reason SSR page
-  // fetches do (see getApiBase() in repositories/apiClient.ts). This one walks
-  // up to 50 pages per crawler hit, so it is the single heaviest consumer of
-  // the shared public rate-limit bucket if it goes out through nginx.
-  const apiBase = config.internalApiBaseUrl || config.public.apiBaseUrl
-
-  // The listing endpoint is capped (see backend tow-trucks.constants.ts), and a
-  // sitemap that silently stops at the cap is worse than no sitemap: Google
-  // would simply never learn about the trucks past it. So this is the one
-  // consumer that walks the pages.
-  const entries: TowTruckSitemapEntry[] = []
+/**
+ * Walks the capped listing endpoint for ONE query, page by page.
+ *
+ * The listing endpoint is capped (see backend tow-trucks.constants.ts), and a
+ * sitemap that silently stops at the cap is worse than no sitemap: Google would
+ * simply never learn about the trucks past it. So this is the one consumer that
+ * pages through it.
+ *
+ * Swallows its own failure and returns what it collected — a partial sitemap
+ * beats a failed route, and a caller that aborted the whole walk on one bad
+ * query would let an unreachable landing-page listing take the city pages down
+ * with it.
+ */
+async function walkListing(apiBase: string, query: Record<string, string>): Promise<TowTruckCard[]> {
+  const entries: TowTruckCard[] = []
   try {
     for (let offset = 0; offset < SITEMAP_MAX_TRUCKS; offset += SITEMAP_PAGE_SIZE) {
-      const page = await $fetch<TowTruckSitemapEntry[]>('/tow-trucks', {
+      const page = await $fetch<TowTruckCard[]>('/tow-trucks', {
         baseURL: apiBase,
-        query: { limit: SITEMAP_PAGE_SIZE, offset },
+        query: { ...query, limit: SITEMAP_PAGE_SIZE, offset },
       })
-      entries.push(...page.map((truck) => ({ slug: truck.slug, updatedAt: truck.updatedAt })))
+      entries.push(...page)
       if (page.length < SITEMAP_PAGE_SIZE) break
     }
-    return entries
   } catch {
     // Backend unreachable — better to serve a sitemap with whatever pages we
     // already collected than to fail the whole route or leak stale mock URLs.
-    return entries
   }
+  return entries
+}
+
+/**
+ * Which vehicle-type AREA pages have at least one driver.
+ *
+ * ## Why the answer is computed here and not fetched
+ *
+ * The obvious source would be `/tow-trucks/coverage`, which is what the landing
+ * settlements use — but that endpoint is general discovery and no longer
+ * returns these trucks at all (docs/taxonomies.md), so it cannot answer this
+ * question by construction. The alternative, one request per area per type,
+ * is 22 extra round trips on a route that already walks the listing.
+ *
+ * So it reuses what the vehicle-type walk already fetched. A listing card
+ * carries `location` and `serviceAreas`, which is exactly what `servesRegion`
+ * and `servesYerevan` read — the same predicates the pages themselves filter
+ * with, so a page cannot be announced here and render empty there.
+ *
+ * ## Why an empty area is left out rather than listed
+ *
+ * A URL that ranks for «մանիպուլյատոր Տավուշ» and then shows nothing is a thin
+ * page, and eleven of them per type would be a doorway farm — the exact trap
+ * the 300 settlements are kept out of the sitemap for. The page still exists
+ * and still answers 200; it sends `noindex, follow` until it has something to
+ * list (`VehicleTypeListing.vue`), and the day a driver registers there it
+ * becomes indexable and appears here with no code change.
+ */
+function getIndexableVehicleTypeGeoPaths(pageSlug: string, trucks: TowTruckCard[]): string[] {
+  return VEHICLE_TYPE_GEOS.filter((geo) =>
+    geo.isYerevan
+      ? trucks.some((truck) => servesYerevan(truck))
+      : trucks.some((truck) => servesRegion(truck, geo.slug)),
+  ).map((geo) => `/${pageSlug}/${geo.slug}`)
+}
+
+interface TowTruckSitemapData {
+  trucks: TowTruckSitemapEntry[]
+  /** `/manipulator/kotayk`-shaped paths, only for areas that have a driver */
+  vehicleTypeGeoPaths: string[]
+}
+
+async function getTowTrucksForSitemap(event: H3Event): Promise<TowTruckSitemapData> {
+  const config = useRuntimeConfig(event)
+  if (!config.public.apiBaseUrl) {
+    return {
+      trucks: mockTowTrucks.map((truck) => ({ slug: truck.slug, updatedAt: truck.updatedAt })),
+      // Mock mode is for local and design work; announcing area pages built
+      // from fixture data would be announcing URLs that do not exist in
+      // production. The two vehicle-type pages themselves are still listed.
+      vehicleTypeGeoPaths: [],
+    }
+  }
+  // Server-side call — prefer the loopback URL for the same reason SSR page
+  // fetches do (see getApiBase() in repositories/apiClient.ts). This walks the
+  // listing several times per crawler hit, so it is the single heaviest
+  // consumer of the shared public rate-limit bucket if it goes out through
+  // nginx.
+  const apiBase = config.internalApiBaseUrl || config.public.apiBaseUrl
+
+  // One walk per listing this site actually publishes, not one walk full stop.
+  //
+  // `GET /tow-trucks` is GENERAL discovery and no longer answers with the
+  // specialist vehicle types (docs/taxonomies.md § "Landing-page-only vehicle
+  // types"). Their profile pages are still real pages, linked from
+  // `/manipulator` and `/tsanr-tehnika` — walking only the general listing
+  // would quietly deindex every one of them, which is the exact class of
+  // silent omission the /free-routes note above records.
+  //
+  // Driven by VEHICLE_TYPE_PAGE_LIST, the same constant the nav and the page
+  // entries in buildEntries() come from, so a third landing page is walked
+  // automatically instead of being remembered.
+  const [general, ...byVehicleType] = await Promise.all([
+    walkListing(apiBase, {}),
+    ...VEHICLE_TYPE_PAGE_LIST.map((page) =>
+      walkListing(apiBase, { vehicleType: page.vehicleType }),
+    ),
+  ])
+
+  // The same walks answer twice: which profile URLs exist, and which area
+  // pages have anything on them. No extra requests for the second question —
+  // see getIndexableVehicleTypeGeoPaths.
+  const vehicleTypeGeoPaths = VEHICLE_TYPE_PAGE_LIST.flatMap((page, index) =>
+    getIndexableVehicleTypeGeoPaths(page.slug, byVehicleType[index] ?? []),
+  )
+
+  // Deduped by slug, because the walks legitimately overlap: a landing page
+  // answers with a UNION (the vehicle type OR the equipment flag), so a flatbed
+  // carrying a crane is in both `/manipulator`'s listing and the general one. A
+  // repeated <url> is a malformed sitemap, not a stronger signal.
+  const bySlug = new Map<string, TowTruckSitemapEntry>()
+  for (const truck of [general ?? [], ...byVehicleType].flat()) {
+    bySlug.set(truck.slug, { slug: truck.slug, updatedAt: truck.updatedAt })
+  }
+
+  return { trucks: [...bySlug.values()], vehicleTypeGeoPaths }
 }
 
 function buildEntries(
   towTrucks: TowTruckSitemapEntry[],
   landingPaths: string[],
+  vehicleTypeGeoPaths: string[],
 ): SitemapEntry[] {
   const regionSlugById = new Map(staticRegions.map((region) => [region.id, region.slug]))
 
@@ -164,9 +258,25 @@ function buildEntries(
       priority: '0.8',
       changefreq: 'weekly' as const,
     })),
+    // Their area pages — `/manipulator/yerevan` and friends — but only the ones
+    // that actually have a driver. Priority just under the parent for the same
+    // reason a city sits under a marz: it is the more specific query and the
+    // shorter path to a phone number, but the parent is the entry point.
+    ...vehicleTypeGeoPaths.map((path) => ({
+      path,
+      priority: '0.7',
+      changefreq: 'weekly' as const,
+    })),
     { path: '/register', priority: '0.6', changefreq: 'monthly' },
     { path: '/about', priority: '0.4', changefreq: 'monthly' },
     { path: '/contact', priority: '0.4', changefreq: 'monthly' },
+    // Low priority but genuinely indexable: a privacy policy is a page people
+    // search for by name when deciding whether to trust a site, and one that
+    // exists only behind a signup modal reads as a policy with something to
+    // hide. `monthly` like the other two static pages — `SitemapEntry` offers
+    // no slower option, and it is the honest end of the range anyway: this page
+    // changes only when the policy version is bumped.
+    { path: '/privacy', priority: '0.3', changefreq: 'monthly' },
     ...staticRegions.map((region) => ({
       path: `/regions/${region.slug}`,
       priority: '0.8',
@@ -215,11 +325,15 @@ function buildEntries(
 }
 
 export default defineEventHandler(async (event) => {
-  const [towTrucks, landingPaths] = await Promise.all([
+  const [towTruckData, landingPaths] = await Promise.all([
     getTowTrucksForSitemap(event),
     getIndexableLandingPaths(event),
   ])
-  const urls = buildEntries(towTrucks, landingPaths)
+  const urls = buildEntries(
+    towTruckData.trucks,
+    landingPaths,
+    towTruckData.vehicleTypeGeoPaths,
+  )
     .map((entry) => {
       const lastmod = entry.lastmod ? `<lastmod>${entry.lastmod}</lastmod>` : ''
       return `  <url><loc>${SITE_URL}${entry.path}</loc>${lastmod}<changefreq>${entry.changefreq}</changefreq><priority>${entry.priority}</priority></url>`

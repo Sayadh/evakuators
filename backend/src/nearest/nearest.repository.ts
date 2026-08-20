@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import { Prisma } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
+import { SPECIALIST_VEHICLE_TYPES } from '../tow-trucks/vehicle-types'
 import type { NearestCandidateRow } from './nearest.types'
 
 /**
@@ -27,6 +28,19 @@ export class NearestRepository {
    * field the public listing withholds. Instead this answers "who and how far",
    * and `NearestService` fetches the actual cards through
    * `TowTrucksRepository`, the same way every other listing does.
+   *
+   * ## Specialist trucks are filtered HERE, not afterwards
+   *
+   * «Մանիպուլյատոր» and «Ծանր տեխնիկա» are landing-page-only
+   * (`SPECIALIST_VEHICLE_TYPES`), and someone pressing "find the nearest
+   * evacuator" next to a broken car is the clearest case of general discovery
+   * there is. The clause sits inside this query for the same reason `isActive`
+   * does: dropping them from the result afterwards would silently return fewer
+   * than N drivers — and on this page N is small and the visitor is stranded.
+   *
+   * It also keeps the KNN walk honest. `LIMIT` stops the index scan, so a
+   * post-filter would be choosing from "the 25 nearest trucks of any kind"
+   * rather than "the 25 nearest trucks a visitor can actually call".
    *
    * ## The filters are the publication rule, restated
    *
@@ -71,6 +85,7 @@ export class NearestRepository {
         t."longitude"
       FROM "TowTruck" t, origin o
       WHERE t."isActive" = true
+        AND t."vehicleType" NOT IN (${Prisma.join([...SPECIALIST_VEHICLE_TYPES])})
         AND t."location" IS NOT NULL
         AND ST_DWithin(t."location", o.point, ${radiusMeters}::double precision)
       ORDER BY t."location" <-> o.point

@@ -246,7 +246,8 @@ cp backend/.env.staging.example backend/.env
 # backend/.env verbatim; SUPABASE_STORAGE_READ_ONLY="true" (already the
 # template default — leave it); TELEGRAM_OUTBOUND_ALLOWED_CHAT_IDS set to
 # YOUR OWN Telegram chat id; and fresh values (openssl rand -hex 32) for
-# DRIVER_JWT_SECRET / ADMIN_JWT_SECRET / ANALYTICS_VISITOR_PEPPER. See the
+# DRIVER_JWT_SECRET / ADMIN_JWT_SECRET / ANALYTICS_VISITOR_PEPPER /
+# PRIVACY_CONSENT_IP_SECRET. See the
 # file's own comments for exactly which is which.
 
 cd frontend && npm install && npm run build
@@ -514,6 +515,7 @@ wrong link in Telegram messages.
 | `ROUTE_MATRIX_API_KEY` | no, default `''` | OpenRouteService key for the road distances/times on `/evakuator`. Blank = no external call is ever made and the search shows PostGIS straight-line distances with **no** estimated times — the same fallback a routing outage produces, so a deploy without a key is a working deploy with a smaller answer. This deployment's key is capped at 500 req/day (`NEAREST_ORS_DAILY_QUOTA`); one visitor search is one request, cached 5 minutes, and the app stops calling ORS with margin to spare rather than risk exceeding the real limit. See `docs/nearest-search.md` |
 | `ROUTE_MATRIX_BASE_URL` | no, default `https://api.openrouteservice.org` | Only for pointing at a self-hosted instance |
 | `ANALYTICS_VISITOR_PEPPER` | no, falls back to `DRIVER_JWT_SECRET` | Pepper for hashing analytics visitor ids (see `docs/analytics.md`). Optional so analytics needs no new setup on an existing deploy. **Changing it makes every returning visitor count as new** from that point on; historical aggregates are unaffected |
+| `PRIVACY_CONSENT_IP_SECRET` | no, falls back to `DRIVER_JWT_SECRET` | HMAC key for the `ipHash` on a privacy-consent record (see `docs/auth-and-security.md` § "Privacy consent"). Optional for the same reason as the pepper above — an existing deploy must not silently stop recording consent because a new variable was missed. Rotating it only breaks "same IP as last time" comparisons across the rotation; it cannot affect who consented, to what, or when |
 
 ## Environment variables reference (frontend)
 

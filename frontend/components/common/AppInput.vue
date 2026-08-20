@@ -30,6 +30,12 @@ interface Props {
   placeholder?: string
   required?: boolean
   error?: string
+  /**
+   * Short helper text rendered between the label and the field — for
+   * explaining what a field means, not for validation (that's `error`).
+   * Wired to the input via `aria-describedby` so screen readers announce it.
+   */
+  hint?: string
   maxlength?: number
   /**
    * Left undefined by default, which renders no attribute at all and lets the
@@ -51,6 +57,7 @@ const props = withDefaults(defineProps<Props>(), {
   placeholder: '',
   required: false,
   error: undefined,
+  hint: undefined,
   maxlength: undefined,
   autocomplete: undefined,
 })
@@ -140,6 +147,7 @@ function onKeydown(event: KeyboardEvent): void {
     <label v-if="label" :for="id" class="app-input__label">
       {{ label }}<span v-if="required" class="app-input__required" aria-hidden="true"> *</span>
     </label>
+    <p v-if="hint" :id="`${id}-hint`" class="app-input__hint">{{ hint }}</p>
     <input
       :id="id"
       ref="inputRef"
@@ -152,6 +160,7 @@ function onKeydown(event: KeyboardEvent): void {
       :maxlength="maxlength"
       :autocomplete="autocomplete"
       :aria-invalid="Boolean(error)"
+      :aria-describedby="hint ? `${id}-hint` : undefined"
       @input="onInput"
       @blur="emit('blur')"
       @click="onClick"
@@ -174,6 +183,12 @@ function onKeydown(event: KeyboardEvent): void {
 
   &__required {
     color: var(--color-danger);
+  }
+
+  &__hint {
+    margin: 0;
+    font-size: 0.82rem;
+    color: var(--color-text-muted);
   }
 
   &__field {

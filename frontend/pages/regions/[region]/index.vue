@@ -82,6 +82,12 @@ useSeoMetaData({
       :paragraphs="seoParagraphs"
       class="region-page__section"
     />
+
+    <SpecialVehicleCrossLinks
+      :region-slug="region.slug"
+      :area-label="`${region.name}ի մարզում`"
+      class="region-page__section"
+    />
   </div>
 </template>
 

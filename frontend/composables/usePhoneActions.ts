@@ -1,14 +1,9 @@
 import type { TowTruckContactable } from '~/types/towTruck'
-import {
-  trackEmailClick,
-  trackPhoneClick,
-  trackTelegramClick,
-  trackWhatsAppClick,
-} from '~/utils/analytics'
+import { trackPhoneClick, trackTelegramClick, trackWhatsAppClick } from '~/utils/analytics'
 import { getPhoneHref, getTelegramUrl, getWhatsAppUrl } from '~/utils/formatPhone'
 
 /**
- * Call / WhatsApp / Telegram / Email links plus the tracking that goes with them.
+ * Call / WhatsApp / Telegram links plus the tracking that goes with them.
  *
  * This is the single place every contact action in the app funnels through
  * (profile page, mobile sticky bar, cards), which is exactly why the analytics
@@ -40,17 +35,11 @@ export function usePhoneActions(truck: MaybeRefOrGetter<TowTruckContactable>) {
     return value.telegram ? getTelegramUrl(value.telegram) : null
   })
 
-  const emailHref = computed(() => {
-    const value = toValue(truck)
-    return value.email ? `mailto:${value.email}` : null
-  })
-
   return {
     phoneHref,
     secondaryPhoneHref,
     whatsappUrl,
     telegramUrl,
-    emailHref,
     onPhoneClick: (): void => {
       const value = toValue(truck)
       trackPhoneClick(value.slug)
@@ -65,11 +54,6 @@ export function usePhoneActions(truck: MaybeRefOrGetter<TowTruckContactable>) {
       const value = toValue(truck)
       trackTelegramClick(value.slug)
       analytics.trackTelegramClick(value.id)
-    },
-    onEmailClick: (): void => {
-      const value = toValue(truck)
-      trackEmailClick(value.slug)
-      analytics.trackEmailClick(value.id)
     },
   }
 }

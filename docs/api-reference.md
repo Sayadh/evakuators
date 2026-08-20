@@ -22,7 +22,7 @@ from the server itself (Nuxt SSR over loopback) skip throttling entirely — see
 | `POST` | `/images` | 10/60s | Multipart, field name `file`, 30MB max (`MAX_UPLOAD_BYTES`, kept in sync by hand with the same-named constant in `image-processor.service.ts`) → returns `{ id, url, width, height }`, unattached until a registration references its id. Format is validated from the file's own bytes (`sharp().metadata().format`), not the client-declared mimetype: JPEG/PNG/WebP always, HEIC only if this sharp build has libheif — otherwise it returns a message telling the driver how to change the iPhone setting |
 | `POST` | `/analytics/site-events` | 60/60s | Body `{ eventType: SITE_VISIT\|FREE_ROUTES_VIEW, visitorId }`. `202` + empty body, deduplicated to once per visitor per Armenia day — see `docs/analytics.md` § "Site-wide traffic" |
 | `POST` | `/nearest-tow-trucks` | 10/60s per IP | Body `{ latitude, longitude, skipRouting? }` — the visitor's own position. Returns `{ results, routed }`, at most 10 drivers, each an ordinary **card shape** plus `straightLineMeters` and (when routing succeeded) `roadMeters`/`durationSeconds`. A **POST** despite being a read: a query string would put the visitor's exact coordinates in nginx's `access.log` next to their IP. The position is never stored. `skipRouting: true` asks for straight-line distances only — sent by the frontend once a visitor has spent their 2 detailed searches for the day, after which the search keeps working, unlimited and free. It is the one client-set flag the backend trusts uncorroborated, because it can only ask for **less**; the inverse ("route this one anyway") must never be added. A separate **global** daily budget (500 ORS calls/day, minus a safety margin — `NEAREST_ORS_DAILY_QUOTA`) is charged only when a search actually calls the route matrix (a 5-minute cache hit is free); once it is spent for the day, the search silently falls back to `routed: false` straight-line distances instead of erroring — there is no 429 for this, and it is never per-IP. **Unrelated to the visitor-facing "2 searches per day"**, which is per browser — see `docs/nearest-search.md` § "How often one person may search" |
-| `POST` | `/registrations` | 5/60s | Driver registration submission — `imageIds` must reference images uploaded via `/images` and not already attached elsewhere. `latitude`/`longitude` are **optional** (the form's hardest step, and editable from the dashboard once approved — see `docs/data-model.md`), but must be sent **both or neither**: one alone is a 400 |
+| `POST` | `/registrations` | 5/60s | Driver registration submission — `imageIds` must reference images uploaded via `/images` and not already attached elsewhere. `latitude`/`longitude` are **optional** (the form's hardest step, and editable from the dashboard once approved — see `docs/data-model.md`), but must be sent **both or neither**: one alone is a 400. Also requires `privacyConsentAccepted: true` and a `privacyPolicyVersion` matching the server's current one — the version is checked *first*, before any other validation, so a tab left open across a policy change is told to reload rather than burning its 5/60s budget. The request and its consent record are written in **one transaction**: a stored registration with no consent is impossible. See `docs/auth-and-security.md` § "Privacy consent" |
 | `GET` | `/free-routes` | — | `ACTIVE` only |
 | `POST` | `/admin-auth/login` | 5/60s | `{ email, password }` → `{ token }`, or `{ requiresCode: true }` if the admin has linked Telegram 2FA (see below) |
 | `POST` | `/admin-auth/verify-code` | 10/60s | Second step when `requiresCode: true` — `{ email, code }` → `{ token }`, 24h TTL |
@@ -41,6 +41,10 @@ from the server itself (Nuxt SSR over loopback) skip throttling entirely — see
 | `PATCH` | `/my/tow-truck/coordinates` | Body: `SetCoordinatesDto`. Also queues — a base location is as public a claim as a service area, and leaving it self-service would make it the way around the review. Same response shape |
 | `GET` | `/my/tow-truck/profile-change` | What is queued for this driver, or why the last attempt was refused. Never both |
 | `DELETE` | `/my/tow-truck/profile-change` | Withdraws the queued edit. Nothing was applied, so it is deleted rather than marked cancelled |
+| `GET` | `/my/tow-truck/privacy-consent` | `{ requiresPrivacyConsent, policyVersion, acceptedAt }`. The **authoritative** answer — `DriverSession.requiresPrivacyConsent` from login is a cached copy that goes stale across a version bump or a consent given in another tab, so the dashboard re-reads this on load |
+| `POST` | `/my/tow-truck/privacy-consent` | Body `{ policyVersion, accepted: true }`. **Idempotent**: a second call returns the *first* acceptance's `acceptedAt` rather than writing a second row, so a double-tapped button is one consent. A `policyVersion` other than the server's current one is **400** ("reload the page"), never a silent upgrade. `accepted: false` is rejected by `@Equals(true)`. There is deliberately **no `consentTextHash` field** — the server hashes its own canonical text; see `docs/auth-and-security.md` § "Privacy consent". 10/60s. Answers 200 with the new status, not 204, because the response is what clears the frontend's block |
+| `DELETE` | `/my/tow-truck/privacy-consent` | Withdraws it. Rows are marked `revokedAt`, **never deleted** — the record of the period during which publication was consented to is the point. Idempotent (`{ revoked: 0 }` when there was nothing live). The driver's next dashboard load blocks again. 10/60s |
+| `GET` | `/my/tow-truck/privacy-consent/history` | The caller's own consent history, projected: `policyVersion`, `acceptedAt`, `revokedAt`, `source`. `ipHash`, `userAgent` and `consentTextHash` are withheld — they answer a regulator's question, not a driver's |
 | `GET` | `/my/free-routes` | Own routes, any status |
 | `POST` | `/my/free-routes` | Requires `isActive` profile |
 | `PATCH` | `/my/free-routes/:id` | Ownership-checked; force-reactivates to `ACTIVE` |
@@ -67,8 +71,31 @@ shape, the rating join and the row cap to drift.
 - **Not validated against a member list**, on purpose: the vehicle-type
   taxonomy lives in the frontend and the backend stores the column as an opaque
   string. An unknown slug matches nothing, which is the honest answer.
+- **Naming one of these two types is the only way to see them at all.**
+  `manipulator` and `heavy-duty` are landing-page-only: omit `vehicleType` and
+  `GET /tow-trucks` excludes them, because a request with no type is general
+  discovery. This is why the exclusion is the last branch of `buildWhere` and
+  not a line at the top — see `docs/taxonomies.md` § "Landing-page-only vehicle
+  types".
 
-`backend/test/vehicle-type-filter.spec.ts` covers all three.
+`backend/test/vehicle-type-filter.spec.ts` covers all four.
+
+### General discovery hides two vehicle types
+
+Applies to `GET /tow-trucks` with no `vehicleType`, `GET
+/tow-trucks/coverage`, `GET /tow-trucks/featured` and `POST /nearest`: none of
+them return «Մանիպուլյատոր» or «Ծանր տեխնիկա» trucks. `GET /tow-trucks/:slug`
+does — a specialist profile is a real page, linked from its landing page — and
+so does every `/admin` endpoint.
+
+The rule is the stored `vehicleType` alone, never `manipulator` /
+`heavyEquipment`: a flatbed that also carries a crane is an ordinary evacuator
+and stays in the town listings. Full reasoning, and the list of the five places
+it is applied, in `docs/taxonomies.md`.
+
+A consumer that genuinely needs every published truck — the sitemap is the only
+one — asks for each listing in turn (the general one plus one per landing page)
+and dedupes, rather than being handed a flag that turns the rule off.
 
 ## Admin-authenticated (`Authorization: Bearer <admin JWT>`, `AdminJwtGuard`)
 

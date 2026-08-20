@@ -83,7 +83,6 @@ describe('the shared component asks every question', () => {
     'model.lastName',
     'model.companyName',
     'model.telegram',
-    'model.email',
     'model.brand',
     'model.model',
     'model.year',

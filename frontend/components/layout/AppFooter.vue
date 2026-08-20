@@ -69,35 +69,57 @@ const currentYear = new Date().getFullYear()
              vehicle-type pages took their places, and `/regions` is the entry
              point to every marz and city page — most of the site. This is the
              site-wide link that keeps both hubs reachable and crawlable. -->
-        <nav class="footer__col" aria-label="Մարզեր">
-          <h3 class="footer__heading">
-            <NuxtLink :to="getRegionsRoute()">Մարզեր</NuxtLink>
-          </h3>
-          <ul class="footer__list">
-            <li v-for="region in regions" :key="region.slug">
-              <NuxtLink :to="getRegionRoute(region.slug)">{{ region.name }}</NuxtLink>
-            </li>
-          </ul>
+        <nav aria-label="Մարզեր">
+          <!--
+            `<details>` rather than a click-state ref: the disclosure is purely
+            presentational (collapsed on a phone, always open from 640px up —
+            see the media query below), so the browser's own open/close
+            behaviour is enough and keeps every link in the server-rendered
+            HTML regardless of state, the same crawlability reasoning as
+            `VehicleTypeGeoLinks`. No `open` binding, so a visitor's manual
+            toggle is never fought by reactivity re-closing it underneath them.
+
+            The heading link inside `<summary>` still navigates instead of
+            only toggling: `NuxtLink` calls `preventDefault()` on the click to
+            do its own client-side routing, and that cancels every default
+            action tied to the same event — including the browser's toggle —
+            so a tap on "Մարզեր"/"Երևան" goes straight to the page, and only a
+            tap elsewhere in the bar opens or closes the list.
+          -->
+          <details class="footer__col">
+            <summary class="footer__heading">
+              <NuxtLink :to="getRegionsRoute()">Մարզեր</NuxtLink>
+            </summary>
+            <ul class="footer__list">
+              <li v-for="region in regions" :key="region.slug">
+                <NuxtLink :to="getRegionRoute(region.slug)">{{ region.name }}</NuxtLink>
+              </li>
+            </ul>
+          </details>
         </nav>
 
-        <nav class="footer__col" aria-label="Երևանի շրջաններ">
-          <h3 class="footer__heading">
-            <NuxtLink :to="getYerevanRoute()">Երևան</NuxtLink>
-          </h3>
-          <ul class="footer__list">
-            <li v-for="district in districts" :key="district.slug">
-              <NuxtLink :to="getDistrictRoute(district.slug)">{{ district.name }}</NuxtLink>
-            </li>
-          </ul>
+        <nav aria-label="Երևանի շրջաններ">
+          <details class="footer__col">
+            <summary class="footer__heading">
+              <NuxtLink :to="getYerevanRoute()">Երևան</NuxtLink>
+            </summary>
+            <ul class="footer__list">
+              <li v-for="district in districts" :key="district.slug">
+                <NuxtLink :to="getDistrictRoute(district.slug)">{{ district.name }}</NuxtLink>
+              </li>
+            </ul>
+          </details>
         </nav>
 
-        <nav class="footer__col" aria-label="Կայքի էջեր">
-          <h3 class="footer__heading">Կայք</h3>
-          <ul class="footer__list">
-            <li v-for="page in FOOTER_PAGES" :key="page.to">
-              <NuxtLink :to="page.to">{{ page.label }}</NuxtLink>
-            </li>
-          </ul>
+        <nav aria-label="Կայքի էջեր">
+          <details class="footer__col">
+            <summary class="footer__heading">Կայք</summary>
+            <ul class="footer__list">
+              <li v-for="page in FOOTER_PAGES" :key="page.to">
+                <NuxtLink :to="page.to">{{ page.label }}</NuxtLink>
+              </li>
+            </ul>
+          </details>
         </nav>
       </div>
 
@@ -194,10 +216,60 @@ const currentYear = new Date().getFullYear()
     }
   }
 
+  // The `<details>` wrapping each column — collapsed accordion under 640px,
+  // forced open (and non-interactive) from 640px, where the grid already
+  // lays the three columns out side by side and a collapsed one would just
+  // be an extra click for no space saved. See the template comment for why
+  // native `<details>` rather than a Vue-tracked open flag.
+  &__col {
+    // The disclosure marker is drawn by `__heading`'s own `::after` instead —
+    // this removes the native triangle so there are not two.
+    summary {
+      list-style: none;
+
+      &::-webkit-details-marker {
+        display: none;
+      }
+    }
+  }
+
   &__heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
     color: #fff;
     font-size: 1rem;
     margin-bottom: var(--space-3);
+    cursor: pointer;
+
+    // "Մարզեր" and "Երևան" are links (see the template comment on why), so the
+    // global `a { color: ... }` rule was winning over this heading's white and
+    // making only those two look dimmed next to the plain-text "Կայք" heading.
+    a {
+      color: inherit;
+
+      &:hover {
+        color: var(--color-accent);
+      }
+    }
+
+    // The chevron. A plain border/rotate shape rather than an icon import —
+    // this is the only place on the page that needs one.
+    &::after {
+      content: '';
+      flex-shrink: 0;
+      width: 8px;
+      height: 8px;
+      border-right: 2px solid currentColor;
+      border-bottom: 2px solid currentColor;
+      transform: rotate(45deg);
+      transition: transform var(--transition);
+    }
+  }
+
+  &__col[open] &__heading::after {
+    transform: rotate(225deg);
   }
 
   &__list {
@@ -205,6 +277,7 @@ const currentYear = new Date().getFullYear()
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
+    margin-top: var(--space-2);
 
     a {
       color: rgba(255, 255, 255, 0.7);
@@ -213,6 +286,32 @@ const currentYear = new Date().getFullYear()
       &:hover {
         color: var(--color-accent);
       }
+    }
+  }
+
+  @media (min-width: 640px) {
+    &__heading {
+      cursor: default;
+      // The link stays clickable; only the toggle behaviour of the rest of
+      // the bar is switched off, so the column reads as a plain static
+      // heading again once there is room for all three side by side.
+      pointer-events: none;
+
+      a {
+        pointer-events: auto;
+      }
+
+      &::after {
+        display: none;
+      }
+    }
+
+    // Beats the UA stylesheet's `details:not([open]) > *:not(summary)` rule
+    // on specificity (two classes outrank its one-class-plus-two-type
+    // selector), so the list stays visible regardless of the `open`
+    // attribute's actual value — see the template comment.
+    &__col > &__list {
+      display: flex;
     }
   }
 

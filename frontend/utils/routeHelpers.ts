@@ -16,6 +16,17 @@ export const getTowTruckRoute = (towTruckSlug: string): string => `/tow-trucks/$
  * in one place rather than scattered through templates.
  */
 export const getVehicleTypePageRoute = (pageSlug: string): string => `/${pageSlug}`
+
+/**
+ * One area of a vehicle-type page — `/manipulator/kotayk`, `/manipulator/yerevan`.
+ *
+ * A path segment rather than `?region=`: this is a page in its own right, with
+ * its own `<h1>`, its own copy and its own sitemap entry, and a query string
+ * is a filter on a page rather than a page. Same reasoning as
+ * `/regions/:region/:city`.
+ */
+export const getVehicleTypeGeoRoute = (pageSlug: string, geoSlug: string): string =>
+  `/${pageSlug}/${geoSlug}`
 export const getRegisterRoute = (): string => '/register'
 
 /** Route to the listing page a tow truck belongs to (city or Yerevan district) */

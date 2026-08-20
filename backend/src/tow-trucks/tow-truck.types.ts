@@ -30,14 +30,14 @@ export interface TowTruckFilters {
  *
  * The list endpoints used to return the full `TowTruckApi` for every truck,
  * which meant one unauthenticated `GET /tow-trucks` handed out **every driver's
- * secondary phone, WhatsApp, Telegram and email address** — the whole contact
+ * secondary phone, WhatsApp and Telegram** — the whole contact
  * database of the platform, in one request, to anyone. It also shipped their
  * plate number, platform dimensions, full price list, description and every
  * photo URL, none of which a card displays.
  *
  * So the list and the detail endpoints now return deliberately different
  * shapes. The card carries **one** way to reach a driver — the main phone,
- * which is the button it renders. WhatsApp, Telegram, email and the secondary
+ * which is the button it renders. WhatsApp, Telegram and the secondary
  * phone are all profile-page details, because `TowTruckContactActions` (the
  * component that renders those buttons) is only ever mounted on
  * `GET /tow-trucks/:slug`; the card mounts a single «Զանգահարել» link.
@@ -48,6 +48,7 @@ export interface TowTruckFilters {
  * exchange for nothing. If a WhatsApp button is ever added to the card, add
  * the field back **with** it, not before.
  */
+
 export interface TowTruckCardApi {
   id: number
   slug: string
@@ -141,7 +142,7 @@ export interface TowTruckCoverageApi {
 export interface ServiceAreaJson {
   name: string
   slug: string
-  type: 'city' | 'district' | 'route'
+  type: 'city' | 'district' | 'route' | 'region'
 }
 
 /** API shape — mirrors the frontend `TowTruck` interface exactly */
@@ -154,7 +155,6 @@ export interface TowTruckApi {
   secondaryPhone?: string
   whatsapp?: string
   telegram?: string
-  email?: string
   works24Hours: boolean
   /** Computed display string — HOURS_24 when works24Hours, else workingHoursText, else unset */
   workingHours?: string
@@ -170,14 +170,43 @@ export interface TowTruckApi {
     capacityTons: number
     platformLengthM?: number
     platformWidthM?: number
+    /**
+     * The specialist technical figures — public, and absent rather than zero
+     * when the question was never asked. A customer with a 22-tonne excavator
+     * is deciding on exactly these numbers, so unlike `heavyEquipment` below
+     * they belong on the profile: they are a specification, not a page filter.
+     */
+    craneCapacityTons?: number
+    craneReachM?: number
+    maxLoadTons?: number
+    platformLoadHeightCm?: number
     winch: boolean
     manipulator: boolean
     wheelSkates: boolean
+    /**
+     * «Ծանր տեխնիկայի տեղափոխում», as approved by a moderator.
+     *
+     * Present ONLY on the driver's own `GET /my/tow-truck`, never on the public
+     * profile — the same withholding rule `location.latitude` and
+     * `plateNumber` follow, and the same reason `docs/taxonomies.md` gives:
+     * this is what puts a truck on `/tsanr-tehnika`, a page filter rather than
+     * a badge, and putting it in the public JSON publishes it for every driver
+     * at once. The dashboard needs it back because the driver may now propose
+     * it, so it is asked for explicitly via `includeOwnerFields`.
+     */
+    heavyEquipment?: boolean
     plateNumber?: string
     showPlateNumber: boolean
   }
   services: string[]
   serviceAreas: ServiceAreaJson[]
+  /**
+   * «Ամբողջ Հայաստան» — public, unlike `vehicle.heavyEquipment`, because it is
+   * an answer to "where do you work" and that is the whole of what
+   * `serviceAreas` is for. A profile listing one city while the driver in fact
+   * covers the country is a listing that loses them the job.
+   */
+  servesAllArmenia: boolean
   location: {
     regionSlug?: string
     citySlug?: string

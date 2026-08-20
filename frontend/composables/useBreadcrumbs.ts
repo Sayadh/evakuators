@@ -1,4 +1,4 @@
-import type { VehicleTypePage } from '~/constants/vehicleTypePages'
+import type { VehicleTypeGeo, VehicleTypePage } from '~/constants/vehicleTypePages'
 import type { BreadcrumbItem } from '~/types/common'
 import type { CityWithStats, District, Region } from '~/types/location'
 import type { TowTruck } from '~/types/towTruck'
@@ -7,6 +7,7 @@ import {
   getDistrictRoute,
   getRegionRoute,
   getRegionsRoute,
+  getVehicleTypePageRoute,
   getYerevanRoute,
 } from '~/utils/routeHelpers'
 
@@ -28,6 +29,23 @@ export function useBreadcrumbs() {
   const forVehicleType = (page: Pick<VehicleTypePage, 'heading'>): BreadcrumbItem[] => [
     HOME,
     { label: page.heading },
+  ]
+
+  /**
+   * `/manipulator/kotayk` — three levels, and the middle one is a real link.
+   *
+   * Unlike the two-level trail above, the parent here exists as a page, so it
+   * gets a `to`. That is not cosmetic: `BreadcrumbList` is how a crawler learns
+   * the eleven area pages hang off one parent rather than being eleven
+   * unrelated top-level pages, which is what makes them a set worth ranking.
+   */
+  const forVehicleTypeGeo = (
+    page: Pick<VehicleTypePage, 'heading' | 'slug'>,
+    geo: Pick<VehicleTypeGeo, 'name'>,
+  ): BreadcrumbItem[] => [
+    HOME,
+    { label: page.heading, to: getVehicleTypePageRoute(page.slug) },
+    { label: geo.name },
   ]
 
   const forRegion = (region: Pick<Region, 'name'>): BreadcrumbItem[] => [
@@ -87,6 +105,7 @@ export function useBreadcrumbs() {
     forRegions,
     forFreeRoutes,
     forVehicleType,
+    forVehicleTypeGeo,
     forRegion,
     forCity,
     forServiceZone,

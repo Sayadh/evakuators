@@ -2,18 +2,23 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { hasManipulator } from '~/constants/vehicles'
-import { SortOption, VehicleType } from '~/types/enums'
-import type { TowTruckCard } from '~/types/towTruck'
-import { createDefaultFilterState, matchesFilters } from '~/utils/towTruckFilters'
+import { VehicleType } from '~/types/enums'
 
 /**
  * «Մանիպուլյատոր» — one question the registration form asks twice.
  *
  * `type: 'manipulator'` (a required single-choice select) and `manipulator:
- * true` (an optional equipment checkbox) are both legitimate answers, and the
- * filter used to read only the second. A driver who answered with the first —
- * which is the natural way to answer when the whole truck IS a manipulator —
- * did not appear under the filter built for exactly that customer.
+ * true` (an optional equipment checkbox) are both legitimate answers.
+ * `hasManipulator` is the union of the two, and every place that renders the
+ * answer goes through it — the profile page's own «Մանիպուլյատոր» row
+ * (`TowTruckInfo.vue`) and, on the landing-page side, the mock-mode branch of
+ * `getByVehicleType` in `towTrucks.service.ts`.
+ *
+ * There used to be a third consumer — the public filter sidebar's «Ունի
+ * մանիպուլյատոր» checkbox — removed once both landing pages existed and made
+ * it redundant, and replaced by a plain (non-union) vehicle-type picker; see
+ * `tests/generalListingVehicleTypeFilter.spec.ts` and `docs/taxonomies.md`
+ * § "Landing-page-only vehicle types".
  */
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
@@ -49,47 +54,26 @@ describe('hasManipulator', () => {
   })
 })
 
-describe('the filter', () => {
-  function truck(type: string, manipulator: boolean): TowTruckCard {
-    return {
-      id: 1,
-      slug: 'truck',
-      driverName: 'Վարորդ',
-      phone: '+37491000001',
-      works24Hours: false,
-      vehicle: { brand: 'Isuzu', model: 'NPR', type, capacityTons: 3, manipulator },
-      services: [],
-      serviceAreas: [],
-      location: { name: 'Հիմք' },
-      images: [],
-      updatedAt: '2026-01-01T00:00:00.000Z',
-    } as unknown as TowTruckCard
-  }
+describe('the public filter no longer reads the union', () => {
+  /**
+   * Regression guard for the removal. `TowTruckFilterState.manipulator` (and
+   * the store action, and the old single-purpose checkbox) must not come
+   * back — the sidebar's «Տեխնիկա» section now filters by plain type equality
+   * instead, covered in `tests/generalListingVehicleTypeFilter.spec.ts`.
+   */
+  const filterTypes = readFileSync(`${ROOT}types/filters.ts`, 'utf8')
+  const filterUtils = readFileSync(`${ROOT}utils/towTruckFilters.ts`, 'utf8')
 
-  const manipulatorOnly = { ...createDefaultFilterState(), manipulator: true }
-
-  it('keeps a driver who answered only with the vehicle type', () => {
-    expect(matchesFilters(truck(VehicleType.Manipulator, false), manipulatorOnly)).toBe(true)
+  it('has no manipulator field on the filter state', () => {
+    expect(filterTypes).not.toContain('manipulator')
   })
 
-  it('keeps a flatbed that also carries a crane', () => {
-    // Not a data error — a real vehicle, and the checkbox is the only way to
-    // say so once the type is spent on «Հարթակով էվակուատոր».
-    expect(matchesFilters(truck(VehicleType.Flatbed, true), manipulatorOnly)).toBe(true)
-  })
-
-  it('drops a driver with neither', () => {
-    expect(matchesFilters(truck(VehicleType.Flatbed, false), manipulatorOnly)).toBe(false)
-  })
-
-  it('lets everyone through when the box is not ticked', () => {
-    const off = createDefaultFilterState()
-    expect(off.sort).toBe(SortOption.Recommended)
-    expect(matchesFilters(truck(VehicleType.Flatbed, false), off)).toBe(true)
+  it('does not call hasManipulator from the filter predicate', () => {
+    expect(filterUtils).not.toContain('hasManipulator')
   })
 })
 
-describe('the profile page cannot contradict the filter', () => {
+describe('the profile page still renders the union correctly', () => {
   /**
    * The visible half of the bug: the filter returned a truck and the truck's
    * own «Մանիպուլյատոր» row then said «Ոչ», because the two read different

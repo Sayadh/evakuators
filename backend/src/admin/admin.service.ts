@@ -6,6 +6,7 @@ import { assertServiceAreasWithinLimit } from '../tow-trucks/service-area-limits
 import { DriverAuthService } from '../driver-auth/driver-auth.service'
 import { IMAGE_ORDER } from '../images/image-order'
 import { PrismaService } from '../prisma/prisma.service'
+import { PrivacyConsentService } from '../privacy-consent/privacy-consent.service'
 import { ReviewsRepository, ReviewWithTruck } from '../reviews/reviews.repository'
 import { SupabaseStorageService } from '../storage/supabase-storage.service'
 import { telegramTokenFingerprint } from '../telegram/token-fingerprint'
@@ -47,6 +48,10 @@ export class AdminService {
     private readonly telegram: TelegramService,
     private readonly storage: SupabaseStorageService,
     private readonly driverAuth: DriverAuthService,
+    // Only to re-point a registration's consent at the truck approval creates
+    // — see the call inside approve()'s transaction. No consent is ever
+    // created here: an admin cannot consent on a driver's behalf.
+    private readonly privacyConsent: PrivacyConsentService,
   ) {}
 
   async listRegistrations(query: AdminRegistrationsQuery): Promise<AdminRegistrationSummary[]> {
@@ -223,9 +228,21 @@ export class AdminService {
     // not "zero regions", so it degrades to the loose bound rather than being
     // read as one marz and rejecting a perfectly valid old submission — and the
     // same holds if a body somehow arrives with none.
+    //
+    // The truck rides along so the cap can be lifted for the vehicles it was
+    // never written for — see `hasUncappedCoverage`. The values come from the
+    // BODY, like the region list and for the same reason: the moderator may be
+    // changing the vehicle type on this very screen, and measuring the stored
+    // request would apply the wrong rule to the profile actually being
+    // published.
     assertServiceAreasWithinLimit(
       dto.serviceAreas,
       dto.regionSlugs.length > 0 ? dto.regionSlugs : undefined,
+      {
+        vehicleType: dto.vehicleType,
+        manipulator: dto.manipulator,
+        heavyEquipment: dto.heavyEquipment,
+      },
     )
 
     // The placement the moderator picked must be one of the areas being
@@ -266,7 +283,6 @@ export class AdminService {
             // that is the answer, and it is the one we store.
             whatsapp: dto.whatsapp ?? null,
             telegram: dto.telegram,
-            email: dto.email,
             // Derived from the services on the approved profile — see
             // service-slugs.ts. Never stored as its own column anywhere, so
             // un-ticking «24/7» on the review page has to be enough to clear it.
@@ -277,12 +293,30 @@ export class AdminService {
             vehicleModel: dto.vehicleModel,
             vehicleYear: dto.vehicleYear,
             vehicleType: dto.vehicleType,
-            capacityTons: dto.capacityTons,
+            // The exact figure wins when there is one.
+            //
+            // `dto.capacityTons` is derived from the capacity BAND
+            // (`representativeCapacityTons`), which is the only capacity an
+            // ordinary evacuator states. The two specialist types are asked for
+            // a real tonnage instead, and rounding "22 տոննա" up to the
+            // open-ended band's stand-in figure would throw away the one number
+            // that decides whether the job is possible. See
+            // `usesExactCapacity` on the frontend for why the question differs.
+            capacityTons: dto.maxLoadTons ?? dto.capacityTons,
             // Two Floats, the same shape the TowTruck stores. They used to be
             // one free-text field that approval never read at all, so the
             // driver's answer was collected and silently thrown away.
             platformLengthM: dto.platformLengthM,
             platformWidthM: dto.platformWidthM,
+            // The specialist technical answers, copied straight through like
+            // the platform dimensions above. Undefined for every ordinary
+            // evacuator, which is what the column should hold: the question was
+            // never asked, and the public profile omits a null rather than
+            // printing a zero.
+            craneCapacityTons: dto.craneCapacityTons,
+            craneReachM: dto.craneReachM,
+            maxLoadTons: dto.maxLoadTons,
+            platformLoadHeightCm: dto.platformLoadHeightCm,
             winch: dto.winch,
             // Derived, not copied — see vehicle-types.ts. Picking the
             // «Մանիպուլյատորով էվակուատոր» type already answers this, and a
@@ -301,9 +335,23 @@ export class AdminService {
             // Storing the derived `true` here instead would survive the driver
             // later changing their vehicle type away from `heavy-duty` on the
             // dashboard — leaving a flatbed permanently on a page only an admin
-            // is supposed to be able to put anyone on. Left at the column
-            // default, that self-promotion is not expressible.
-            heavyEquipment: false,
+            // is supposed to be able to put anyone on. So it is still NOT
+            // `derivesHeavyEquipment(...)`, and that has not changed.
+            //
+            // What changed is where the `true` may come from. The driver is now
+            // asked «Ծանր տեխնիկայի տեղափոխում» at sign-up, and their answer
+            // arrives here as `dto.heavyEquipment` — but it arrives through
+            // THIS page, submitted by the moderator who has just read the
+            // request, seen the photos and can untick it. So the column still
+            // holds exactly what a human with the whole profile in front of
+            // them decided; a driver cannot put themselves on /tsanr-tehnika,
+            // they can only ask. `?? false` because the field is optional for
+            // the requests filed before it existed.
+            heavyEquipment: dto.heavyEquipment ?? false,
+            // Same shape: the driver proposes «Ամբողջ Հայաստան», the moderator
+            // publishes it. Unlike the flag above there is nothing to derive —
+            // no vehicle type implies a nationwide reach.
+            servesAllArmenia: dto.servesAllArmenia ?? false,
             // Resolved by the admin frontend from the chosen citySlug/districtSlug
             // (see ApproveRegistrationDto.regionSlug) — the backend has no
             // geography of its own, and with up to 2 regionSlugs on the request
@@ -340,6 +388,22 @@ export class AdminService {
           where: { registrationRequestId: request.id },
           data: { towTruckId: created.id },
         })
+
+        // The driver's consent follows them onto the profile it was given for.
+        //
+        // It is the SAME row, re-pointed — not a new one — so `acceptedAt`
+        // still says when the driver actually ticked the box rather than when a
+        // moderator got round to reviewing them. That distinction is the whole
+        // value of the record: "consented on the 3rd, approved on the 9th" is
+        // the truth, and a fresh row written here would assert the driver
+        // consented on the 9th, in a table whose only job is to be accurate
+        // about exactly that.
+        //
+        // A no-op for every request filed before consent was asked for — those
+        // are still in the queue and still approvable, and their drivers are
+        // caught by the dashboard gate on first login. See
+        // PrivacyConsentService.attachToTowTruck.
+        await this.privacyConsent.attachToTowTruck(request.id, created.id, tx)
 
         await tx.registrationRequest.update({
           where: { id: request.id },

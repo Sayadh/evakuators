@@ -52,7 +52,7 @@ export const SITE_ORGANIZATION_DESCRIPTION = 'Հայաստանում էվակո�
 export const SITE_ALTERNATE_NAME = 'Էվակուատորներ Հայաստան'
 
 export const SITE_DESCRIPTION =
-  'Գտեք Հայաստանի ցանկացած մարզում և Երևանի վարչական շրջաններում աշխատող էվակուատորներ։ Դիտեք մեքենաների նկարները, ծառայությունները, գները և անմիջապես զանգահարեք վարորդին։'
+  'Գտեք Հայաստանի ցանկացած մարզում և Երևանի վարչական շրջաններում աշխատող էվակուատորներ ու մանիպուլյատորներ։ Դիտեք մեքենաների նկարները, ծառայությունները, գները և անմիջապես զանգահարեք վարորդին։'
 
 /**
  * The platform's single contact number. Phone, WhatsApp and Telegram are all
@@ -61,6 +61,30 @@ export const SITE_DESCRIPTION =
  * moves, and the three links can never point at different numbers.
  */
 export const CONTACT_PHONE = '+374 77 13 54 66'
+
+/**
+ * TODO(legal): the data controller's registration address, exactly as it
+ * appears on «ՌՈՍԱՄԻ» ՍՊԸ's state registration certificate.
+ *
+ * Required on `/privacy` (§ "Ո՞վ է մշակում Ձեր տվյալները") to identify the
+ * data controller under ՀՀ «Անձնական տվյալների պաշտպանության մասին» օրենքը.
+ * `null` on purpose rather than a placeholder string that reads like a real
+ * address — the page renders an explicit TODO note instead of publishing a
+ * fabricated one. Fill this in once the real address is provided, and the
+ * note disappears on its own.
+ */
+export const COMPANY_LEGAL_ADDRESS: string | null = null
+
+/**
+ * TODO(legal): a real, monitored mailbox for data-protection inquiries (e.g.
+ * `privacy@evakuators.am`).
+ *
+ * `null` until that inbox actually exists and is checked — publishing an
+ * address nobody reads is worse for a data subject than publishing none, and
+ * `/privacy` already offers the phone/WhatsApp/Telegram channels below in the
+ * meantime.
+ */
+export const PRIVACY_CONTACT_EMAIL: string | null = null
 
 /**
  * Single source of truth for the platform's social profiles — same

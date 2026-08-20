@@ -25,7 +25,7 @@ useSeoMetaData({
         գները։
       </p>
       <p>
-        Եթե էվակուատորի վարորդ եք, կարող եք անվճար գրանցվել և ստանալ պատվերներ ձեր տարածքից։
+        Եթե էվակուատորի վարորդ եք, կարող եք գրանցվել և ստանալ պատվերներ ձեր տարածքից։
       </p>
       <div class="static-page__actions">
         <AppButton :to="getRegionsRoute()" variant="primary">Գտնել էվակուատոր</AppButton>

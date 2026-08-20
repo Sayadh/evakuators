@@ -92,3 +92,62 @@ export const HEAVY_DUTY_VEHICLE_TYPE = 'heavy-duty'
 export function derivesHeavyEquipment(vehicleType: string, heavyEquipment: boolean): boolean {
   return heavyEquipment || vehicleType === HEAVY_DUTY_VEHICLE_TYPE
 }
+
+/**
+ * The vehicle types that are NOT part of general discovery.
+ *
+ * «Մանիպուլյատոր» and «Ծանր տեխնիկա» each have a landing page of their own
+ * (`/manipulator`, `/tsanr-tehnika`), and that page is the only place they are
+ * listed. They do not appear on a city, marz or Yerevan listing, in the
+ * homepage's featured picks, in the per-area counters, or in the nearest-driver
+ * search.
+ *
+ * ## Why
+ *
+ * Someone browsing «Աբովյան» or pressing "find the nearest evacuator" is
+ * describing an ordinary car by the roadside. A truck whose whole purpose is
+ * lifting an excavator is not a substitute for that: it is usually further
+ * away, more expensive, and its driver does not want the call either. Listing
+ * it there costs both sides a wasted phone call, which is the only currency
+ * this platform has — there is no booking flow to absorb a bad match.
+ *
+ * ## Why the TYPE alone, and not `derivesManipulator`/`derivesHeavyEquipment`
+ *
+ * This deliberately does NOT use the two union predicates above, and the
+ * difference is the whole design:
+ *
+ * - The unions answer "can this truck ALSO do the specialist job", and that is
+ *   the right question for the landing pages — a flatbed carrying a crane
+ *   belongs on `/manipulator`, which is why the page keeps its union.
+ * - This answers "is the specialist job all this truck is FOR", and that is
+ *   the right question for hiding one. A flatbed with a crane is a perfectly
+ *   ordinary evacuator; excluding it from every city page because of the
+ *   checkbox would delete real supply from the listings for no reason, and the
+ *   admin-set `heavyEquipment` flag would silently do the same.
+ *
+ * So a truck can be on `/manipulator` AND on Աբովյան's page (a flatbed with a
+ * crane), or on `/manipulator` only (`vehicleType = 'manipulator'`). What
+ * cannot happen is a truck being hidden from general discovery by a boolean it
+ * ticked to describe an extra capability.
+ *
+ * ## The one query that lifts the exclusion is one that names the type
+ *
+ * `?vehicleType=manipulator` still answers with the union. Hiding is what
+ * *general* discovery does; an explicit request for the type is not general
+ * discovery. See `TowTrucksRepository.buildWhere`.
+ *
+ * MANUAL SYNC POINT: mirrored by `SPECIALIST_VEHICLE_TYPES` in
+ * `frontend/constants/vehicles.ts`, which is what mock mode filters on. The
+ * backend copy is the real boundary; the frontend copy exists so the two
+ * modes list the same drivers. `frontend/tests/specialistVehicleTypes.spec.ts`
+ * reads this file as text so they cannot drift.
+ */
+export const SPECIALIST_VEHICLE_TYPES = [
+  MANIPULATOR_VEHICLE_TYPE,
+  HEAVY_DUTY_VEHICLE_TYPE,
+] as const
+
+/** Whether this type is landing-page-only — see SPECIALIST_VEHICLE_TYPES */
+export function isSpecialistVehicleType(vehicleType: string): boolean {
+  return (SPECIALIST_VEHICLE_TYPES as readonly string[]).includes(vehicleType)
+}

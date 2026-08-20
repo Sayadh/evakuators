@@ -56,5 +56,10 @@ export const REGISTER_LINK: NavLink = { label: 'Գրանցել էվակուատ�
 export const FOOTER_PAGES: NavLink[] = [
   { label: 'Մեր մասին', to: '/about' },
   { label: 'Կապ', to: '/contact' },
+  // Site-wide, not only in the consent dialog. The dialog links to it too, but
+  // a privacy policy reachable only from a modal a driver has to be mid-signup
+  // to see is not a published policy — and a visitor who never registers has
+  // just as much right to read what the site does with their data.
+  { label: 'Գաղտնիության քաղաքականություն', to: '/privacy' },
   { label: 'Գրանցել էվակուատոր', to: '/register' },
 ]

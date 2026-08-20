@@ -94,6 +94,17 @@ Three decisions worth not re-litigating:
   never be a result, so indexing them would be pure write cost. Today that is
   most of the table.
 
+**The specialist vehicle types are filtered inside this query, before
+`LIMIT`.** «Մանիպուլյատոր» and «Ծանր տեխնիկա» are listed on their own landing
+pages and nowhere else (`docs/taxonomies.md` § "Landing-page-only vehicle
+types"), and someone pressing this button next to a broken car is the clearest
+case of general discovery there is. The clause sits in the SQL for the same
+reason `isActive` does: `LIMIT` stops the index walk, so dropping them
+afterwards would be choosing from "the 25 nearest trucks of any kind" and
+handing back fewer than N drivers — on the one page where the visitor is
+stranded. `TowTrucksRepository.findCardsByIds` states the rule a second time on
+the card fetch, the way it already restates `isActive`.
+
 `ST_MakePoint` takes **X then Y — longitude first**. Reversed, every distance
 comes back plausible and every one is wrong. It appears in three places (the
 migration, `NearestRepository`, `RouteMatrixService`) and is spelled out at each.

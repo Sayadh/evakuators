@@ -8,7 +8,6 @@ export interface RegistrationPersonalData {
   secondaryPhone: string
   whatsapp: string
   telegram: string
-  email: string
 }
 
 export interface RegistrationVehicleData {

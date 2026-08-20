@@ -267,12 +267,18 @@ the last place still delegating it to a library.
 
 ## The listing order is random, and the seed is why that is SSR-safe
 
-Inside a town, drivers are shown in a shuffled order rather than ranked by
-rating. The reason is a marketplace one: the smoothed score separated them by
-hundredths, so every town had one fixed queue — the same two or three profiles
-on top of it every time, and everyone below never called, so never reviewed, so
-never moved. See `sortTowTrucks` for the full argument and for the two coarse
-groups that still decide something (based here, then a half-point rating band).
+Drivers are shown in a shuffled order rather than ranked by rating. The reason
+is a marketplace one: the smoothed score separated them by hundredths, so every
+listing had one fixed queue — the same two or three profiles on top of it every
+time, and everyone below never called, so never reviewed, so never moved. See
+`sortTowTrucks` for the full argument.
+
+Most listings still keep one coarse group on top of the shuffle — a half-point
+rating band (`tiered: true`, the default). The city and district search pages
+(`/regions/[region]/[city]`, `/yerevan/[district]`) are the exception: they
+call `applyTowTruckFilters`, which passes `tiered: false`, so on those two pages
+the band is skipped too and the order is the shuffle itself — every driver gets
+an equal shot at the top on every page load, rating included.
 
 The part that matters architecturally is how the randomness survives hydration.
 `Math.random()` at render time produces one order on the server and another in

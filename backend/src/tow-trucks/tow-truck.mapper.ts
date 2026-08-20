@@ -41,6 +41,21 @@ function buildPricing(truck: TowTruckWithImages): TowTruckApi['pricing'] {
  */
 export interface TowTruckApiOptions {
   includeCoordinates?: boolean
+  /**
+   * Fields the OWNER may see about their own listing and the public may not.
+   *
+   * Today that is `vehicle.heavyEquipment`: the driver may now propose it, so
+   * the dashboard has to show it back, but it stays off the public profile
+   * because it is a page filter and not a badge (see `docs/taxonomies.md` §
+   * «Ծանր տեխնիկա»). Named for the category rather than for the one field, so
+   * the next owner-only value has an obvious home instead of a second flag.
+   *
+   * Separate from `includeCoordinates` on purpose. That one is withheld for a
+   * privacy reason (where a driver parks overnight); this one for an editorial
+   * reason. Collapsing them into one "trusted caller" flag would mean the next
+   * change could not distinguish the two arguments.
+   */
+  includeOwnerFields?: boolean
 }
 
 /** DB row → API shape used by the Nuxt frontend */
@@ -57,7 +72,6 @@ export function toTowTruckApi(
     secondaryPhone: truck.secondaryPhone ?? undefined,
     whatsapp: truck.whatsapp ?? undefined,
     telegram: truck.telegram ?? undefined,
-    email: truck.email ?? undefined,
     works24Hours: truck.works24Hours,
     // No fake default anymore — if the driver never specified real hours and
     // isn't 24/7, this stays undefined and the frontend hides the line
@@ -74,9 +88,18 @@ export function toTowTruckApi(
       capacityTons: truck.capacityTons,
       platformLengthM: truck.platformLengthM ?? undefined,
       platformWidthM: truck.platformWidthM ?? undefined,
+      // `?? undefined`, never `?? 0`: these render as a specification line, and
+      // «Կռունկի բեռնատարողություն՝ 0 տ» is a worse answer than no line at all.
+      // Same call the pricing fields make one level down.
+      craneCapacityTons: truck.craneCapacityTons ?? undefined,
+      craneReachM: truck.craneReachM ?? undefined,
+      maxLoadTons: truck.maxLoadTons ?? undefined,
+      platformLoadHeightCm: truck.platformLoadHeightCm ?? undefined,
       winch: truck.winch,
       manipulator: truck.manipulator,
       wheelSkates: truck.wheelSkates,
+      // Owner-only — see TowTruckApiOptions.includeOwnerFields
+      ...(options.includeOwnerFields ? { heavyEquipment: truck.heavyEquipment } : {}),
       // Withheld server-side when the driver opted out, not just hidden by the
       // UI. TowTruckInfo.vue checks `showPlateNumber` before rendering it, but
       // the value was still in the JSON response and in the SSR payload — so a
@@ -87,6 +110,8 @@ export function toTowTruckApi(
     },
     services: truck.services,
     serviceAreas: (truck.serviceAreas as unknown as ServiceAreaJson[]) ?? [],
+    // Public, unlike `vehicle.heavyEquipment` — see TowTruckApi.servesAllArmenia
+    servesAllArmenia: truck.servesAllArmenia,
     location: {
       regionSlug: truck.regionSlug ?? undefined,
       citySlug: truck.citySlug ?? undefined,
@@ -124,7 +149,7 @@ export function toTowTruckApi(
  * Everything absent here is absent on purpose — see `TowTruckCardApi`. The
  * biggest omission is the contact set: a list response carries only the main
  * phone and WhatsApp, because those are the two buttons a card has.
- * `telegram`, `email`, `secondaryPhone`, the plate number, platform
+ * `telegram`, `secondaryPhone`, the plate number, platform
  * dimensions, the full price table, the description and every photo past the
  * first are detail-page data, served by `GET /tow-trucks/:slug` one truck at a
  * time.

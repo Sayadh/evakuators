@@ -9,16 +9,8 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), { compact: false })
 
-const {
-  phoneHref,
-  whatsappUrl,
-  telegramUrl,
-  emailHref,
-  onPhoneClick,
-  onWhatsAppClick,
-  onTelegramClick,
-  onEmailClick,
-} = usePhoneActions(() => props.towTruck)
+const { phoneHref, whatsappUrl, telegramUrl, onPhoneClick, onWhatsAppClick, onTelegramClick } =
+  usePhoneActions(() => props.towTruck)
 </script>
 
 <template>
@@ -55,16 +47,6 @@ const {
     >
       <AppIcon name="telegram" :size="20" />
       <span>Telegram</span>
-    </a>
-    <a
-      v-if="emailHref && !compact"
-      :href="emailHref"
-      class="contact-actions__secondary contact-actions__secondary--email"
-      aria-label="Գրել email-ով"
-      @click="onEmailClick"
-    >
-      <AppIcon name="mail" :size="20" />
-      <span>Email</span>
     </a>
   </div>
 </template>
@@ -128,8 +110,7 @@ const {
       color: var(--color-success);
     }
 
-    &--telegram,
-    &--email {
+    &--telegram {
       background: rgba(20, 48, 79, 0.08);
       color: var(--color-primary);
     }

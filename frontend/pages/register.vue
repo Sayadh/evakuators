@@ -10,9 +10,9 @@ import {
 } from '~/utils/registrationForm'
 
 useSeoMetaData({
-  title: `Գրանցել էվակուատոր | Միացեք հարթակին անվճար | ${SITE_NAME}`,
+  title: `Գրանցել էվակուատոր | Միացեք հարթակին | ${SITE_NAME}`,
   description:
-    'Գրանցեք ձեր էվակուատորը Evakuators.am հարթակում և ստացեք պատվերներ ձեր տարածքից։ Գրանցումն անվճար է։',
+    'Գրանցեք ձեր էվակուատորը Evakuators.am հարթակում և ստացեք պատվերներ ձեր տարածքից։',
   path: '/register',
 })
 
@@ -139,6 +139,21 @@ const isSuccessOpen = ref(false)
 const isSubmitting = ref(false)
 const submitError = ref('')
 
+/**
+ * The consent gate between «Ուղարկել հայտը» and the request actually going out.
+ *
+ * Opened only once the form VALIDATES — see `onSubmit`. Asking a driver to
+ * consent and then telling them their phone number is malformed would make them
+ * read and agree to a page of text before finding out they cannot submit yet,
+ * which is both rude and, on a second attempt, a second consent dialog for one
+ * act of registering.
+ */
+const isConsentOpen = ref(false)
+
+/** The consent dialog's own error line — kept apart from `submitError`, which
+ * belongs to the form and is rendered above the submit button on the page. */
+const consentError = ref('')
+
 /** Wipes the whole form back to a blank state after a successful submission
  * — fields, validation errors, selected files/previews, and the native file
  * inputs themselves (clearing those needs a direct DOM reset, resetting the
@@ -194,22 +209,59 @@ async function submitToApi(coordinates: Coordinates | null): Promise<void> {
   await registrationRepository.submit(payload)
 }
 
-async function onSubmit(): Promise<void> {
+/**
+ * Pressing «Ուղարկել հայտը» validates and then asks for consent. It does NOT
+ * send anything — see `onConsentConfirmed`, which is the only path to the API.
+ *
+ * The order matters: validate first, consent second. Reversed, a driver with a
+ * mistyped phone number would read and agree to a page of text only to be told
+ * they cannot submit yet, and would then have to consent a second time for what
+ * is one act of registering.
+ */
+function onSubmit(): void {
   if (!validate()) {
     if (import.meta.client) window.scrollTo({ top: 0, behavior: 'smooth' })
     return
   }
 
-  // Null is a legitimate outcome now: the driver left the box empty, and
+  submitError.value = ''
+  consentError.value = ''
+  isConsentOpen.value = true
+}
+
+/**
+ * The consent was given. This is the only place the registration is sent.
+ *
+ * ## Exactly one request per confirmation
+ *
+ * `isSubmitting` guards re-entry, and the dialog disables both its buttons
+ * while it is true — so a double-tap on «Համաձայն եմ և շարունակում եմ» cannot
+ * produce two registrations. That matters more here than on an ordinary form:
+ * the duplicate-phone check would reject the second one with a confusing
+ * "this number is already registered", pointing at the driver's own first
+ * submission a second earlier.
+ *
+ * ## The dialog closes on success, and stays open on failure
+ *
+ * A failed submit leaves the driver in front of the dialog with the reason
+ * rendered in it, one button away from retrying. Closing it would drop them
+ * back on the form with an error above the submit button and no indication that
+ * their consent had not been recorded either.
+ */
+async function onConsentConfirmed(): Promise<void> {
+  if (isSubmitting.value) return
+
+  // Null is a legitimate outcome: the driver left the box empty, and
   // `validate()` passed anyway. It is only ever null-because-unparseable when
   // validate() already returned false, so reaching here with null means
   // "no coordinates", never "bad coordinates".
   const coordinates = parsedCoordinates.value
 
-  submitError.value = ''
+  consentError.value = ''
 
   if (!isApiEnabled()) {
     // No backend configured — demo mode simply confirms the submission
+    isConsentOpen.value = false
     trackRegistrationSubmit()
     isSuccessOpen.value = true
     resetForm()
@@ -219,11 +271,12 @@ async function onSubmit(): Promise<void> {
   isSubmitting.value = true
   try {
     await submitToApi(coordinates)
+    isConsentOpen.value = false
     trackRegistrationSubmit()
     isSuccessOpen.value = true
     resetForm()
   } catch (error) {
-    submitError.value = extractErrorMessage(
+    consentError.value = extractErrorMessage(
       error,
       'Չհաջողվեց ուղարկել հայտը։ Ստուգեք կապը և փորձեք կրկին։',
     )
@@ -231,14 +284,26 @@ async function onSubmit(): Promise<void> {
     isSubmitting.value = false
   }
 }
+
+/**
+ * Cancelling costs nothing here — the form and every uploaded photo are still
+ * exactly where they were, and the driver can submit again whenever they like.
+ * Nothing is recorded, which is the point: a dialog that stored a "declined"
+ * row would be tracking a decision nobody asked us to keep.
+ *
+ * This is the whole difference from the dashboard's copy of the same dialog,
+ * where cancelling signs the driver out.
+ */
+function onConsentCancelled(): void {
+  consentError.value = ''
+}
 </script>
 
 <template>
   <div class="container register">
     <h1>Գրանցել էվակուատոր</h1>
     <p class="register__intro">
-      Լրացրեք ձեր և մեքենայի տվյալները, և ձեր պրոֆիլը կհայտնվի հարթակում ստուգումից հետո։ Գրանցումն
-      անվճար է։
+      Լրացրեք ձեր և մեքենայի տվյալները, և ձեր պրոֆիլը կհայտնվի հարթակում ստուգումից հետո։
     </p>
 
     <form class="register__form" novalidate @submit.prevent="onSubmit">
@@ -327,6 +392,19 @@ async function onSubmit(): Promise<void> {
         {{ isSubmitting ? 'Ուղարկվում է…' : 'Ուղարկել հայտը' }}
       </AppButton>
     </form>
+
+    <!-- Between the button and the request. Not `mandatory`: cancelling here
+         costs nothing — the form and the uploaded photos are untouched — so a
+         backdrop click is allowed to close it. The dashboard's copy of this
+         same dialog is mandatory, because there cancelling signs the driver
+         out. -->
+    <PrivacyConsentDialog
+      v-model="isConsentOpen"
+      :submitting="isSubmitting"
+      :error="consentError"
+      @confirm="onConsentConfirmed"
+      @cancel="onConsentCancelled"
+    />
 
     <AppModal v-model="isSuccessOpen" title="Հայտն ընդունված է">
       <p>

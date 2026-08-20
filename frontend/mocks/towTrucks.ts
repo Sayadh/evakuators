@@ -38,7 +38,6 @@ interface TowTruckSeed {
   phone: string
   secondaryPhone?: string
   telegram?: string
-  email?: string
   works24Hours?: boolean
   /** Only meaningful when works24Hours is false/unset — omit to demo the "hidden" case */
   workingHoursText?: string
@@ -81,7 +80,6 @@ function defineTowTruck(seed: TowTruckSeed): TowTruck {
     secondaryPhone: seed.secondaryPhone,
     whatsapp: seed.phone,
     telegram: seed.telegram,
-    email: seed.email,
     works24Hours,
     // No fake fallback — only 24/7 trucks and ones with an explicit seed
     // value show a working-hours line, matching real driver-entered data.
@@ -100,6 +98,12 @@ function defineTowTruck(seed: TowTruckSeed): TowTruck {
     },
     services: [...BASE_SERVICES, ...(seed.extraServices ?? [])],
     serviceAreas: seed.serviceAreas,
+    // Not a seed field: every mock driver is an ordinary evacuator with a real
+    // city list, which is what the mock fleet is for. «Ամբողջ Հայաստան» is
+    // offered only to crane trucks and machinery transporters — see
+    // `hasUncappedCoverage` — so `false` is the honest value here rather than a
+    // knob nobody would turn.
+    servesAllArmenia: false,
     location: seed.location,
     pricing: buildPricing(seed),
     // Omitted entirely when the seed has none, exactly like the API — that
@@ -174,7 +178,6 @@ export const mockTowTrucks: TowTruck[] = [
     driverName: 'Դավիթ Գրիգորյան',
     companyName: 'Sevan Evak Service',
     phone: '+374 93 00 00 02',
-    email: 'sevan.evak@example.am',
     works24Hours: true,
     startingPrice: 14000,
     vehicle: {
@@ -275,7 +278,6 @@ export const mockTowTrucks: TowTruck[] = [
     phone: '+374 91 00 00 06',
     secondaryPhone: '+374 93 11 00 06',
     telegram: 'evak_express_demo',
-    email: 'evak.express@example.am',
     works24Hours: true,
     startingPrice: 10000,
     perKm: 250,

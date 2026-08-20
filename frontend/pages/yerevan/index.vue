@@ -22,10 +22,6 @@ useSeoMetaData({
 
     <header class="yerevan-page__header">
       <h1>Էվակուատորներ Երևանում</h1>
-      <p class="yerevan-page__description">
-        Ընտրեք վարչական շրջանը՝ տվյալ տարածքում աշխատող էվակուատորները տեսնելու համար։ Վարորդների
-        մեծ մասը սպասարկում է ամբողջ քաղաքը։
-      </p>
       <div class="yerevan-page__stats">
         <AppBadge variant="primary">
           <AppIcon name="map-pin" :size="14" /> 12 վարչական շրջան
@@ -68,11 +64,6 @@ useSeoMetaData({
 
   &__nearest {
     margin-bottom: var(--space-5);
-  }
-
-  &__description {
-    color: var(--color-text-secondary);
-    max-width: 680px;
   }
 
   &__stats {

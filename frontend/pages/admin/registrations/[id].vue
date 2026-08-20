@@ -11,8 +11,9 @@ import { useAdminAuthStore } from '~/stores/adminAuth'
 import { formatCoordinates, type Coordinates } from '~/utils/coordinates'
 import { extractErrorMessage } from '~/utils/errors'
 import { formatDateNumeric } from '~/utils/formatters'
-import { cityOrDistrictLabel, resolveAreaType } from '~/utils/geography'
+import { cityOrDistrictLabel } from '~/utils/geography'
 import { composeLocationName, placementFor } from '~/utils/primaryArea'
+import { baseCandidatesFor, buildServiceAreas } from '~/utils/serviceAreas'
 import { buildRegistrationPayload } from '~/utils/registrationPayload'
 import {
   createRegistrationFormState,
@@ -105,13 +106,7 @@ const submitError = ref('')
  * removes a city must not still be able to base the truck there. Corridors are
  * dropped inside the picker.
  */
-const baseCandidates = computed(() =>
-  form.citySlugs.map((slug) => ({
-    slug,
-    name: cityOrDistrictLabel(slug),
-    type: resolveAreaType(slug),
-  })),
-)
+const baseCandidates = computed(() => baseCandidatesFor(form))
 
 /**
  * Clears a base that the moderator has just removed from the coverage list.
@@ -122,9 +117,12 @@ const baseCandidates = computed(() =>
  * see on screen.
  */
 watch(
-  () => form.citySlugs,
-  (slugs) => {
-    if (adminForm.primarySlug && !slugs.includes(adminForm.primarySlug)) {
+  baseCandidates,
+  (candidates) => {
+    if (
+      adminForm.primarySlug &&
+      !candidates.some((candidate) => candidate.slug === adminForm.primarySlug)
+    ) {
       adminForm.primarySlug = ''
     }
   },
@@ -143,7 +141,6 @@ function fillForm(data: AdminRegistrationRequest): void {
     secondaryPhone: data.secondaryPhone ?? '',
     whatsapp: data.whatsapp ?? '',
     telegram: data.telegram ?? '',
-    email: data.email ?? '',
     brand: data.vehicleBrand,
     model: data.vehicleModel ?? '',
     year: String(data.vehicleYear),
@@ -154,9 +151,19 @@ function fillForm(data: AdminRegistrationRequest): void {
     // refuses to submit on a field nobody filled in. See the helper.
     platformLengthM: numberFieldText(data.platformLengthM),
     platformWidthM: numberFieldText(data.platformWidthM),
+    craneCapacityTons: numberFieldText(data.craneCapacityTons),
+    craneReachM: numberFieldText(data.craneReachM),
+    maxLoadTons: numberFieldText(data.maxLoadTons),
+    platformLoadHeightCm: numberFieldText(data.platformLoadHeightCm),
     winch: data.winch,
     manipulator: data.manipulator,
     wheelSkates: data.wheelSkates,
+    // The driver's CLAIM to «Ծանր տեխնիկայի տեղափոխում», shown as a normal
+    // ticked box the moderator may untick. That is the whole moderation step:
+    // what leaves this page is what goes live, so an unticked box here means
+    // the truck does not appear on /tsanr-tehnika. See the DTO.
+    heavyEquipment: data.heavyEquipment ?? false,
+    servesAllArmenia: data.servesAllArmenia ?? false,
     ...splitWorkingHours(data.workingHoursText),
     regionSlugs: [...data.regionSlugs],
     citySlugs: [...data.citySlugs],
@@ -304,11 +311,12 @@ async function approve(): Promise<void> {
     // of its own, so raw slugs would be stored as-is and a public profile would
     // show "ashtarak" instead of «Աշտարակ». Built from the same `citySlugs` the
     // payload carries, so the two cannot describe different sets.
-    serviceAreas: form.citySlugs.map((slug) => ({
-      slug,
-      name: cityOrDistrictLabel(slug),
-      type: resolveAreaType(slug),
-    })),
+    // Built by the shared helper, because the shape now depends on which
+    // coverage question the driver was asked — cities for an ordinary
+    // evacuator, marzes (or nothing plus the flag) for a specialist. The base
+    // is appended there so `assertPlacementIsServed` still holds without being
+    // relaxed. See utils/serviceAreas.ts.
+    serviceAreas: buildServiceAreas({ ...form, baseSlug: adminForm.primarySlug }),
   }
 
   submitting.value = true

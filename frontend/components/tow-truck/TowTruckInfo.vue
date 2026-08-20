@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import type { TowTruckVehicle } from '~/types/towTruck'
-import { hasManipulator, VEHICLE_TYPE_DESCRIPTIONS, VEHICLE_TYPE_LABELS } from '~/constants/vehicles'
-import { formatCapacity } from '~/utils/formatters'
+import {
+  asksWheelSkates,
+  capacityDisplayText,
+  hasManipulator,
+  VEHICLE_TYPE_DESCRIPTIONS,
+  VEHICLE_TYPE_LABELS,
+} from '~/constants/vehicles'
 import { formatPlatformDimensions } from '~/utils/platformDimensions'
 
 interface Props {
@@ -27,8 +32,36 @@ const rows = computed<InfoRow[]>(() => {
       value: VEHICLE_TYPE_LABELS[vehicle.type],
       hint: VEHICLE_TYPE_DESCRIPTIONS[vehicle.type],
     },
-    { label: 'Բեռնատարողություն', value: `մինչև ${formatCapacity(vehicle.capacityTons)}` },
   ]
+
+  // The capacity, stated the way the driver stated it.
+  //
+  // `capacityDisplayText` renders «մինչև X տ» from the BAND a driver picked,
+  // which is the honest summary for an ordinary evacuator and a misleading one
+  // for a specialist: a machinery transporter gave a real figure
+  // (`maxLoadTons`), and rounding it into «10 տոննայից ավելի» throws away the
+  // one number the whole booking turns on. See `usesExactCapacity`.
+  result.push(
+    vehicle.maxLoadTons === undefined
+      ? { label: 'Բեռնատարողություն', value: capacityDisplayText(vehicle.capacityTons) }
+      : { label: 'Առավելագույն բեռնատարողություն', value: `${vehicle.maxLoadTons} տ` },
+  )
+
+  // The specialist figures, each omitted entirely when unanswered.
+  //
+  // A missing spec is rendered as no row rather than as «0 տ» or «—»: the
+  // customer reads a specification table as a list of facts, and an invented
+  // zero is a worse answer than an absent one. Same rule the prices follow.
+  const specs: { label: string; value?: number; unit: string }[] = [
+    { label: 'Կռունկի բեռնատարողություն', value: vehicle.craneCapacityTons, unit: 'տ' },
+    { label: 'Կռունկի թևի հասանելիություն', value: vehicle.craneReachM, unit: 'մ' },
+    { label: 'Հարթակի բեռնման բարձրություն', value: vehicle.platformLoadHeightCm, unit: 'սմ' },
+  ]
+  for (const spec of specs) {
+    if (spec.value !== undefined) {
+      result.push({ label: spec.label, value: `${spec.value} ${spec.unit}` })
+    }
+  }
 
   const platformSize = formatPlatformDimensions(vehicle.platformLengthM, vehicle.platformWidthM)
   if (platformSize) {
@@ -41,12 +74,19 @@ const rows = computed<InfoRow[]>(() => {
     // here is what let a truck be returned by «Մանիպուլյատոր» and then say
     // «Ոչ» on its own page — one contradiction, two sources.
     { label: 'Մանիպուլյատոր', value: hasManipulator(vehicle) ? 'Այո' : 'Ոչ' },
-    {
+  )
+
+  // Omitted for the vehicles that are never asked about skates — see
+  // `asksWheelSkates`. Rendering «Անիվային ռոլիկներ՝ Ոչ» for a manipulator
+  // states an absence nobody claimed, about equipment the job has no use for,
+  // and reads as a shortcoming rather than as an irrelevance.
+  if (asksWheelSkates(vehicle.type)) {
+    result.push({
       label: 'Անիվային ռոլիկներ',
       value: vehicle.wheelSkates ? 'Այո' : 'Ոչ',
       hint: 'Անիվային ռոլիկներն օգտագործվում են արգելափակված կամ չպտտվող անիվներով մեքենան անվտանգ հարթակ բարձրացնելու և տեղափոխելու համար։',
-    },
-  )
+    })
+  }
 
   if (vehicle.showPlateNumber && vehicle.plateNumber) {
     result.push({ label: 'Պետհամարանիշ', value: vehicle.plateNumber })

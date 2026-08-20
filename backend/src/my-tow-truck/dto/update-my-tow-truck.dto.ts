@@ -4,7 +4,6 @@ import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
-  IsEmail,
   IsInt,
   IsNumber,
   IsOptional,
@@ -14,7 +13,6 @@ import {
   MaxLength,
   Min,
   MinLength,
-  ValidateIf,
   ValidateNested,
 } from 'class-validator'
 import { ServiceAreaDto } from '../../tow-trucks/dto/service-area.dto'
@@ -102,7 +100,7 @@ export class UpdateMyTowTruckDto {
   companyName?: string
 
   /**
-   * These four, like `companyName` above, accept `''` as "remove this value" —
+   * These three, like `companyName` above, accept `''` as "remove this value" —
    * see MyTowTruckService's `clearable()`. Omitting the key still means "leave
    * it alone", so a PATCH that doesn't mention a field never touches it.
    */
@@ -120,17 +118,6 @@ export class UpdateMyTowTruckDto {
   @IsString()
   @MaxLength(60)
   telegram?: string
-
-  /**
-   * `@ValidateIf` before `@IsEmail`, because an empty string is not an email
-   * and would otherwise be rejected — which would make this the one contact
-   * field a driver still could not clear, and would fail the whole save for
-   * every driver who never had an email in the first place.
-   */
-  @IsOptional()
-  @ValidateIf((dto: UpdateMyTowTruckDto) => dto.email !== '')
-  @IsEmail()
-  email?: string
 
   // ── Vehicle ───────────────────────────────────────────────────────────────
 
@@ -190,6 +177,61 @@ export class UpdateMyTowTruckDto {
   @IsOptional()
   @IsBoolean()
   wheelSkates?: boolean
+
+  /**
+   * The specialist technical answers — the same four columns registration
+   * collects, editable here for the same reason everything else is: a field a
+   * driver can be asked at sign-up and can never correct afterwards means the
+   * only way to fix a typo is to register again (CLAUDE.md § "Registration and
+   * the driver dashboard must offer the same fields").
+   *
+   * Ranges mirror `RegistrationProfileDto` exactly. Nothing here is required —
+   * a driver switching FROM a specialist type back to `flatbed` sends the
+   * whole form with these blank, and rejecting that would strand them on a
+   * type they no longer drive.
+   */
+  @IsOptional()
+  @IsNumber()
+  @Min(0.1)
+  @Max(200)
+  craneCapacityTons?: number
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0.5)
+  @Max(80)
+  craneReachM?: number
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0.1)
+  @Max(200)
+  maxLoadTons?: number
+
+  @IsOptional()
+  @IsNumber()
+  @Min(5)
+  @Max(400)
+  platformLoadHeightCm?: number
+
+  /**
+   * «Ծանր տեխնիկայի տեղափոխում», proposed by the driver.
+   *
+   * Editable here and still not self-granted: a dashboard save does not write,
+   * it QUEUES a diff that a moderator approves (`docs/api-reference.md` §
+   * "Driver edits are moderated"). So `TowTruck.heavyEquipment` goes on meaning
+   * "what a human decided" — the only thing that changed is who may propose it.
+   * That is the property `backend/src/tow-trucks/vehicle-types.ts` argues for,
+   * and it is preserved rather than traded away.
+   */
+  @IsOptional()
+  @IsBoolean()
+  heavyEquipment?: boolean
+
+  /** «Ամբողջ Հայաստան» — see `TowTruck.servesAllArmenia` */
+  @IsOptional()
+  @IsBoolean()
+  servesAllArmenia?: boolean
 
   // ── Listing content ───────────────────────────────────────────────────────
 

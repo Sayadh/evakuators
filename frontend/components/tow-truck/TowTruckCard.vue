@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { TowTruckCard } from '~/types/towTruck'
-import { VEHICLE_TYPE_LABELS } from '~/constants/vehicles'
-import { formatCapacity } from '~/utils/formatters'
+import { capacityDisplayText, VEHICLE_TYPE_LABELS } from '~/constants/vehicles'
 import { formatStartingPrice } from '~/utils/formatPrice'
 import { getTowTruckRoute } from '~/utils/routeHelpers'
 
@@ -66,7 +65,7 @@ const mainAreas = computed(() =>
         </li>
         <li>
           <AppIcon name="weight" :size="15" />
-          Մինչև {{ formatCapacity(towTruck.vehicle.capacityTons) }}
+          {{ capacityDisplayText(towTruck.vehicle.capacityTons) }}
         </li>
         <li v-if="towTruck.workingHours">
           <AppIcon name="clock" :size="15" />

@@ -1,6 +1,6 @@
 import { mockRequest } from './apiClient'
 import { mockTowTrucks } from '~/mocks/towTrucks'
-import { hasManipulator } from '~/constants/vehicles'
+import { hasManipulator, isSpecialistVehicleType } from '~/constants/vehicles'
 import { isApiEnabled, towTruckRepository } from '~/repositories'
 import { LocationType, VehicleType } from '~/types/enums'
 import type {
@@ -74,7 +74,13 @@ export function servesRegion(truck: TowTruckGeography, regionSlug: string): bool
   return truck.serviceAreas.some(
     (area) =>
       (area.type === LocationType.City && citySlugs.has(area.slug)) ||
-      (area.type === LocationType.Route && zoneSlugs.has(area.slug)),
+      (area.type === LocationType.Route && zoneSlugs.has(area.slug)) ||
+      // A marz-wide area matches its own marz and nothing else — the slug IS
+      // the region. Only an uncapped driver has one, and the two specialist
+      // listings are the only places they are shown; the general listings this
+      // predicate also feeds exclude those drivers by vehicle type anyway
+      // (`SPECIALIST_VEHICLE_TYPES`), so this cannot widen a city page.
+      (area.type === LocationType.Region && area.slug === regionSlug),
   )
 }
 
@@ -88,6 +94,56 @@ export function servesYerevan(truck: TowTruckGeography): boolean {
     isBasedInYerevan(truck) ||
     truck.serviceAreas.some((area) => area.type === LocationType.District)
   )
+}
+
+/**
+ * Mock-mode mirror of the backend's general-discovery rule.
+ *
+ * «Մանիպուլյատոր» and «Ծանր տեխնիկա» are listed on their own landing pages and
+ * nowhere else (`SPECIALIST_VEHICLE_TYPES`). The API applies that in Postgres;
+ * every mock branch below that stands in for a general listing reads this array
+ * instead of `mockTowTrucks`, so the two modes cannot show different drivers —
+ * which is the only promise the mock/API switch makes.
+ *
+ * Computed once at module scope rather than per call: the mock list is a static
+ * import and the predicate is pure, so re-filtering on every request would buy
+ * nothing.
+ */
+const generalMockTowTrucks = mockTowTrucks.filter(
+  (truck) => !isSpecialistVehicleType(truck.vehicle.type),
+)
+
+/**
+ * "Is this mock truck of the asked-for vehicle type" — the one predicate every
+ * mock branch that takes a `vehicleType` goes through.
+ *
+ * «Մանիպուլյատոր» is a union of the vehicle type and the equipment checkbox
+ * (`hasManipulator`), which is how the backend answers it too. There are now
+ * three callers — the country-wide landing page and the two geo listings — and
+ * a second copy of that `if` is how one of them ends up disagreeing with the
+ * API about the one type where disagreement is possible.
+ */
+function mockMatchesVehicleType(
+  truck: { vehicle: { type: string; manipulator: boolean } },
+  vehicleType: VehicleType,
+): boolean {
+  return vehicleType === VehicleType.Manipulator
+    ? hasManipulator(truck.vehicle)
+    : truck.vehicle.type === vehicleType
+}
+
+/**
+ * The mock fleet a geo listing should filter, given what it was asked for.
+ *
+ * Naming a type lifts the landing-page-only exclusion (see
+ * `SPECIALIST_VEHICLE_TYPES`), so `/manipulator/kotayk` starts from the WHOLE
+ * mock fleet and narrows by type, while plain `/regions/kotayk` starts from
+ * the general one. Getting this backwards empties the geo pages in mock mode
+ * and nowhere else, which is the hardest kind of bug to notice.
+ */
+function mockFleetFor(vehicleType?: VehicleType) {
+  if (!vehicleType) return generalMockTowTrucks
+  return mockTowTrucks.filter((truck) => mockMatchesVehicleType(truck, vehicleType))
 }
 
 const by24Hours = (a: TowTruckCard, b: TowTruckCard): number =>
@@ -123,7 +179,7 @@ export const towTrucksService = {
    */
   getCoverage(): Promise<TowTruckCoverage[]> {
     if (isApiEnabled()) return towTruckRepository.getCoverage()
-    return mockRequest(() => mockTowTrucks.map(toMockCoverage))
+    return mockRequest(() => generalMockTowTrucks.map(toMockCoverage))
   },
 
   getBySlug(slug: string): Promise<TowTruck | null> {
@@ -133,12 +189,14 @@ export const towTrucksService = {
 
   getByCitySlug(citySlug: string): Promise<TowTruckCard[]> {
     if (isApiEnabled()) return towTruckRepository.getByCity(citySlug)
-    return mockRequest(() => mockTowTrucks.filter((truck) => servesCity(truck, citySlug)))
+    return mockRequest(() => generalMockTowTrucks.filter((truck) => servesCity(truck, citySlug)))
   },
 
   getByDistrictSlug(districtSlug: string): Promise<TowTruckCard[]> {
     if (isApiEnabled()) return towTruckRepository.getByDistrict(districtSlug)
-    return mockRequest(() => mockTowTrucks.filter((truck) => servesDistrict(truck, districtSlug)))
+    return mockRequest(() =>
+      generalMockTowTrucks.filter((truck) => servesDistrict(truck, districtSlug)),
+    )
   },
 
   /**
@@ -147,10 +205,10 @@ export const towTrucksService = {
    * longer a full in-memory list to derive them from — the counters next to
    * them come from the much smaller coverage endpoint instead.
    */
-  async getYerevanTowTrucks(): Promise<TowTruckCard[]> {
+  async getYerevanTowTrucks(vehicleType?: VehicleType): Promise<TowTruckCard[]> {
     const trucks = isApiEnabled()
-      ? await towTruckRepository.getYerevan()
-      : await mockRequest(() => mockTowTrucks.filter(servesYerevan))
+      ? await towTruckRepository.getYerevan(vehicleType)
+      : await mockRequest(() => mockFleetFor(vehicleType).filter(servesYerevan))
     return [...trucks].sort((a, b) => Number(isBasedInYerevan(b)) - Number(isBasedInYerevan(a)))
   },
 
@@ -163,16 +221,15 @@ export const towTrucksService = {
    * would make the mock list and the real list disagree about the one vehicle
    * type where that is possible, which is precisely the page most likely to be
    * checked against mocks.
+   *
+   * The one list branch that still reads `mockTowTrucks` rather than
+   * `generalMockTowTrucks`. Naming a type is exactly what lifts the
+   * landing-page-only exclusion — see `SPECIALIST_VEHICLE_TYPES` — and
+   * filtering it out here would empty both landing pages.
    */
   getByVehicleType(vehicleType: VehicleType): Promise<TowTruckCard[]> {
     if (isApiEnabled()) return towTruckRepository.getByVehicleType(vehicleType)
-    return mockRequest(() =>
-      mockTowTrucks.filter((truck) =>
-        vehicleType === VehicleType.Manipulator
-          ? hasManipulator(truck.vehicle)
-          : truck.vehicle.type === vehicleType,
-      ),
-    )
+    return mockRequest(() => mockFleetFor(vehicleType))
   },
 
   /**
@@ -180,17 +237,20 @@ export const towTrucksService = {
    */
   getByZoneSlug(zoneSlug: string): Promise<TowTruckCard[]> {
     if (isApiEnabled()) return towTruckRepository.getByZone(zoneSlug)
-    return mockRequest(() => mockTowTrucks.filter((truck) => servesZone(truck, zoneSlug)))
+    return mockRequest(() => generalMockTowTrucks.filter((truck) => servesZone(truck, zoneSlug)))
   },
 
-  async getByRegionSlug(regionSlug: string): Promise<TowTruckCard[]> {
+  async getByRegionSlug(regionSlug: string, vehicleType?: VehicleType): Promise<TowTruckCard[]> {
     const trucks = isApiEnabled()
       ? await towTruckRepository.getByRegion(
           regionSlug,
           getRegionCitySlugs(regionSlug),
           getRegionServiceZoneSlugs(regionSlug),
+          vehicleType,
         )
-      : await mockRequest(() => mockTowTrucks.filter((truck) => servesRegion(truck, regionSlug)))
+      : await mockRequest(() =>
+          mockFleetFor(vehicleType).filter((truck) => servesRegion(truck, regionSlug)),
+        )
     return [...trucks].sort(
       (a, b) => Number(isBasedInRegion(b, regionSlug)) - Number(isBasedInRegion(a, regionSlug)),
     )
@@ -205,7 +265,7 @@ export const towTrucksService = {
    */
   async getFeatured(limit = 6): Promise<TowTruckCard[]> {
     if (isApiEnabled()) return towTruckRepository.getFeatured()
-    return mockRequest(() => [...mockTowTrucks].sort(by24Hours).slice(0, limit))
+    return mockRequest(() => [...generalMockTowTrucks].sort(by24Hours).slice(0, limit))
   },
 
   /** Trucks serving the same base location, excluding the truck itself */

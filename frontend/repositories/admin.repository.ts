@@ -21,12 +21,26 @@ export interface AdminRegistrationRequest {
   capacityRange: string
   platformLengthM?: number
   platformWidthM?: number
+  /** The specialist technical answers — absent for an ordinary evacuator */
+  craneCapacityTons?: number
+  craneReachM?: number
+  maxLoadTons?: number
+  platformLoadHeightCm?: number
   winch: boolean
   manipulator: boolean
   wheelSkates: boolean
+  /**
+   * The driver's CLAIM to «Ծանր տեխնիկայի տեղափոխում» — optional because every
+   * request filed before the question existed carries none, which is not the
+   * same as a driver answering "no".
+   */
+  heavyEquipment?: boolean
+  /** «Ամբողջ Հայաստան» — same optionality, same reason */
+  servesAllArmenia?: boolean
   workingHoursText?: string
-  /** Up to 2 marzes the driver picked at registration */
+  /** Up to 2 marzes for an ordinary evacuator, unlimited for a specialist */
   regionSlugs: string[]
+  /** Empty when the driver answered «Ամբողջ Հայաստան» */
   citySlugs: string[]
   services: string[]
   priceCityCallout?: number
@@ -84,10 +98,16 @@ export interface ApproveRegistrationPayload extends Omit<RegistrationPayload, 'i
    * `citySlugs` cannot carry — the backend has no geography to resolve them
    * with, so whatever is sent here is what a public profile shows forever.
    *
-   * Built FROM `citySlugs` on the review page: one picker on screen produces
-   * both fields, so they cannot describe different sets.
+   * Built by `buildServiceAreas()` on the review page from whichever coverage
+   * question the driver was asked, so the payload and the picker on screen
+   * cannot describe different sets.
+   *
+   * `region` is the newest member and the narrowest: only an uncapped driver
+   * (`hasUncappedCoverage`) can produce one, and only the two specialist
+   * listings match it. See `ServiceAreaDto` on the backend, which is the
+   * enforcing copy of this union.
    */
-  serviceAreas: { slug: string; name: string; type: 'city' | 'district' | 'route' }[]
+  serviceAreas: { slug: string; name: string; type: 'city' | 'district' | 'route' | 'region' }[]
 }
 
 /**

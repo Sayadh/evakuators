@@ -98,6 +98,27 @@ onMounted(restore)
 const busy = computed(() => locating.value || searching.value)
 const shownError = computed(() => geolocationError.value || searchError.value)
 
+/**
+ * Wraps whichever of the three post-press states (empty result, result list,
+ * or nothing yet) is actually mounted, so there is one stable element to
+ * scroll to regardless of which branch rendered — a ref placed on the result
+ * list alone would be null on an empty answer, and the empty state deserves
+ * the same "the answer is here" scroll as a full list does.
+ */
+const resultsAnchor = ref<HTMLElement | null>(null)
+
+// Fires once the button's press actually resolves into something to look at
+// — not on `busy`, so a visitor is not yanked down the page before there is
+// anything there yet. `nextTick` waits for the v-if branch to have rendered,
+// since scrolling to the anchor the same tick it appears would measure the
+// page before the new content exists in it.
+watch(result, (value) => {
+  if (value === null) return
+  nextTick(() => {
+    resultsAnchor.value?.scrollIntoView({ block: 'start' })
+  })
+})
+
 /** Asked at least once and got an empty list back — a different screen from the initial one */
 const hasEmptyResult = computed(() => result.value !== null && result.value.results.length === 0)
 
@@ -214,74 +235,85 @@ async function findNearest(): Promise<void> {
 
     <p v-if="shownError" class="nearest-page__error" role="alert">{{ shownError }}</p>
 
-    <div v-if="busy" class="nearest-page__results">
-      <LoadingSkeleton variant="card" :count="3" />
+    <!--
+      One wrapper around all three post-press states, so there is a single
+      stable element to scroll to no matter which branch rendered — a ref on
+      the result list alone would be null on an empty answer, and the empty
+      state deserves the same "the answer is here" scroll as a full list
+      does. Not on the skeleton's own scroll: the watcher only fires once
+      `result` actually resolves (see the script), so a visitor is not
+      yanked down the page before there is anything there yet.
+    -->
+    <div ref="resultsAnchor" class="nearest-page__results-anchor">
+      <div v-if="busy" class="nearest-page__results">
+        <LoadingSkeleton variant="card" :count="3" />
+      </div>
+
+      <!-- Asked, and there is genuinely nobody within range. Distinct from an
+           error: nothing went wrong, the answer is just empty — so the copy says
+           so and immediately offers the search that does have answers. -->
+      <EmptyState
+        v-else-if="hasEmptyResult"
+        title="Ձեր մոտակայքում էվակուատոր չի գտնվել"
+        description="Հնարավոր է՝ այս տարածքում դեռ գրանցված վարորդ չկա, կամ նրանք դեռ չեն նշել իրենց տեղադիրքը։ Փորձեք գտնել վարորդ ըստ մարզի կամ քաղաքի։"
+        icon="truck"
+      />
+
+      <template v-else-if="result">
+        <div class="nearest-page__summary">
+          <h2 class="nearest-page__results-title">Ձեզ ամենամոտ էվակուատորները</h2>
+          <!-- Shown only for a remembered list. A visitor looking at drivers
+               "near me" is entitled to know the answer was computed a while ago
+               and from where they stood then — without it, an hour-old list is
+               indistinguishable from a live one. -->
+          <p v-if="servedFromCache && cachedAtLabel" class="nearest-page__disclaimer">
+            <AppIcon name="clock" :size="16" />
+            <span>
+              Ցուցակը կազմվել է {{ cachedAtLabel }}-ին՝ այն պահի Ձեր տեղադրության հիման վրա։
+            </span>
+          </p>
+          <!-- The honesty line, and the reason it is not fine print: every number
+               on this page is measured from the parking spot a driver typed into
+               their profile, not from where their truck is right now. A visitor
+               who assumes otherwise will plan around a figure that was never
+               promised. -->
+          <p class="nearest-page__disclaimer">
+            <AppIcon name="info" :size="16" />
+            <span>
+              Հեռավորությունը հաշվարկված է վարորդի նշած հիմնական կայանման վայրից, ոչ թե իրական
+              ժամանակի GPS դիրքից։ Ճշգրիտ ժամանակը ճշտեք վարորդի հետ զանգով։
+            </span>
+          </p>
+          <!-- Both branches explain the same missing numbers, and the reason is
+               what differs. Telling someone the routing service is down when it
+               is simply their third search of the day would be a false outage
+               report; telling someone their allowance is spent when the service
+               is actually down would be a lie they cannot act on. -->
+          <p v-if="!result.routed" class="nearest-page__disclaimer">
+            <AppIcon v-if="degradedByAllowance" name="info" :size="16" />
+            <AppIcon v-else name="alert" :size="16" />
+            <span v-if="degradedByAllowance">
+              Ցուցադրվում է ուղիղ գծով հեռավորությունը, քանի որ այսօրվա մանրամասն որոնումներն
+              օգտագործված են։ Ցանկը լրիվ է՝ սրանք Ձեզ ամենամոտ վարորդներն են, պարզապես առանց
+              ճանապարհային հեռավորության և ժամանակի։ Իրական ճանապարհը սովորաբար ավելի երկար է։
+            </span>
+            <span v-else>
+              Ճանապարհային հեռավորության ծառայությունն այս պահին հասանելի չէ, ուստի ցուցադրվում է
+              ուղիղ գծով հեռավորությունը։ Իրական ճանապարհը սովորաբար ավելի երկար է։
+            </span>
+          </p>
+        </div>
+
+        <div class="nearest-page__results">
+          <NearestResultCard
+            v-for="item in result.results"
+            :key="item.towTruck.id"
+            :result="item"
+            :routed="result.routed"
+          />
+        </div>
+      </template>
     </div>
-
-    <!-- Asked, and there is genuinely nobody within range. Distinct from an
-         error: nothing went wrong, the answer is just empty — so the copy says
-         so and immediately offers the search that does have answers. -->
-    <EmptyState
-      v-else-if="hasEmptyResult"
-      title="Ձեր մոտակայքում էվակուատոր չի գտնվել"
-      description="Հնարավոր է՝ այս տարածքում դեռ գրանցված վարորդ չկա, կամ նրանք դեռ չեն նշել իրենց տեղադիրքը։ Փորձեք գտնել վարորդ ըստ մարզի կամ քաղաքի։"
-      icon="truck"
-    />
-
-    <template v-else-if="result">
-      <div class="nearest-page__summary">
-        <h2 class="nearest-page__results-title">Ձեզ ամենամոտ էվակուատորները</h2>
-        <!-- Shown only for a remembered list. A visitor looking at drivers
-             "near me" is entitled to know the answer was computed a while ago
-             and from where they stood then — without it, an hour-old list is
-             indistinguishable from a live one. -->
-        <p v-if="servedFromCache && cachedAtLabel" class="nearest-page__disclaimer">
-          <AppIcon name="clock" :size="16" />
-          <span>
-            Ցուցակը կազմվել է {{ cachedAtLabel }}-ին՝ այն պահի Ձեր տեղադրության հիման վրա։
-          </span>
-        </p>
-        <!-- The honesty line, and the reason it is not fine print: every number
-             on this page is measured from the parking spot a driver typed into
-             their profile, not from where their truck is right now. A visitor
-             who assumes otherwise will plan around a figure that was never
-             promised. -->
-        <p class="nearest-page__disclaimer">
-          <AppIcon name="info" :size="16" />
-          <span>
-            Հեռավորությունը հաշվարկված է վարորդի նշած հիմնական կայանման վայրից, ոչ թե իրական
-            ժամանակի GPS դիրքից։ Ճշգրիտ ժամանակը ճշտեք վարորդի հետ զանգով։
-          </span>
-        </p>
-        <!-- Both branches explain the same missing numbers, and the reason is
-             what differs. Telling someone the routing service is down when it
-             is simply their third search of the day would be a false outage
-             report; telling someone their allowance is spent when the service
-             is actually down would be a lie they cannot act on. -->
-        <p v-if="!result.routed" class="nearest-page__disclaimer">
-          <AppIcon v-if="degradedByAllowance" name="info" :size="16" />
-          <AppIcon v-else name="alert" :size="16" />
-          <span v-if="degradedByAllowance">
-            Ցուցադրվում է ուղիղ գծով հեռավորությունը, քանի որ այսօրվա մանրամասն որոնումներն
-            օգտագործված են։ Ցանկը լրիվ է՝ սրանք Ձեզ ամենամոտ վարորդներն են, պարզապես առանց
-            ճանապարհային հեռավորության և ժամանակի։ Իրական ճանապարհը սովորաբար ավելի երկար է։
-          </span>
-          <span v-else>
-            Ճանապարհային հեռավորության ծառայությունն այս պահին հասանելի չէ, ուստի ցուցադրվում է
-            ուղիղ գծով հեռավորությունը։ Իրական ճանապարհը սովորաբար ավելի երկար է։
-          </span>
-        </p>
-      </div>
-
-      <div class="nearest-page__results">
-        <NearestResultCard
-          v-for="item in result.results"
-          :key="item.towTruck.id"
-          :result="item"
-          :routed="result.routed"
-        />
-      </div>
-    </template>
 
     <!-- Always present, in every state: it is the fallback the error copy keeps
          pointing at, and a visitor who has just been refused a permission
@@ -354,6 +386,14 @@ async function findNearest(): Promise<void> {
 
   &__results-title {
     margin: 0 0 var(--space-3);
+  }
+
+  // The scroll target itself (see the script's `resultsAnchor`). The offset
+  // keeps the sticky header from covering the top of whatever just appeared
+  // — without it, `scrollIntoView` would land the anchor exactly under the
+  // header rather than just below it.
+  &__results-anchor {
+    scroll-margin-top: calc(var(--header-height) + var(--space-3));
   }
 
   &__disclaimer {

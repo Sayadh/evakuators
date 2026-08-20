@@ -28,6 +28,43 @@
 
 import { BadRequestException } from '@nestjs/common'
 import type { ServiceAreaDto } from './dto/service-area.dto'
+import { derivesHeavyEquipment, derivesManipulator } from './vehicle-types'
+
+/**
+ * Who the coverage cap is NOT written for.
+ *
+ * The 2/3/5-area budget answers one question: a roadside evacuator that claims
+ * the whole country is useless to the person standing next to a broken car,
+ * because the driver 90 km away will not come. That reasoning does not survive
+ * contact with a crane truck. A manipulator or a machinery transporter is
+ * dispatched against a **booked job** with a price agreed in advance; driving
+ * Yerevan → Kapan for it is the normal case, not an empty promise. There are
+ * also only a handful of these trucks in the country, so capping them removes
+ * real supply from a page that may otherwise be empty.
+ *
+ * Uses the two union predicates, NOT `isSpecialistVehicleType`, and the
+ * difference is the same one drawn all through this module: the unions ask
+ * "can this truck do the specialist job", which is exactly who the exemption is
+ * for. A flatbed carrying a crane travels for the same booked jobs. What it
+ * must NOT do is lose its city-page listing over it — and it does not, because
+ * general discovery still excludes on the TYPE alone (see
+ * `SPECIALIST_VEHICLE_TYPES`), so an exempt flatbed keeps every ordinary
+ * listing it had while gaining an uncapped reach for the specialist pages.
+ *
+ * MANUAL SYNC POINT: mirrored by `hasUncappedCoverage` in
+ * `frontend/constants/serviceAreaLimits.ts`, which is what decides whether the
+ * picker offers the choice at all. This copy is the boundary.
+ */
+export function hasUncappedCoverage(vehicle: {
+  vehicleType: string
+  manipulator?: boolean
+  heavyEquipment?: boolean
+}): boolean {
+  return (
+    derivesManipulator(vehicle.vehicleType, vehicle.manipulator ?? false) ||
+    derivesHeavyEquipment(vehicle.vehicleType, vehicle.heavyEquipment ?? false)
+  )
+}
 
 /** Budget when exactly one marz is chosen and Yerevan is not among them */
 export const MAX_AREAS_ONE_REGION = 3
@@ -71,7 +108,24 @@ function tooManyMessage(max: number): string {
 export function assertServiceAreasWithinLimit(
   areas: readonly ServiceAreaDto[],
   regionSlugs?: readonly string[],
+  /**
+   * The truck the areas belong to, when the caller knows it.
+   *
+   * Optional so the older call shape keeps working and keeps applying the cap —
+   * "unknown vehicle" degrading to "capped" is the safe direction, since the
+   * exemption is a widening. Every caller in this repo passes it.
+   */
+  vehicle?: { vehicleType: string; manipulator?: boolean; heavyEquipment?: boolean },
 ): void {
+  // A crane truck's coverage is not a claim about how fast it can reach a
+  // roadside — see `hasUncappedCoverage`. Nothing else about the selection
+  // changes: the base still has to be one of the served areas
+  // (`placement.ts`), which is what stops "everywhere" from meaning "nowhere".
+  if (vehicle && hasUncappedCoverage(vehicle)) return
+
+  // `region` entries only ever come from an uncapped driver (the picker offers
+  // them nowhere else), so they never reach the counting below. Counted like a
+  // city if one ever did, which is the conservative reading.
   const counted = areas.filter((area) => area.type !== 'district').length
 
   // Yerevan is readable from the payload alone: only Yerevan has districts.
@@ -130,7 +184,41 @@ export function assertServiceAreasWithinLimit(
 export function assertRegistrationAreasWithinLimit(
   regionSlugs: readonly string[],
   citySlugs: readonly string[],
+  /**
+   * The truck, and whether it answered «Ամբողջ Հայաստան».
+   *
+   * Both halves of the "at least one city, at most 2 marzes" rule moved here
+   * out of `RegistrationProfileDto`, because both stopped being true of every
+   * driver at once and a per-property decorator cannot see a sibling field.
+   * The DTO keeps `MAX_SLUG_ARRAY_SIZE` as the payload guard it always was.
+   */
+  vehicle?: {
+    vehicleType: string
+    manipulator?: boolean
+    heavyEquipment?: boolean
+    servesAllArmenia?: boolean
+  },
 ): void {
+  const uncapped = vehicle !== undefined && hasUncappedCoverage(vehicle)
+
+  if (uncapped) {
+    // «Ամբողջ Հայաստան» is a complete answer on its own — there is no list to
+    // cap and none to require. «Ընտրված մարզերում» still has to name at least
+    // one place, or the profile says nothing about where the truck works.
+    if (!vehicle?.servesAllArmenia && regionSlugs.length === 0) {
+      throw new BadRequestException('Ընտրեք առնվազն մեկ մարզ')
+    }
+    return
+  }
+
+  if (regionSlugs.length > MAX_REGIONS) {
+    throw new BadRequestException(`Կարող եք ընտրել առավելագույնը ${MAX_REGIONS} մարզ`)
+  }
+
+  if (citySlugs.length === 0) {
+    throw new BadRequestException('Ընտրեք առնվազն մեկ քաղաք/շրջան')
+  }
+
   const yerevanSelected = regionSlugs.includes(YEREVAN_REGION_SLUG)
   const otherRegions = regionSlugs.filter((slug) => slug !== YEREVAN_REGION_SLUG).length
 

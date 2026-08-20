@@ -14,11 +14,14 @@ import { sortTowTrucks } from '~/utils/towTruckFilters'
  * everyone below them never called — so never reviewed, so never moved. The
  * ordering was quietly deciding who got work.
  *
- * Two coarse groups still decide something (based here, then rating band), and
- * inside a group the order is shuffled. These tests are about the properties
- * that make that safe: the shuffle is uniform enough to be fair, reproducible
- * enough to survive hydration, and never applied where a customer asked for a
- * specific order.
+ * Most listings still keep one coarse group — a half-point rating band — and
+ * shuffle within it (`sortTowTrucks`'s default `tiered: true`). The city and
+ * district search pages are the one exception: `tiered: false` drops the band
+ * too, so on those two pages the order is a flat shuffle with rating playing
+ * no part at all. These tests are about the properties that make both modes
+ * safe: the shuffle is uniform enough to be fair, reproducible enough to
+ * survive hydration, and never applied where a customer asked for a specific
+ * order.
  */
 
 function truck(id: number, overrides: Partial<TowTruckCard> = {}): TowTruckCard {
@@ -90,11 +93,11 @@ describe('seededShuffle', () => {
   })
 })
 
-describe('the Recommended order', () => {
+describe('the Recommended order, tiered (every listing except the search pages)', () => {
   it('shuffles equally-placed drivers instead of ranking them', () => {
     const orders = new Set(
       [1, 2, 3, 4, 5].map((seed) =>
-        sortTowTrucks(TEN, SortOption.Recommended, undefined, seed)
+        sortTowTrucks(TEN, SortOption.Recommended, seed)
           .map((item) => item.id)
           .join(','),
       ),
@@ -103,27 +106,13 @@ describe('the Recommended order', () => {
     expect(orders.size).toBeGreaterThan(1)
   })
 
-  it('still puts locally-based drivers first, every time', () => {
-    // The tier that survives. Someone searching a town means the drivers who
-    // work there, then everyone else who merely covers it.
-    const local = truck(1, { location: { name: 'Վարդենիս', citySlug: 'vardenis' } as never })
-    const outsiders = [2, 3, 4, 5].map((id) => truck(id))
-
-    for (let seed = 0; seed < 50; seed += 1) {
-      const sorted = sortTowTrucks([...outsiders, local], SortOption.Recommended, {
-        citySlug: 'vardenis',
-      }, seed)
-      expect(sorted[0]!.id).toBe(1)
-    }
-  })
-
   it('keeps a badly-rated driver below the rest, every time', () => {
     // The band is coarse on purpose, but it is not nothing: 8 × 3.2 smooths to
     // 3.50 and lands a band below everyone else.
     const bad = truck(99, { rating: { average: 3.2, count: 8 } as never })
 
     for (let seed = 0; seed < 50; seed += 1) {
-      const sorted = sortTowTrucks([bad, ...TEN], SortOption.Recommended, undefined, seed)
+      const sorted = sortTowTrucks([bad, ...TEN], SortOption.Recommended, seed)
       expect(sorted.at(-1)!.id).toBe(99)
     }
   })
@@ -136,7 +125,7 @@ describe('the Recommended order', () => {
     const wins = new Set<number>()
 
     for (let seed = 0; seed < 200; seed += 1) {
-      wins.add(sortTowTrucks([...TEN, fresh], SortOption.Recommended, undefined, seed)[0]!.id)
+      wins.add(sortTowTrucks([...TEN, fresh], SortOption.Recommended, seed)[0]!.id)
     }
 
     expect(wins.has(50)).toBe(true)
@@ -160,10 +149,46 @@ describe('the Recommended order', () => {
     ]
 
     for (let seed = 0; seed < 20; seed += 1) {
-      expect(sortTowTrucks(priced, SortOption.Price, undefined, seed).map((t) => t.id)).toEqual([
-        2, 3, 1,
-      ])
+      expect(sortTowTrucks(priced, SortOption.Price, seed).map((t) => t.id)).toEqual([2, 3, 1])
     }
+  })
+})
+
+describe('the Recommended order, flat (city and district search pages)', () => {
+  // `applyTowTruckFilters` is what these two pages actually call; `tiered:
+  // false` on `sortTowTrucks` directly is exercised here because it is the
+  // one line that decides the behaviour, and because `applyTowTruckFilters`
+  // also filters, which would obscure the ordering assertion below.
+
+  it('ignores rating entirely — a badly-rated driver is not pinned to the bottom', () => {
+    const bad = truck(99, { rating: { average: 1, count: 40 } as never })
+    const great = TEN.map((item) => ({ ...item, rating: { average: 5, count: 40 } }))
+    const winners = new Set<number>()
+
+    for (let seed = 0; seed < 200; seed += 1) {
+      winners.add(sortTowTrucks([bad, ...great], SortOption.Recommended, seed, false)[0]!.id)
+    }
+
+    // If rating still decided anything, 99 could never win.
+    expect(winners.has(99)).toBe(true)
+  })
+
+  it('is exactly the seeded shuffle, with no re-sort on top of it', () => {
+    for (const seed of [1, 2, 3]) {
+      expect(sortTowTrucks(TEN, SortOption.Recommended, seed, false)).toEqual(
+        seededShuffle(TEN, seed),
+      )
+    }
+  })
+
+  it('still never shuffles the price sort', () => {
+    const priced = [
+      truck(1, { startingPrice: 5000 } as never),
+      truck(2, { startingPrice: 3000 } as never),
+      truck(3, { startingPrice: 4000 } as never),
+    ]
+
+    expect(sortTowTrucks(priced, SortOption.Price, 7, false).map((t) => t.id)).toEqual([2, 3, 1])
   })
 })
 

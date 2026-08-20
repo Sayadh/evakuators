@@ -34,14 +34,6 @@ withDefaults(defineProps<Props>(), { variant: 'banner' })
        false: this block is how a visitor finds out the feature is coming, and
        the page it links to says so plainly. See constants/features.ts. -->
   <div class="nearest-cta" :class="`nearest-cta--${variant}`">
-    <div v-if="variant === 'banner'" class="nearest-cta__text">
-      <p class="nearest-cta__title">Չգիտե՞ք որ էվակուատորն է Ձեզ ամենամոտը</p>
-      <p class="nearest-cta__subtitle">
-        Թույլատրեք տեղադրության որոշումը, և մենք ցույց կտանք Ձեզ ամենամոտ գտնվող վարորդներին՝
-        հեռավորությամբ և մոտավոր ժամանակով։
-      </p>
-    </div>
-
     <AppButton to="/evakuator" variant="accent" :size="variant === 'banner' ? 'lg' : 'md'" :block="variant === 'inline'">
       <AppIcon name="map-pin" :size="18" />
       Գտնել մոտակա էվակուատորները
@@ -68,57 +60,31 @@ withDefaults(defineProps<Props>(), { variant: 'banner' })
     text-align: center;
   }
 
+  // `lg` is 1.05rem (~16.8px) by default — too large once the button is the
+  // only thing in a phone-width row. Scoped to mobile only; the `min-width:
+  // 768px` block below already returns the button to its natural size.
+  @media (max-width: 767px) {
+    :deep(.app-button) {
+      font-size: 14px;
+    }
+  }
+
+  // Just the button now (see the template comment on why the text is gone) —
+  // no more white card around it, so this only has to center the button.
   &--banner {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--space-4);
-    padding: var(--space-5);
-    border-radius: var(--radius-lg);
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    box-shadow: var(--shadow-sm);
+    justify-content: center;
 
-    // Text and button side by side once there is room; stacked on a phone, where
-    // a button squeezed next to two lines of copy becomes a tap target nobody
-    // hits on the first try.
     @media (min-width: 768px) {
-      flex-direction: row;
-      align-items: center;
-      justify-content: space-between;
-      gap: var(--space-5);
-
-      // Side by side now, so the button goes back to its natural width and one
-      // line. It is `__text` that gives way when the row gets tight — it has
-      // `min-width: 0` for exactly that, and shrinking a paragraph is better
-      // than shrinking the thing being clicked.
       :deep(.app-button) {
         width: auto;
         white-space: nowrap;
-        flex-shrink: 0;
       }
     }
   }
 
   &--inline {
     display: block;
-  }
-
-  &__text {
-    min-width: 0;
-  }
-
-  &__title {
-    margin: 0 0 var(--space-1);
-    font-size: 1.05rem;
-    font-weight: 700;
-  }
-
-  &__subtitle {
-    margin: 0;
-    font-size: 0.9rem;
-    line-height: 1.55;
-    color: var(--color-text-secondary);
   }
 }
 </style>

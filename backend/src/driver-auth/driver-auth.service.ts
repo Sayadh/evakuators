@@ -1,13 +1,16 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
   UnauthorizedException,
+  forwardRef,
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { JwtService } from '@nestjs/jwt'
 import bcrypt from 'bcrypt'
+import { PrivacyConsentService } from '../privacy-consent/privacy-consent.service'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
 import { BCRYPT_ROUNDS, generateTemporaryPassword } from './driver-password'
 
@@ -34,6 +37,23 @@ export interface DriverSession {
    * `GET /my/tow-truck` so the frontend knows before it renders anything.
    */
   mustChangePassword: boolean
+  /**
+   * True when this driver has no live consent at the current policy version.
+   *
+   * Returned from login for exactly the same reason `mustChangePassword` is:
+   * the dashboard has to know before it renders anything, and a driver who owes
+   * a consent must not see a flash of the profile they cannot yet manage.
+   *
+   * It is true for every driver approved before this feature existed — ~100 of
+   * them — because nothing was backfilled and nothing should have been. See
+   * `DriverPrivacyConsent` in schema.prisma.
+   *
+   * The frontend caches this in `localStorage` alongside the token, so it is
+   * NOT the last word: a version bump, or a consent given in another tab, would
+   * leave the cached copy stale. `GET /my/tow-truck/privacy-consent` is
+   * authoritative and the dashboard re-reads it on load.
+   */
+  requiresPrivacyConsent: boolean
 }
 
 /**
@@ -73,6 +93,12 @@ export class DriverAuthService {
   constructor(
     private readonly towTrucksRepository: TowTrucksRepository,
     private readonly jwt: JwtService,
+    // forwardRef: PrivacyConsentModule needs DriverJwtGuard from this module,
+    // and this service needs its status query — a declared cycle rather than a
+    // second copy of "is there a live consent at the current version". See
+    // PrivacyConsentModule.
+    @Inject(forwardRef(() => PrivacyConsentService))
+    private readonly privacyConsent: PrivacyConsentService,
     config: ConfigService,
   ) {
     this.secret = config.getOrThrow<string>('driverJwtSecret')
@@ -96,6 +122,13 @@ export class DriverAuthService {
       )
     }
 
+    // Read AFTER authentication succeeded, never before: it is one more query,
+    // and running it on the failure path would both waste it and make a failed
+    // login measurably slower for a driver who exists than for one who does not
+    // — reintroducing, by the back door, the timing difference DUMMY_HASH above
+    // exists to remove.
+    const requiresPrivacyConsent = await this.privacyConsent.requiresConsent(towTruck.id)
+
     return {
       token: await this.jwt.signAsync(
         { sub: towTruck.id },
@@ -104,6 +137,7 @@ export class DriverAuthService {
       towTruckId: towTruck.id,
       slug: towTruck.slug,
       mustChangePassword: towTruck.mustChangePassword,
+      requiresPrivacyConsent,
     }
   }
 

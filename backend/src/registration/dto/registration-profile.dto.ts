@@ -3,7 +3,6 @@ import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
-  IsEmail,
   IsInt,
   IsNumber,
   IsOptional,
@@ -32,15 +31,19 @@ export const WORKING_HOURS_PATTERN = /^\d{2}:\d{2}\s[–-]\s\d{2}:\d{2}$/
  *
  * That distinction is not academic — it shipped as a bug. The first version of
  * this cap was 40, chosen as "comfortably above the whole taxonomy" without
- * counting it. The taxonomy is 45 slugs, and every category in the
+ * counting it. The taxonomy was 45 slugs, and every category in the
  * registration form has a "select all" button, so any driver who ticked
  * everything was rejected with an untranslated
  * "services must contain no more than 40 elements" and could not register at
  * all. A cap sized to today's data turns tomorrow's new option into an outage.
  *
- * Current reachable maxima, for reference: services 45
- * (frontend/constants/services.ts), citySlugs 19 in practice and 58 in the
- * absolute worst case (46 cities + 12 districts).
+ * Current reachable maxima, for reference — and note the first number has moved
+ * three times since, which is exactly the point: services **52**
+ * (frontend/constants/services.ts; the specialist lists added eight slugs, and
+ * `night-service` and `receipt-provided` were retired), citySlugs 19 in
+ * practice and 58 in the absolute worst case (46 cities + 12 districts). No
+ * driver can actually reach 52, since the specialist lists replace the general
+ * ones rather than adding to them.
  */
 export const MAX_SLUG_ARRAY_SIZE = 100
 
@@ -127,10 +130,6 @@ export class RegistrationProfileDto {
   @MaxLength(60)
   telegram?: string
 
-  @IsOptional()
-  @IsEmail({}, { message: 'Մուտքագրեք վավեր email հասցե' })
-  email?: string
-
   // Vehicle
   @IsString()
   @MinLength(2, { message: 'Մուտքագրեք մեքենայի մակնիշը' })
@@ -175,6 +174,49 @@ export class RegistrationProfileDto {
   @Max(30)
   platformWidthM?: number
 
+  /**
+   * The four specialist technical answers — «Մանիպուլյատոր» is asked the first
+   * three, «Ծանր տեխնիկայի էվակուատոր» the third and fourth. Which questions a
+   * given driver actually sees is decided entirely on the frontend
+   * (`specialistSpecFieldsFor` in `frontend/constants/vehicles.ts`).
+   *
+   * All four are `@IsOptional()` here, including `maxLoadTons`, which the form
+   * makes required for those two types. That is deliberate and it is the same
+   * call `capacityRange`'s siblings make: this DTO is also what the ADMIN
+   * review page submits, for requests filed before these questions existed and
+   * for a moderator correcting a truck whose type they are changing. A
+   * hard-required field would make every one of those unapprovable — and the
+   * only value at risk is a specification the public profile simply omits when
+   * it is missing.
+   *
+   * `capacityTons` never comes from here: `AdminService.approve` prefers
+   * `maxLoadTons` when there is one and falls back to the band, so a specialist
+   * truck filters on the figure its driver actually stated.
+   */
+  @IsOptional()
+  @IsNumber()
+  @Min(0.1)
+  @Max(200)
+  craneCapacityTons?: number
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0.5)
+  @Max(80)
+  craneReachM?: number
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0.1)
+  @Max(200)
+  maxLoadTons?: number
+
+  @IsOptional()
+  @IsNumber()
+  @Min(5)
+  @Max(400)
+  platformLoadHeightCm?: number
+
   @IsBoolean()
   winch!: boolean
 
@@ -184,6 +226,38 @@ export class RegistrationProfileDto {
   /** Wheel skates — for loading a vehicle with locked/non-rotating wheels */
   @IsBoolean()
   wheelSkates!: boolean
+
+  /**
+   * The driver's claim to «Ծանր տեխնիկայի տեղափոխում», and the moderator's
+   * verdict on it — the same field submitted twice, which is the whole point of
+   * this base class.
+   *
+   * `@IsOptional()` rather than required, unlike its three sibling booleans:
+   * those have been asked since the form existed, this one has not, so every
+   * pending request in the queue predates it. Defaulted to `false` where it is
+   * read, never here — a DTO default would make "the moderator unticked it"
+   * indistinguishable from "an old client did not send it".
+   *
+   * `TowTruck.heavyEquipment` keeps meaning "what a moderator decided": nothing
+   * a driver types here reaches a live profile without passing through this
+   * page. See `backend/src/tow-trucks/vehicle-types.ts` for why that property
+   * is the one that matters.
+   */
+  @IsOptional()
+  @IsBoolean()
+  heavyEquipment?: boolean
+
+  /**
+   * «Ամբողջ Հայաստան» — see `TowTruck.servesAllArmenia`.
+   *
+   * When true the coverage cap does not apply (`assertRegistrationAreasWithinLimit`
+   * returns early) and `citySlugs` may be empty, because there is no list to
+   * cap. `regionSlugs` and the base placement are unaffected: this says where a
+   * driver will GO, and the base still says where they ARE.
+   */
+  @IsOptional()
+  @IsBoolean()
+  servesAllArmenia?: boolean
 
   /**
    * Fully optional — a driver may leave both 24/7 unselected and this unset.
@@ -199,10 +273,25 @@ export class RegistrationProfileDto {
   workingHoursText?: string
 
   // Areas — slugs reference frontend static data
-  /** Up to 2 marzes — a driver covering e.g. Yerevan + Kotayk picks both */
+  /**
+   * The marzes a driver covers — up to 2 for an ordinary evacuator, unlimited
+   * for a crane truck or a machinery transporter.
+   *
+   * The `2` used to live here as `@ArrayMaxSize`. It moved into
+   * `assertRegistrationAreasWithinLimit`, which is the only place that knows
+   * *which* driver this is: the cap is a rule about a roadside evacuator (a
+   * listing claiming everywhere is worth nothing to someone standing next to a
+   * broken car) and it was never a rule about a manipulator driving to a
+   * booked job in Syunik. A per-property decorator cannot see `vehicleType`,
+   * so keeping it here would mean rejecting the very selection the specialist
+   * form is built to offer.
+   *
+   * `ArrayMaxSize(MAX_SLUG_ARRAY_SIZE)` stays as the payload guard it always
+   * was — see that constant for why a bound and a rule are different things.
+   */
   @IsArray()
   @ArrayMinSize(1, { message: 'Ընտրեք առնվազն մեկ մարզ' })
-  @ArrayMaxSize(2, { message: 'Կարող եք ընտրել առավելագույնը 2 մարզ' })
+  @ArrayMaxSize(MAX_SLUG_ARRAY_SIZE, { message: TOO_MANY_MESSAGE })
   @IsString({ each: true })
   @MaxLength(40, { each: true })
   regionSlugs!: string[]
@@ -218,8 +307,14 @@ export class RegistrationProfileDto {
    * and even every city and district in the country at once is 58. See
    * MAX_SLUG_ARRAY_SIZE.
    */
+  /**
+   * `ArrayMinSize` is gone for the same reason `regionSlugs`' max did: a driver
+   * who answered «Ամբողջ Հայաստան» has no city list to be non-empty, and
+   * emptiness is only wrong for the drivers who were asked for one. The rule
+   * moved to `assertRegistrationAreasWithinLimit`, which can see
+   * `servesAllArmenia`.
+   */
   @IsArray()
-  @ArrayMinSize(1, { message: 'Ընտրեք առնվազն մեկ քաղաք/շրջան' })
   @ArrayMaxSize(MAX_SLUG_ARRAY_SIZE, { message: TOO_MANY_MESSAGE })
   @IsString({ each: true })
   @MaxLength(40, { each: true })

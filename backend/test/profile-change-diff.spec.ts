@@ -24,7 +24,6 @@ const CURRENT = {
   secondaryPhone: null,
   whatsapp: '+37491000001',
   telegram: null,
-  email: null,
   vehicleBrand: 'Isuzu',
   vehicleYear: 2018,
   vehicleType: 'flatbed',
@@ -60,9 +59,7 @@ describe('diffProfile keeps only what changed', () => {
     // A clearable contact field renders null as an empty box, so a driver who
     // never touched it submits ''. Reading that as a change would put a phantom
     // line in front of a moderator on literally every save.
-    expect(isEmptyDiff(diffProfile({ companyName: '', telegram: '', email: '' }, CURRENT))).toBe(
-      true,
-    )
+    expect(isEmptyDiff(diffProfile({ companyName: '', telegram: '' }, CURRENT))).toBe(true)
   })
 
   it('does see a value actually being cleared', () => {
@@ -116,13 +113,30 @@ describe('diffProfile keeps only what changed', () => {
         phone: '+37491000009',
         isActive: false,
         isFeatured: true,
-        heavyEquipment: true,
         driverName: 'Աշոտ Ուղղված',
       },
       CURRENT,
     )
 
     expect(Object.keys(diff.changes)).toEqual(['driverName'])
+  })
+
+  it('lets a driver PROPOSE «Ծանր տեխնիկայի տեղափոխում»', () => {
+    // This field used to sit in the list above, and moving it is the one
+    // deliberate reversal in this feature — so the reasoning belongs here.
+    //
+    // The property that mattered was never "no driver may write this column".
+    // It was "no driver puts themselves on /tsanr-tehnika", and what enforced
+    // it was that the column had no driver-facing write path at all.
+    //
+    // A queued diff is a different kind of write path: it does not write. It
+    // asks, and a moderator with the whole profile and the photos in front of
+    // them decides. So the property survives — a driver can request the page,
+    // not grant themselves it — while the question finally gets asked of the
+    // person who knows the truck. Approval still runs through
+    // `MyTowTruckService.applyUpdate`, the same single write path.
+    const diff = diffProfile({ heavyEquipment: true }, CURRENT)
+    expect(Object.keys(diff.changes)).toEqual(['heavyEquipment'])
   })
 
   it('carries regionSlugs whenever coverage changes, without treating it as a change', () => {
@@ -201,14 +215,18 @@ describe('the editable allow-list', () => {
   it('excludes every admin-only and system field', () => {
     // Named individually rather than by a rule, because each one is a separate
     // decision documented elsewhere: slug is the public URL, phone is the login
-    // key, heavyEquipment is an admin's own placement decision on
-    // /tsanr-tehnika, and isActive/isFeatured are moderation state.
+    // key, and isActive/isFeatured are moderation state — a driver deciding
+    // their own listing is active is not a thing a moderator should be able to
+    // rubber-stamp by accident.
+    //
+    // `heavyEquipment` is deliberately NOT on this list any more; see the
+    // "lets a driver PROPOSE" case above for why a queued diff is a different
+    // thing from a write.
     for (const forbidden of [
       'slug',
       'phone',
       'isActive',
       'isFeatured',
-      'heavyEquipment',
       'passwordHash',
       'telegramChatId',
       'works24Hours',

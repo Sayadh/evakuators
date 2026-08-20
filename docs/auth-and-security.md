@@ -566,6 +566,93 @@ having no idea what a driver JWT is.
   Check `node -v` on the VPS before deploying an upgrade; the pinned 2.5.1 is the
   newest release that runs on the production Node.
 
+## Privacy consent
+
+Every driver must consent to the processing and publication of their personal
+data before their profile exists (new drivers) or before they can manage it
+again (the ~100 who were published before consent was asked for). The record
+lives in `DriverPrivacyConsent` — an append-only history, not a boolean.
+
+### The canonical text is the backend's, and so is the hash
+
+`backend/src/privacy-consent/privacy-consent.text.ts` holds the wording,
+`PRIVACY_POLICY_VERSION`, and a SHA-256 of both together. Every consent row
+stores that hash, which is what lets a 2026 consent still be checked against the
+2026 wording years after the file has moved on.
+
+**No consent DTO carries a hash, and none ever should.** A hash supplied by the
+caller proves only that the caller can run SHA-256; it says nothing about what
+was on their screen, and storing it would be recording an attestation to text
+nobody was shown — worse than recording nothing, because it looks like evidence.
+The version IS taken from the client, precisely so it can be *checked*: a tab
+open across a policy change is told to reload rather than consenting on behalf of
+a document it never displayed.
+
+The frontend keeps a mirror of the text so the dialog can render without a
+round-trip. That pair is a manual sync point — see CLAUDE.md, and
+`backend/test/privacy-consent-sync.spec.ts`, which fails on drift.
+
+### Re-consent is a version bump and nothing else
+
+`hasCurrentConsent` matches `policyVersion` literally, so changing the constant
+to `'1.2'` makes every stored `'1.1'` stop counting. No migration, no backfill,
+nothing deleted — the old rows remain true statements about what somebody agreed
+to on the day they agreed to it. Bump it in **both** files together.
+
+### Nobody was backfilled
+
+The migration creates an empty table and touches no existing driver. Inventing
+an `acceptedAt` for someone who never saw the dialog would fabricate the exact
+evidence this table exists to hold honestly, and would silently satisfy the check
+meant to put the dialog in front of them. `requiresPrivacyConsent` is simply "no
+live row at the current version", which is true of all of them until each one
+actually ticks the box. Asserted in `test/migrations.pglite.spec.ts`, which
+checks the migration file contains no `INSERT` or `UPDATE` at all.
+
+### Ownership is structural, not a check
+
+Every consent route lives under `/my/tow-truck/privacy-consent` and takes the
+truck id from the JWT. There is **no id anywhere in any consent payload**, so a
+request to change another driver's consent cannot be expressed — as opposed to
+being rejected by a guard that a future code path might forget.
+
+### What is stored, and what is deliberately not
+
+- `ipHash` is **HMAC**-SHA256 with a server-side secret, never the address. It
+  deviates from `AnalyticsVisitorKeyService`'s `sha256(value + pepper)` on
+  purpose: IPv4 is 2^32 values, small enough to enumerate exhaustively against
+  an unkeyed digest if both the table and the pepper leaked. A visitor id is a
+  122-bit random UUID with no such space to search.
+- `userAgent` is truncated to 512 characters — it is a client-controlled string,
+  and an unbounded column in an audit table is an invitation.
+- A missing IP is stored as `NULL` ("not captured"), never as a hash of the empty
+  string, which would give every uncaptured request one shared, real-looking
+  value.
+- **Application logs record the fact of a consent and nothing about its
+  content** — truck id and version only. No text, no hash, no IP, no
+  User-Agent. A log line is the least access-controlled artifact the system
+  produces; the consent record's whole point is living somewhere with a
+  retention policy.
+
+### Withdrawal marks, never deletes
+
+`revokedAt` is set; the row stays. Deleting the acceptance would destroy the
+record of the period during which publication *was* consented to, which is the
+fact the table exists to be able to show. A withdrawn row stops satisfying the
+live-consent query, so the driver is asked again exactly as if they had never
+consented — the honest consequence, not a punishment.
+
+### Known limits
+
+- **The dashboard block is a UI gate, not an authorisation boundary** — the same
+  caveat, and the same reasoning, as `mustChangePassword` below. A token held by
+  a driver who has not consented is still accepted by every `/my/*` route. Making
+  it a real boundary means gating `DriverJwtGuard` on the consent status and
+  exempting the consent routes themselves.
+- Consent is not required to *read* a public profile that is already published;
+  it gates the driver's own management of it. Un-publishing on withdrawal is a
+  manual admin action today.
+
 ## Throttling
 
 Global default (`ThrottlerModule.forRoot`, `app.module.ts`): 60 requests /

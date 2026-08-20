@@ -69,6 +69,22 @@ export interface AppConfig {
    */
   analyticsVisitorPepper: string
   /**
+   * HMAC key for hashing the client IP on a privacy-consent record — see
+   * `ConsentRequestContextService`.
+   *
+   * Optional in the environment for the same reason and with the same fallback
+   * as `analyticsVisitorPepper` above: an existing deployment must not fail to
+   * boot, or silently stop recording consent, because a new variable has not
+   * been set yet. Set a dedicated random value if you would rather the two
+   * concerns never share a secret.
+   *
+   * Rotating it is less destructive than rotating the analytics pepper, but not
+   * free: past `ipHash` values stop matching newly computed ones, so "same
+   * address as last time" comparisons no longer span the rotation. The consents
+   * themselves — who agreed, to what, when — are entirely unaffected.
+   */
+  privacyConsentIpSecret: string
+  /**
    * Road distance/time provider for the "nearest evacuator" search
    * (OpenRouteService — see RouteMatrixService for why that one).
    *
@@ -124,6 +140,7 @@ export default (): AppConfig => ({
   driverJwtSecret: driverJwtSecret(),
   adminJwtSecret: process.env.ADMIN_JWT_SECRET ?? '',
   analyticsVisitorPepper: process.env.ANALYTICS_VISITOR_PEPPER || driverJwtSecret(),
+  privacyConsentIpSecret: process.env.PRIVACY_CONSENT_IP_SECRET || driverJwtSecret(),
   routeMatrix: {
     apiKey: process.env.ROUTE_MATRIX_API_KEY ?? '',
     // Trailing slash stripped so the service can concatenate a path without

@@ -24,12 +24,7 @@ import { formatCoordinates } from '~/utils/coordinates'
 import { extractErrorMessage } from '~/utils/errors'
 import { formatDateNumeric } from '~/utils/formatters'
 import { armenianPhoneInputValue } from '~/utils/formatPhone'
-import {
-  cityOrDistrictLabel,
-  findCityLocation,
-  findStaticRegion,
-  YEREVAN_REGION_SLUG,
-} from '~/utils/geography'
+import { cityOrDistrictLabel, findCityLocation, regionLabel } from '~/utils/geography'
 import { composeLocationName, placementFor } from '~/utils/primaryArea'
 import { isPhone, required, validateField } from '~/utils/validators'
 
@@ -434,12 +429,6 @@ function serviceLabel(slug: string): string {
 
 function vehicleTypeLabel(slug: string): string {
   return VEHICLE_TYPE_LABELS[slug as VehicleType] ?? slug
-}
-
-/** Yerevan isn't in staticRegions (it's a pseudo-region — see CLAUDE.md), so it needs its own case */
-function regionLabel(slug: string): string {
-  if (slug === YEREVAN_REGION_SLUG) return 'Երևան'
-  return findStaticRegion(slug)?.name ?? slug
 }
 
 const formatDate = formatDateNumeric

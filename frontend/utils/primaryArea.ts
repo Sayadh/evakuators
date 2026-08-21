@@ -4,7 +4,7 @@ import {
   cityOrDistrictLabel,
   findCityLocation,
   findServiceZoneLocation,
-  findStaticRegion,
+  regionLabel,
   resolveAreaType,
   YEREVAN_REGION_SLUG,
 } from '~/utils/geography'
@@ -67,7 +67,7 @@ export function primaryRegionOptions(areas: readonly PrimaryAreaCandidate[]): Se
 
   return [...slugs].map((slug) => ({
     value: slug,
-    label: slug === YEREVAN_REGION_SLUG ? 'Երևան' : (findStaticRegion(slug)?.name ?? slug),
+    label: regionLabel(slug),
   }))
 }
 

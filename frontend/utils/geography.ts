@@ -61,6 +61,25 @@ export function findStaticRegion(regionSlug: string): Region | undefined {
   return staticRegions.find((region) => region.slug === regionSlug)
 }
 
+/**
+ * A region slug's display name, Yerevan included.
+ *
+ * `findStaticRegion` alone is not enough for a label: Yerevan is not one of
+ * the 10 marzes in `staticRegions` (it is the pseudo-region above — see the
+ * note on `YEREVAN_REGION_SLUG`), so `findStaticRegion('yerevan')` returns
+ * `undefined` and a caller that falls back to the raw slug prints the literal
+ * string "yerevan" instead of «Երևան». This happened three times
+ * independently (`buildServiceAreas`, `primaryRegionOptions`, and the admin
+ * registrations page's own `regionLabel`) before being collected here — the
+ * public-facing one, `buildServiceAreas`, is what put "yerevan" on a live
+ * profile's service-area chips for any uncapped (manipulator / heavy-duty)
+ * driver who chose Yerevan as one of their marzes.
+ */
+export function regionLabel(regionSlug: string): string {
+  if (regionSlug === YEREVAN_REGION_SLUG) return YEREVAN_LABEL
+  return findStaticRegion(regionSlug)?.name ?? regionSlug
+}
+
 export function findStaticDistrict(districtSlug: string): District | undefined {
   return staticDistricts.find((district) => district.slug === districtSlug)
 }

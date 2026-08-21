@@ -3,10 +3,10 @@ import type { ServiceArea } from '~/types/towTruck'
 import { LocationType } from '~/types/enums'
 import {
   cityOrDistrictLabel,
-  findStaticRegion,
   getRegionCities,
   getStaticDistricts,
   getStaticRegions,
+  regionLabel,
   resolveAreaType,
   YEREVAN_REGION_SLUG,
 } from './geography'
@@ -61,7 +61,10 @@ export function buildServiceAreas(input: {
       for (const slug of input.regionSlugs) {
         areas.push({
           slug,
-          name: findStaticRegion(slug)?.name ?? slug,
+          // Not `findStaticRegion(slug)?.name ?? slug` — Yerevan isn't one of
+          // the 10 marzes `findStaticRegion` searches, so that fallback would
+          // print the raw slug "yerevan" on a live profile. See `regionLabel`.
+          name: regionLabel(slug),
           type: LocationType.Region,
         })
       }

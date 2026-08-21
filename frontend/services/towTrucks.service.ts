@@ -1,6 +1,6 @@
 import { mockRequest } from './apiClient'
 import { mockTowTrucks } from '~/mocks/towTrucks'
-import { hasManipulator, isSpecialistVehicleType } from '~/constants/vehicles'
+import { hasManipulator, isSpecialistVehicleType, publicVehicleTypeCategory } from '~/constants/vehicles'
 import { isApiEnabled, towTruckRepository } from '~/repositories'
 import { LocationType, VehicleType } from '~/types/enums'
 import type {
@@ -187,15 +187,17 @@ export const towTrucksService = {
     return mockRequest(() => mockTowTrucks.find((truck) => truck.slug === slug) ?? null)
   },
 
-  getByCitySlug(citySlug: string): Promise<TowTruckCard[]> {
-    if (isApiEnabled()) return towTruckRepository.getByCity(citySlug)
-    return mockRequest(() => generalMockTowTrucks.filter((truck) => servesCity(truck, citySlug)))
+  getByCitySlug(citySlug: string, vehicleType?: VehicleType): Promise<TowTruckCard[]> {
+    if (isApiEnabled()) return towTruckRepository.getByCity(citySlug, vehicleType)
+    return mockRequest(() =>
+      mockFleetFor(vehicleType).filter((truck) => servesCity(truck, citySlug)),
+    )
   },
 
-  getByDistrictSlug(districtSlug: string): Promise<TowTruckCard[]> {
-    if (isApiEnabled()) return towTruckRepository.getByDistrict(districtSlug)
+  getByDistrictSlug(districtSlug: string, vehicleType?: VehicleType): Promise<TowTruckCard[]> {
+    if (isApiEnabled()) return towTruckRepository.getByDistrict(districtSlug, vehicleType)
     return mockRequest(() =>
-      generalMockTowTrucks.filter((truck) => servesDistrict(truck, districtSlug)),
+      mockFleetFor(vehicleType).filter((truck) => servesDistrict(truck, districtSlug)),
     )
   },
 
@@ -268,14 +270,29 @@ export const towTrucksService = {
     return mockRequest(() => [...generalMockTowTrucks].sort(by24Hours).slice(0, limit))
   },
 
-  /** Trucks serving the same base location, excluding the truck itself */
+  /**
+   * Trucks serving the same base location, excluding the truck itself.
+   *
+   * Narrowed to the same vehicle-type category the truck being viewed belongs
+   * to, for «Մանիպուլյատոր» and «Ծանր տեխնիկա» — without this, a manipulator's
+   * own profile page recommended ordinary flatbed evacuators nearby, which
+   * answers a different question than the one a visitor on that profile is
+   * asking. Plain evacuators (the general-discovery case) get no narrowing:
+   * `undefined` here means "the geo call's default", exactly as it does for
+   * `getByVehicleType`/`getByRegionSlug`.
+   *
+   * See `publicVehicleTypeCategory` for why `heavyEquipment` (the admin-set
+   * flag half of the «Ծանր տեխնիկա» union) is not, and cannot be, read here.
+   */
   async getSimilar(truck: TowTruck, limit = 3): Promise<TowTruckCard[]> {
     const { districtSlug, citySlug } = truck.location
     if (!districtSlug && !citySlug) return []
 
+    const vehicleType = publicVehicleTypeCategory(truck.vehicle)
+
     const candidates = districtSlug
-      ? await towTrucksService.getByDistrictSlug(districtSlug)
-      : await towTrucksService.getByCitySlug(citySlug as string)
+      ? await towTrucksService.getByDistrictSlug(districtSlug, vehicleType)
+      : await towTrucksService.getByCitySlug(citySlug as string, vehicleType)
 
     return candidates.filter((candidate) => candidate.id !== truck.id).slice(0, limit)
   },

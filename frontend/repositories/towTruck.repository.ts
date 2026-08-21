@@ -11,12 +11,16 @@ import { apiFetch, isNotFoundError } from './apiClient'
  * driver's contact details. Only `getBySlug` returns a full profile.
  */
 export const towTruckRepository = {
-  getByCity(citySlug: string): Promise<TowTruckCard[]> {
-    return apiFetch<TowTruckCard[]>('/tow-trucks', { query: { city: citySlug } })
+  getByCity(citySlug: string, vehicleType?: string): Promise<TowTruckCard[]> {
+    return apiFetch<TowTruckCard[]>('/tow-trucks', {
+      query: { city: citySlug, ...(vehicleType ? { vehicleType } : {}) },
+    })
   },
 
-  getByDistrict(districtSlug: string): Promise<TowTruckCard[]> {
-    return apiFetch<TowTruckCard[]>('/tow-trucks', { query: { district: districtSlug } })
+  getByDistrict(districtSlug: string, vehicleType?: string): Promise<TowTruckCard[]> {
+    return apiFetch<TowTruckCard[]>('/tow-trucks', {
+      query: { district: districtSlug, ...(vehicleType ? { vehicleType } : {}) },
+    })
   },
 
   /**

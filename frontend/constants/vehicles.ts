@@ -290,6 +290,27 @@ export function hasManipulator(vehicle: { type: string; manipulator: boolean }):
 }
 
 /**
+ * Which specialist landing page a truck's OWN vehicle belongs to, from public
+ * fields alone — `undefined` for an ordinary evacuator.
+ *
+ * Built for `TowTrucksService.getSimilar`: a manipulator's own profile page
+ * must recommend other manipulators nearby, not ordinary flatbeds, and the
+ * same for «Ծանր տեխնիկա». `heavyEquipment` (the admin-set half of that
+ * union) is not read here and cannot be — the public profile withholds it
+ * (see `TowTruckVehicle.heavyEquipment`) — so this can only ever see the
+ * `vehicleType` half; the backend still applies its full union when it
+ * narrows the candidates a caller gets back for the value returned here.
+ */
+export function publicVehicleTypeCategory(vehicle: {
+  type: string
+  manipulator: boolean
+}): VehicleType.Manipulator | VehicleType.HeavyDuty | undefined {
+  if (hasManipulator(vehicle)) return VehicleType.Manipulator
+  if (vehicle.type === VehicleType.HeavyDuty) return VehicleType.HeavyDuty
+  return undefined
+}
+
+/**
  * The vehicle types that are listed on their own landing page and nowhere else.
  *
  * «Մանիպուլյատոր» (`/manipulator`) and «Ծանր տեխնիկա» (`/tsanr-tehnika`) are

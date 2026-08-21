@@ -64,8 +64,8 @@ PROD_ENV_FILE="${PROD_ENV_FILE:-/var/www/evakuators/backend/.env}"
 STAGING_ENV_FILE="${STAGING_ENV_FILE:-$REPO_ROOT/backend/.env}"
 SAMPLE_SIZE="${1:-20}"
 
-log() { printf '%s  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"; }
-fail() { log "ERROR: $*" >&2; exit 1; }
+log() { printf '%s  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >&2; }
+fail() { log "ERROR: $*"; exit 1; }
 
 # Never print a connection string with its password in it.
 mask_url() { echo "$1" | sed -E 's#(://[^:]+:)[^@]+(@)#\1***\2#'; }

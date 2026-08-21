@@ -165,16 +165,31 @@ REGISTRATION_IDS_ARR="{${REGISTRATION_IDS_CSV:-}}"
 # order.
 columns_present_in_both() {
   local table="$1"; shift
-  local prod_cols staging_cols col out=()
+  local prod_cols staging_cols col out=() missing=()
   prod_cols=" $(psql "$PROD_URL" -Atc "SELECT string_agg(column_name, ' ') FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '$table';") "
   staging_cols=" $(psql "$STAGING_URL" -Atc "SELECT string_agg(column_name, ' ') FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '$table';") "
+
+  # A table missing entirely (not one column, but every column) means one side
+  # hasn't run that model's migration at all. Report it as the one fact it is,
+  # rather than as a wall of one-line-per-column notes.
+  if [[ "$(echo "$prod_cols" | tr -d ' ')" == "" ]]; then
+    log "  SKIPPING table \"$table\": it does not exist in PRODUCTION (that migration hasn't been applied there yet)"
+    return 0
+  fi
+  if [[ "$(echo "$staging_cols" | tr -d ' ')" == "" ]]; then
+    log "  SKIPPING table \"$table\": it does not exist in STAGING (run the migrations there first)"
+    return 0
+  fi
+
   for col in "$@"; do
     if [[ "$prod_cols" == *" $col "* && "$staging_cols" == *" $col "* ]]; then
       out+=("\"$col\"")
     else
-      log "  note: \"$table\".\"$col\" isn't in both databases yet — skipping that column for this table"
+      missing+=("$col")
     fi
   done
+  [[ ${#missing[@]} -eq 0 ]] ||
+    log "  note: \"$table\" — skipping ${#missing[@]} column(s) not present in both databases: ${missing[*]}"
   local IFS=,
   echo "${out[*]}"
 }
@@ -223,22 +238,31 @@ CONSENT_COLS="$(columns_present_in_both DriverPrivacyConsent \
 IMAGE_EXPORT_COLS="${IMAGE_LOAD_COLS//\"profileChangeRequestId\"/NULL::integer AS \"profileChangeRequestId\"}"
 
 # ── 3. Export from production ───────────────────────────────────────────────
-
-log "exporting the sampled rows"
+#
 # Plain SQL `COPY ... TO STDOUT`, not the `\copy` meta-command: `\copy` is
 # parsed by psql's own lightweight, line-oriented backslash-command scanner
-# (not the real SQL parser), and that scanner can choke on a machine-built
+# (not the real SQL parser), and that scanner chokes on a machine-built
 # one-liner mixing quoted identifiers, string literals and `::int[]` casts
 # ("\copy: parse error at end of line"). Routing the same query through the
 # ordinary `COPY ... TO STDOUT` SQL statement inside `-c` sends it through
 # the real parser instead, then the copy stream is just `-c`'s stdout,
 # redirected to a file exactly like any other command's output.
+
+log "exporting the sampled rows"
+
 psql "$PROD_URL" -v ON_ERROR_STOP=1 -c "COPY (SELECT $TOWTRUCK_COLS FROM \"TowTruck\" WHERE id = ANY('$TOWTRUCK_IDS_ARR'::int[])) TO STDOUT WITH (FORMAT csv)" > "$WORKDIR/towtruck.csv"
 psql "$PROD_URL" -v ON_ERROR_STOP=1 -c "COPY (SELECT $REGISTRATION_COLS FROM \"RegistrationRequest\" WHERE id = ANY('$REGISTRATION_IDS_ARR'::int[])) TO STDOUT WITH (FORMAT csv)" > "$WORKDIR/registration.csv"
-psql "$PROD_URL" -v ON_ERROR_STOP=1 -c "COPY (SELECT $IMAGE_EXPORT_COLS FROM \"TowTruckImage\" WHERE \"towTruckId\" = ANY('$TOWTRUCK_IDS_ARR'::int[]) OR \"registrationRequestId\" = ANY('$REGISTRATION_IDS_ARR'::int[])) TO STDOUT WITH (FORMAT csv)" > "$WORKDIR/image.csv"
-psql "$PROD_URL" -v ON_ERROR_STOP=1 -c "COPY (SELECT $CONSENT_COLS FROM \"DriverPrivacyConsent\" WHERE \"towTruckId\" = ANY('$TOWTRUCK_IDS_ARR'::int[]) OR \"registrationRequestId\" = ANY('$REGISTRATION_IDS_ARR'::int[])) TO STDOUT WITH (FORMAT csv)" > "$WORKDIR/consent.csv"
+log "exported: $(wc -l < "$WORKDIR/towtruck.csv") tow trucks, $(wc -l < "$WORKDIR/registration.csv") registration requests"
 
-log "exported: $(wc -l < "$WORKDIR/towtruck.csv") tow trucks, $(wc -l < "$WORKDIR/registration.csv") registration requests, $(wc -l < "$WORKDIR/image.csv") images, $(wc -l < "$WORKDIR/consent.csv") consent records"
+if [[ -n "$IMAGE_LOAD_COLS" ]]; then
+  psql "$PROD_URL" -v ON_ERROR_STOP=1 -c "COPY (SELECT $IMAGE_EXPORT_COLS FROM \"TowTruckImage\" WHERE \"towTruckId\" = ANY('$TOWTRUCK_IDS_ARR'::int[]) OR \"registrationRequestId\" = ANY('$REGISTRATION_IDS_ARR'::int[])) TO STDOUT WITH (FORMAT csv)" > "$WORKDIR/image.csv"
+  log "exported: $(wc -l < "$WORKDIR/image.csv") images"
+fi
+
+if [[ -n "$CONSENT_COLS" ]]; then
+  psql "$PROD_URL" -v ON_ERROR_STOP=1 -c "COPY (SELECT $CONSENT_COLS FROM \"DriverPrivacyConsent\" WHERE \"towTruckId\" = ANY('$TOWTRUCK_IDS_ARR'::int[]) OR \"registrationRequestId\" = ANY('$REGISTRATION_IDS_ARR'::int[])) TO STDOUT WITH (FORMAT csv)" > "$WORKDIR/consent.csv"
+  log "exported: $(wc -l < "$WORKDIR/consent.csv") consent records"
+fi
 
 # ── 4. Clear + load into staging ────────────────────────────────────────────
 #
@@ -247,21 +271,22 @@ log "exported: $(wc -l < "$WORKDIR/towtruck.csv") tow trucks, $(wc -l < "$WORKDI
 # is deleted explicitly first, by exactly the same id it's about to reuse.
 
 log "clearing any earlier copies of these ids in staging"
-psql "$STAGING_URL" -v ON_ERROR_STOP=1 <<SQL
-DELETE FROM "DriverPrivacyConsent" WHERE "towTruckId" = ANY('$TOWTRUCK_IDS_ARR'::int[]) OR "registrationRequestId" = ANY('$REGISTRATION_IDS_ARR'::int[]);
-DELETE FROM "TowTruckImage" WHERE "towTruckId" = ANY('$TOWTRUCK_IDS_ARR'::int[]) OR "registrationRequestId" = ANY('$REGISTRATION_IDS_ARR'::int[]);
-DELETE FROM "TowTruck" WHERE id = ANY('$TOWTRUCK_IDS_ARR'::int[]);
-DELETE FROM "RegistrationRequest" WHERE id = ANY('$REGISTRATION_IDS_ARR'::int[]);
-SQL
+
+# One DELETE per table rather than one heredoc for all four, so a table that
+# was skipped above (missing from production, so nothing to re-copy) doesn't
+# take the whole statement batch down with it.
+[[ -z "$CONSENT_COLS" ]] || psql "$STAGING_URL" -v ON_ERROR_STOP=1 -c "DELETE FROM \"DriverPrivacyConsent\" WHERE \"towTruckId\" = ANY('$TOWTRUCK_IDS_ARR'::int[]) OR \"registrationRequestId\" = ANY('$REGISTRATION_IDS_ARR'::int[]);"
+[[ -z "$IMAGE_LOAD_COLS" ]] || psql "$STAGING_URL" -v ON_ERROR_STOP=1 -c "DELETE FROM \"TowTruckImage\" WHERE \"towTruckId\" = ANY('$TOWTRUCK_IDS_ARR'::int[]) OR \"registrationRequestId\" = ANY('$REGISTRATION_IDS_ARR'::int[]);"
+psql "$STAGING_URL" -v ON_ERROR_STOP=1 -c "DELETE FROM \"TowTruck\" WHERE id = ANY('$TOWTRUCK_IDS_ARR'::int[]);"
+psql "$STAGING_URL" -v ON_ERROR_STOP=1 -c "DELETE FROM \"RegistrationRequest\" WHERE id = ANY('$REGISTRATION_IDS_ARR'::int[]);"
 
 log "loading production's rows into staging"
 # Same reasoning as the export step: `COPY ... FROM STDIN` through the real
-# SQL parser, fed by redirecting the file onto `-c`'s stdin, instead of the
-# fragile `\copy` meta-command.
+# SQL parser, fed by redirecting the file onto `-c`'s stdin.
 psql "$STAGING_URL" -v ON_ERROR_STOP=1 -c "COPY \"TowTruck\" ($TOWTRUCK_COLS) FROM STDIN WITH (FORMAT csv)" < "$WORKDIR/towtruck.csv"
 psql "$STAGING_URL" -v ON_ERROR_STOP=1 -c "COPY \"RegistrationRequest\" ($REGISTRATION_COLS) FROM STDIN WITH (FORMAT csv)" < "$WORKDIR/registration.csv"
-psql "$STAGING_URL" -v ON_ERROR_STOP=1 -c "COPY \"TowTruckImage\" ($IMAGE_LOAD_COLS) FROM STDIN WITH (FORMAT csv)" < "$WORKDIR/image.csv"
-psql "$STAGING_URL" -v ON_ERROR_STOP=1 -c "COPY \"DriverPrivacyConsent\" ($CONSENT_COLS) FROM STDIN WITH (FORMAT csv)" < "$WORKDIR/consent.csv"
+[[ -z "$IMAGE_LOAD_COLS" ]] || psql "$STAGING_URL" -v ON_ERROR_STOP=1 -c "COPY \"TowTruckImage\" ($IMAGE_LOAD_COLS) FROM STDIN WITH (FORMAT csv)" < "$WORKDIR/image.csv"
+[[ -z "$CONSENT_COLS" ]] || psql "$STAGING_URL" -v ON_ERROR_STOP=1 -c "COPY \"DriverPrivacyConsent\" ($CONSENT_COLS) FROM STDIN WITH (FORMAT csv)" < "$WORKDIR/consent.csv"
 
 # ── 5. Resync sequences ──────────────────────────────────────────────────
 #
@@ -272,15 +297,27 @@ psql "$STAGING_URL" -v ON_ERROR_STOP=1 -c "COPY \"DriverPrivacyConsent\" ($CONSE
 # — a unique-constraint violation that looks like a bug in the app, not in
 # this script. `GREATEST(..., 1)` is for the empty-table edge case, where
 # MAX(id) is NULL and setval would otherwise fail outright.
+#
+# Only the tables actually written above; `to_regclass` returns NULL rather
+# than erroring for a table that doesn't exist, so a staging database missing
+# one of these is a no-op here instead of a failure.
 log "resyncing id sequences"
 psql "$STAGING_URL" -v ON_ERROR_STOP=1 <<'SQL'
-SELECT setval(pg_get_serial_sequence('"TowTruck"', 'id'), GREATEST((SELECT COALESCE(MAX(id), 0) FROM "TowTruck"), 1));
-SELECT setval(pg_get_serial_sequence('"RegistrationRequest"', 'id'), GREATEST((SELECT COALESCE(MAX(id), 0) FROM "RegistrationRequest"), 1));
-SELECT setval(pg_get_serial_sequence('"TowTruckImage"', 'id'), GREATEST((SELECT COALESCE(MAX(id), 0) FROM "TowTruckImage"), 1));
-SELECT setval(pg_get_serial_sequence('"DriverPrivacyConsent"', 'id'), GREATEST((SELECT COALESCE(MAX(id), 0) FROM "DriverPrivacyConsent"), 1));
+DO $$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['TowTruck', 'RegistrationRequest', 'TowTruckImage', 'DriverPrivacyConsent'] LOOP
+    IF to_regclass(format('%I', t)) IS NOT NULL THEN
+      EXECUTE format(
+        'SELECT setval(pg_get_serial_sequence(%L, %L), GREATEST((SELECT COALESCE(MAX(id), 0) FROM %I), 1))',
+        format('"%s"', t), 'id', t
+      );
+    END IF;
+  END LOOP;
+END $$;
 SQL
 
-log "done — staging now has $SAMPLE_SIZE real tow trucks and $SAMPLE_SIZE real"
-log "registration requests copied from production, with their photos and"
-log "consent records. No restart needed — nothing here touched a schema or a"
-log "running process, just rows."
+log "done — staging now has up to $SAMPLE_SIZE real tow trucks and up to"
+log "$SAMPLE_SIZE real registration requests copied from production, plus"
+log "whatever related rows the tables above allowed. No restart needed —"
+log "nothing here touched a schema or a running process, just rows."

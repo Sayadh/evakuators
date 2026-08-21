@@ -225,10 +225,18 @@ IMAGE_EXPORT_COLS="${IMAGE_LOAD_COLS//\"profileChangeRequestId\"/NULL::integer A
 # ── 3. Export from production ───────────────────────────────────────────────
 
 log "exporting the sampled rows"
-psql "$PROD_URL" -c "\copy (SELECT $TOWTRUCK_COLS FROM \"TowTruck\" WHERE id = ANY('$TOWTRUCK_IDS_ARR'::int[])) TO '$WORKDIR/towtruck.csv' WITH (FORMAT csv)"
-psql "$PROD_URL" -c "\copy (SELECT $REGISTRATION_COLS FROM \"RegistrationRequest\" WHERE id = ANY('$REGISTRATION_IDS_ARR'::int[])) TO '$WORKDIR/registration.csv' WITH (FORMAT csv)"
-psql "$PROD_URL" -c "\copy (SELECT $IMAGE_EXPORT_COLS FROM \"TowTruckImage\" WHERE \"towTruckId\" = ANY('$TOWTRUCK_IDS_ARR'::int[]) OR \"registrationRequestId\" = ANY('$REGISTRATION_IDS_ARR'::int[])) TO '$WORKDIR/image.csv' WITH (FORMAT csv)"
-psql "$PROD_URL" -c "\copy (SELECT $CONSENT_COLS FROM \"DriverPrivacyConsent\" WHERE \"towTruckId\" = ANY('$TOWTRUCK_IDS_ARR'::int[]) OR \"registrationRequestId\" = ANY('$REGISTRATION_IDS_ARR'::int[])) TO '$WORKDIR/consent.csv' WITH (FORMAT csv)"
+# Plain SQL `COPY ... TO STDOUT`, not the `\copy` meta-command: `\copy` is
+# parsed by psql's own lightweight, line-oriented backslash-command scanner
+# (not the real SQL parser), and that scanner can choke on a machine-built
+# one-liner mixing quoted identifiers, string literals and `::int[]` casts
+# ("\copy: parse error at end of line"). Routing the same query through the
+# ordinary `COPY ... TO STDOUT` SQL statement inside `-c` sends it through
+# the real parser instead, then the copy stream is just `-c`'s stdout,
+# redirected to a file exactly like any other command's output.
+psql "$PROD_URL" -v ON_ERROR_STOP=1 -c "COPY (SELECT $TOWTRUCK_COLS FROM \"TowTruck\" WHERE id = ANY('$TOWTRUCK_IDS_ARR'::int[])) TO STDOUT WITH (FORMAT csv)" > "$WORKDIR/towtruck.csv"
+psql "$PROD_URL" -v ON_ERROR_STOP=1 -c "COPY (SELECT $REGISTRATION_COLS FROM \"RegistrationRequest\" WHERE id = ANY('$REGISTRATION_IDS_ARR'::int[])) TO STDOUT WITH (FORMAT csv)" > "$WORKDIR/registration.csv"
+psql "$PROD_URL" -v ON_ERROR_STOP=1 -c "COPY (SELECT $IMAGE_EXPORT_COLS FROM \"TowTruckImage\" WHERE \"towTruckId\" = ANY('$TOWTRUCK_IDS_ARR'::int[]) OR \"registrationRequestId\" = ANY('$REGISTRATION_IDS_ARR'::int[])) TO STDOUT WITH (FORMAT csv)" > "$WORKDIR/image.csv"
+psql "$PROD_URL" -v ON_ERROR_STOP=1 -c "COPY (SELECT $CONSENT_COLS FROM \"DriverPrivacyConsent\" WHERE \"towTruckId\" = ANY('$TOWTRUCK_IDS_ARR'::int[]) OR \"registrationRequestId\" = ANY('$REGISTRATION_IDS_ARR'::int[])) TO STDOUT WITH (FORMAT csv)" > "$WORKDIR/consent.csv"
 
 log "exported: $(wc -l < "$WORKDIR/towtruck.csv") tow trucks, $(wc -l < "$WORKDIR/registration.csv") registration requests, $(wc -l < "$WORKDIR/image.csv") images, $(wc -l < "$WORKDIR/consent.csv") consent records"
 
@@ -247,10 +255,13 @@ DELETE FROM "RegistrationRequest" WHERE id = ANY('$REGISTRATION_IDS_ARR'::int[])
 SQL
 
 log "loading production's rows into staging"
-psql "$STAGING_URL" -c "\copy \"TowTruck\" ($TOWTRUCK_COLS) FROM '$WORKDIR/towtruck.csv' WITH (FORMAT csv)"
-psql "$STAGING_URL" -c "\copy \"RegistrationRequest\" ($REGISTRATION_COLS) FROM '$WORKDIR/registration.csv' WITH (FORMAT csv)"
-psql "$STAGING_URL" -c "\copy \"TowTruckImage\" ($IMAGE_LOAD_COLS) FROM '$WORKDIR/image.csv' WITH (FORMAT csv)"
-psql "$STAGING_URL" -c "\copy \"DriverPrivacyConsent\" ($CONSENT_COLS) FROM '$WORKDIR/consent.csv' WITH (FORMAT csv)"
+# Same reasoning as the export step: `COPY ... FROM STDIN` through the real
+# SQL parser, fed by redirecting the file onto `-c`'s stdin, instead of the
+# fragile `\copy` meta-command.
+psql "$STAGING_URL" -v ON_ERROR_STOP=1 -c "COPY \"TowTruck\" ($TOWTRUCK_COLS) FROM STDIN WITH (FORMAT csv)" < "$WORKDIR/towtruck.csv"
+psql "$STAGING_URL" -v ON_ERROR_STOP=1 -c "COPY \"RegistrationRequest\" ($REGISTRATION_COLS) FROM STDIN WITH (FORMAT csv)" < "$WORKDIR/registration.csv"
+psql "$STAGING_URL" -v ON_ERROR_STOP=1 -c "COPY \"TowTruckImage\" ($IMAGE_LOAD_COLS) FROM STDIN WITH (FORMAT csv)" < "$WORKDIR/image.csv"
+psql "$STAGING_URL" -v ON_ERROR_STOP=1 -c "COPY \"DriverPrivacyConsent\" ($CONSENT_COLS) FROM STDIN WITH (FORMAT csv)" < "$WORKDIR/consent.csv"
 
 # ── 5. Resync sequences ──────────────────────────────────────────────────
 #

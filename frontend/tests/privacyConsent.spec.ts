@@ -32,6 +32,7 @@ const registerPage = read('pages/register.vue')
 const dashboard = read('pages/dashboard.vue')
 const privacyPage = read('pages/privacy.vue')
 const payload = read('utils/registrationPayload.ts')
+const adminReview = read('pages/admin/registrations/[id].vue')
 
 describe('the consent copy is exactly what was specified', () => {
   it('has the four body paragraphs and the title', () => {
@@ -208,6 +209,40 @@ describe('registration sends exactly one request, after the consent', () => {
     // only that the client can run SHA-256.
     expect(payload.toLowerCase()).not.toContain('sha256')
     expect(registerPage).not.toContain('consentTextHash')
+  })
+})
+
+/**
+ * Approving a registration must NOT re-send consent.
+ *
+ * The admin review page deliberately reuses `buildRegistrationPayload` so a
+ * field cannot be mapped one way for a driver and another way for an admin —
+ * but that builder hard-codes the two consent keys, and `ApproveRegistrationDto`
+ * declares neither, because consent is the driver's act at submission time and
+ * an admin clicking «Հաստատել» is not a second one. The API runs with
+ * `forbidNonWhitelisted: true`, so leaving them in does not degrade quietly: it
+ * rejects EVERY approval with "property privacyConsentAccepted should not
+ * exist", which is exactly what reached production once.
+ */
+describe('admin approval does not resend the driver consent', () => {
+  it('strips both consent keys off the shared builder result', () => {
+    const approve = adminReview.slice(adminReview.indexOf('async function approve()'))
+    const destructure = approve.slice(0, approve.indexOf('buildRegistrationPayload'))
+
+    expect(destructure).toContain('privacyConsentAccepted:')
+    expect(destructure).toContain('privacyPolicyVersion:')
+  })
+
+  it('does not put either key back into the request body', () => {
+    // The destructure above only removes them from `profile`; re-adding either
+    // one to the literal that is actually POSTed would reintroduce the bug
+    // while still passing the first assertion.
+    const start = adminReview.indexOf('const payload: ApproveRegistrationPayload = {')
+    expect(start).toBeGreaterThan(-1)
+    const body = adminReview.slice(start, adminReview.indexOf('\n  }', start))
+
+    expect(body).not.toContain('privacyConsentAccepted')
+    expect(body).not.toContain('privacyPolicyVersion')
   })
 })
 

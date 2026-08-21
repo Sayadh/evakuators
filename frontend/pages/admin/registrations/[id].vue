@@ -285,15 +285,28 @@ async function approve(): Promise<void> {
     return
   }
 
-  // `imageIds` is dropped: the photos are already attached to this request and
-  // approval re-points them at the new truck. Everything else is exactly the
-  // payload the public form builds, which is the point — one builder, so a
-  // field cannot be mapped one way for a driver and another way for an admin.
-  const { imageIds: _imageIds, ...profile } = buildRegistrationPayload(
-    form,
-    [],
-    validation.coordinates,
-  )
+  // Three keys are dropped; everything else is exactly the payload the public
+  // form builds, which is the point — one builder, so a field cannot be mapped
+  // one way for a driver and another way for an admin.
+  //
+  // `imageIds`: the photos are already attached to this request and approval
+  // re-points them at the new truck.
+  //
+  // The two consent keys, because consent is the DRIVER's act at submission
+  // time and an admin clicking «Հաստատել» is not a second one. The row already
+  // exists against this RegistrationRequest, and approving re-points it at the
+  // new TowTruck inside the same transaction
+  // (`PrivacyConsentRepository.attachRegistrationConsentToTruck`) — the admin
+  // sends nothing and decides nothing here. `ApproveRegistrationDto`
+  // accordingly declares neither field, and the API runs with
+  // `forbidNonWhitelisted: true`, so leaving them in rejected every approval
+  // outright with "property privacyConsentAccepted should not exist".
+  const {
+    imageIds: _imageIds,
+    privacyConsentAccepted: _privacyConsentAccepted,
+    privacyPolicyVersion: _privacyPolicyVersion,
+    ...profile
+  } = buildRegistrationPayload(form, [], validation.coordinates)
 
   const placement = placementFor(adminForm.primarySlug)
   const primaryName = cityOrDistrictLabel(adminForm.primarySlug)

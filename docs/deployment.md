@@ -11,12 +11,53 @@ initial nginx/certbot setup, etc.) which isn't repeated here.
 ```bash
 git pull
 cd frontend && npm install && npm run build
-cd ../backend && npm install && npx prisma migrate deploy && npm run build
+cd ../backend && npm install && npx prisma migrate deploy && npm run build && npm run check:di
+cd ..            # ecosystem.config.js lives at the repo ROOT, not in backend/
 pm2 restart ecosystem.config.js
 ```
 
 Run both sides even if only one changed — cheap insurance, and PM2 restart
 is fast enough that there's no real cost to doing both every time.
+
+Two details in that block that have each cost this project an outage:
+
+**`cd ..` before `pm2 restart`.** `ecosystem.config.js` is at the repo root. Run
+`pm2 restart ecosystem.config.js` from `backend/` and PM2 answers
+`[PM2][ERROR] File ecosystem.config.js not found` — which scrolls past in the
+middle of a long deploy and leaves the OLD build running, or, worse, leaves a
+process restarted without the ecosystem file's `env` block.
+
+**`npm run check:di` after the build.** See § "The DI-graph trap" below. It takes
+about a second and is the only step before PM2 that fails the same way
+production would.
+
+## The DI-graph trap
+
+**A missing `exports:` entry in a NestJS module passes `nest build` and passes
+every unit test, then crash-loops in production.** Nest resolves constructor
+injection at runtime from `design:paramtypes` metadata; a provider listed in one
+module's `providers` but not its `exports` is a perfectly well-typed program that
+Nest refuses to wire up at boot:
+
+```
+Nest can't resolve dependencies of the RegistrationController (RegistrationService, ?).
+Please make sure that the argument ConsentRequestContextService at index [1] is
+available in the RegistrationModule context.
+```
+
+The Vitest suite cannot catch this — it deliberately runs without
+`@nestjs/testing` (see `vitest.config.ts` for that decision), so no test ever
+compiles the module graph. `npm run check:di` does: it boots the real compiled
+`AppModule`, resolves every provider, and closes it again without listening on a
+port or connecting to Postgres.
+
+What this looks like if it reaches production, because it is not obvious from
+the symptom: the API is simply **absent** — nginx has nothing to proxy to, every
+page renders with empty data, and the site looks exactly as though the database
+had been wiped. `pm2 list` shows the backend "online" with an uptime of a couple
+of seconds and a restart counter climbing into the hundreds. Check `ss -ltnp |
+grep 4002` (nothing listening) and the row counts in Postgres (all intact)
+before reaching for a backup.
 
 ## PostGIS is a prerequisite, not a migration step
 
@@ -65,6 +106,7 @@ npm install
 npx prisma generate
 npx prisma migrate deploy
 npm run build
+npm run check:di          # see § "The DI-graph trap"
 pm2 restart evakuators-backend
 ```
 
@@ -323,7 +365,8 @@ never opens a connection to the production database at all. See
 cd /var/www/evakuators-staging
 git pull
 cd frontend && npm install && npm run build
-cd ../backend && npm install && npx prisma generate && npx prisma migrate deploy && npm run build
+cd ../backend && npm install && npx prisma generate && npx prisma migrate deploy && npm run build && npm run check:di
+cd ..            # ecosystem.staging.config.js is at the repo root, not in backend/
 pm2 restart ecosystem.staging.config.js
 
 # 2. Click through staging.evakuators.am — the exact change, against real

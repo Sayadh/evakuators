@@ -17,6 +17,15 @@ import { PrivacyConsentService } from './privacy-consent.service'
  * - `AdminModule` re-points that consent at the truck an approval creates.
  * - `DriverAuthModule`'s login answers `requiresPrivacyConsent`.
  *
+ * `ConsentRequestContextService` is exported for the same reason and must stay
+ * exported: `RegistrationController` injects it directly to derive the hashed
+ * IP and truncated User-Agent for the consent row it writes. Being listed in
+ * `providers` alone is not enough — that makes it resolvable inside THIS
+ * module only, and Nest fails at boot ("can't resolve dependencies of the
+ * RegistrationController ... ConsentRequestContextService at index [1]"), not
+ * at build time and not in any unit test that doesn't compile the whole
+ * module graph.
+ *
  * `forwardRef` on `DriverAuthModule`, because this is a genuine cycle rather
  * than an accident: this module needs `DriverJwtGuard` to protect its routes,
  * and `DriverAuthService.login()` needs this module's service to answer
@@ -31,6 +40,6 @@ import { PrivacyConsentService } from './privacy-consent.service'
   imports: [PrismaModule, forwardRef(() => DriverAuthModule)],
   controllers: [PrivacyConsentController],
   providers: [PrivacyConsentService, PrivacyConsentRepository, ConsentRequestContextService],
-  exports: [PrivacyConsentService, PrivacyConsentRepository],
+  exports: [PrivacyConsentService, PrivacyConsentRepository, ConsentRequestContextService],
 })
 export class PrivacyConsentModule {}

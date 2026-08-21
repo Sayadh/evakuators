@@ -244,6 +244,12 @@ export default defineNuxtConfig({
           'https://www.google.am',
           'https://ad.doubleclick.net',
           'https://www.googletagmanager.com',
+          // The view-through conversion beacon (see `connect-src`) is sent as a
+          // fetch when the browser allows it and falls back to a 1×1 image
+          // otherwise, so it needs both entries — listing it only in
+          // `connect-src` would swap one blocked-console-error for another on
+          // exactly the browsers that take the fallback path.
+          'https://googleads.g.doubleclick.net',
         ],
 
         'font-src': ["'self'", 'data:'],
@@ -304,6 +310,19 @@ export default defineNuxtConfig({
           // comment above it). Same reasoning applies here: add this host by
           // name, don't widen `ad.doubleclick.net` into `*.doubleclick.net`.
           'https://stats.g.doubleclick.net',
+          // `googleads.g.doubleclick.net/pagead/viewthroughconversion/<id>/` —
+          // the Google Ads view-through conversion beacon, and a fifth host.
+          // Same family as `stats.g.doubleclick.net` directly above (both are
+          // `*.g.doubleclick.net`) but a different label, and CSP matches host
+          // names literally, so listing one has never covered the other.
+          //
+          // This is the second `.g.doubleclick.net` host to be added one at a
+          // time. If a third ever appears, that is the point to replace both
+          // with `https://*.g.doubleclick.net` — still far narrower than the
+          // `*.doubleclick.net` the comments above rightly refuse, since `g.`
+          // is Google's tag/measurement subdomain rather than the ad-serving
+          // tree. Two hosts is not yet enough to justify the wildcard.
+          'https://googleads.g.doubleclick.net',
         ],
 
         'object-src': ["'none'"],

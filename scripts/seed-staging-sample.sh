@@ -148,27 +148,86 @@ REGISTRATION_IDS_ARR="{${REGISTRATION_IDS_CSV:-}}"
 # Explicit on purpose, never `SELECT *`: TowTruck.location is `GENERATED
 # ALWAYS ... STORED` from latitude/longitude (see schema.prisma) and Postgres
 # rejects an explicit value for a generated column outright, so it must be
-# left out of both the export and the load. Everything below mirrors
-# schema.prisma's own column order for that model.
+# left out of both the export and the load regardless.
+#
+# The lists below are the DESIRED columns per schema.prisma, in its column
+# order — but production and staging are not guaranteed to be on the same
+# migration at the moment this runs (staging routinely gets a new migration
+# before production does; that's the entire point of having a staging
+# environment). `columns_present_in_both` below intersects this wishlist
+# against what each database's information_schema actually reports right
+# now, so a column added to the schema but not yet migrated onto production
+# is silently skipped instead of failing the whole script.
 
-TOWTRUCK_COLS='id, slug, "driverName", "companyName", phone, "secondaryPhone", whatsapp, telegram, email, "works24Hours", "workingHoursText", description, "vehicleBrand", "vehicleModel", "vehicleYear", "vehicleType", "capacityTons", "platformLengthM", "platformWidthM", "craneCapacityTons", "craneReachM", "maxLoadTons", "platformLoadHeightCm", winch, manipulator, "wheelSkates", "heavyEquipment", "plateNumber", "showPlateNumber", "regionSlug", "citySlug", "districtSlug", "locationName", "servesAllArmenia", latitude, longitude, "locationUpdatedAt", services, "serviceAreas", "priceCityCallout", "pricePerKm", "priceWaitingPerHour", "priceNightSurchargePercent", "priceExtraLoading", "isActive", "isFeatured", "createdAt", "updatedAt", "passwordHash", "mustChangePassword", "telegramChatId", "telegramLinkToken", "telegramLinkTokenExpiresAt", "contactNoticeIntroAt"'
+# columns_present_in_both TABLE col1 col2 ... → prints a quoted, comma-joined
+# list on stdout containing only the given columns that exist, right now, in
+# BOTH databases — in the order they were listed here, not information_schema
+# order.
+columns_present_in_both() {
+  local table="$1"; shift
+  local prod_cols staging_cols col out=()
+  prod_cols=" $(psql "$PROD_URL" -Atc "SELECT string_agg(column_name, ' ') FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '$table';") "
+  staging_cols=" $(psql "$STAGING_URL" -Atc "SELECT string_agg(column_name, ' ') FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '$table';") "
+  for col in "$@"; do
+    if [[ "$prod_cols" == *" $col "* && "$staging_cols" == *" $col "* ]]; then
+      out+=("\"$col\"")
+    else
+      log "  note: \"$table\".\"$col\" isn't in both databases yet — skipping that column for this table"
+    fi
+  done
+  local IFS=,
+  echo "${out[*]}"
+}
 
-REGISTRATION_COLS='id, status, "firstName", "lastName", "companyName", phone, "secondaryPhone", whatsapp, telegram, email, "vehicleBrand", "vehicleModel", "vehicleYear", "vehicleType", "capacityRange", "platformLengthM", "platformWidthM", "craneCapacityTons", "craneReachM", "maxLoadTons", "platformLoadHeightCm", winch, manipulator, "wheelSkates", "heavyEquipment", "servesAllArmenia", "workingHoursText", "regionSlugs", "citySlugs", services, latitude, longitude, "priceCityCallout", "pricePerKm", "priceWaitingPerHour", "priceNightSurchargePercent", "priceExtraLoading", "createdAt", "updatedAt"'
+log "checking which columns exist in both databases right now"
 
-IMAGE_LOAD_COLS='id, path, url, width, height, "sizeBytes", position, "createdAt", "towTruckId", "registrationRequestId", "profileChangeRequestId"'
-# The export SELECT hardcodes NULL for profileChangeRequestId (see below):
+TOWTRUCK_COLS="$(columns_present_in_both TowTruck \
+  id slug driverName companyName phone secondaryPhone whatsapp telegram email \
+  works24Hours workingHoursText description vehicleBrand vehicleModel vehicleYear \
+  vehicleType capacityTons platformLengthM platformWidthM craneCapacityTons \
+  craneReachM maxLoadTons platformLoadHeightCm winch manipulator wheelSkates \
+  heavyEquipment plateNumber showPlateNumber regionSlug citySlug districtSlug \
+  locationName servesAllArmenia latitude longitude locationUpdatedAt services \
+  serviceAreas priceCityCallout pricePerKm priceWaitingPerHour \
+  priceNightSurchargePercent priceExtraLoading isActive isFeatured createdAt \
+  updatedAt passwordHash mustChangePassword telegramChatId telegramLinkToken \
+  telegramLinkTokenExpiresAt contactNoticeIntroAt)"
+
+REGISTRATION_COLS="$(columns_present_in_both RegistrationRequest \
+  id status firstName lastName companyName phone secondaryPhone whatsapp \
+  telegram email vehicleBrand vehicleModel vehicleYear vehicleType capacityRange \
+  platformLengthM platformWidthM craneCapacityTons craneReachM maxLoadTons \
+  platformLoadHeightCm winch manipulator wheelSkates heavyEquipment \
+  servesAllArmenia workingHoursText regionSlugs citySlugs services latitude \
+  longitude priceCityCallout pricePerKm priceWaitingPerHour \
+  priceNightSurchargePercent priceExtraLoading createdAt updatedAt)"
+
+IMAGE_LOAD_COLS="$(columns_present_in_both TowTruckImage \
+  id path url width height sizeBytes position createdAt towTruckId \
+  registrationRequestId profileChangeRequestId)"
+# profileChangeRequestId is nulled out at export time regardless (see below):
 # ProfileChangeRequest rows are not part of this sample, and a copied image
 # whose value still pointed at a real production id would fail staging's
 # foreign key the moment it landed.
 
-CONSENT_COLS='id, "towTruckId", "registrationRequestId", "policyVersion", "consentTextHash", "acceptedAt", "revokedAt", "ipHash", "userAgent", source, "createdAt"'
+CONSENT_COLS="$(columns_present_in_both DriverPrivacyConsent \
+  id towTruckId registrationRequestId policyVersion consentTextHash acceptedAt \
+  revokedAt ipHash userAgent source createdAt)"
+
+[[ -n "$TOWTRUCK_COLS" ]] || fail "no common TowTruck columns found — is STAGING_ENV_FILE/PROD_ENV_FILE pointing at the right databases?"
+[[ -n "$REGISTRATION_COLS" ]] || fail "no common RegistrationRequest columns found — is STAGING_ENV_FILE/PROD_ENV_FILE pointing at the right databases?"
+
+# Same column NAMES as IMAGE_LOAD_COLS, but the value read for
+# profileChangeRequestId is forced to NULL rather than copied — see the note
+# above where IMAGE_LOAD_COLS is built.
+IMAGE_EXPORT_COLS="${IMAGE_LOAD_COLS//\"profileChangeRequestId\"/NULL::integer AS \"profileChangeRequestId\"}"
 
 # ── 3. Export from production ───────────────────────────────────────────────
 
 log "exporting the sampled rows"
 psql "$PROD_URL" -c "\copy (SELECT $TOWTRUCK_COLS FROM \"TowTruck\" WHERE id = ANY('$TOWTRUCK_IDS_ARR'::int[])) TO '$WORKDIR/towtruck.csv' WITH (FORMAT csv)"
 psql "$PROD_URL" -c "\copy (SELECT $REGISTRATION_COLS FROM \"RegistrationRequest\" WHERE id = ANY('$REGISTRATION_IDS_ARR'::int[])) TO '$WORKDIR/registration.csv' WITH (FORMAT csv)"
-psql "$PROD_URL" -c "\copy (SELECT id, path, url, width, height, \"sizeBytes\", position, \"createdAt\", \"towTruckId\", \"registrationRequestId\", NULL::integer AS \"profileChangeRequestId\" FROM \"TowTruckImage\" WHERE \"towTruckId\" = ANY('$TOWTRUCK_IDS_ARR'::int[]) OR \"registrationRequestId\" = ANY('$REGISTRATION_IDS_ARR'::int[])) TO '$WORKDIR/image.csv' WITH (FORMAT csv)"
+psql "$PROD_URL" -c "\copy (SELECT $IMAGE_EXPORT_COLS FROM \"TowTruckImage\" WHERE \"towTruckId\" = ANY('$TOWTRUCK_IDS_ARR'::int[]) OR \"registrationRequestId\" = ANY('$REGISTRATION_IDS_ARR'::int[])) TO '$WORKDIR/image.csv' WITH (FORMAT csv)"
 psql "$PROD_URL" -c "\copy (SELECT $CONSENT_COLS FROM \"DriverPrivacyConsent\" WHERE \"towTruckId\" = ANY('$TOWTRUCK_IDS_ARR'::int[]) OR \"registrationRequestId\" = ANY('$REGISTRATION_IDS_ARR'::int[])) TO '$WORKDIR/consent.csv' WITH (FORMAT csv)"
 
 log "exported: $(wc -l < "$WORKDIR/towtruck.csv") tow trucks, $(wc -l < "$WORKDIR/registration.csv") registration requests, $(wc -l < "$WORKDIR/image.csv") images, $(wc -l < "$WORKDIR/consent.csv") consent records"

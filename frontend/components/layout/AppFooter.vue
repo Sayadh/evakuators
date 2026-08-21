@@ -24,6 +24,12 @@ const regions = getStaticRegions()
 const districts = getStaticDistricts()
 
 const currentYear = new Date().getFullYear()
+
+/**
+ * Drives each column's `open` attribute — see the template comment for why
+ * this replaced a CSS-only attempt at the same thing.
+ */
+const isWideFooter = useMediaQuery('(min-width: 640px)')
 </script>
 
 <template>
@@ -71,13 +77,20 @@ const currentYear = new Date().getFullYear()
              site-wide link that keeps both hubs reachable and crawlable. -->
         <nav aria-label="Մարզեր">
           <!--
-            `<details>` rather than a click-state ref: the disclosure is purely
-            presentational (collapsed on a phone, always open from 640px up —
-            see the media query below), so the browser's own open/close
-            behaviour is enough and keeps every link in the server-rendered
-            HTML regardless of state, the same crawlability reasoning as
-            `VehicleTypeGeoLinks`. No `open` binding, so a visitor's manual
-            toggle is never fought by reactivity re-closing it underneath them.
+            `:open="isWideFooter"` rather than a CSS-only override: a closed
+            `<details>` hides its non-`<summary>` content through a mechanism
+            some browsers implement as more than a plain overridable
+            `display: none` (Chromium's `<details>` uses a `content-visibility`
+            based `::details-content`, not a rule an author selector reliably
+            wins against) — a `min-width: 640px` rule setting `display: flex`
+            on the list compiled and looked correct, but the column stayed
+            empty on desktop regardless. Setting the real `open` attribute
+            sidesteps the question of which mechanism a given browser uses.
+
+            Still safe for a visitor's manual toggle on mobile: Vue only
+            touches the attribute when `isWideFooter` itself changes value, so
+            a click that flips the native `open` attribute while `isWideFooter`
+            stays `false` is never patched back closed underneath them.
 
             The heading link inside `<summary>` still navigates instead of
             only toggling: `NuxtLink` calls `preventDefault()` on the click to
@@ -86,7 +99,7 @@ const currentYear = new Date().getFullYear()
             so a tap on "Մարզեր"/"Երևան" goes straight to the page, and only a
             tap elsewhere in the bar opens or closes the list.
           -->
-          <details class="footer__col">
+          <details class="footer__col" :open="isWideFooter">
             <summary class="footer__heading">
               <NuxtLink :to="getRegionsRoute()">Մարզեր</NuxtLink>
             </summary>
@@ -99,7 +112,7 @@ const currentYear = new Date().getFullYear()
         </nav>
 
         <nav aria-label="Երևանի շրջաններ">
-          <details class="footer__col">
+          <details class="footer__col" :open="isWideFooter">
             <summary class="footer__heading">
               <NuxtLink :to="getYerevanRoute()">Երևան</NuxtLink>
             </summary>
@@ -112,7 +125,7 @@ const currentYear = new Date().getFullYear()
         </nav>
 
         <nav aria-label="Կայքի էջեր">
-          <details class="footer__col">
+          <details class="footer__col" :open="isWideFooter">
             <summary class="footer__heading">Կայք</summary>
             <ul class="footer__list">
               <li v-for="page in FOOTER_PAGES" :key="page.to">
@@ -304,14 +317,6 @@ const currentYear = new Date().getFullYear()
       &::after {
         display: none;
       }
-    }
-
-    // Beats the UA stylesheet's `details:not([open]) > *:not(summary)` rule
-    // on specificity (two classes outrank its one-class-plus-two-type
-    // selector), so the list stays visible regardless of the `open`
-    // attribute's actual value — see the template comment.
-    &__col > &__list {
-      display: flex;
     }
   }
 

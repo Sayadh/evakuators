@@ -115,6 +115,31 @@ const uncapped = computed(() => hasUncappedCoverage(model.value))
 const uncappedReason = computed(() => uncappedCoverageReason(model.value))
 
 /**
+ * Which of the two specialist landing pages «Ամբողջ Հայաստան» actually puts
+ * this driver on — the same union `hasUncappedCoverage` checks, read apart
+ * instead of collapsed into one boolean.
+ *
+ * `uncapped` is true for four different reasons (pure manipulator, pure
+ * heavy-duty, a flatbed with the crane checkbox, a flatbed with the heavy-load
+ * checkbox), and only the first and third put a driver on `/manipulator` —
+ * the note below used to name both pages unconditionally, which told a driver
+ * who is only going on one of them that they would appear somewhere they
+ * would not.
+ */
+const appearsOnManipulatorPages = computed(() => isManipulatorType.value || model.value.manipulator)
+const appearsOnHeavyDutyPages = computed(() => isHeavyDutyType.value || model.value.heavyEquipment)
+
+const nationwideVisibilityNote = computed(() => {
+  if (appearsOnManipulatorPages.value && appearsOnHeavyDutyPages.value) {
+    return 'Դուք կհայտնվեք ՀՀ բոլոր մարզերի ծանր տեխնիկայի և մանիպուլյատորի էջերում։'
+  }
+  if (appearsOnManipulatorPages.value) {
+    return 'Դուք կհայտնվեք ՀՀ բոլոր մարզերի մանիպուլյատորի էջերում։'
+  }
+  return 'Դուք կհայտնվեք ՀՀ բոլոր մարզերի ծանր տեխնիկայի էջերում։'
+})
+
+/**
  * The two coverage answers, as one control over one boolean.
  *
  * `servesAllArmenia` is the stored shape (see the column's comment for why
@@ -378,7 +403,7 @@ const whatsappModel = armenianPhoneModel('whatsapp')
         class="reg-fields__coverage-mode"
       />
       <p v-if="model.servesAllArmenia" class="reg-fields__note">
-        Դուք կհայտնվեք ՀՀ բոլոր մարզերի ծանր տեխնիկայի և մանիպուլյատորի էջերում։
+        {{ nationwideVisibilityNote }}
       </p>
       <!-- No city list and no budget: an uncapped driver picks marzes, and the
            marz itself is stored as the served area (`type: 'region'`). -->

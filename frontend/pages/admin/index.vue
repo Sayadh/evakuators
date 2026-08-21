@@ -187,6 +187,8 @@ const actioningId = ref<number | null>(null)
 const hasMoreRegistrations = ref(false)
 const hasMoreReviews = ref(false)
 const hasMoreTowTrucks = ref(false)
+const exportingDrivers = ref(false)
+const exportDriversError = ref('')
 
 /**
  * Totals across every page, straight from the database.
@@ -537,6 +539,38 @@ async function loadTowTrucks(append = false): Promise<void> {
     towTrucksError.value = 'Էվակուատորները բեռնել չհաջողվեց։'
   } finally {
     loadingTowTrucks.value = false
+  }
+}
+
+/**
+ * Downloads the full driver list as CSV — every published driver, active and
+ * deactivated, not just the page currently loaded above (`towTrucks` is
+ * paginated and "load more"'d; the export is one separate backend request
+ * that reads the whole table).
+ *
+ * `apiFetch` returns the response as a `Blob` (see `exportDrivers`'s own
+ * comment) — turned into a temporary object URL and clicked via a detached
+ * `<a download>`, the standard way to save an authenticated fetch response as
+ * a file: a plain `<a href="/admin/tow-trucks/export.csv">` could not carry
+ * the admin's Authorization header at all.
+ */
+async function downloadDriversCsv(): Promise<void> {
+  exportDriversError.value = ''
+  exportingDrivers.value = true
+  try {
+    const blob = await adminRepository.exportDrivers()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'varordner.csv'
+    link.click()
+    // Deferred, not immediate: revoking the URL synchronously can race the
+    // browser's own read of it for the download it was just asked to start.
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (error) {
+    exportDriversError.value = extractErrorMessage(error, 'CSV-ն ներբեռնել չհաջողվեց։')
+  } finally {
+    exportingDrivers.value = false
   }
 }
 
@@ -1271,9 +1305,21 @@ async function rejectReview(review: AdminReview): Promise<void> {
                 <h3>{{ request.firstName }} {{ request.lastName }}</h3>
                 <p v-if="request.companyName" class="admin-card__muted">{{ request.companyName }}</p>
               </div>
-              <AppBadge :variant="statusBadgeVariant(request.status)">
-                {{ statusOptions.find((option) => option.value === request.status)?.label }}
-              </AppBadge>
+              <div class="admin-card__badges">
+                <AppBadge :variant="statusBadgeVariant(request.status)">
+                  {{ statusOptions.find((option) => option.value === request.status)?.label }}
+                </AppBadge>
+                <!-- Only while PENDING — see the identical note on the review
+                     page for why an already-decided request always reads
+                     `null` here regardless of what the driver actually did. -->
+                <AppBadge
+                  v-if="request.status === 'PENDING'"
+                  :variant="request.privacyConsent ? 'success' : 'danger'"
+                  :title="request.privacyConsent ? `Համաձայնել է ${formatDate(request.privacyConsent.acceptedAt)}` : ''"
+                >
+                  {{ request.privacyConsent ? 'Գաղտնիությանը համաձայն է' : 'Համաձայն չէ' }}
+                </AppBadge>
+              </div>
             </header>
 
             <dl class="admin-card__grid">
@@ -1478,10 +1524,16 @@ async function rejectReview(review: AdminReview): Promise<void> {
           <AppButton variant="outline" size="sm" @click="openBroadcastModal">
             Ուղարկել հաղորդագրություն
           </AppButton>
+          <!-- Every driver, one request — not just the page currently loaded
+               above (which is paginated and "load more"'d). See downloadDriversCsv(). -->
+          <AppButton variant="outline" size="sm" :disabled="exportingDrivers" @click="downloadDriversCsv">
+            {{ exportingDrivers ? 'Ներբեռնվում է…' : 'Ներբեռնել CSV' }}
+          </AppButton>
         </div>
 
         <p v-if="issuePasswordsResult" class="admin-hint">{{ issuePasswordsResult }}</p>
         <p v-if="broadcastResult" class="admin-hint">{{ broadcastResult }}</p>
+        <p v-if="exportDriversError" class="admin-error">{{ exportDriversError }}</p>
 
         <p v-if="towTrucksError" class="admin-error">{{ towTrucksError }}</p>
 
@@ -1577,6 +1629,21 @@ async function rejectReview(review: AdminReview): Promise<void> {
               <div>
                 <dt>Telegram</dt>
                 <dd>{{ truck.hasTelegramLinked ? 'Կապակցված ✓' : 'Կապակցված չէ' }}</dd>
+              </div>
+              <!-- Answers "who among the old, already-published drivers has
+                   (still) done this and who hasn't" — the dashboard already
+                   blocks the ones reading «Չի համաձայնվել» here on their next
+                   login, this is just the panel's own view of the same fact. -->
+              <div>
+                <dt>Գաղտնիության համաձայնություն</dt>
+                <dd>
+                  <AppBadge
+                    :variant="truck.privacyConsent ? 'success' : 'danger'"
+                    :title="truck.privacyConsent ? `Համաձայնել է ${formatDate(truck.privacyConsent.acceptedAt)}` : ''"
+                  >
+                    {{ truck.privacyConsent ? 'Համաձայն է ✓' : 'Չի համաձայնվել' }}
+                  </AppBadge>
+                </dd>
               </div>
               <!-- Whether the driver can log in at all. Worth its own row
                    because "no password" is otherwise invisible in the panel and
@@ -2242,6 +2309,13 @@ async function rejectReview(review: AdminReview): Promise<void> {
     h3 {
       margin: 0 0 var(--space-1);
     }
+  }
+
+  &__badges {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--space-1);
   }
 
   &__muted {

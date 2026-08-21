@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common'
-import type { Prisma, TowTruck } from '@prisma/client'
+import type { DriverPrivacyConsent, Prisma, TowTruck } from '@prisma/client'
 import { IMAGE_ORDER } from '../images/image-order'
 import { PrismaService } from '../prisma/prisma.service'
+import { PRIVACY_POLICY_VERSION } from '../privacy-consent/privacy-consent.text'
 import type { TowTruckFilters, TowTruckWhere, TowTruckWithImages } from './tow-truck.types'
 import {
   HEAVY_DUTY_VEHICLE_TYPE,
@@ -309,12 +310,44 @@ export class TowTrucksRepository {
    * inactive trucks, and it is paginated: the admin table is the one listing
    * that grows monotonically and is never filtered down by geography.
    */
-  findAllForAdmin(page: { limit: number; offset: number }): Promise<TowTruckWithImages[]> {
+  findAllForAdmin(
+    page: { limit: number; offset: number },
+  ): Promise<(TowTruckWithImages & { privacyConsents: DriverPrivacyConsent[] })[]> {
     return this.prisma.towTruck.findMany({
-      include: { images: { orderBy: IMAGE_ORDER } },
+      include: {
+        images: { orderBy: IMAGE_ORDER },
+        // Filtered rather than "latest overall": this answers exactly the
+        // question the dashboard's own block does — is there a LIVE consent
+        // at the CURRENT version — so the panel and the driver's own login
+        // can never disagree about who still owes one. `take: 1` because a
+        // partial unique index makes more than one such row impossible (see
+        // the DriverPrivacyConsent migration). See AdminTowTruckSummary.privacyConsent.
+        privacyConsents: {
+          where: { revokedAt: null, policyVersion: PRIVACY_POLICY_VERSION },
+          take: 1,
+        },
+      },
       orderBy: { createdAt: 'desc' },
       take: page.limit,
       skip: page.offset,
+    })
+  }
+
+  /**
+   * Every published driver, unpaginated, for the admin CSV export — active
+   * and deactivated alike, same "admin sees everyone" rule as
+   * `findAllForAdmin`. A `select`, not the default full row: the export reads
+   * four columns, and pulling `description`, coverage JSON, coordinates and
+   * every other column for every driver just to throw them away would be the
+   * wide read `findByCard`'s own comment warns against, at the scale of the
+   * WHOLE table instead of one page of it.
+   */
+  findAllForExport(): Promise<
+    { id: number; driverName: string; companyName: string | null; phone: string; isActive: boolean }[]
+  > {
+    return this.prisma.towTruck.findMany({
+      select: { id: true, driverName: true, companyName: true, phone: true, isActive: true },
+      orderBy: { createdAt: 'asc' },
     })
   }
 

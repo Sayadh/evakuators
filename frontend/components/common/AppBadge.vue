@@ -1,6 +1,6 @@
 <script setup lang="ts">
 interface Props {
-  variant?: 'success' | 'accent' | 'primary' | 'neutral'
+  variant?: 'success' | 'accent' | 'primary' | 'neutral' | 'danger'
 }
 
 withDefaults(defineProps<Props>(), { variant: 'neutral' })
@@ -42,6 +42,11 @@ withDefaults(defineProps<Props>(), { variant: 'neutral' })
   &--neutral {
     background: var(--color-bg);
     color: var(--color-text-secondary);
+  }
+
+  &--danger {
+    background: var(--color-danger-bg, rgba(220, 53, 69, 0.12));
+    color: var(--color-danger);
   }
 }
 </style>

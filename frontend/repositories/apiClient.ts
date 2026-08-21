@@ -43,6 +43,13 @@ interface ApiRequestOptions {
   body?: BodyInit | Record<string, unknown>
   /** e.g. { Authorization: `Bearer ${token}` } for driver-authenticated calls */
   headers?: Record<string, string>
+  /**
+   * `'blob'` for the one endpoint that isn't JSON — the admin drivers CSV
+   * export. ofetch's default response handling assumes JSON and would try
+   * (and fail) to parse a `text/csv` body, so this has to be told upfront
+   * rather than discovered from the response's Content-Type.
+   */
+  responseType?: 'json' | 'blob'
 }
 
 export async function apiFetch<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
@@ -53,6 +60,7 @@ export async function apiFetch<T>(path: string, options: ApiRequestOptions = {})
       query: options.query,
       body: options.body,
       headers: options.headers,
+      responseType: options.responseType,
     })
   } catch (error) {
     await handleExpiredSession(error, path)

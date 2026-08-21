@@ -5,7 +5,6 @@ import {
   PRIVACY_POLICY_VERSION,
 } from '~/constants/privacyConsent'
 import {
-  COMPANY_LEGAL_ADDRESS,
   CONTACT_PHONE,
   PRIVACY_CONTACT_EMAIL,
   SITE_NAME,
@@ -59,30 +58,13 @@ useSeoMetaData({
       <ul>
         <li>Իրավաբանական անվանում՝ {{ PRIVACY_DATA_CONTROLLER }},</li>
         <li>
-          Գրանցման հասցե՝
-          <template v-if="COMPANY_LEGAL_ADDRESS">{{ COMPANY_LEGAL_ADDRESS }}</template>
-          <span v-else class="static-page__todo"
-            >[TODO. Անհրաժեշտ է ընկերության պետական գրանցման հասցեն]</span
-          >,
-        </li>
-        <li>
           Հեռախոս՝
           <a :href="getPhoneHref(CONTACT_PHONE)">{{ CONTACT_PHONE }}</a
           >,
         </li>
-        <li>
-          Email՝
-          <template v-if="PRIVACY_CONTACT_EMAIL">
-            <a :href="`mailto:${PRIVACY_CONTACT_EMAIL}`">{{ PRIVACY_CONTACT_EMAIL }}</a>
-          </template>
-          <span v-else class="static-page__todo"
-            >[TODO. Անհրաժեշտ է տվյալների պաշտպանության հարցերով պատասխանատու, փաստացի ստուգվող
-            email հասցե]</span
-          >։
-        </li>
       </ul>
       <p>
-        Տվյալների մշակման հետ կապված ցանկացած հարցով կարող եք դիմել մեզ ստորև, 11-րդ կետում նշված
+        Տվյալների մշակման հետ կապված ցանկացած հարցով կարող եք դիմել մեզ ստորև, 12-րդ կետում նշված
         կապի միջոցներով։
       </p>
 

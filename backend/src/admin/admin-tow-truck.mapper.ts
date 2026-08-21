@@ -1,4 +1,6 @@
+import type { DriverPrivacyConsent } from '@prisma/client'
 import { decimalToNumber } from '../common/coordinates'
+import { toAdminConsentSummary, type AdminConsentSummary } from '../privacy-consent/privacy-consent.service'
 import type { ServiceAreaJson, TowTruckWithImages } from '../tow-trucks/tow-truck.types'
 import { derivesHeavyEquipment } from '../tow-trucks/vehicle-types'
 
@@ -92,9 +94,22 @@ export interface AdminTowTruckSummary {
   hasPassword: boolean
   createdAt: string
   images: { id: number; url: string }[]
+  /**
+   * Whether this driver currently clears the dashboard's privacy-consent
+   * block — `null` means they do not, which covers three cases the panel
+   * does not need to tell apart: never asked (one of the ~100 drivers
+   * published before the consent dialog existed), asked at an older policy
+   * version, or withdrawn. All three are, right now, "owes a consent",
+   * exactly as `PrivacyConsentService.getStatus` computes it for the
+   * driver's own dashboard — see `TowTrucksRepository.findAllForAdmin`,
+   * which queries for precisely this row rather than "the latest ever".
+   */
+  privacyConsent: AdminConsentSummary | null
 }
 
-export function toAdminTowTruckSummary(truck: TowTruckWithImages): AdminTowTruckSummary {
+export function toAdminTowTruckSummary(
+  truck: TowTruckWithImages & { privacyConsents: Pick<DriverPrivacyConsent, 'policyVersion' | 'acceptedAt' | 'revokedAt'>[] },
+): AdminTowTruckSummary {
   return {
     id: truck.id,
     slug: truck.slug,
@@ -125,5 +140,6 @@ export function toAdminTowTruckSummary(truck: TowTruckWithImages): AdminTowTruck
     hasPassword: truck.passwordHash !== null,
     createdAt: truck.createdAt.toISOString(),
     images: truck.images.map((image) => ({ id: image.id, url: image.url })),
+    privacyConsent: toAdminConsentSummary(truck.privacyConsents?.[0]),
   }
 }

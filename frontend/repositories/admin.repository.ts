@@ -58,6 +58,17 @@ export interface AdminRegistrationRequest {
   longitude?: number
   createdAt: string
   images: { id: number; url: string }[]
+  /**
+   * Whether — and when — this driver ticked the privacy-consent checkbox at
+   * registration. `null` for a request filed before the consent dialog
+   * existed, and also (by backend design) for one already APPROVED/REJECTED
+   * — see `AdminRegistrationSummary.privacyConsent` on the backend for why.
+   */
+  privacyConsent?: {
+    policyVersion: string
+    acceptedAt: string
+    revokedAt: string | null
+  } | null
 }
 
 /**
@@ -200,6 +211,18 @@ export interface AdminTowTruck {
   hasPassword: boolean
   createdAt: string
   images: { id: number; url: string }[]
+  /**
+   * Whether this driver currently clears the dashboard's privacy-consent
+   * block. `null` covers three cases the panel does not need to tell apart:
+   * never asked (published before the consent dialog existed), asked at an
+   * older policy version, or withdrawn — all three mean "owes a consent"
+   * right now, same as the driver's own dashboard.
+   */
+  privacyConsent?: {
+    policyVersion: string
+    acceptedAt: string
+    revokedAt: string | null
+  } | null
 }
 
 /** One entry of a truck's stored coverage — mirrors backend ServiceAreaJson */
@@ -613,6 +636,23 @@ export const adminRepository = {
       method: 'PATCH',
       body: payload,
       headers: authHeader(),
+    })
+  },
+
+  /**
+   * The full drivers list as a downloadable CSV — name, company, phone,
+   * active status, and each driver's all-time traffic totals in one file.
+   *
+   * Returns the raw `Blob` rather than text: the caller (the panel's download
+   * button) hands it straight to `URL.createObjectURL`, and going through a
+   * string in between would only cost a UTF-8 re-encode for no benefit —
+   * `apiFetch`'s `responseType: 'blob'` is what makes this endpoint's
+   * `text/csv` body skip the client's default JSON parsing.
+   */
+  exportDrivers(): Promise<Blob> {
+    return apiFetch<Blob>('/admin/tow-trucks/export.csv', {
+      headers: authHeader(),
+      responseType: 'blob',
     })
   },
 

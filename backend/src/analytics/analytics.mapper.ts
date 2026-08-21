@@ -10,6 +10,7 @@ import type {
   AnalyticsDailyStatRow,
   AnalyticsEventTotals,
   AnalyticsEventTypeSumRow,
+  AnalyticsEventTypeSumRowByTruck,
   AnalyticsRatingBucketApi,
   AnalyticsRatingCountersApi,
   AnalyticsReviewApi,
@@ -48,6 +49,26 @@ export function toEventTotals(rows: AnalyticsEventTypeSumRow[]): AnalyticsEventT
     totals[row.eventType] = row.total
   }
   return totals
+}
+
+/**
+ * Buckets `sumByEventTypeForAllTrucks()`'s flat (truck, event type, count)
+ * rows into one zero-filled totals record per truck — the admin drivers CSV
+ * export's shape. A truck with no key at all in the map (never had a single
+ * event recorded) is exactly as valid a state as one present with all zeros;
+ * the export reads a missing entry as `emptyEventTotals()` rather than
+ * treating it as a data problem — see the export controller.
+ */
+export function groupEventTotalsByTruck(
+  rows: AnalyticsEventTypeSumRowByTruck[],
+): Map<number, AnalyticsEventTotals> {
+  const byTruck = new Map<number, AnalyticsEventTotals>()
+  for (const row of rows) {
+    const totals = byTruck.get(row.towTruckId) ?? emptyEventTotals()
+    totals[row.eventType] = row.total
+    byTruck.set(row.towTruckId, totals)
+  }
+  return byTruck
 }
 
 /** Site-wide counters at zero — same zero-fill contract as emptyEventTotals() */

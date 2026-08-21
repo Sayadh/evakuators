@@ -57,8 +57,18 @@ export class AdminService {
   async listRegistrations(query: AdminRegistrationsQuery): Promise<AdminRegistrationSummary[]> {
     const requests = await this.prisma.registrationRequest.findMany({
       where: query.status ? { status: query.status } : undefined,
-      // Driver's own order — main photo first (see IMAGE_ORDER)
-      include: { images: { orderBy: IMAGE_ORDER } },
+      include: {
+        // Driver's own order — main photo first (see IMAGE_ORDER)
+        images: { orderBy: IMAGE_ORDER },
+        // `take: 1` — a request can only ever have one live row (see the
+        // migration's partial unique index), so this is "the" consent, not
+        // "the latest of several". Empty for a request filed before the
+        // consent dialog existed, or one already APPROVED — `approve()`
+        // re-points the row at the new TowTruck and clears this foreign key
+        // in the same write (see PrivacyConsentRepository.attachRegistrationConsentToTruck),
+        // so a decided request reading empty here is expected, not a bug.
+        privacyConsents: { orderBy: { acceptedAt: 'desc' }, take: 1 },
+      },
       orderBy: { createdAt: 'desc' },
       take: query.limit,
       skip: query.offset,
@@ -85,8 +95,13 @@ export class AdminService {
   async getRegistration(id: number): Promise<AdminRegistrationSummary> {
     const request = await this.prisma.registrationRequest.findUnique({
       where: { id },
-      // Driver's own order — main photo first (see IMAGE_ORDER)
-      include: { images: { orderBy: IMAGE_ORDER } },
+      include: {
+        // Driver's own order — main photo first (see IMAGE_ORDER)
+        images: { orderBy: IMAGE_ORDER },
+        // See the identical include in listRegistrations for why `take: 1`
+        // and why an APPROVED/REJECTED request reads empty here.
+        privacyConsents: { orderBy: { acceptedAt: 'desc' }, take: 1 },
+      },
     })
     if (!request) throw new NotFoundException(`Հայտ #${id}-ը չի գտնվել`)
 

@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { Cron } from '@nestjs/schedule'
+import type { DriverPrivacyConsent } from '@prisma/client'
 import { PrivacyConsentSource } from '@prisma/client'
 import type { ConsentRequestContext } from './consent-request-context'
 import { CONSENT_AUDIT_PURGE_CRON, CONSENT_AUDIT_RETENTION_DAYS } from './privacy-consent.constants'
@@ -277,4 +278,31 @@ export function assertCurrentPolicyVersion(policyVersion: string): void {
  */
 export function assertTruckExists(towTruck: unknown): void {
   if (!towTruck) throw new NotFoundException('Ձեր պրոֆիլը չի գտնվել')
+}
+
+/**
+ * One consent row projected the way both admin summaries show it —
+ * `AdminRegistrationSummary.privacyConsent` and
+ * `AdminTowTruckSummary.privacyConsent`. Pulled out here so the two mappers
+ * cannot drift on what a driver's consent "looks like" from the panel: one
+ * reads it off a pending `RegistrationRequest`, the other off a published
+ * `TowTruck`, and this is the one place that decides which raw columns
+ * survive onto the wire.
+ */
+export interface AdminConsentSummary {
+  policyVersion: string
+  acceptedAt: string
+  revokedAt: string | null
+}
+
+/** `null` in, `null` out — the caller passes whatever its own query found (or nothing) */
+export function toAdminConsentSummary(
+  row: Pick<DriverPrivacyConsent, 'policyVersion' | 'acceptedAt' | 'revokedAt'> | null | undefined,
+): AdminConsentSummary | null {
+  if (!row) return null
+  return {
+    policyVersion: row.policyVersion,
+    acceptedAt: row.acceptedAt.toISOString(),
+    revokedAt: row.revokedAt?.toISOString() ?? null,
+  }
 }

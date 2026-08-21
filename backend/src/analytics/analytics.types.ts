@@ -114,6 +114,11 @@ export interface AnalyticsEventTypeSumRow {
   total: number
 }
 
+/** Same shape as above, one truck's worth per row — the admin drivers export's read */
+export interface AnalyticsEventTypeSumRowByTruck extends AnalyticsEventTypeSumRow {
+  towTruckId: number
+}
+
 /* ── Site-wide (admin panel) ── */
 
 /** The site-wide twin of AnalyticsEventRecord — no tow truck, same guarantees */

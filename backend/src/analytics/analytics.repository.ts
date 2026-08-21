@@ -6,6 +6,7 @@ import type {
   AnalyticsDailyStatRow,
   AnalyticsEventRecord,
   AnalyticsEventTypeSumRow,
+  AnalyticsEventTypeSumRowByTruck,
 } from './analytics.types'
 import { AnalyticsDateKey, dateKeyToDate } from './analytics.utils'
 
@@ -156,6 +157,30 @@ export class AnalyticsRepository {
     })
 
     return rows.map((row) => ({
+      eventType: row.eventType,
+      total: row._sum.eventCount ?? 0,
+    }))
+  }
+
+  /**
+   * All-time totals for every truck at once, one query — the admin drivers
+   * CSV export's read. `sumByEventType` above answers the same question for
+   * one truck; a loop calling it once per driver would be one query per row
+   * of the export instead of one query total. Same reasoning as
+   * `sumEventTypeSiteWide`'s comment for why an unfiltered (all-time) read of
+   * `AnalyticsDailyStat` is cheap regardless of platform age: the table holds
+   * one row per (truck, day, event type) that actually happened, never one
+   * per raw event, and is never purged — grouping by truck as well here does
+   * not change that.
+   */
+  async sumByEventTypeForAllTrucks(): Promise<AnalyticsEventTypeSumRowByTruck[]> {
+    const rows = await this.prisma.analyticsDailyStat.groupBy({
+      by: ['towTruckId', 'eventType'],
+      _sum: { eventCount: true },
+    })
+
+    return rows.map((row) => ({
+      towTruckId: row.towTruckId,
       eventType: row.eventType,
       total: row._sum.eventCount ?? 0,
     }))

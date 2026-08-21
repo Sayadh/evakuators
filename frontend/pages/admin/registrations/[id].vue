@@ -393,9 +393,25 @@ async function reject(): Promise<void> {
             Հայտ #{{ request.id }} · {{ formatDateNumeric(request.createdAt) }}
           </p>
         </div>
-        <AppBadge :variant="isPending ? 'accent' : 'neutral'">
-          {{ isPending ? 'Սպասում է' : request.status === 'APPROVED' ? 'Հաստատված' : 'Մերժված' }}
-        </AppBadge>
+        <div class="review__badges">
+          <AppBadge :variant="isPending ? 'accent' : 'neutral'">
+            {{ isPending ? 'Սպասում է' : request.status === 'APPROVED' ? 'Հաստատված' : 'Մերժված' }}
+          </AppBadge>
+          <!--
+            Only while PENDING: the backend re-points this same consent row
+            at the new TowTruck the moment a request is approved (and clears
+            it on the request), so an already-decided request always reads
+            "no consent" here regardless of what the driver actually did —
+            showing the badge then would just be wrong, not merely stale.
+          -->
+          <AppBadge v-if="isPending" :variant="request.privacyConsent ? 'success' : 'danger'">
+            {{
+              request.privacyConsent
+                ? `Գաղտնիությանը համաձայնել է · ${formatDateNumeric(request.privacyConsent.acceptedAt)}`
+                : 'Գաղտնիությանը դեռ չի համաձայնել'
+            }}
+          </AppBadge>
+        </div>
       </header>
 
       <!-- Stated up front rather than discovered on submit: everything below is
@@ -535,6 +551,13 @@ async function reject(): Promise<void> {
     margin: var(--space-1) 0 0;
     font-size: 0.85rem;
     color: var(--color-text-muted);
+  }
+
+  &__badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    justify-content: flex-end;
   }
 
   &__intro {

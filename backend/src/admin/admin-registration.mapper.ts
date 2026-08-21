@@ -1,4 +1,6 @@
+import type { DriverPrivacyConsent } from '@prisma/client'
 import { decimalToNumber } from '../common/coordinates'
+import { toAdminConsentSummary, type AdminConsentSummary } from '../privacy-consent/privacy-consent.service'
 import type { RegistrationWithImages } from '../registration/registration.repository'
 
 /**
@@ -28,14 +30,32 @@ export type AdminRegistrationSummary = Omit<
 > & {
   latitude?: number
   longitude?: number
+  /**
+   * Whether — and when — this driver ticked the privacy-consent checkbox.
+   *
+   * Read straight off the row `PrivacyConsentService.acceptForRegistration`
+   * writes at submission time, so this is not inferred from anything else on
+   * the request. `null` covers two cases the admin panel does not need to
+   * tell apart: a request filed before the consent dialog existed, and one
+   * that has already been decided (`approve()` re-points the row at the new
+   * TowTruck and clears `registrationRequestId` — see
+   * `PrivacyConsentRepository.attachRegistrationConsentToTruck` — so a
+   * PENDING request is the only reliable place to read this from).
+   */
+  privacyConsent: AdminConsentSummary | null
 }
 
-export function toAdminRegistrationSummary(
-  request: RegistrationWithImages,
-): AdminRegistrationSummary {
+type RegistrationRow = RegistrationWithImages & {
+  privacyConsents: Pick<DriverPrivacyConsent, 'policyVersion' | 'acceptedAt' | 'revokedAt'>[]
+}
+
+export function toAdminRegistrationSummary(request: RegistrationRow): AdminRegistrationSummary {
+  const { privacyConsents, ...rest } = request
+
   return {
-    ...request,
+    ...rest,
     latitude: decimalToNumber(request.latitude),
     longitude: decimalToNumber(request.longitude),
+    privacyConsent: toAdminConsentSummary(privacyConsents[0]),
   }
 }

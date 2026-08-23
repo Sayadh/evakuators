@@ -1,4 +1,4 @@
-import { IsEnum, IsInt, IsOptional, Max, Min } from 'class-validator'
+import { IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator'
 import { RegistrationStatus } from '@prisma/client'
 import {
   ADMIN_LIST_DEFAULT_LIMIT,
@@ -36,4 +36,24 @@ export class AdminRegistrationsQuery extends AdminListQuery {
   @IsOptional()
   @IsEnum(RegistrationStatus)
   status?: RegistrationStatus
+}
+
+/**
+ * The tow truck list additionally filters by vehicle type.
+ *
+ * Plain string, not an enum — same reasoning as `RegistrationProfileDto`'s own
+ * `vehicleType`: the backend stores it as an opaque slug and the taxonomy
+ * itself is owned by `frontend/constants/vehicles.ts` (see vehicle-types.ts).
+ * Deliberately plain equality on the raw column, unlike the public listing's
+ * `?vehicleType=manipulator`/`heavy-duty` union (see
+ * `TowTrucksRepository.buildWhere`) — the admin panel shows each truck's own
+ * `vehicleType` label on its card, so a filter that pulled in trucks by a
+ * *different* union field (the `manipulator`/`heavyEquipment` checkboxes)
+ * would show cards under a filter whose own label disagrees with it.
+ */
+export class AdminTowTrucksQuery extends AdminListQuery {
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  vehicleType?: string
 }

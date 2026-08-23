@@ -149,6 +149,16 @@ const statusOptions = [
   { value: 'ALL', label: 'Բոլորը' },
 ]
 
+type TowTruckTypeFilter = VehicleType | 'ALL'
+
+/** 'ALL' plus the same four types the registration form's own select offers */
+const towTruckTypeOptions = [
+  { value: 'ALL', label: 'Բոլոր տեսակները' },
+  ...Object.values(VehicleType).map((type) => ({ value: type, label: VEHICLE_TYPE_LABELS[type] })),
+]
+
+const towTruckTypeFilter = ref<TowTruckTypeFilter>('ALL')
+
 /**
  * Admin listings are paginated server-side (see backend AdminListQuery): these
  * tables only ever grow, and the panel was refetching every row ever created on
@@ -521,7 +531,11 @@ async function loadTowTrucks(append = false): Promise<void> {
   void preserveScrollAfterDisable(scrollY)
   try {
     const offset = append ? towTrucks.value.length : 0
-    const page = await adminRepository.listTowTrucks({ limit: ADMIN_PAGE_SIZE, offset })
+    const page = await adminRepository.listTowTrucks({
+      limit: ADMIN_PAGE_SIZE,
+      offset,
+      vehicleType: towTruckTypeFilter.value === 'ALL' ? undefined : towTruckTypeFilter.value,
+    })
     towTrucks.value = append ? [...towTrucks.value, ...page] : page
     hasMoreTowTrucks.value = page.length === ADMIN_PAGE_SIZE
   } catch {
@@ -1126,6 +1140,10 @@ watch(statusFilter, () => {
   if (apiEnabled) void loadRegistrations()
 })
 
+watch(towTruckTypeFilter, () => {
+  if (apiEnabled) void loadTowTrucks()
+})
+
 /* ── Telegram link hand-off (shown after approval and after a reset) ── */
 const telegramLinkModalOpen = ref(false)
 const telegramLinkModalTitle = ref('')
@@ -1503,6 +1521,13 @@ async function rejectReview(review: AdminReview): Promise<void> {
               {{ towTruckCounts.inactive }}
             </p>
           </div>
+
+          <AppSelect
+            v-model="towTruckTypeFilter"
+            :options="towTruckTypeOptions"
+            placeholder="Տեսակ"
+            class="admin-section__filter"
+          />
 
           <!-- Opens the picker; sends nothing on its own. See
                openPasswordModal() for why nothing is fetched until then. -->

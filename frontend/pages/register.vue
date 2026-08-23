@@ -7,15 +7,11 @@ import { trackRegistrationSubmit } from '~/utils/analytics'
 import type { Coordinates } from '~/utils/coordinates'
 import { extractErrorMessage } from '~/utils/errors'
 import { getPhoneHref } from '~/utils/formatPhone'
-import {
-  createRegistrationFormState,
-  validateRegistrationForm,
-} from '~/utils/registrationForm'
+import { createRegistrationFormState, validateRegistrationForm } from '~/utils/registrationForm'
 
 useSeoMetaData({
   title: `Գրանցել էվակուատոր | Միացեք հարթակին | ${SITE_NAME}`,
-  description:
-    'Գրանցեք ձեր էվակուատորը Evakuators.am հարթակում և ստացեք պատվերներ ձեր տարածքից։',
+  description: 'Գրանցեք ձեր էվակուատորը Evakuators.am հարթակում և ստացեք պատվերներ ձեր տարածքից։',
   path: '/register',
 })
 
@@ -314,10 +310,11 @@ function onConsentCancelled(): void {
          before the form because it applies before the driver has even picked
          a vehicle type. -->
     <p class="register__notice">
-      <strong>{{ VEHICLE_TYPE_LABELS[VehicleType.Manipulator] }}</strong> և
-      <strong>{{ VEHICLE_TYPE_LABELS[VehicleType.HeavyDuty] }}</strong>
+      <strong>{{ VEHICLE_TYPE_LABELS[VehicleType.Manipulator] }}ի</strong> և
+      <strong>{{ VEHICLE_TYPE_LABELS[VehicleType.HeavyDuty] }}ի</strong>
       գրանցումն անվճար է, մնացած տեսակների համար՝ վճարովի։ Հարցերի համար զանգահարեք
-      <a :href="getPhoneHref(CONTACT_PHONE)">{{ CONTACT_PHONE }}</a>։
+      <a :href="getPhoneHref(CONTACT_PHONE)">{{ CONTACT_PHONE }}</a
+      >։
     </p>
 
     <form class="register__form" novalidate @submit.prevent="onSubmit">
@@ -340,12 +337,10 @@ function onConsentCancelled(): void {
               type="file"
               accept="image/*"
               @change="onMainImageChange"
-            >
-            <span v-if="imageNames.main" class="register__file-name">{{
-              imageNames.main
-            }}</span>
+            />
+            <span v-if="imageNames.main" class="register__file-name">{{ imageNames.main }}</span>
             <div v-if="mainImagePreview" class="register__image-preview-wrap">
-              <img :src="mainImagePreview" alt="" class="register__image-preview" >
+              <img :src="mainImagePreview" alt="" class="register__image-preview" />
               <button
                 type="button"
                 class="register__image-remove"
@@ -368,7 +363,7 @@ function onConsentCancelled(): void {
               accept="image/*"
               multiple
               @change="onExtraImagesChange"
-            >
+            />
             <span v-if="imageNames.extra.length" class="register__file-name">
               {{ imageNames.extra.length }}/{{ MAX_EXTRA_IMAGES }} ֆայլ ընտրված է
             </span>
@@ -378,7 +373,7 @@ function onConsentCancelled(): void {
                 :key="index"
                 class="register__image-preview-wrap"
               >
-                <img :src="preview" alt="" class="register__image-preview" >
+                <img :src="preview" alt="" class="register__image-preview" />
                 <button
                   type="button"
                   class="register__image-remove"
@@ -498,21 +493,9 @@ function onConsentCancelled(): void {
     }
   }
 
-
-
-
-
-
-
-
-
-
   &__required {
     color: var(--color-danger);
   }
-
-
-
 
   &__file {
     display: flex;
@@ -575,7 +558,6 @@ function onConsentCancelled(): void {
     flex-wrap: wrap;
     gap: var(--space-3);
   }
-
 
   &__error {
     color: var(--color-danger);

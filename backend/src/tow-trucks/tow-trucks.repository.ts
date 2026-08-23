@@ -310,10 +310,17 @@ export class TowTrucksRepository {
    * inactive trucks, and it is paginated: the admin table is the one listing
    * that grows monotonically and is never filtered down by geography.
    */
+  /**
+   * `vehicleType`, when given, is plain equality on the raw column — not the
+   * manipulator/heavy-duty union `buildWhere` applies for the public listing
+   * (see `AdminTowTrucksQuery`'s own comment for why the two must differ).
+   */
   findAllForAdmin(
     page: { limit: number; offset: number },
+    vehicleType?: string,
   ): Promise<(TowTruckWithImages & { privacyConsents: DriverPrivacyConsent[] })[]> {
     return this.prisma.towTruck.findMany({
+      where: vehicleType ? { vehicleType } : undefined,
       include: {
         images: { orderBy: IMAGE_ORDER },
         // Filtered rather than "latest overall": this answers exactly the

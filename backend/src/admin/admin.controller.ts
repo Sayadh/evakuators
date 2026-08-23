@@ -21,7 +21,7 @@ import type { ReviewWithTruck } from '../reviews/reviews.repository'
 import type { ServiceAreaJson } from '../tow-trucks/tow-truck.types'
 import type { AdminTowTruckSummary } from './admin-tow-truck.mapper'
 import { AdminService } from './admin.service'
-import { AdminListQuery, AdminRegistrationsQuery } from './dto/admin-list.query'
+import { AdminListQuery, AdminRegistrationsQuery, AdminTowTrucksQuery } from './dto/admin-list.query'
 import { ApproveRegistrationDto } from './dto/approve-registration.dto'
 import { BroadcastMessageDto } from './dto/broadcast-message.dto'
 import { IssuePasswordsDto } from './dto/issue-passwords.dto'
@@ -233,7 +233,7 @@ export class AdminController {
 
   /** Every tow truck, active or not — paginated, unlike the public listing */
   @Get('tow-trucks')
-  listTowTrucks(@Query() query: AdminListQuery): Promise<AdminTowTruckSummary[]> {
+  listTowTrucks(@Query() query: AdminTowTrucksQuery): Promise<AdminTowTruckSummary[]> {
     return this.adminService.listTowTrucks(query)
   }
 

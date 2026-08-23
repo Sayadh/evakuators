@@ -21,7 +21,11 @@ import {
   toAdminRegistrationSummary,
 } from './admin-registration.mapper'
 import { AdminTowTruckSummary, toAdminTowTruckSummary } from './admin-tow-truck.mapper'
-import type { AdminListQuery, AdminRegistrationsQuery } from './dto/admin-list.query'
+import type {
+  AdminListQuery,
+  AdminRegistrationsQuery,
+  AdminTowTrucksQuery,
+} from './dto/admin-list.query'
 import type { ApproveRegistrationDto } from './dto/approve-registration.dto'
 import type { RemoveServiceAreaDto } from './dto/remove-service-area.dto'
 import type { SetPrimaryAreaDto } from './dto/set-primary-area.dto'
@@ -794,9 +798,14 @@ export class AdminService {
     return this.reviewsRepository.listPending(query)
   }
 
-  /** Every tow truck, active or not — the public list only ever shows isActive: true */
-  async listTowTrucks(query: AdminListQuery): Promise<AdminTowTruckSummary[]> {
-    const trucks = await this.towTrucksRepository.findAllForAdmin(query)
+  /**
+   * Every tow truck, active or not — the public list only ever shows
+   * isActive: true. `vehicleType`, when given, is plain equality on the raw
+   * column — see `AdminTowTrucksQuery` for why this deliberately does not
+   * reuse the public listing's manipulator/heavy-duty union.
+   */
+  async listTowTrucks(query: AdminTowTrucksQuery): Promise<AdminTowTruckSummary[]> {
+    const trucks = await this.towTrucksRepository.findAllForAdmin(query, query.vehicleType)
     return trucks.map(toAdminTowTruckSummary)
   }
 

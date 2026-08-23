@@ -336,6 +336,12 @@ export interface AdminListParams {
   offset?: number
 }
 
+/** `listTowTrucks`'s own extra param — see its own comment */
+export interface AdminTowTrucksParams extends AdminListParams {
+  /** Plain equality on the raw column — see `listTowTrucks`'s own comment */
+  vehicleType?: string
+}
+
 /** All moderation reads/writes against the backend admin endpoints */
 export const adminRepository = {
   listRegistrations(
@@ -509,9 +515,18 @@ export const adminRepository = {
     })
   },
 
-  listTowTrucks(params: AdminListParams = {}): Promise<AdminTowTruck[]> {
+  /**
+   * `vehicleType`, when given, is plain equality on the truck's own raw
+   * column — not the manipulator/heavy-duty union the public `/tow-trucks`
+   * listing applies (see `TowTrucksRepository.buildWhere` on the backend).
+   * Each admin card already shows that truck's own `vehicleType` label, so a
+   * filter pulling in trucks via a *different* field (the `manipulator`/
+   * `heavyEquipment` checkboxes) would show cards whose own label disagrees
+   * with the filter that surfaced them.
+   */
+  listTowTrucks(params: AdminTowTrucksParams = {}): Promise<AdminTowTruck[]> {
     return apiFetch<AdminTowTruck[]>('/admin/tow-trucks', {
-      query: { limit: params.limit, offset: params.offset },
+      query: { limit: params.limit, offset: params.offset, vehicleType: params.vehicleType },
       headers: authHeader(),
     })
   },

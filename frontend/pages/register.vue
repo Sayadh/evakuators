@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { imageRepository, isApiEnabled, registrationRepository } from '~/repositories'
-import { SITE_NAME } from '~/constants/site'
+import { CONTACT_PHONE, SITE_NAME } from '~/constants/site'
+import { VEHICLE_TYPE_LABELS } from '~/constants/vehicles'
+import { VehicleType } from '~/types/enums'
 import { trackRegistrationSubmit } from '~/utils/analytics'
 import type { Coordinates } from '~/utils/coordinates'
 import { extractErrorMessage } from '~/utils/errors'
+import { getPhoneHref } from '~/utils/formatPhone'
 import {
   createRegistrationFormState,
   validateRegistrationForm,
@@ -306,6 +309,16 @@ function onConsentCancelled(): void {
       Լրացրեք ձեր և մեքենայի տվյալները, և ձեր պրոֆիլը կհայտնվի հարթակում ստուգումից հետո։
     </p>
 
+    <!-- Only these two vehicle types are paid — ordinary flatbed/sliding-platform
+         evacuators are not. Placed before the form (not inside a field's hint)
+         because it applies before the driver has even picked a vehicle type. -->
+    <p class="register__notice">
+      <strong>{{ VEHICLE_TYPE_LABELS[VehicleType.Manipulator] }}</strong> և
+      <strong>{{ VEHICLE_TYPE_LABELS[VehicleType.HeavyDuty] }}</strong>
+      գրանցումը վճարովի է։ Հարցերի համար զանգահարեք
+      <a :href="getPhoneHref(CONTACT_PHONE)">{{ CONTACT_PHONE }}</a>։
+    </p>
+
     <form class="register__form" novalidate @submit.prevent="onSubmit">
       <!-- Every question below is shared, verbatim, with the moderator's copy
            of this form at /admin/registrations/:id — one component so the two
@@ -432,6 +445,23 @@ function onConsentCancelled(): void {
   &__intro {
     color: var(--color-text-secondary);
     max-width: 640px;
+  }
+
+  &__notice {
+    max-width: 640px;
+    margin-top: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: rgba(255, 193, 7, 0.12);
+    border: 1px solid rgba(255, 193, 7, 0.4);
+    border-radius: var(--radius-md);
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: var(--color-text-secondary);
+
+    a {
+      color: var(--color-primary);
+      font-weight: 600;
+    }
   }
 
   &__form {

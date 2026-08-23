@@ -309,13 +309,14 @@ function onConsentCancelled(): void {
       Լրացրեք ձեր և մեքենայի տվյալները, և ձեր պրոֆիլը կհայտնվի հարթակում ստուգումից հետո։
     </p>
 
-    <!-- Only these two vehicle types are paid — ordinary flatbed/sliding-platform
-         evacuators are not. Placed before the form (not inside a field's hint)
-         because it applies before the driver has even picked a vehicle type. -->
+    <!-- Manipulator and heavy-duty registration is free; every other vehicle
+         type (ordinary flatbed/sliding-platform evacuators) is paid. Placed
+         before the form because it applies before the driver has even picked
+         a vehicle type. -->
     <p class="register__notice">
       <strong>{{ VEHICLE_TYPE_LABELS[VehicleType.Manipulator] }}</strong> և
       <strong>{{ VEHICLE_TYPE_LABELS[VehicleType.HeavyDuty] }}</strong>
-      գրանցումը վճարովի է։ Հարցերի համար զանգահարեք
+      գրանցումն անվճար է, մնացած տեսակների համար՝ վճարովի։ Հարցերի համար զանգահարեք
       <a :href="getPhoneHref(CONTACT_PHONE)">{{ CONTACT_PHONE }}</a>։
     </p>
 

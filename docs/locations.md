@@ -540,25 +540,34 @@ would mean parsing a composed string back apart, and a legacy label that never
 followed the format would parse into nonsense — so the field starts empty and
 asks again, which is a question rather than a silent wrong answer.
 
-### The city/district listing order — fully random, on request
+### The city/district listing order — based-here first, random within each tier
 
 A city or Yerevan district page (and the landing-settlement pages that borrow
-one) used to order the drivers **based** there above the ones who merely also
-cover it, with rating deciding inside each tier. Both tiers are gone now: these
-two pages show every matching driver in a flat, seeded-random order — see
-`sortTowTrucks`'s `tiered: false` mode and `applyTowTruckFilters`, its only
-caller.
+one) orders the drivers **based** there above the ones who merely also cover
+it — `isBasedAt`, compared against the driver's own structural placement
+(`location.citySlug`/`districtSlug`), never against `serviceAreas` (every
+driver on a city page already serves that city, so coverage would be true for
+all of them and rank nothing). Unlike the rating band on every other listing,
+there is no third tier: within "based here" and within "covers it" the order is
+a flat, seeded shuffle, not a rating sort — a badly-rated local driver still
+outranks a well-rated visiting one, because "based here" is what a search for
+one town is actually asking for. See `sortTowTrucks`'s `tiered: false` mode
+with its `basePlace` argument, and `applyTowTruckFilters`, its only caller.
+
+A road corridor page passes no `basePlace` at all (a truck cannot be "based on"
+a road), so on those pages every driver is in one shuffled group.
 
 Every other listing (marz pages, the Yerevan overview, the vehicle-type pages,
 the homepage's featured section, "similar trucks") is unaffected and still
 keeps the half-point rating band described in `docs/architecture.md` § "The
-listing order is random" — this change is scoped to the two search pages with
-a filter sidebar, nowhere else.
+listing order is random" — the `basePlace` tier is scoped to the two search
+pages with a filter sidebar, nowhere else.
 
 `frontend/tests/listingShuffle.spec.ts` covers both modes; the driver's own
-**base place** — which city/district/corridor they picked at registration, and
-what a city page's listing is scoped to in the first place — is a separate,
-unaffected concept, covered by `frontend/tests/basePlaceRanking.spec.ts`.
+**base place** — which city/district/corridor they picked at registration —
+is what feeds `basePlace` above and is also, unrelatedly, what a city page's
+listing is scoped to in the first place; that picker is covered by
+`frontend/tests/basePlaceRanking.spec.ts`.
 
 ### Coordinates are stated at approval too
 

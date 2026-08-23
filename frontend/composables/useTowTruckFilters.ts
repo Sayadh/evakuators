@@ -2,7 +2,7 @@ import { useTowTruckFiltersStore } from '~/stores/towTruckFilters'
 import type { TowTruckCard } from '~/types/towTruck'
 import { trackFilterApply } from '~/utils/analytics'
 import { buildFilterQueryParams, parseFilterQueryParams } from '~/utils/queryParams'
-import { applyTowTruckFilters } from '~/utils/towTruckFilters'
+import { applyTowTruckFilters, type BasePlace } from '~/utils/towTruckFilters'
 
 const FILTER_QUERY_KEYS = ['24h', 'vehicleType', 'services', 'capacity', 'sort']
 
@@ -11,11 +11,16 @@ const FILTER_QUERY_KEYS = ['24h', 'vehicleType', 'services', 'capacity', 'sort']
  * restores state from the URL, keeps the URL in sync and returns the filtered list.
  *
  * The only two pages that call this — the city and Yerevan district search
- * pages — show the Recommended order fully random: no rating, no "based here"
- * boost, every driver an equal shot at the top on every page load. See
- * `applyTowTruckFilters`.
+ * pages — show the Recommended order shuffled, with one tier ahead of the
+ * shuffle: drivers actually based in the town/district being searched come
+ * first (see `applyTowTruckFilters`'s `basePlace`). `basePlace` is optional
+ * because the city page also serves road corridors, which have no base-place
+ * concept at all (see `BasePlace`).
  */
-export function useTowTruckFilters(towTrucks: Ref<TowTruckCard[]>) {
+export function useTowTruckFilters(
+  towTrucks: Ref<TowTruckCard[]>,
+  basePlace?: MaybeRefOrGetter<BasePlace | undefined>,
+) {
   // Read once, in setup: `useState` cannot be reached from inside a computed's
   // getter, and the value must be the same one the SSR pass used anyway.
   const seed = useListingShuffleSeed()
@@ -44,7 +49,7 @@ export function useTowTruckFilters(towTrucks: Ref<TowTruckCard[]>) {
   }
 
   const filteredTowTrucks = computed(() =>
-    applyTowTruckFilters(towTrucks.value, store.$state, seed),
+    applyTowTruckFilters(towTrucks.value, store.$state, seed, toValue(basePlace)),
   )
   const activeFiltersCount = computed(() => store.activeFiltersCount)
 

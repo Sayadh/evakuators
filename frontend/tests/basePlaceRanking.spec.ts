@@ -12,13 +12,12 @@ import {
  * "Base place" here is the registration/dashboard concept — which city,
  * district or corridor a driver picks as their own base (`primaryArea.ts`).
  *
- * It used to also drive a listing-order boost ("based here" ranked above
- * "merely also covers it") on the city/district search pages. That boost is
- * gone — see `frontend/tests/listingShuffle.spec.ts` for what those pages do
- * now (fully random, no tiering at all) — but the base-place *picker* below is
- * unrelated and unaffected: a driver still states one base place, it is still
- * what a city/district page's listing is scoped to, it just no longer changes
- * the order within that listing.
+ * It also drives a listing-order boost on the city/district search pages —
+ * "based here" ranks above "merely also covers it", each tier still shuffled
+ * internally — see `frontend/tests/listingShuffle.spec.ts` for that mechanism
+ * (`isBasedAt` / `sortTowTrucks`'s `basePlace`). The base-place *picker* below
+ * is a separate concern: a driver states one base place, and that is both what
+ * a city/district page's listing is scoped to AND what feeds the boost above.
  */
 
 describe('composeLocationName', () => {

@@ -97,6 +97,37 @@ function ratingBand(truck: TowTruckCard): number {
 }
 
 /**
+ * The place a city/district listing page is *about*, so it can ask "is this
+ * driver based here, or merely also covering it?" — see `isBasedAt`.
+ *
+ * Only a city or a Yerevan district, never a marz and never a road corridor,
+ * because those are the only two things `TowTruck.location.citySlug` /
+ * `districtSlug` can hold. A corridor page passes nothing, which is correct
+ * rather than a gap: a truck cannot be "based in" «Գառնի–Գեղարդ», so on that
+ * page no driver is more local than any other.
+ */
+export interface BasePlace {
+  citySlug?: string
+  districtSlug?: string
+}
+
+/**
+ * Whether this driver's own base is the place the page is about — i.e. they
+ * work here, not merely *also* here.
+ *
+ * Compared against the structural placement (`location.citySlug` /
+ * `districtSlug`), never against `serviceAreas`: every driver on a city page
+ * already serves that city, so matching on coverage would make this true for
+ * all of them and boost nothing.
+ */
+export function isBasedAt(truck: TowTruckCard, place: BasePlace | undefined): boolean {
+  if (!place) return false
+  if (place.citySlug) return truck.location.citySlug === place.citySlug
+  if (place.districtSlug) return truck.location.districtSlug === place.districtSlug
+  return false
+}
+
+/**
  * Orders a list for the **Recommended** sort — the only sort this touches;
  * `SortOption.Price` is the customer's own explicit instruction and is never
  * reordered by anything below.
@@ -112,20 +143,24 @@ function ratingBand(truck: TowTruckCard): number {
  * reviewed, so never moved — the ordering was quietly deciding who got work.
  *
  * `tiered: false` — used only by the city/district search pages
- * (`useTowTruckFilters` → `applyTowTruckFilters`) — skips the rating band
- * entirely and returns the shuffle itself: every driver, regardless of rating
- * or of being locally based, has an equal chance at the top of the list on
- * every page load. This was a direct, later request on top of the banded
- * behaviour above — those two pages used to also boost a driver based in the
- * town being searched, and now do not.
+ * (`useTowTruckFilters` → `applyTowTruckFilters`) — skips the rating band and
+ * shuffles everyone's Recommended position on every page load, EXCEPT for one
+ * tier ahead of that shuffle: drivers actually based in the town or district
+ * being searched (`isBasedAt`) come first, in their own shuffled order, then
+ * everyone who merely also covers it, in theirs. Someone searching «Ավան» is
+ * looking for an Ավան driver first and a driver who merely also drives there
+ * second — the shuffle answers "which of the several equally-relevant drivers
+ * do I see on top", not "should a local driver ever be less visible than one
+ * who is not local at all".
  *
  * ## `seed`, and why the shuffle is not in the comparator
  *
  * A comparator that returns random values is not a comparator: the sort
  * contract requires consistency, and violating it lets an engine produce
  * anything at all. So the list is shuffled FIRST and, in tiered mode, sorted by
- * the band second — `Array.prototype.sort` is stable (ES2019), so entries with
- * equal bands keep the shuffled order they arrived in.
+ * the band second (or, in flat mode, by `isBasedAt` second) —
+ * `Array.prototype.sort` is stable (ES2019), so entries with an equal band or
+ * an equal based-here status keep the shuffled order they arrived in.
  *
  * `seed` is decided once per page load and travels in the Nuxt payload
  * (`useListingShuffleSeed`), because the same permutation has to happen on the
@@ -138,6 +173,7 @@ export function sortTowTrucks(
   sort: SortOption,
   seed?: number,
   tiered = true,
+  basePlace?: BasePlace,
 ): TowTruckCard[] {
   switch (sort) {
     case SortOption.Price:
@@ -151,7 +187,16 @@ export function sortTowTrucks(
     default: {
       const base = seed === undefined ? [...trucks] : seededShuffle(trucks, seed)
 
-      if (!tiered) return base
+      if (!tiered) {
+        if (!basePlace) return base
+
+        // Two booleans, so this is -1/0/1 and never a partial comparator. A
+        // stable sort then leaves each side's shuffled order in place — the
+        // same mechanism the rating band uses below.
+        return base.sort(
+          (a, b) => Number(isBasedAt(b, basePlace)) - Number(isBasedAt(a, basePlace)),
+        )
+      }
 
       // Bands, not scores. Equal bands compare 0, and a stable sort then
       // leaves the shuffled order in place — which is the whole mechanism.
@@ -161,21 +206,24 @@ export function sortTowTrucks(
 }
 
 /**
- * The city/district search pages' own entry point — always flat-random (see
- * `sortTowTrucks`'s `tiered: false` mode), because this is their only caller
- * and that is the order they show. Every other listing goes through
- * `useTowTrucks.ts`'s `recommendedWith` instead, which keeps the rating band.
+ * The city/district search pages' own entry point — flat-shuffled with a
+ * based-here tier on top (see `sortTowTrucks`'s `tiered: false` mode), because
+ * this is their only caller and that is the order they show. Every other
+ * listing goes through `useTowTrucks.ts`'s `recommendedWith` instead, which
+ * keeps the rating band and has no concept of a page "being about" one place.
  */
 export function applyTowTruckFilters(
   trucks: TowTruckCard[],
   filters: TowTruckFilterState,
   seed?: number,
+  basePlace?: BasePlace,
 ): TowTruckCard[] {
   return sortTowTrucks(
     trucks.filter((truck) => matchesFilters(truck, filters)),
     filters.sort,
     seed,
     false,
+    basePlace,
   )
 }
 

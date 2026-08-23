@@ -276,9 +276,12 @@ time, and everyone below never called, so never reviewed, so never moved. See
 Most listings still keep one coarse group on top of the shuffle — a half-point
 rating band (`tiered: true`, the default). The city and district search pages
 (`/regions/[region]/[city]`, `/yerevan/[district]`) are the exception: they
-call `applyTowTruckFilters`, which passes `tiered: false`, so on those two pages
-the band is skipped too and the order is the shuffle itself — every driver gets
-an equal shot at the top on every page load, rating included.
+call `applyTowTruckFilters`, which passes `tiered: false`, so the rating band is
+skipped and rating plays no part in the order. Those two pages keep a different
+tier instead: `basePlace` (see `isBasedAt`) puts drivers actually based in the
+town/district being searched ahead of everyone who merely also covers it — a
+search for one town means that town's own drivers first — and only within each
+of those two groups is the order the shuffle itself.
 
 The part that matters architecturally is how the randomness survives hydration.
 `Math.random()` at render time produces one order on the server and another in

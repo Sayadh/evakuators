@@ -83,7 +83,18 @@ const seoSectionTitle = computed(() =>
       : `Էվակուատորի ծառայություններ ${areaName.value}ում`,
 )
 
-const { filteredTowTrucks, activeFiltersCount } = useTowTruckFilters(towTrucks)
+/**
+ * The place THIS listing's drivers are for, so `useTowTruckFilters` can boost
+ * whoever is actually based there. A corridor has no base-place concept (see
+ * `BasePlace`) — nobody is "based on" a road — so it gets no boost, exactly as
+ * before. A landing settlement reuses its target city's drivers (see above),
+ * so its base place is that city's slug, not the settlement's own.
+ */
+const basePlace = computed(() =>
+  isZone ? undefined : { citySlug: isLanding ? landingCity!.slug : citySlug },
+)
+
+const { filteredTowTrucks, activeFiltersCount } = useTowTruckFilters(towTrucks, basePlace)
 const { visibleItems, hasMore, loadMore } = usePagination(filteredTowTrucks, 9)
 const { isDesktop, isDrawerOpen, openDrawer } = useResponsiveFilters()
 

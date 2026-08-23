@@ -17,11 +17,14 @@ import { sortTowTrucks } from '~/utils/towTruckFilters'
  * Most listings still keep one coarse group — a half-point rating band — and
  * shuffle within it (`sortTowTrucks`'s default `tiered: true`). The city and
  * district search pages are the one exception: `tiered: false` drops the band
- * too, so on those two pages the order is a flat shuffle with rating playing
- * no part at all. These tests are about the properties that make both modes
- * safe: the shuffle is uniform enough to be fair, reproducible enough to
- * survive hydration, and never applied where a customer asked for a specific
- * order.
+ * too, so rating plays no part on those two pages — but they keep their own
+ * tier ahead of the shuffle, `basePlace`: drivers actually based in the town or
+ * district being searched come first, and only within that group (and within
+ * "everyone else") is the order a flat shuffle. See `basePlaceRanking.spec.ts`
+ * for the driver-facing base-place *picker*, which is unrelated. These tests
+ * are about the properties that make both modes safe: the shuffle is uniform
+ * enough to be fair, reproducible enough to survive hydration, and never
+ * applied where a customer asked for a specific order.
  */
 
 function truck(id: number, overrides: Partial<TowTruckCard> = {}): TowTruckCard {
@@ -173,7 +176,7 @@ describe('the Recommended order, flat (city and district search pages)', () => {
     expect(winners.has(99)).toBe(true)
   })
 
-  it('is exactly the seeded shuffle, with no re-sort on top of it', () => {
+  it('is exactly the seeded shuffle when no basePlace is given, with no re-sort on top', () => {
     for (const seed of [1, 2, 3]) {
       expect(sortTowTrucks(TEN, SortOption.Recommended, seed, false)).toEqual(
         seededShuffle(TEN, seed),
@@ -189,6 +192,60 @@ describe('the Recommended order, flat (city and district search pages)', () => {
     ]
 
     expect(sortTowTrucks(priced, SortOption.Price, 7, false).map((t) => t.id)).toEqual([2, 3, 1])
+  })
+})
+
+describe('the based-here tier on the flat search pages', () => {
+  // Restored: the city/district pages used to show every driver an equal shot
+  // at the top regardless of where they are actually based. A search for
+  // «Ավան» meaning "show me an Ավան driver first" again outranks "any driver
+  // who merely also covers Ավան" — see `isBasedAt` and `sortTowTrucks`'s
+  // `basePlace` parameter.
+  const local = [truck(1, { location: { name: 'Ավան', districtSlug: 'avan' } as never })]
+  const covering = TEN.filter((item) => item.id !== 1)
+  const AVAN = { districtSlug: 'avan' }
+
+  it('puts every based-here driver ahead of every merely-covering one, on every seed', () => {
+    for (let seed = 0; seed < 50; seed += 1) {
+      const sorted = sortTowTrucks([...covering, ...local], SortOption.Recommended, seed, false, AVAN)
+      expect(sorted[0]!.id).toBe(1)
+    }
+  })
+
+  it('shuffles within each tier rather than fixing a queue inside it', () => {
+    // Two based-here drivers: which of them leads should still vary by seed.
+    const twoLocal = [
+      truck(1, { location: { name: 'Ավան', districtSlug: 'avan' } as never }),
+      truck(2, { location: { name: 'Ավան', districtSlug: 'avan' } as never }),
+    ]
+    const leaders = new Set<number>()
+
+    for (let seed = 0; seed < 50; seed += 1) {
+      leaders.add(
+        sortTowTrucks([...covering, ...twoLocal], SortOption.Recommended, seed, false, AVAN)[0]!
+          .id,
+      )
+    }
+
+    expect(leaders.size).toBe(2)
+  })
+
+  it('does nothing when the page has no base place (a road corridor)', () => {
+    for (const seed of [1, 2, 3]) {
+      expect(sortTowTrucks([...covering, ...local], SortOption.Recommended, seed, false)).toEqual(
+        seededShuffle([...covering, ...local], seed),
+      )
+    }
+  })
+
+  it('never touches the price sort either', () => {
+    const priced = [
+      truck(1, { location: { name: 'Ավան', districtSlug: 'avan' } as never, startingPrice: 5000 }),
+      truck(2, { startingPrice: 3000 } as never),
+    ]
+    expect(sortTowTrucks(priced, SortOption.Price, 7, false, AVAN).map((t) => t.id)).toEqual([
+      2, 1,
+    ])
   })
 })
 

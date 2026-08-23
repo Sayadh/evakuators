@@ -73,6 +73,22 @@ export interface AnalyticsCardDefinition {
  * Single source of truth for the overview row: order, labels, icons and which
  * number each card reads. The card component iterates this — adding a metric is
  * one entry here, not a new block of markup.
+ *
+ * ## Why there is no Email card
+ *
+ * `EMAIL_CLICK` still exists in the enum, in the database and in historical
+ * rows, but it can no longer be produced: the email address was removed from
+ * the public profile, so there is no button to press and
+ * `useAnalyticsTracking().trackEmailClick` has no caller anywhere in the app
+ * (grep it). A card for it would show every driver a permanently frozen number
+ * under the hint "how many visitors pressed the Email button" — a button they
+ * do not have — which reads as "nobody ever emails me" rather than "this
+ * channel does not exist". The admin drivers CSV export omits the column for
+ * exactly the same reason.
+ *
+ * The event type is deliberately NOT deleted: whatever was counted before the
+ * address was removed is real history, and dropping the enum member would
+ * orphan those rows. It simply stops being surfaced.
  */
 export const ANALYTICS_OVERVIEW_CARDS: AnalyticsCardDefinition[] = [
   {
@@ -94,40 +110,42 @@ export const ANALYTICS_OVERVIEW_CARDS: AnalyticsCardDefinition[] = [
     label: 'Զանգի սեղմումներ',
     icon: 'phone',
     eventType: AnalyticsEventType.PhoneClick,
-    hint: 'Քանի այցելու է սեղմել «Զանգահարել» կոճակը',
+    // Same daily-dedup rule as Դիտումներ above, and stated the same way. One
+    // person who calls on three different days is 3 here, not 1 — the number
+    // is visitor-days, and a hint reading plainly "how many visitors" would
+    // have it read as distinct people, which is the Եզակի այցելուներ card.
+    hint: 'Քանի անգամ է սեղմվել «Զանգահարել» կոճակը (օրական՝ մեկ այցելու = 1)',
   },
   {
     id: AnalyticsCard.WhatsAppClicks,
     label: 'WhatsApp',
     icon: 'whatsapp',
     eventType: AnalyticsEventType.WhatsAppClick,
-    hint: 'Քանի այցելու է սեղմել WhatsApp-ի կոճակը',
+    hint: 'Քանի անգամ է սեղմվել WhatsApp-ի կոճակը (օրական՝ մեկ այցելու = 1)',
   },
   {
     id: AnalyticsCard.TelegramClicks,
     label: 'Telegram',
     icon: 'telegram',
     eventType: AnalyticsEventType.TelegramClick,
-    hint: 'Քանի այցելու է սեղմել Telegram-ի կոճակը',
-  },
-  {
-    id: AnalyticsCard.EmailClicks,
-    label: 'Email',
-    icon: 'mail',
-    eventType: AnalyticsEventType.EmailClick,
-    hint: 'Քանի այցելու է սեղմել Email-ի կոճակը',
+    hint: 'Քանի անգամ է սեղմվել Telegram-ի կոճակը (օրական՝ մեկ այցելու = 1)',
   },
 ]
 
 /* ── Chart ───────────────────────────────────────────────────────────────── */
 
-/** Metrics selectable on the daily chart, in display order */
+/**
+ * Metrics selectable on the daily chart, in display order.
+ *
+ * No Email line, for the same reason there is no Email card — see
+ * ANALYTICS_OVERVIEW_CARDS above. On a chart it would be worse than on a card:
+ * a flat line at zero across the whole window reads as a measured result.
+ */
 export const ANALYTICS_CHART_METRICS: { eventType: AnalyticsEventType; label: string }[] = [
   { eventType: AnalyticsEventType.PageView, label: 'Դիտումներ' },
   { eventType: AnalyticsEventType.PhoneClick, label: 'Զանգեր' },
   { eventType: AnalyticsEventType.WhatsAppClick, label: 'WhatsApp' },
   { eventType: AnalyticsEventType.TelegramClick, label: 'Telegram' },
-  { eventType: AnalyticsEventType.EmailClick, label: 'Email' },
 ]
 
 /** Star values for the rating histogram, high → low (how review UIs read) */

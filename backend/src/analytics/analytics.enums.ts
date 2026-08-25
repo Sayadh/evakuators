@@ -22,6 +22,19 @@ export { AnalyticsEventType, SiteEventType } from '@prisma/client'
  * this enum directly.
  */
 export enum AnalyticsPeriod {
+  /**
+   * The Armenia calendar day in progress right now — a 1-day window, not
+   * "the last 24 hours" (see `AnalyticsClock.resolveRange`, which treats
+   * every period this way: whole calendar days, inclusive, ending today).
+   *
+   * Currently offered only by the admin's site-wide panel
+   * (`SiteAnalyticsPanel.vue`) — the driver-facing dashboard's own period
+   * switcher (`ANALYTICS_PERIOD_OPTIONS`) deliberately does not list it. The
+   * enum itself stays one shared closed set rather than forking a second one
+   * for that one panel; a value existing here does not by itself put it in
+   * front of anyone — each caller curates its own options list.
+   */
+  Today = 'TODAY',
   Last7Days = 'LAST_7_DAYS',
   Last30Days = 'LAST_30_DAYS',
   Last90Days = 'LAST_90_DAYS',

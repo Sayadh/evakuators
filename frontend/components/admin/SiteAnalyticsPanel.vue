@@ -15,6 +15,9 @@ import { extractErrorMessage } from '~/utils/errors'
  * is conditional on which mode it's in.
  */
 const PERIOD_OPTIONS = [
+  // Today first — the one period that exists only on this panel, never on a
+  // driver's own dashboard (see AnalyticsPeriod's own comment).
+  { value: AnalyticsPeriod.Today, label: 'Այսօր' },
   { value: AnalyticsPeriod.Last7Days, label: '7 օր' },
   { value: AnalyticsPeriod.Last30Days, label: '30 օր' },
   { value: AnalyticsPeriod.Last90Days, label: '90 օր' },

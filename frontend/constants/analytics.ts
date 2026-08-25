@@ -41,14 +41,25 @@ export const VISITOR_ID_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 730
 /* ── Periods ─────────────────────────────────────────────────────────────── */
 
 export const ANALYTICS_PERIOD_LABELS: Record<AnalyticsPeriod, string> = {
+  [AnalyticsPeriod.Today]: 'Այսօր',
   [AnalyticsPeriod.Last7Days]: 'Վերջին 7 օրը',
   [AnalyticsPeriod.Last30Days]: 'Վերջին 30 օրը',
   [AnalyticsPeriod.Last90Days]: 'Վերջին 90 օրը',
 }
 
-export const ANALYTICS_PERIOD_OPTIONS: SelectOption[] = Object.values(AnalyticsPeriod).map(
-  (period) => ({ value: period, label: ANALYTICS_PERIOD_LABELS[period] }),
-)
+/**
+ * The driver-facing dashboard's own period switcher (`AnalyticsDashboard.vue`)
+ * — an explicit, curated list rather than `Object.values(AnalyticsPeriod)`, on
+ * purpose: `Today` exists in the enum only for the admin's site-wide panel
+ * (`SiteAnalyticsPanel.vue`, which keeps its own separate options array), and
+ * deriving this list from every enum value would hand it to every driver's
+ * dashboard the moment it was added anywhere.
+ */
+export const ANALYTICS_PERIOD_OPTIONS: SelectOption[] = [
+  AnalyticsPeriod.Last7Days,
+  AnalyticsPeriod.Last30Days,
+  AnalyticsPeriod.Last90Days,
+].map((period) => ({ value: period, label: ANALYTICS_PERIOD_LABELS[period] }))
 
 export const ANALYTICS_DEFAULT_PERIOD = AnalyticsPeriod.Last30Days
 

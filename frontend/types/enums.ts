@@ -169,8 +169,17 @@ export enum SiteEventType {
   FreeRoutesView = 'FREE_ROUTES_VIEW',
 }
 
-/** Selectable chart/overview windows — mirrors backend AnalyticsPeriod */
+/**
+ * Selectable chart/overview windows — mirrors backend AnalyticsPeriod.
+ *
+ * `Today` is offered only by the admin's site-wide panel
+ * (`components/admin/SiteAnalyticsPanel.vue`) — the driver-facing dashboard's
+ * own switcher (`ANALYTICS_PERIOD_OPTIONS`) deliberately curates its own list
+ * rather than deriving it from every value here, so this stays one shared
+ * closed set without leaking a value into a page that never asked for it.
+ */
 export enum AnalyticsPeriod {
+  Today = 'TODAY',
   Last7Days = 'LAST_7_DAYS',
   Last30Days = 'LAST_30_DAYS',
   Last90Days = 'LAST_90_DAYS',

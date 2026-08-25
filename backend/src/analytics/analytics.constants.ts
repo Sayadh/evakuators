@@ -26,6 +26,7 @@ export const ANALYTICS_TIMEZONE = ARMENIA_TIMEZONE
 
 /** How many calendar days (inclusive of today) each selectable period covers */
 export const ANALYTICS_PERIOD_DAYS: Record<AnalyticsPeriod, number> = {
+  [AnalyticsPeriod.Today]: 1,
   [AnalyticsPeriod.Last7Days]: 7,
   [AnalyticsPeriod.Last30Days]: 30,
   [AnalyticsPeriod.Last90Days]: 90,

@@ -34,6 +34,7 @@ export interface UpdateMyTowTruckPayload {
   winch?: boolean
   manipulator?: boolean
   wheelSkates?: boolean
+  doubleDeck?: boolean
   /**
    * «Ծանր տեխնիկայի տեղափոխում», proposed by the driver.
    *

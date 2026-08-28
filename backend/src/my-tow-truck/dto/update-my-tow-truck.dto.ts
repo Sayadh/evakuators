@@ -178,6 +178,10 @@ export class UpdateMyTowTruckDto {
   @IsBoolean()
   wheelSkates?: boolean
 
+  @IsOptional()
+  @IsBoolean()
+  doubleDeck?: boolean
+
   /**
    * The specialist technical answers — the same four columns registration
    * collects, editable here for the same reason everything else is: a field a

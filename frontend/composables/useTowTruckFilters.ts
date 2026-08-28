@@ -4,7 +4,13 @@ import { trackFilterApply } from '~/utils/analytics'
 import { buildFilterQueryParams, parseFilterQueryParams } from '~/utils/queryParams'
 import { applyTowTruckFilters, type BasePlace } from '~/utils/towTruckFilters'
 
-const FILTER_QUERY_KEYS = ['24h', 'vehicleType', 'services', 'capacity', 'sort']
+/**
+ * Every key `buildFilterQueryParams` can emit. Stripped from the URL before
+ * the current state is written back, so a filter being turned OFF removes its
+ * param instead of leaving the old value behind — a key missing from this list
+ * is one that can never be cleared from a shared link.
+ */
+const FILTER_QUERY_KEYS = ['24h', 'vehicleType', 'services', 'capacity', 'doubleDeck', 'sort']
 
 /**
  * Connects the filter store to a tow truck list:

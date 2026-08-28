@@ -10,5 +10,13 @@ export interface TowTruckFilterState {
   vehicleType: VehicleType | null
   /** CAPACITY_RANGE_OPTIONS value slug (~/constants/vehicles), or null for "any" */
   capacity: string | null
+  /**
+   * «2-հարկանի էվակուատոր» — carries two cars at once.
+   *
+   * A one-way narrowing like `works24Hours`, not a tri-state: false means "do
+   * not care", never "must NOT be two-tier". Nobody searches for a truck that
+   * definitely cannot carry a second car.
+   */
+  doubleDeck: boolean
   sort: SortOption
 }

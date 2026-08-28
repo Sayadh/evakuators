@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { TowTruckVehicle } from '~/types/towTruck'
 import {
+  asksDoubleDeck,
   asksWheelSkates,
   capacityDisplayText,
   hasManipulator,
@@ -85,6 +86,18 @@ const rows = computed<InfoRow[]>(() => {
       label: 'Անիվային ռոլիկներ',
       value: vehicle.wheelSkates ? 'Այո' : 'Ոչ',
       hint: 'Անիվային ռոլիկներն օգտագործվում են արգելափակված կամ չպտտվող անիվներով մեքենան անվտանգ հարթակ բարձրացնելու և տեղափոխելու համար։',
+    })
+  }
+
+  // Omitted for the same two vehicles, and for the same reason — see
+  // `asksDoubleDeck`. A plain boolean read, not a union predicate like
+  // `hasManipulator`: no vehicle type implies a second deck, so there is no
+  // second answer this could contradict.
+  if (asksDoubleDeck(vehicle.type)) {
+    result.push({
+      label: '2-հարկանի էվակուատոր',
+      value: vehicle.doubleDeck ? 'Այո' : 'Ոչ',
+      hint: 'Երկհարկանի հարթակով էվակուատորը կարող է միաժամանակ տեղափոխել երկու մեքենա՝ մեկը վերին հարկում, մյուսը՝ ներքևում։',
     })
   }
 

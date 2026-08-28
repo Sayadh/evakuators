@@ -66,6 +66,12 @@ export interface TowTruckCardApi {
     capacityTons: number
     /** Needed by the public filter sidebar */
     manipulator: boolean
+    /**
+     * Also the filter sidebar's — «2-հարկանի էվակուատոր» is a checkbox there,
+     * and the filtering runs client-side over this card shape, so a card that
+     * omitted it could not be matched at all.
+     */
+    doubleDeck: boolean
   }
   services: string[]
   serviceAreas: ServiceAreaJson[]
@@ -183,6 +189,7 @@ export interface TowTruckApi {
     winch: boolean
     manipulator: boolean
     wheelSkates: boolean
+    doubleDeck: boolean
     /**
      * «Ծանր տեխնիկայի տեղափոխում», as approved by a moderator.
      *

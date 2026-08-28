@@ -7,6 +7,7 @@ import {
   type CoverageMode,
 } from '~/constants/serviceAreaLimits'
 import {
+  asksDoubleDeck,
   asksWheelSkates,
   CAPACITY_RANGE_OPTIONS,
   specialistSpecFieldsFor,
@@ -101,6 +102,7 @@ const serviceCategories = computed(() => serviceCategoriesFor(model.value.vehicl
 const specFields = computed(() => specialistSpecFieldsFor(model.value.vehicleType))
 const showCapacityBand = computed(() => !usesExactCapacity(model.value.vehicleType))
 const showWheelSkates = computed(() => asksWheelSkates(model.value.vehicleType))
+const showDoubleDeck = computed(() => asksDoubleDeck(model.value.vehicleType))
 
 /** «Հաշիվ-ապրանքագիր» as a plain boolean over one slug in `services` */
 const providesInvoice = computed<boolean>({
@@ -370,6 +372,23 @@ const whatsappModel = armenianPhoneModel('whatsapp')
           <AppTooltip label="Անիվային ռոլիկների բացատրություն">
             Անիվային ռոլիկներն օգտագործվում են արգելափակված կամ չպտտվող անիվներով մեքենան
             անվտանգ հարթակ բարձրացնելու և տեղափոխելու համար։
+          </AppTooltip>
+        </template>
+      </AppCheckbox>
+      <!-- A two-tier deck carries two cars at once, which is a question only
+           the two ordinary evacuators can answer — a crane truck lifts one
+           vehicle and a transporter carries one machine. See `asksDoubleDeck`
+           (its own predicate, not `asksWheelSkates`, for the reason set out
+           there). -->
+      <AppCheckbox
+        v-if="showDoubleDeck"
+        v-model="model.doubleDeck"
+        label="2-հարկանի էվակուատոր"
+      >
+        <template #label-suffix>
+          <AppTooltip label="2-հարկանի էվակուատորի բացատրություն">
+            Երկհարկանի հարթակով էվակուատորը կարող է միաժամանակ տեղափոխել երկու մեքենա՝
+            մեկը վերին հարկում, մյուսը՝ ներքևում։
           </AppTooltip>
         </template>
       </AppCheckbox>

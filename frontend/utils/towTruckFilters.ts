@@ -11,12 +11,18 @@ export function createDefaultFilterState(): TowTruckFilterState {
     services: [],
     vehicleType: null,
     capacity: null,
+    doubleDeck: false,
     sort: SortOption.Recommended,
   }
 }
 
 export function matchesFilters(truck: TowTruckCard, filters: TowTruckFilterState): boolean {
   if (filters.works24Hours && !truck.works24Hours) return false
+  // One-way, exactly like works24Hours above: ticked narrows to two-tier
+  // trucks, unticked does not exclude them. Read straight off the column with
+  // no union predicate — unlike «Մանիպուլյատոր», no vehicle type answers this
+  // question a second time (see `asksDoubleDeck`).
+  if (filters.doubleDeck && !truck.vehicle.doubleDeck) return false
   // Plain equality, unlike the old manipulator filter: `flatbed` and
   // `sliding-platform` are not asked twice at registration, so there is no
   // union to apply. The specialist types never reach here as a value — see
@@ -232,5 +238,6 @@ export function countActiveFilters(filters: TowTruckFilterState): number {
   if (filters.works24Hours) count += 1
   if (filters.vehicleType !== null) count += 1
   if (filters.capacity !== null) count += 1
+  if (filters.doubleDeck) count += 1
   return count
 }

@@ -201,7 +201,7 @@ TOWTRUCK_COLS="$(columns_present_in_both TowTruck \
   works24Hours workingHoursText description vehicleBrand vehicleModel vehicleYear \
   vehicleType capacityTons platformLengthM platformWidthM craneCapacityTons \
   craneReachM maxLoadTons platformLoadHeightCm winch manipulator wheelSkates \
-  heavyEquipment plateNumber showPlateNumber regionSlug citySlug districtSlug \
+  doubleDeck heavyEquipment plateNumber showPlateNumber regionSlug citySlug districtSlug \
   locationName servesAllArmenia latitude longitude locationUpdatedAt services \
   serviceAreas priceCityCallout pricePerKm priceWaitingPerHour \
   priceNightSurchargePercent priceExtraLoading isActive isFeatured createdAt \
@@ -212,7 +212,7 @@ REGISTRATION_COLS="$(columns_present_in_both RegistrationRequest \
   id status firstName lastName companyName phone secondaryPhone whatsapp \
   telegram email vehicleBrand vehicleModel vehicleYear vehicleType capacityRange \
   platformLengthM platformWidthM craneCapacityTons craneReachM maxLoadTons \
-  platformLoadHeightCm winch manipulator wheelSkates heavyEquipment \
+  platformLoadHeightCm winch manipulator wheelSkates doubleDeck heavyEquipment \
   servesAllArmenia workingHoursText regionSlugs citySlugs services latitude \
   longitude priceCityCallout pricePerKm priceWaitingPerHour \
   priceNightSurchargePercent priceExtraLoading createdAt updatedAt)"

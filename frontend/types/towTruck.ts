@@ -8,6 +8,12 @@ export interface TowTruckCardVehicle {
   capacityTons: number
   /** Used by the "manipulator" filter checkbox */
   manipulator: boolean
+  /**
+   * Two-tier platform — the truck carries two cars at once. On the card shape
+   * (not just the full profile) because the «2-հարկանի էվակուատոր» filter runs
+   * client-side over this, in `matchesFilters`.
+   */
+  doubleDeck: boolean
 }
 
 export interface TowTruckVehicle extends TowTruckCardVehicle {

@@ -46,8 +46,8 @@ interface TowTruckSeed {
   waitingPerHour?: number
   nightSurchargePercent?: number
   extraLoading?: number
-  vehicle: Omit<TowTruckVehicle, 'winch' | 'manipulator' | 'wheelSkates' | 'showPlateNumber'> &
-    Partial<Pick<TowTruckVehicle, 'winch' | 'manipulator' | 'wheelSkates' | 'showPlateNumber'>>
+  vehicle: Omit<TowTruckVehicle, 'winch' | 'manipulator' | 'wheelSkates' | 'doubleDeck' | 'showPlateNumber'> &
+    Partial<Pick<TowTruckVehicle, 'winch' | 'manipulator' | 'wheelSkates' | 'doubleDeck' | 'showPlateNumber'>>
   /** Approved-review aggregate; omit to demo an unrated (brand-new) driver */
   rating?: { average: number; count: number }
   extraServices?: ServiceType[]
@@ -93,6 +93,10 @@ function defineTowTruck(seed: TowTruckSeed): TowTruck {
       winch: true,
       manipulator: seed.vehicle.type === VehicleType.Manipulator,
       wheelSkates: true,
+      // Not every mock truck: a two-tier deck is the uncommon answer, and
+      // defaulting it true would make the «2-հարկանի» filter match the whole
+      // mock fleet, which tells a developer nothing about whether it works.
+      doubleDeck: false,
       showPlateNumber: false,
       ...seed.vehicle,
     },
@@ -188,6 +192,9 @@ export const mockTowTrucks: TowTruck[] = [
       capacityTons: 4.5,
       platformLengthM: 5.4,
       platformWidthM: 2.1,
+      // The one two-tier truck in the mock fleet, so the «2-հարկանի» filter
+      // has something to match and something to exclude in mock mode.
+      doubleDeck: true,
     },
     extraServices: [
       ServiceType.SuvTransport,

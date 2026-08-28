@@ -9,6 +9,7 @@ import {
 } from '~/constants/serviceAreaLimits'
 import { SITE_NAME } from '~/constants/site'
 import {
+  asksDoubleDeck,
   asksWheelSkates,
   CAPACITY_RANGE_OPTIONS,
   capacityRangeFromTons,
@@ -99,6 +100,7 @@ const form = reactive({
   winch: false,
   manipulator: false,
   wheelSkates: false,
+  doubleDeck: false,
   /**
    * «Ծանր տեխնիկայի տեղափոխում», proposed here and approved by a moderator —
    * a dashboard save queues a diff, it does not write (see
@@ -152,6 +154,7 @@ const serviceCategories = computed(() => serviceCategoriesFor(form.vehicleType))
 const specFields = computed(() => specialistSpecFieldsFor(form.vehicleType))
 const showCapacityBand = computed(() => !usesExactCapacity(form.vehicleType))
 const showWheelSkates = computed(() => asksWheelSkates(form.vehicleType))
+const showDoubleDeck = computed(() => asksDoubleDeck(form.vehicleType))
 
 /** «Հաշիվ-ապրանքագիր» as a plain boolean over one slug in `services` */
 const providesInvoice = computed<boolean>({
@@ -403,6 +406,7 @@ function fillFormFromTruck(data: TowTruck): void {
   form.winch = data.vehicle.winch
   form.manipulator = data.vehicle.manipulator
   form.wheelSkates = data.vehicle.wheelSkates
+  form.doubleDeck = data.vehicle.doubleDeck
   // Owner-only field — the public profile withholds it, `/my/tow-truck` sends
   // it back so the driver can see the state of their own request.
   form.heavyEquipment = data.vehicle.heavyEquipment ?? false
@@ -746,6 +750,7 @@ async function submit(): Promise<void> {
       winch: form.winch,
       manipulator: form.manipulator,
       wheelSkates: form.wheelSkates,
+      doubleDeck: form.doubleDeck,
       // Queued for moderation like everything else on this form — a save does
       // not write (see `docs/api-reference.md` § "Driver edits are moderated").
       heavyEquipment: form.heavyEquipment,
@@ -1151,6 +1156,20 @@ async function logout(): Promise<void> {
                   <AppTooltip label="Անիվային ռոլիկների բացատրություն">
                     Անիվային ռոլիկներն օգտագործվում են արգելափակված կամ չպտտվող անիվներով
                     մեքենան անվտանգ հարթակ բարձրացնելու և տեղափոխելու համար։
+                  </AppTooltip>
+                </template>
+              </AppCheckbox>
+              <!-- Hidden for a manipulator and a transporter, same rule as
+                   registration — see `asksDoubleDeck`. -->
+              <AppCheckbox
+                v-if="showDoubleDeck"
+                v-model="form.doubleDeck"
+                label="2-հարկանի էվակուատոր"
+              >
+                <template #label-suffix>
+                  <AppTooltip label="2-հարկանի էվակուատորի բացատրություն">
+                    Երկհարկանի հարթակով էվակուատորը կարող է միաժամանակ տեղափոխել երկու
+                    մեքենա՝ մեկը վերին հարկում, մյուսը՝ ներքևում։
                   </AppTooltip>
                 </template>
               </AppCheckbox>

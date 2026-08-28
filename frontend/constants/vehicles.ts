@@ -254,6 +254,43 @@ export function asksWheelSkates(vehicleType: string): boolean {
 }
 
 /**
+ * Whether «2-հարկանի էվակուատոր» is a question this vehicle can answer.
+ *
+ * A two-tier platform carries two cars at once — one on a raised upper deck,
+ * one below. That is a question about how many CARS fit, and only the two
+ * ordinary evacuators are in the business of carrying cars by the platform: a
+ * manipulator lifts a single vehicle by crane, and a machinery transporter
+ * carries one machine on one low deck. Asking either of them would be asking
+ * about a capability their job does not have, and a stray tick would publish
+ * it.
+ *
+ * ## Why this is not `asksWheelSkates`, and not `isSpecialistVehicleType`
+ *
+ * All three currently exclude the same two types, and all three are written
+ * out separately on purpose — they answer different questions and a fourth
+ * vehicle type would answer them differently:
+ *
+ * - `isSpecialistVehicleType` — "should this be hidden from general discovery"
+ * - `asksWheelSkates` — "does this truck load cars by rolling them"
+ * - this — "does this truck's deck hold more than one car"
+ *
+ * A low-loader, say, would be hidden from general discovery, would never touch
+ * a skate, and could plausibly be two-tier. Reusing one predicate for all three
+ * would make that impossible to express without untangling every caller first.
+ *
+ * ## Nothing derives this from the type
+ *
+ * Unlike `hasManipulator`, there is no «2-հարկանի» option in the vehicle-type
+ * select, so the checkbox is the only place the answer exists and there is no
+ * second answer for it to contradict. That is why this is a plain
+ * `vehicle.doubleDeck` read everywhere — filter, profile row and card alike —
+ * with no union predicate wrapping it.
+ */
+export function asksDoubleDeck(vehicleType: string): boolean {
+  return vehicleType !== VehicleType.Manipulator && vehicleType !== VehicleType.HeavyDuty
+}
+
+/**
  * Does this truck have a manipulator (crane)?
  *
  * ## Why this is a function and not just `vehicle.manipulator`

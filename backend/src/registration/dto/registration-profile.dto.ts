@@ -227,6 +227,10 @@ export class RegistrationProfileDto {
   @IsBoolean()
   wheelSkates!: boolean
 
+  /** Two-tier platform — carries two cars at once. See TowTruck.doubleDeck */
+  @IsBoolean()
+  doubleDeck!: boolean
+
   /**
    * The driver's claim to «Ծանր տեխնիկայի տեղափոխում», and the moderator's
    * verdict on it — the same field submitted twice, which is the whole point of

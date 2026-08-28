@@ -17,6 +17,13 @@ const chips = computed<ActiveChip[]>(() => {
   if (store.works24Hours)
     result.push({ key: '24h', label: '24/7', remove: () => store.toggleWorks24Hours() })
 
+  if (store.doubleDeck)
+    result.push({
+      key: 'doubleDeck',
+      label: '2-հարկանի',
+      remove: () => store.toggleDoubleDeck(),
+    })
+
   if (store.vehicleType !== null) {
     const option = GENERAL_LISTING_VEHICLE_TYPE_OPTIONS.find(
       (item) => item.value === store.vehicleType,

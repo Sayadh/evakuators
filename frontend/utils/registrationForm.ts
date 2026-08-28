@@ -3,7 +3,12 @@ import {
   validateServiceAreaSelection,
 } from '~/constants/serviceAreaLimits'
 import { servicesAllowedFor } from '~/constants/services'
-import { asksWheelSkates, specialistSpecFieldsFor, usesExactCapacity } from '~/constants/vehicles'
+import {
+  asksDoubleDeck,
+  asksWheelSkates,
+  specialistSpecFieldsFor,
+  usesExactCapacity,
+} from '~/constants/vehicles'
 import { ServiceType, VehicleType } from '~/types/enums'
 import { parseCoordinates, type Coordinates } from './coordinates'
 import type { RegistrationFormState } from './registrationPayload'
@@ -72,6 +77,7 @@ export function createRegistrationFormState(): RegistrationFormState {
     winch: false,
     manipulator: false,
     wheelSkates: false,
+    doubleDeck: false,
     heavyEquipment: false,
     servesAllArmenia: false,
     workingHoursStart: '',
@@ -387,6 +393,7 @@ export function syncVehicleDependentFields<TService extends string>(
     manipulator: boolean
     heavyEquipment: boolean
     wheelSkates: boolean
+    doubleDeck: boolean
     servesAllArmenia: boolean
     services: TService[]
     capacity: string
@@ -405,6 +412,11 @@ export function syncVehicleDependentFields<TService extends string>(
   // invisible, uncorrectable, and still reaches the public profile. A crane
   // truck advertising wheel skates is equipment it does not carry.
   if (!asksWheelSkates(form.vehicleType)) form.wheelSkates = false
+
+  // Same rule, its own predicate — see `asksDoubleDeck` for why the two are
+  // not one function even though they currently exclude the same types. A
+  // crane truck advertising a second car deck is a platform it does not have.
+  if (!asksDoubleDeck(form.vehicleType)) form.doubleDeck = false
 
   if (!hasUncappedCoverage(form)) form.servesAllArmenia = false
 

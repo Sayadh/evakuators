@@ -59,6 +59,7 @@ export const PROFILE_FIELD_LABELS: Record<string, string> = {
   winch: 'Ճախարակ',
   manipulator: 'Մանիպուլյատոր',
   wheelSkates: 'Անիվային ռոլիկներ',
+  doubleDeck: '2-հարկանի էվակուատոր',
   heavyEquipment: 'Ծանր տեխնիկայի տեղափոխում',
   servesAllArmenia: 'Սպասարկում ամբողջ Հայաստանում',
 
@@ -118,6 +119,7 @@ export function formatProfileValue(field: string, value: unknown): string {
     case 'winch':
     case 'manipulator':
     case 'wheelSkates':
+    case 'doubleDeck':
     case 'heavyEquipment':
     case 'servesAllArmenia':
       return value ? 'Այո' : 'Ոչ'

@@ -23,6 +23,7 @@ export interface RegistrationVehicleData {
   winch: boolean
   manipulator: boolean
   wheelSkates: boolean
+  doubleDeck: boolean
 }
 
 export interface RegistrationAreasData {

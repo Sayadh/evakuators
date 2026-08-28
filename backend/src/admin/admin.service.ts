@@ -345,6 +345,10 @@ export class AdminService {
             // changing the vehicle type changes this with it.
             manipulator: derivesManipulator(dto.vehicleType, dto.manipulator),
             wheelSkates: dto.wheelSkates,
+            // Copied verbatim like wheelSkates, and NOT derived like
+            // `manipulator` below: no vehicle type implies a two-tier deck, so
+            // the checkbox is the only answer there is.
+            doubleDeck: dto.doubleDeck,
             // NOT derived, unlike `manipulator` directly above — and the
             // asymmetry is deliberate. This column stores *only what an admin
             // decided*; whether a truck appears on /tsanr-tehnika is the union

@@ -43,6 +43,19 @@ function onServicesUpdate(services: ServiceType[]): void {
       />
     </fieldset>
 
+    <!-- Its own group rather than a fifth box inside «Տեխնիկա» above: that one
+         is a pick-one list of vehicle types, and a boolean sitting among them
+         reads as a sixth type. This is equipment the truck either has or does
+         not, which is the same shape as «Աշխատում է 24/7». -->
+    <fieldset class="filters__group">
+      <legend class="filters__legend">Հագեցվածություն</legend>
+      <AppCheckbox
+        :model-value="store.doubleDeck"
+        label="2-հարկանի էվակուատոր"
+        @update:model-value="store.toggleDoubleDeck()"
+      />
+    </fieldset>
+
     <fieldset class="filters__group">
       <legend class="filters__legend">Բեռնատարողություն</legend>
       <AppCheckbox

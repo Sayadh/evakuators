@@ -308,6 +308,36 @@ driver at once; see CLAUDE.md § "A listing is not a profile".
 and with the `vehicleType` of `HEAVY_DUTY_PAGE` in
 `frontend/constants/vehicleTypePages.ts`, which is what sends it over the wire.
 
+### The equipment booleans, and the three predicates that gate them
+
+`winch`, `manipulator`, `wheelSkates` and `doubleDeck` are all driver-answered
+booleans on the same column shape, but only the last two are *conditional* —
+they are hidden for the vehicles the question makes no sense for, and the
+answer is cleared when a type change hides them (`syncVehicleDependentFields`).
+Without that clearing, an answer whose question has disappeared is invisible,
+uncorrectable, and still published.
+
+Three predicates currently exclude the same two vehicle types, and all three
+are written out separately on purpose:
+
+| Predicate | Question it answers |
+| --- | --- |
+| `isSpecialistVehicleType` | should this be hidden from general discovery |
+| `asksWheelSkates` | does this truck load cars by rolling them |
+| `asksDoubleDeck` | does this truck's deck hold more than one car |
+
+They agree today only because of which vehicles happen to exist. A fourth type
+— a low-loader, say — would be hidden from general discovery, would never touch
+a skate, and could plausibly be two-tier. Collapsing them into one predicate
+would make that impossible to express without untangling every caller first.
+
+«2-հարկանի էվակուատոր» (`doubleDeck`) is also the one equipment boolean that is
+**not** asked twice: there is no two-tier option in the vehicle-type select, so
+unlike `manipulator` there is no second answer to union with, and every layer —
+filter, profile row, card — reads the column directly. It is on the card shape
+(unlike `heavyEquipment`) because it is a public filter checkbox and the
+filtering runs client-side over cards.
+
 ## Geography — `frontend/data/{regions,cities,districts}.ts`
 
 Not really a "taxonomy" in the picker sense, but the same single-source

@@ -549,8 +549,16 @@ export class TowTrucksRepository {
    * exactly the one an admin still needs to find here. Sorted by name so the
    * list reads the same on every load and a driver typed into the search box
    * lands where alphabetic scanning expects them.
+   *
+   * `search`, when given, matches driver name, company name or phone —
+   * server-side, so the admin panel's search box works over every row, not
+   * just whatever happened to already be in the browser. Names go through
+   * `mode: 'insensitive'` (Armenian has no case, but a company name can carry
+   * Latin text); phone does not need it — `TowTruck.phone` is always stored
+   * as the canonical `+374XXXXXXXX` (see `IsArmenianPhone`), so a plain
+   * substring match already finds a number typed with or without the prefix.
    */
-  findAllForPayments(): Promise<
+  findAllForPayments(search?: string): Promise<
     {
       id: number
       driverName: string
@@ -560,7 +568,18 @@ export class TowTrucksRepository {
       isActive: boolean
     }[]
   > {
+    const where: Prisma.TowTruckWhereInput | undefined = search
+      ? {
+          OR: [
+            { driverName: { contains: search, mode: 'insensitive' } },
+            { companyName: { contains: search, mode: 'insensitive' } },
+            { phone: { contains: search } },
+          ],
+        }
+      : undefined
+
     return this.prisma.towTruck.findMany({
+      where,
       select: {
         id: true,
         driverName: true,

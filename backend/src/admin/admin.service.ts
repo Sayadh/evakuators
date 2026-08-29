@@ -1262,8 +1262,8 @@ export class AdminService {
    * see `sortPaymentsByUrgency` — so the admin opens the page and sees who to
    * chase before who to merely check on.
    */
-  async listTowTruckPayments(): Promise<AdminPaymentSummary[]> {
-    const trucks = await this.towTrucksRepository.findAllForPayments()
+  async listTowTruckPayments(search?: string): Promise<AdminPaymentSummary[]> {
+    const trucks = await this.towTrucksRepository.findAllForPayments(search)
     return sortPaymentsByUrgency(trucks.map(toAdminPaymentSummary))
   }
 

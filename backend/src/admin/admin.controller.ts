@@ -22,7 +22,7 @@ import type { ReviewWithTruck } from '../reviews/reviews.repository'
 import type { ServiceAreaJson } from '../tow-trucks/tow-truck.types'
 import type { AdminTowTruckSummary } from './admin-tow-truck.mapper'
 import { AdminService } from './admin.service'
-import { AdminListQuery, AdminRegistrationsQuery, AdminTowTrucksQuery } from './dto/admin-list.query'
+import { AdminListQuery, AdminPaymentsQuery, AdminRegistrationsQuery, AdminTowTrucksQuery } from './dto/admin-list.query'
 import { ApproveRegistrationDto } from './dto/approve-registration.dto'
 import { BroadcastMessageDto } from './dto/broadcast-message.dto'
 import { IssuePasswordsDto } from './dto/issue-passwords.dto'
@@ -256,14 +256,16 @@ export class AdminController {
    * Every driver's payment status, for the dedicated `/admin/payments` page —
    * not the vehicle listing. Deliberately its own lean shape (AdminPaymentSummary)
    * rather than fields bolted onto AdminTowTruckSummary, same reasoning as
-   * `count` above: unpaginated and one purpose.
+   * `count` above: unpaginated and one purpose. `?search=` matches name or
+   * phone server-side (see `AdminPaymentsQuery`), so the search box on that
+   * page works over every driver regardless of how large the table gets.
    *
    * Also declared before any `tow-trucks/:id` route for the same reason `count`
    * is — so `payments` can never be read as an id.
    */
   @Get('tow-trucks/payments')
-  listTowTruckPayments(): Promise<AdminPaymentSummary[]> {
-    return this.adminService.listTowTruckPayments()
+  listTowTruckPayments(@Query() query: AdminPaymentsQuery): Promise<AdminPaymentSummary[]> {
+    return this.adminService.listTowTruckPayments(query.search)
   }
 
   /** Deactivate/reactivate — non-destructive, reversible, hides from public listing */

@@ -305,17 +305,19 @@ export class AdminController {
   }
 
   /**
-   * Marks/unmarks this month's payment as received — purely informational
-   * bookkeeping for the admin, with no effect on `isActive` or any public
-   * page. See AdminService.setTowTruckPayment for how the month resets
-   * itself with no reset job.
+   * Marks/unmarks a payment as received — purely informational bookkeeping
+   * for the admin, with no effect on `isActive` or any public page. `paidAt`
+   * is the date the admin picked by hand (required when `dto.paid` is true —
+   * see `SetTowTruckPaymentDto`), not the moment this request happened. See
+   * AdminService.setTowTruckPayment for how the day-count status derives
+   * from it with no reset job.
    */
   @Patch('tow-trucks/:id/payment')
   setPayment(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: SetTowTruckPaymentDto,
   ): Promise<{ id: number; lastPaymentAt?: string; status: PaymentStatus }> {
-    return this.adminService.setTowTruckPayment(id, dto.paid)
+    return this.adminService.setTowTruckPayment(id, dto.paid, dto.paidAt)
   }
 
   /**

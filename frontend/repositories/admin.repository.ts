@@ -620,14 +620,20 @@ export const adminRepository = {
    * corrects a mistaken click) — see `/admin/payments`, the only page that
    * calls this. Purely informational, with no effect on `isActive` or any
    * public page.
+   *
+   * `paidAt` is the date the admin picked by hand — required (backend-
+   * enforced) whenever `paid` is true, since there is no "now" to default to
+   * once the date is a deliberate choice rather than a timestamp of the
+   * click. Omitted when `paid` is false; the backend ignores it either way.
    */
   setTowTruckPayment(
     id: number,
     paid: boolean,
+    paidAt?: string,
   ): Promise<{ id: number; lastPaymentAt?: string; status: PaymentStatus }> {
     return apiFetch<{ id: number; lastPaymentAt?: string; status: PaymentStatus }>(
       `/admin/tow-trucks/${id}/payment`,
-      { method: 'PATCH', body: { paid }, headers: authHeader() },
+      { method: 'PATCH', body: { paid, paidAt }, headers: authHeader() },
     )
   },
 

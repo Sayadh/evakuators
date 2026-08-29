@@ -1241,14 +1241,35 @@ export class AdminService {
    * again the instant September starts, simply because the stored month no
    * longer matches — nothing has to run to make that happen.
    */
+  /**
+   * `paidAt` is required (DTO-enforced) whenever `paid` is true — the admin
+   * picks the actual payment date by hand. Re-validated here too (not just
+   * trusted from the DTO's `@IsISO8601`) because that only checks the string
+   * is a real date, not that it makes sense as a payment date: malformed
+   * enough to fail `Date` parsing anyway is defense in depth, and a date in
+   * the future would let a driver read as "paid" before they actually paid.
+   */
   async setTowTruckPayment(
     id: number,
     paid: boolean,
+    paidAt?: string,
   ): Promise<{ id: number; lastPaymentAt?: string; status: PaymentStatus }> {
     const towTruck = await this.towTrucksRepository.findById(id)
     if (!towTruck) throw new NotFoundException(`Էվակուատոր #${id}-ը չի գտնվել`)
 
-    const updated = await this.towTrucksRepository.setPayment(id, paid)
+    let lastPaymentAt: Date | null = null
+    if (paid) {
+      const date = new Date(paidAt!)
+      if (Number.isNaN(date.getTime())) {
+        throw new BadRequestException('Սխալ ամսաթիվ')
+      }
+      if (date.getTime() > Date.now()) {
+        throw new BadRequestException('Վճարման ամսաթիվը չի կարող ապագայում լինել')
+      }
+      lastPaymentAt = date
+    }
+
+    const updated = await this.towTrucksRepository.setPayment(id, lastPaymentAt)
     return {
       id: updated.id,
       lastPaymentAt: updated.lastPaymentAt?.toISOString(),

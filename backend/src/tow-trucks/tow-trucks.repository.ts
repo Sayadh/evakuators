@@ -531,10 +531,15 @@ export class TowTrucksRepository {
    * rather than merely being ignored, so unmarking is a real correction and
    * not just a hidden button that reappears next reload.
    */
-  setPayment(id: number, paid: boolean): Promise<TowTruck> {
+  /**
+   * `lastPaymentAt` straight through — `null` clears it (unmarking a
+   * mistaken click), any other value stamps it exactly, chosen by the admin
+   * rather than defaulted to "now" (see `SetTowTruckPaymentDto.paidAt`).
+   */
+  setPayment(id: number, lastPaymentAt: Date | null): Promise<TowTruck> {
     return this.prisma.towTruck.update({
       where: { id },
-      data: { lastPaymentAt: paid ? new Date() : null },
+      data: { lastPaymentAt },
     })
   }
 

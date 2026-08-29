@@ -39,6 +39,7 @@ export class FreeRoutesService {
   async create(towTruckId: number, dto: CreateFreeRouteDto): Promise<MyFreeRouteApi> {
     await this.assertActiveDriver(towTruckId)
     const departureAt = this.parseDepartureAt(dto.departureAt)
+    const estimatedArrivalAt = this.parseEstimatedArrivalAt(dto.estimatedArrivalAt, departureAt)
 
     const route = await this.freeRoutesRepository.create(towTruckId, {
       startRegionSlug: dto.startRegionSlug,
@@ -46,6 +47,7 @@ export class FreeRoutesService {
       endRegionSlug: dto.endRegionSlug,
       endCitySlug: dto.endCitySlug,
       departureAt,
+      estimatedArrivalAt,
       description: dto.description,
     })
 
@@ -65,6 +67,7 @@ export class FreeRoutesService {
         endRegionSlug: dto.endRegionSlug,
         endCitySlug: dto.endCitySlug,
         departureAt,
+        estimatedArrivalAt,
       })
     }
 
@@ -75,21 +78,45 @@ export class FreeRoutesService {
     await this.assertActiveDriver(towTruckId)
     const existing = await this.getOwnedOrThrow(towTruckId, id)
 
-    // Editing a route is the driver re-posting it, so it goes back to ACTIVE —
-    // but only if it would actually still be in the future. Reactivating
-    // unconditionally (which is what this used to do) republished a finished
-    // route with a departure time that had already passed: it showed publicly
-    // as "leaving at <yesterday>" until the next cron tick, and if the
-    // departure was more than the grace period ago the very next tick marked
-    // it FINISHED and then hard-deleted it — so a driver who fixed a typo in
-    // the description watched their route disappear.
+    // departureAt itself is allowed to be in the past here (unlike create) —
+    // a route the driver is already driving is exactly the case the arrival
+    // range exists to keep findable. What must NOT be in the past is the
+    // route's effective deadline, checked below.
     const departureAt = dto.departureAt
       ? this.parseDepartureAt(dto.departureAt)
       : existing.departureAt
 
-    if (departureAt.getTime() <= Date.now()) {
+    // Three cases: a fresh arrival in the dto is validated against the
+    // (possibly new) departureAt by parseEstimatedArrivalAt itself. Keeping
+    // the existing arrival still needs that same check done by hand here —
+    // otherwise pushing departureAt past an untouched estimatedArrivalAt
+    // would silently store a route that arrives before it departs. A legacy
+    // row with no arrival at all has nothing to check against; it falls back
+    // to departureAt, same as every other reader of this field.
+    let estimatedArrivalAt: Date
+    if (dto.estimatedArrivalAt) {
+      estimatedArrivalAt = this.parseEstimatedArrivalAt(dto.estimatedArrivalAt, departureAt)
+    } else if (existing.estimatedArrivalAt) {
+      if (existing.estimatedArrivalAt.getTime() <= departureAt.getTime()) {
+        throw new BadRequestException('Ժամանման ժամը պետք է լինի մեկնման ժամից ուշ')
+      }
+      estimatedArrivalAt = existing.estimatedArrivalAt
+    } else {
+      estimatedArrivalAt = departureAt
+    }
+
+    // Editing a route is the driver re-posting it, so it goes back to ACTIVE —
+    // but only if its EFFECTIVE deadline (estimatedArrivalAt, same field the
+    // cron now keys off) would actually still be in the future. Reactivating
+    // unconditionally (which is what this used to do, against departureAt)
+    // republished a finished route whose deadline had already passed: it
+    // stayed publicly listed until the next cron tick, and if the deadline was
+    // more than the grace period ago the very next tick marked it FINISHED
+    // and then hard-deleted it — so a driver who fixed a typo in the
+    // description watched their route disappear.
+    if (estimatedArrivalAt.getTime() <= Date.now()) {
       throw new BadRequestException(
-        'Այս երթուղու մեկնման ժամն արդեն անցել է։ Խմբագրելու համար նշեք նոր ամսաթիվ և ժամ։',
+        'Այս երթուղու ժամանման ժամն արդեն անցել է։ Խմբագրելու համար նշեք նոր ամսաթվեր/ժամեր։',
       )
     }
 
@@ -100,6 +127,7 @@ export class FreeRoutesService {
       endCitySlug: dto.endCitySlug,
       description: dto.description,
       departureAt,
+      estimatedArrivalAt,
       status: 'ACTIVE',
     })
     return toMyFreeRouteApi(route)
@@ -151,6 +179,22 @@ export class FreeRoutesService {
     }
     if (date.getTime() <= Date.now()) {
       throw new BadRequestException('Մեկնման ժամը պետք է լինի ապագայում')
+    }
+    return date
+  }
+
+  /**
+   * `departureAt` is passed in already resolved (parsed and, on create,
+   * confirmed future) rather than re-derived here, so this only ever has to
+   * ask one question: does arrival make sense relative to it.
+   */
+  private parseEstimatedArrivalAt(value: string, departureAt: Date): Date {
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException('Սխալ ամսաթիվ/ժամ')
+    }
+    if (date.getTime() <= departureAt.getTime()) {
+      throw new BadRequestException('Ժամանման ժամը պետք է լինի մեկնման ժամից ուշ')
     }
     return date
   }

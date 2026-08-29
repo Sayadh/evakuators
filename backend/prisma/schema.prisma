@@ -738,10 +738,22 @@ model FreeRoute {
   endRegionSlug   String
   endCitySlug     String
 
-  /// Departure date + time combined. This IS the auto-expiry deadline —
-  /// once it passes the cleanup cron flips ACTIVE -> FINISHED, then hard
-  /// deletes FINISHED rows after a short grace period (see FreeRoutesService).
+  /// Departure date + time combined.
   departureAt DateTime
+
+  /// Estimated arrival at the destination — together with departureAt this is
+  /// the range the public card shows ("12:00–19:00"), and it is now what
+  /// decides the auto-expiry deadline: once IT passes, the cleanup cron flips
+  /// ACTIVE -> FINISHED, then hard-deletes FINISHED rows after a short grace
+  /// period (see FreeRoutesService). departureAt used to be the deadline on
+  /// its own, back when the card showed a single instant — a route now stays
+  /// findable for the whole trip, not just until the driver sets off.
+  ///
+  /// Nullable only for migration safety (a route posted before this column
+  /// existed has none); every route created from here on always has one — see
+  /// CreateFreeRouteDto. Both cron queries treat a null the same way they
+  /// treated every row before this column existed: fall back to departureAt.
+  estimatedArrivalAt DateTime?
 
   /// Optional free-text note from the driver, shown on the public card
   /// (e.g. "կարող եմ սպասել կես ժամ")
@@ -753,6 +765,7 @@ model FreeRoute {
 
   @@index([towTruckId])
   @@index([status, departureAt])
+  @@index([status, estimatedArrivalAt])
 }
 
 /// Pre-aggregated, deduplicated counters — ONE row per

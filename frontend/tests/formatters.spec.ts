@@ -8,6 +8,7 @@ import {
   formatDateLong,
   formatDateNumeric,
   formatDepartureAt,
+  formatDepartureRange,
 } from '~/utils/formatters'
 import { formatPrice, formatPricePerKm, formatStartingPrice } from '~/utils/formatPrice'
 
@@ -81,6 +82,36 @@ describe('formatDepartureAt', () => {
     // 19:59 UTC is still the 7th in Yerevan; 20:00 UTC is already the 8th.
     expect(formatDepartureAt('2026-08-07T19:59:00.000Z')).toBe('7 օգոստոսի, 23:59')
     expect(formatDepartureAt('2026-08-07T20:00:00.000Z')).toBe('8 օգոստոսի, 00:00')
+  })
+})
+
+describe('formatDepartureRange', () => {
+  const DEPARTURE_20_15 = '2026-08-07T16:15:00.000Z' // 7-ի 20:15 Երևանում
+
+  it('falls back to formatDepartureAt alone when there is no arrival time', () => {
+    // A route posted before estimatedArrivalAt existed.
+    expect(formatDepartureRange(DEPARTURE_20_15)).toBe(formatDepartureAt(DEPARTURE_20_15))
+  })
+
+  it('renders a same-day range as one date with two clock times', () => {
+    const arrival = '2026-08-07T19:00:00.000Z' // 7-ի 23:00 Երևանում
+    expect(formatDepartureRange(DEPARTURE_20_15, arrival)).toBe('7 օգոստոսի, 20:15–23:00')
+  })
+
+  it('repeats the date on the arrival side once the trip crosses midnight', () => {
+    const arrival = '2026-08-08T03:00:00.000Z' // 8-ի 07:00 Երևանում
+    expect(formatDepartureRange(DEPARTURE_20_15, arrival)).toBe('7 օգոստոսի, 20:15 – 8 օգոստոսի, 07:00')
+  })
+
+  it('keeps working across a runtime timezone other than Yerevan', () => {
+    const original = process.env.TZ
+    try {
+      process.env.TZ = 'America/Los_Angeles'
+      const arrival = '2026-08-07T19:00:00.000Z'
+      expect(formatDepartureRange(DEPARTURE_20_15, arrival)).toBe('7 օգոստոսի, 20:15–23:00')
+    } finally {
+      process.env.TZ = original
+    }
   })
 })
 

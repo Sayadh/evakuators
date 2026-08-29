@@ -10,6 +10,8 @@ export interface FreeRoutePayload {
   endCitySlug: string
   /** ISO 8601 datetime — combine the day + time pickers before calling */
   departureAt: string
+  /** ISO 8601 datetime — must be after departureAt */
+  estimatedArrivalAt: string
   description?: string
 }
 

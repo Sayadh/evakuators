@@ -3,7 +3,7 @@ import { VEHICLE_TYPE_LABELS } from '~/constants/vehicles'
 import type { VehicleType } from '~/types/enums'
 import type { FreeRoute } from '~/types/freeRoute'
 import { trackPhoneClick } from '~/utils/analytics'
-import { formatDepartureAt } from '~/utils/formatters'
+import { formatDepartureRange } from '~/utils/formatters'
 import { getPhoneHref } from '~/utils/formatPhone'
 import { formatRouteLocation } from '~/utils/freeRouteLocation'
 import { getTowTruckRoute } from '~/utils/routeHelpers'
@@ -41,7 +41,7 @@ function onPhoneClick(): void {
 
       <p class="route-card__time">
         <AppIcon name="clock" :size="15" />
-        {{ formatDepartureAt(route.departureAt) }}
+        {{ formatDepartureRange(route.departureAt, route.estimatedArrivalAt) }}
       </p>
 
       <p v-if="route.description" class="route-card__note">{{ route.description }}</p>

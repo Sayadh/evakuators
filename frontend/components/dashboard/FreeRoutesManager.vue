@@ -4,7 +4,8 @@ import { myFreeRoutesRepository } from '~/repositories'
 import type { VehicleType } from '~/types/enums'
 import type { MyFreeRoute } from '~/types/freeRoute'
 import { extractErrorMessage } from '~/utils/errors'
-import { formatDepartureAt } from '~/utils/formatters'
+import { formatDepartureRange } from '~/utils/formatters'
+import { buildEstimatedArrivalAt } from '~/utils/freeRouteArrival'
 import { formatRouteLocation } from '~/utils/freeRouteLocation'
 import { required, validateField } from '~/utils/validators'
 
@@ -22,6 +23,7 @@ const end = useLocationPicker()
 
 const departureDate = ref('')
 const departureTime = ref('')
+const arrivalTime = ref('')
 const description = ref('')
 const errors = reactive<Record<string, string>>({})
 
@@ -61,12 +63,14 @@ function resetForm(): void {
   end.reset()
   departureDate.value = ''
   departureTime.value = ''
+  arrivalTime.value = ''
   description.value = ''
   errors.startRegionSlug = ''
   errors.startCitySlug = ''
   errors.endRegionSlug = ''
   errors.endCitySlug = ''
   errors.departure = ''
+  errors.arrival = ''
 }
 
 async function startEdit(route: MyFreeRoute): Promise<void> {
@@ -78,6 +82,17 @@ async function startEdit(route: MyFreeRoute): Promise<void> {
   const date = new Date(route.departureAt)
   departureDate.value = date.toISOString().slice(0, 10)
   departureTime.value = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+  // Only the clock time is reused — the date field stays departureDate, and
+  // buildEstimatedArrivalAt() rolls it to the next day again on save if the
+  // trip crosses midnight. A route from before this field existed has no
+  // estimatedArrivalAt at all; left empty, validate() then asks the driver
+  // to set one before the edit can save.
+  if (route.estimatedArrivalAt) {
+    const arrival = new Date(route.estimatedArrivalAt)
+    arrivalTime.value = `${String(arrival.getHours()).padStart(2, '0')}:${String(arrival.getMinutes()).padStart(2, '0')}`
+  } else {
+    arrivalTime.value = ''
+  }
   description.value = route.description ?? ''
   if (import.meta.client) window.scrollTo({ top: 0, behavior: 'smooth' })
 }
@@ -104,6 +119,9 @@ function validate(): boolean {
     errors.departure = ''
   }
 
+  const arrival = departure ? buildEstimatedArrivalAt(departure, departureDate.value, arrivalTime.value) : null
+  errors.arrival = arrival ? '' : 'Ընտրեք ժամանման մոտավոր ժամը'
+
   return Object.values(errors).every((error) => !error)
 }
 
@@ -112,6 +130,8 @@ async function submit(): Promise<void> {
 
   const departure = buildDepartureAt()
   if (!departure) return
+  const arrival = buildEstimatedArrivalAt(departure, departureDate.value, arrivalTime.value)
+  if (!arrival) return
 
   saving.value = true
   saveError.value = ''
@@ -122,6 +142,7 @@ async function submit(): Promise<void> {
       endRegionSlug: end.regionSlug.value,
       endCitySlug: end.citySlug.value,
       departureAt: departure.toISOString(),
+      estimatedArrivalAt: arrival.toISOString(),
       description: description.value.trim() || undefined,
     }
 
@@ -199,10 +220,11 @@ async function removeRoute(route: MyFreeRoute): Promise<void> {
           :error="errors.endCitySlug"
         />
         <AppInput v-model="departureDate" type="date" label="Մեկնման օր" required />
+        <AppInput v-model="departureTime" type="time" label="Մեկնման ժամ" required />
         <AppInput
-          v-model="departureTime"
+          v-model="arrivalTime"
           type="time"
-          label="Մեկնման ժամ"
+          label="Ժամանման մոտավոր ժամ"
           hint="Այս ժամից հետո երթուղին ինքնաշխատ հեռացվում է կայքից"
           required
         />
@@ -210,13 +232,17 @@ async function removeRoute(route: MyFreeRoute): Promise<void> {
 
       <p class="free-routes-manager__note">
         <AppIcon name="info" :size="14" />
-        Նշված օրն ու ժամը միաժամանակ երթուղու վավերականության ժամկետն են՝ դրանից հետո այն ինքնաշխատ հեռացվում է
-        համակարգից։ Ընտրեք ժամը այնպես, որ ընդգրկի ամբողջ ճանապարհի տևողությունը, որպեսզի հայտարարությունը մնա
-        գտնելի ողջ ուղու ընթացքում։
+        Երթուղին կայքում մնում է գտնելի մեկնումից մինչև նշված ժամանման ժամը՝ դրանից հետո ինքնաշխատ հեռացվում է
+        համակարգից։ Ընտրեք ժամանման ժամը այնպես, որ ընդգրկի ամբողջ ճանապարհի տևողությունը, որպեսզի հայտարարությունը
+        մնա գտնելի ողջ ուղու ընթացքում։ Եթե ժամանման ժամը մեկնման ժամից շուտ է, այն համարվում է հաջորդ օրվա (գիշերային
+        երթուղի)։
       </p>
 
       <p v-if="errors.departure" class="free-routes-manager__error" role="alert">
         {{ errors.departure }}
+      </p>
+      <p v-if="errors.arrival" class="free-routes-manager__error" role="alert">
+        {{ errors.arrival }}
       </p>
 
       <AppInput
@@ -252,7 +278,7 @@ async function removeRoute(route: MyFreeRoute): Promise<void> {
             {{ formatRouteLocation(route.endRegionSlug, route.endCitySlug) }}
           </p>
           <p class="free-routes-manager__item-meta">
-            {{ formatDepartureAt(route.departureAt) }} ·
+            {{ formatDepartureRange(route.departureAt, route.estimatedArrivalAt) }} ·
             <span :class="`free-routes-manager__status free-routes-manager__status--${route.status.toLowerCase()}`">
               {{ STATUS_LABELS[route.status] }}
             </span>

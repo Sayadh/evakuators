@@ -10,6 +10,7 @@ export function toFreeRouteApi(route: FreeRouteWithTruck): FreeRouteApi {
     endRegionSlug: route.endRegionSlug,
     endCitySlug: route.endCitySlug,
     departureAt: route.departureAt.toISOString(),
+    estimatedArrivalAt: route.estimatedArrivalAt?.toISOString(),
     description: route.description ?? undefined,
     driver: {
       slug: route.towTruck.slug,
@@ -29,6 +30,7 @@ export function toMyFreeRouteApi(route: FreeRoute): MyFreeRouteApi {
     endRegionSlug: route.endRegionSlug,
     endCitySlug: route.endCitySlug,
     departureAt: route.departureAt.toISOString(),
+    estimatedArrivalAt: route.estimatedArrivalAt?.toISOString(),
     description: route.description ?? undefined,
     status: route.status,
     createdAt: route.createdAt.toISOString(),

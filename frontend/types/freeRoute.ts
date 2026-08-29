@@ -15,6 +15,8 @@ export interface FreeRoute {
   endCitySlug: string
   /** ISO datetime */
   departureAt: string
+  /** ISO datetime — undefined only for a route posted before this field existed */
+  estimatedArrivalAt?: string
   description?: string
   driver: FreeRouteDriver
 }
@@ -29,6 +31,8 @@ export interface MyFreeRoute {
   endRegionSlug: string
   endCitySlug: string
   departureAt: string
+  /** ISO datetime — undefined only for a route posted before this field existed */
+  estimatedArrivalAt?: string
   description?: string
   status: FreeRouteStatus
   createdAt: string

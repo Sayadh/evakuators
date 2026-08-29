@@ -27,6 +27,7 @@ export const mockFreeRoutes: FreeRoute[] = [
     endRegionSlug: 'yerevan',
     endCitySlug: 'kentron',
     departureAt: inHours(3),
+    estimatedArrivalAt: inHours(7),
     description: 'Կարող եմ սպասել կես ժամ ճանապարհին։',
     driver: driverFromTruck(1),
   },
@@ -37,6 +38,7 @@ export const mockFreeRoutes: FreeRoute[] = [
     endRegionSlug: 'yerevan',
     endCitySlug: 'ajapnyak',
     departureAt: inHours(6),
+    estimatedArrivalAt: inHours(9),
     driver: driverFromTruck(14),
   },
   {
@@ -46,6 +48,7 @@ export const mockFreeRoutes: FreeRoute[] = [
     endRegionSlug: 'ararat',
     endCitySlug: 'artashat',
     departureAt: inHours(26),
+    estimatedArrivalAt: inHours(27),
     description: 'Ուղևորվում եմ Արտաշատի ուղղությամբ, կարող եմ շեղվել 10-15 կմ։',
     driver: driverFromTruck(4),
   },

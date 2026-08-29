@@ -20,6 +20,8 @@ export interface FreeRouteApi {
   endRegionSlug: string
   endCitySlug: string
   departureAt: string
+  /** Undefined only for a route posted before this field existed — see schema.prisma */
+  estimatedArrivalAt?: string
   description?: string
   driver: {
     slug: string
@@ -37,6 +39,8 @@ export interface MyFreeRouteApi {
   endRegionSlug: string
   endCitySlug: string
   departureAt: string
+  /** Undefined only for a route posted before this field existed — see schema.prisma */
+  estimatedArrivalAt?: string
   description?: string
   status: FreeRouteStatus
   createdAt: string

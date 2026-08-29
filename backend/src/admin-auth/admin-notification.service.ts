@@ -20,6 +20,7 @@ export interface NewFreeRouteNotice {
   endRegionSlug: string
   endCitySlug: string
   departureAt: Date
+  estimatedArrivalAt: Date
 }
 
 /**
@@ -89,7 +90,8 @@ export class AdminNotificationService {
       `${driver}\n` +
       `Հեռ.՝ ${route.phone}\n` +
       `${route.startRegionSlug}/${route.startCitySlug} → ${route.endRegionSlug}/${route.endCitySlug}\n` +
-      `Մեկնում՝ ${armeniaDateTimeLabel(route.departureAt)}`
+      `Մեկնում՝ ${armeniaDateTimeLabel(route.departureAt)}\n` +
+      `Ժամանում՝ ${armeniaDateTimeLabel(route.estimatedArrivalAt)}`
 
     await Promise.all(
       admins.map((admin) =>

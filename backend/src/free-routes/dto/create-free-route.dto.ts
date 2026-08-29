@@ -23,6 +23,16 @@ export class CreateFreeRouteDto {
   @IsISO8601()
   departureAt!: string
 
+  /**
+   * ISO 8601 datetime — estimated arrival at the destination. Must be after
+   * `departureAt`; see `FreeRoutesService.parseEstimatedArrivalAt`. Together
+   * with `departureAt` this is the range the public card shows, and it is
+   * what now decides the route's auto-expiry (see schema.prisma's own
+   * comment on this column).
+   */
+  @IsISO8601()
+  estimatedArrivalAt!: string
+
   @IsOptional()
   @IsString()
   @MaxLength(300)

@@ -165,6 +165,33 @@ export function formatDepartureAt(iso: string): string {
   return `${day} ${monthName(month)}, ${hour}:${minute}`
 }
 
+/**
+ * Departure + estimated arrival → "7 օգոստոսի, 12:00–19:00" (Armenia time) —
+ * how long the driver expects to be on this route, not just when they set
+ * off. `estimatedArrivalAt` is optional only for a route posted before that
+ * field existed; for one of those this falls back to `formatDepartureAt`
+ * alone rather than showing a range with a made-up end.
+ *
+ * A same-day trip shows one date with two clock times. A trip that crosses
+ * midnight (rare, but the arrival-time field allows it) repeats the date on
+ * the arrival side so the range still reads as two distinct instants rather
+ * than implying a 19:00 arrival earlier the same day.
+ */
+export function formatDepartureRange(departureIso: string, arrivalIso?: string): string {
+  if (!arrivalIso) return formatDepartureAt(departureIso)
+
+  const departure = yerevanFields(new Date(departureIso))
+  const arrival = yerevanFields(new Date(arrivalIso))
+
+  const departureLabel = `${departure.day} ${monthName(departure.month)}`
+  if (departure.year === arrival.year && departure.month === arrival.month && departure.day === arrival.day) {
+    return `${departureLabel}, ${departure.hour}:${departure.minute}–${arrival.hour}:${arrival.minute}`
+  }
+
+  const arrivalLabel = `${arrival.day} ${monthName(arrival.month)}`
+  return `${departureLabel}, ${departure.hour}:${departure.minute} – ${arrivalLabel}, ${arrival.hour}:${arrival.minute}`
+}
+
 /** ISO datetime → "7 օգոստոսի 2026 թ." (Armenia time) — for dates without a clock time */
 export function formatDateLong(iso: string): string {
   const { day, month, year } = yerevanFields(new Date(iso))

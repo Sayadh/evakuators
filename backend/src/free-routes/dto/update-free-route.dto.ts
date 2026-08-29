@@ -26,6 +26,11 @@ export class UpdateFreeRouteDto {
   @IsISO8601()
   departureAt?: string
 
+  /** See CreateFreeRouteDto's own comment — must be after the effective departureAt */
+  @IsOptional()
+  @IsISO8601()
+  estimatedArrivalAt?: string
+
   @IsOptional()
   @IsString()
   @MaxLength(300)

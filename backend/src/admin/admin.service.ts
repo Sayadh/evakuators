@@ -20,6 +20,13 @@ import {
   AdminRegistrationSummary,
   toAdminRegistrationSummary,
 } from './admin-registration.mapper'
+import {
+  AdminPaymentSummary,
+  derivePaymentStatus,
+  PaymentStatus,
+  sortPaymentsByUrgency,
+  toAdminPaymentSummary,
+} from './admin-payment.mapper'
 import { AdminTowTruckSummary, toAdminTowTruckSummary } from './admin-tow-truck.mapper'
 import type {
   AdminListQuery,
@@ -1215,6 +1222,43 @@ export class AdminService {
 
     const updated = await this.towTrucksRepository.setHeavyEquipment(id, heavyEquipment)
     return { id: updated.id, heavyEquipment: updated.heavyEquipment }
+  }
+
+  /**
+   * Marks/unmarks this month's payment as received. Purely informational —
+   * bookkeeping for us, not a claim about the driver: has no effect on
+   * `isActive` or any public page.
+   *
+   * Recurs automatically and needs no reset job: "paid this month" is derived
+   * by comparing `lastPaymentAt`'s Armenia calendar month (`armeniaMonthKey`)
+   * to the current one, so a driver marked paid in August reads as unpaid
+   * again the instant September starts, simply because the stored month no
+   * longer matches — nothing has to run to make that happen.
+   */
+  async setTowTruckPayment(
+    id: number,
+    paid: boolean,
+  ): Promise<{ id: number; lastPaymentAt?: string; status: PaymentStatus }> {
+    const towTruck = await this.towTrucksRepository.findById(id)
+    if (!towTruck) throw new NotFoundException(`Էվակուատոր #${id}-ը չի գտնվել`)
+
+    const updated = await this.towTrucksRepository.setPayment(id, paid)
+    return {
+      id: updated.id,
+      lastPaymentAt: updated.lastPaymentAt?.toISOString(),
+      status: derivePaymentStatus(updated.lastPaymentAt),
+    }
+  }
+
+  /**
+   * Every driver's payment status — see `/admin/payments`, AdminPaymentSummary.
+   * Ordered most urgent first (overdue, then due-soon, then everyone else) —
+   * see `sortPaymentsByUrgency` — so the admin opens the page and sees who to
+   * chase before who to merely check on.
+   */
+  async listTowTruckPayments(): Promise<AdminPaymentSummary[]> {
+    const trucks = await this.towTrucksRepository.findAllForPayments()
+    return sortPaymentsByUrgency(trucks.map(toAdminPaymentSummary))
   }
 
   /**

@@ -299,6 +299,23 @@ model TowTruck {
   /// on the frontend. Purely editorial, has no effect on public search/filter
   /// results elsewhere.
   isFeatured Boolean  @default(false)
+  /// When an admin last marked this driver's payment as received — bookkeeping
+  /// for US, not a claim about the driver: never read by the public site, the
+  /// driver's own dashboard, or `isActive`.
+  ///
+  /// Deliberately ONE timestamp and not a payments-history table: the panel
+  /// only ever needs "paid this month or not", and that is answered by
+  /// comparing this instant's Armenia calendar month (`armeniaMonthKey`,
+  /// backend/src/common/armenia-day.ts) to the current one — see
+  /// AdminService.setTowTruckPayment. A month has no explicit reset job as a
+  /// result: it lapses back to "not paid" on its own the moment the calendar
+  /// turns over, simply because the stored month no longer matches.
+  ///
+  /// Null means "no payment recorded yet" (every row before this column
+  /// existed, and any row an admin has since unmarked) — indistinguishable
+  /// from "paid last month and it lapsed", which is fine: both read as
+  /// unpaid right now, and that is the only question this column answers.
+  lastPaymentAt DateTime?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

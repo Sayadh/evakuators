@@ -1212,9 +1212,12 @@ async function rejectReview(review: AdminReview): Promise<void> {
   <div class="container admin-page">
     <header class="admin-page__header">
       <h1>Ադմին վահանակ</h1>
-      <AppButton v-if="adminAuth.isLoggedIn" variant="outline" size="sm" @click="logout">
-        Դուրս գալ
-      </AppButton>
+      <div v-if="adminAuth.isLoggedIn" class="admin-page__header-actions">
+        <NuxtLink to="/admin/payments" class="admin-page__nav-link">Վճարումներ</NuxtLink>
+        <AppButton variant="outline" size="sm" @click="logout">
+          Դուրս գալ
+        </AppButton>
+      </div>
     </header>
 
     <EmptyState
@@ -2104,6 +2107,22 @@ async function rejectReview(review: AdminReview): Promise<void> {
 
     h1 {
       margin: 0;
+    }
+  }
+
+  &__header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  &__nav-link {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--color-primary);
+
+    &:hover {
+      text-decoration: underline;
     }
   }
 }

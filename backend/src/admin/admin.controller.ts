@@ -14,6 +14,7 @@ import { ProfileChangeStatus, RegistrationStatus } from '@prisma/client'
 import { AdminJwtGuard } from '../admin-auth/admin-jwt.guard'
 import { SetCoordinatesDto } from '../common/set-coordinates.dto'
 import type { AdminRegistrationSummary } from './admin-registration.mapper'
+import type { AdminPaymentSummary, PaymentStatus } from './admin-payment.mapper'
 import { toProfileChangeApi } from '../profile-changes/profile-change.mapper'
 import type { ProfileChangeApi } from '../profile-changes/profile-change.types'
 import { ProfileChangesService } from '../profile-changes/profile-changes.service'
@@ -31,6 +32,7 @@ import { SetPrimaryAreaDto } from './dto/set-primary-area.dto'
 import { SetTowTruckActiveDto } from './dto/set-tow-truck-active.dto'
 import { SetTowTruckFeaturedDto } from './dto/set-tow-truck-featured.dto'
 import { SetTowTruckHeavyEquipmentDto } from './dto/set-tow-truck-heavy-equipment.dto'
+import { SetTowTruckPaymentDto } from './dto/set-tow-truck-payment.dto'
 import { SetTowTruckPhoneDto } from './dto/set-tow-truck-phone.dto'
 
 /** Moderation endpoints — every route requires a valid admin JWT (see AdminAuthModule) */
@@ -250,6 +252,20 @@ export class AdminController {
     return this.adminService.countTowTrucks()
   }
 
+  /**
+   * Every driver's payment status, for the dedicated `/admin/payments` page —
+   * not the vehicle listing. Deliberately its own lean shape (AdminPaymentSummary)
+   * rather than fields bolted onto AdminTowTruckSummary, same reasoning as
+   * `count` above: unpaginated and one purpose.
+   *
+   * Also declared before any `tow-trucks/:id` route for the same reason `count`
+   * is — so `payments` can never be read as an id.
+   */
+  @Get('tow-trucks/payments')
+  listTowTruckPayments(): Promise<AdminPaymentSummary[]> {
+    return this.adminService.listTowTruckPayments()
+  }
+
   /** Deactivate/reactivate — non-destructive, reversible, hides from public listing */
   @Patch('tow-trucks/:id/active')
   setActive(
@@ -284,6 +300,20 @@ export class AdminController {
     @Body() dto: SetTowTruckHeavyEquipmentDto,
   ): Promise<{ id: number; heavyEquipment: boolean }> {
     return this.adminService.setTowTruckHeavyEquipment(id, dto.heavyEquipment)
+  }
+
+  /**
+   * Marks/unmarks this month's payment as received — purely informational
+   * bookkeeping for the admin, with no effect on `isActive` or any public
+   * page. See AdminService.setTowTruckPayment for how the month resets
+   * itself with no reset job.
+   */
+  @Patch('tow-trucks/:id/payment')
+  setPayment(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SetTowTruckPaymentDto,
+  ): Promise<{ id: number; lastPaymentAt?: string; status: PaymentStatus }> {
+    return this.adminService.setTowTruckPayment(id, dto.paid)
   }
 
   /**

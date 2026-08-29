@@ -495,6 +495,54 @@ export class TowTrucksRepository {
   }
 
   /**
+   * Admin-recorded "paid this month" marker — see
+   * AdminService.setTowTruckPayment. `paid: false` clears the timestamp
+   * rather than merely being ignored, so unmarking is a real correction and
+   * not just a hidden button that reappears next reload.
+   */
+  setPayment(id: number, paid: boolean): Promise<TowTruck> {
+    return this.prisma.towTruck.update({
+      where: { id },
+      data: { lastPaymentAt: paid ? new Date() : null },
+    })
+  }
+
+  /**
+   * Lean select for `/admin/payments` — mirrors `findAllForExport`'s own
+   * reasoning: that page reads four columns per row, so pulling the full
+   * truck (images, coverage JSON, coordinates, every price field…) just to
+   * throw it away would be the wide read `findByCard`'s comment warns
+   * against, at the scale of the whole table.
+   *
+   * Every truck, active or not — a driver deactivated mid-billing-dispute is
+   * exactly the one an admin still needs to find here. Sorted by name so the
+   * list reads the same on every load and a driver typed into the search box
+   * lands where alphabetic scanning expects them.
+   */
+  findAllForPayments(): Promise<
+    {
+      id: number
+      driverName: string
+      companyName: string | null
+      phone: string
+      lastPaymentAt: Date | null
+      isActive: boolean
+    }[]
+  > {
+    return this.prisma.towTruck.findMany({
+      select: {
+        id: true,
+        driverName: true,
+        companyName: true,
+        phone: true,
+        lastPaymentAt: true,
+        isActive: true,
+      },
+      orderBy: { driverName: 'asc' },
+    })
+  }
+
+  /**
    * Writes the base parking coordinates, for both the driver's own edit and the
    * admin correction — one method, so the timestamp cannot be set by one caller
    * and forgotten by the other.

@@ -227,6 +227,21 @@ export interface AdminTowTruck {
   } | null
 }
 
+/** Mirrors backend PaymentStatus (admin-payment.mapper.ts) */
+export type PaymentStatus = 'unpaid' | 'paid' | 'due-soon' | 'overdue'
+
+/** Mirrors backend AdminPaymentSummary — the lean shape behind `/admin/payments` */
+export interface AdminPayment {
+  id: number
+  driverName: string
+  companyName?: string
+  phone: string
+  lastPaymentAt?: string
+  status: PaymentStatus
+  /** Lets the payments page offer "Ապաակտիվացնել" on an overdue row and hide it once already inactive */
+  isActive: boolean
+}
+
 /** One entry of a truck's stored coverage — mirrors backend ServiceAreaJson */
 export interface AdminServiceArea {
   slug: string
@@ -578,6 +593,32 @@ export const adminRepository = {
       `/admin/tow-trucks/${id}/heavy-equipment`,
       { method: 'PATCH', body: { heavyEquipment }, headers: authHeader() },
     )
+  },
+
+  /**
+   * Marks this driver's payment as received (or, with `paid: false`,
+   * corrects a mistaken click) — see `/admin/payments`, the only page that
+   * calls this. Purely informational, with no effect on `isActive` or any
+   * public page.
+   */
+  setTowTruckPayment(
+    id: number,
+    paid: boolean,
+  ): Promise<{ id: number; lastPaymentAt?: string; status: PaymentStatus }> {
+    return apiFetch<{ id: number; lastPaymentAt?: string; status: PaymentStatus }>(
+      `/admin/tow-trucks/${id}/payment`,
+      { method: 'PATCH', body: { paid }, headers: authHeader() },
+    )
+  },
+
+  /**
+   * Every driver's payment status — the lean shape behind `/admin/payments`.
+   * Deliberately not part of `listTowTrucks`/`AdminTowTruck`: that page is
+   * already the busiest one in the panel, and payment status is checked on
+   * its own. See backend AdminPaymentSummary.
+   */
+  listTowTruckPayments(): Promise<AdminPayment[]> {
+    return apiFetch<AdminPayment[]>('/admin/tow-trucks/payments', { headers: authHeader() })
   },
 
   /**

@@ -1,6 +1,7 @@
 export { apiFetch, getApiBase, isApiEnabled, isNotFoundError } from './apiClient'
 export { adminRepository } from './admin.repository'
 export type {
+  AdminPayment,
   AdminProfileChange,
   AdminRegistrationRequest,
   AdminReview,
@@ -12,6 +13,7 @@ export type {
   BroadcastMessageResult,
   IssuePasswordsResult,
   PasswordCandidate,
+  PaymentStatus,
   RemoveServiceAreaPayload,
   SetPrimaryAreaPayload,
 } from './admin.repository'

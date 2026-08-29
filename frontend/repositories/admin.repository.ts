@@ -636,9 +636,17 @@ export const adminRepository = {
    * Deliberately not part of `listTowTrucks`/`AdminTowTruck`: that page is
    * already the busiest one in the panel, and payment status is checked on
    * its own. See backend AdminPaymentSummary.
+   *
+   * `search`, when given, is matched server-side against driver name,
+   * company name and phone (see `AdminPaymentsQuery` on the backend) — that
+   * page loads its whole unpaginated table client-side, but the search box
+   * still goes to the backend so it keeps working if that ever changes.
    */
-  listTowTruckPayments(): Promise<AdminPayment[]> {
-    return apiFetch<AdminPayment[]>('/admin/tow-trucks/payments', { headers: authHeader() })
+  listTowTruckPayments(search?: string): Promise<AdminPayment[]> {
+    return apiFetch<AdminPayment[]>('/admin/tow-trucks/payments', {
+      query: { search: search || undefined },
+      headers: authHeader(),
+    })
   },
 
   /**

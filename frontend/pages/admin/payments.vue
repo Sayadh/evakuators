@@ -27,28 +27,40 @@ const adminAuth = useAdminAuthStore()
 
 const payments = ref<AdminPayment[]>([])
 const loading = ref(true)
+/** True only while a debounced search request is in flight — never hides the list/search box the way `loading` does */
+const searching = ref(false)
 const loadError = ref('')
 const actioningId = ref<number | null>(null)
 const search = ref('')
 
-async function load(): Promise<void> {
+/**
+ * `showFullLoading: false` is for a search-triggered reload — the list and
+ * search box stay on screen (only `searching` flips), unlike the initial
+ * load's full-page skeleton.
+ */
+async function load(options: { showFullLoading?: boolean } = {}): Promise<void> {
   if (!apiEnabled || !adminAuth.isLoggedIn) {
     loading.value = false
     return
   }
 
-  loading.value = true
+  if (options.showFullLoading ?? true) {
+    loading.value = true
+  } else {
+    searching.value = true
+  }
   loadError.value = ''
   try {
-    payments.value = await adminRepository.listTowTruckPayments()
+    payments.value = await adminRepository.listTowTruckPayments(search.value.trim())
   } catch (error) {
     loadError.value = extractErrorMessage(error, 'Ցուցակը բեռնել չհաջողվեց։')
   } finally {
     loading.value = false
+    searching.value = false
   }
 }
 
-onMounted(load)
+onMounted(() => load())
 // Same reasoning as the registration-review page: the admin token is read
 // from localStorage by a client plugin that can land after this page mounts,
 // so a first paint with no session is normal and a reload once it arrives is
@@ -61,16 +73,23 @@ watch(
 )
 
 /**
- * Plain substring match on the driver's name. Client-side on purpose: the
- * whole list loads in one lean, unpaginated request (see
- * `TowTrucksRepository.findAllForPayments`), so filtering it locally beats a
- * round trip per keystroke and needs no debounce.
+ * Matched server-side against driver name, company name and phone (see
+ * `AdminRepository.listTowTruckPayments` / backend `AdminPaymentsQuery`) —
+ * the earlier version filtered the already-loaded array client-side, which
+ * only ever checked the driver's name. Going to the backend adds phone
+ * search for free, and keeps working the same if this page's "load
+ * everything at once" design ever changes to real pagination. Debounced so
+ * a fast typist doesn't fire one request per keystroke.
  */
-const filteredPayments = computed(() => {
-  const query = search.value.trim().toLowerCase()
-  if (!query) return payments.value
-  return payments.value.filter((payment) => payment.driverName.toLowerCase().includes(query))
+const SEARCH_DEBOUNCE_MS = 300
+let searchDebounceTimer: ReturnType<typeof setTimeout> | undefined
+
+watch(search, () => {
+  clearTimeout(searchDebounceTimer)
+  searchDebounceTimer = setTimeout(() => void load({ showFullLoading: false }), SEARCH_DEBOUNCE_MS)
 })
+
+onBeforeUnmount(() => clearTimeout(searchDebounceTimer))
 
 const STATUS_LABEL: Record<PaymentStatus, string> = {
   unpaid: 'Չվճարված',
@@ -161,10 +180,13 @@ async function deactivate(payment: AdminPayment): Promise<void> {
     <template v-else>
       <header class="payments__header">
         <h1>Վճարումներ</h1>
-        <AppInput v-model="search" placeholder="Փնտրել անունով…" class="payments__search" />
+        <div class="payments__search-wrap">
+          <AppInput v-model="search" placeholder="Փնտրել անունով կամ հեռախոսով…" class="payments__search" />
+          <span v-if="searching" class="payments__searching">Փնտրվում է…</span>
+        </div>
       </header>
 
-      <EmptyState v-if="filteredPayments.length === 0" title="Ոչինչ չի գտնվել" icon="search" />
+      <EmptyState v-if="payments.length === 0" title="Ոչինչ չի գտնվել" icon="search" />
 
       <div v-else class="payments__table-wrap">
         <table class="payments__table">
@@ -176,7 +198,7 @@ async function deactivate(payment: AdminPayment): Promise<void> {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="payment in filteredPayments" :key="payment.id">
+            <tr v-for="payment in payments" :key="payment.id">
               <td>{{ payment.driverName }}</td>
               <td>{{ payment.phone }}</td>
               <td class="payments__status">
@@ -244,9 +266,21 @@ async function deactivate(payment: AdminPayment): Promise<void> {
     }
   }
 
+  &__search-wrap {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
   &__search {
     width: 100%;
     max-width: 280px;
+  }
+
+  &__searching {
+    font-size: 0.82rem;
+    color: var(--color-text-muted);
+    white-space: nowrap;
   }
 
   &__error {

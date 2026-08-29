@@ -107,3 +107,18 @@ export class AdminTowTrucksQuery extends AdminListQuery {
   @IsBoolean()
   yerevan?: boolean
 }
+
+/**
+ * `?search=` for `/admin/tow-trucks/payments` — matched server-side against
+ * driver name, company name and phone (see `TowTrucksRepository.findAllForPayments`).
+ * Deliberately not `AdminListQuery`-based: that page is unpaginated on
+ * purpose (see the endpoint's own comment) precisely so a search never has
+ * to reason about which page a match landed on — the whole table is always
+ * in scope, search included.
+ */
+export class AdminPaymentsQuery {
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  search?: string
+}

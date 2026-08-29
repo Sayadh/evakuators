@@ -146,19 +146,63 @@ function showsPayButton(status: PaymentStatus): boolean {
   return status !== 'paid'
 }
 
-/** Asks the same question whether this is a driver's first payment ever or their next monthly one. */
-async function markPaid(payment: AdminPayment): Promise<void> {
-  if (!confirm(`Նշե՞լ ${payment.driverName}-ի վճարումը կատարված։`)) return
+/**
+ * The payment date is chosen by hand, not stamped with the moment this
+ * button gets clicked — a driver often pays a few days before or after an
+ * admin gets around to marking it, and `derivePaymentStatus`'s day-count is
+ * only honest if `lastPaymentAt` is the real payment date. Defaults the
+ * picker to today (the common case) but nothing is sent until the admin
+ * confirms, so it stays a deliberate choice, not an accident.
+ */
+const payModalOpen = ref(false)
+const payTarget = ref<AdminPayment | null>(null)
+const payDate = ref('')
+const payError = ref('')
+const paySubmitting = ref(false)
 
-  actioningId.value = payment.id
+function todayDateKey(): string {
+  const now = new Date()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${now.getFullYear()}-${month}-${day}`
+}
+
+function openPayModal(payment: AdminPayment): void {
+  payTarget.value = payment
+  payDate.value = todayDateKey()
+  payError.value = ''
+  payModalOpen.value = true
+}
+
+async function confirmPay(): Promise<void> {
+  const payment = payTarget.value
+  if (!payment) return
+
+  if (!payDate.value) {
+    payError.value = 'Նշեք վճարման ամսաթիվը'
+    return
+  }
+  const chosenDate = new Date(`${payDate.value}T00:00:00`)
+  if (Number.isNaN(chosenDate.getTime())) {
+    payError.value = 'Սխալ ամսաթիվ'
+    return
+  }
+  if (chosenDate.getTime() > Date.now()) {
+    payError.value = 'Ամսաթիվը չի կարող ապագայում լինել'
+    return
+  }
+
+  paySubmitting.value = true
+  payError.value = ''
   try {
-    const updated = await adminRepository.setTowTruckPayment(payment.id, true)
+    const updated = await adminRepository.setTowTruckPayment(payment.id, true, chosenDate.toISOString())
     payment.lastPaymentAt = updated.lastPaymentAt
     payment.status = updated.status
+    payModalOpen.value = false
   } catch (error) {
-    loadError.value = extractErrorMessage(error, 'Վճարումը նշել չհաջողվեց։')
+    payError.value = extractErrorMessage(error, 'Վճարումը նշել չհաջողվեց։')
   } finally {
-    actioningId.value = null
+    paySubmitting.value = false
   }
 }
 
@@ -251,7 +295,7 @@ async function deactivate(payment: AdminPayment): Promise<void> {
                   variant="outline"
                   size="sm"
                   :disabled="actioningId === payment.id"
-                  @click="markPaid(payment)"
+                  @click="openPayModal(payment)"
                 >
                   Վճարել
                 </AppButton>
@@ -272,6 +316,17 @@ async function deactivate(payment: AdminPayment): Promise<void> {
         </table>
       </div>
     </template>
+
+    <AppModal v-model="payModalOpen" title="Նշել վճարումը">
+      <form class="pay-form" @submit.prevent="confirmPay">
+        <p class="payments__muted">{{ payTarget?.driverName }} — նշեք վճարման ամսաթիվը։</p>
+        <AppInput v-model="payDate" type="date" label="Վճարման ամսաթիվ" required />
+        <p v-if="payError" class="payments__error" role="alert">{{ payError }}</p>
+        <AppButton type="submit" variant="accent" block :disabled="paySubmitting">
+          {{ paySubmitting ? 'Պահպանվում է…' : 'Հաստատել' }}
+        </AppButton>
+      </form>
+    </AppModal>
   </div>
 </template>
 
@@ -376,5 +431,11 @@ async function deactivate(payment: AdminPayment): Promise<void> {
     font-size: 0.85rem;
     color: var(--color-text-secondary);
   }
+}
+
+.pay-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 </style>

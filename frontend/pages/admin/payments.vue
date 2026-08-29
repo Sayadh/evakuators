@@ -105,6 +105,36 @@ const STATUS_BADGE_VARIANT: Record<PaymentStatus, 'success' | 'neutral' | 'accen
   overdue: 'danger',
 }
 
+type PaymentStatusFilter = PaymentStatus | 'ALL'
+
+/**
+ * Most-urgent-first, same ordering `sortPaymentsByUrgency` already gives the
+ * list itself — so picking a status from this select reads as "narrow down
+ * to the group I'm already scanning for," not an arbitrary reshuffle.
+ */
+const STATUS_FILTER_OPTIONS: { value: PaymentStatusFilter; label: string }[] = [
+  { value: 'ALL', label: 'Բոլոր կարգավիճակները' },
+  { value: 'overdue', label: STATUS_LABEL.overdue },
+  { value: 'due-soon', label: STATUS_LABEL['due-soon'] },
+  { value: 'unpaid', label: STATUS_LABEL.unpaid },
+  { value: 'paid', label: STATUS_LABEL.paid },
+]
+
+const statusFilter = ref<PaymentStatusFilter>('ALL')
+
+/**
+ * Client-side, unlike the name/phone search above — `status` is already a
+ * value the backend computed once (`derivePaymentStatus`) and sent down on
+ * every row, so filtering on it here needs no round trip and, just as
+ * importantly, no second copy of the day-threshold logic that decides it.
+ * Combines with `search` for free: both narrow the same already-loaded,
+ * already-backend-filtered `payments` array.
+ */
+const visiblePayments = computed(() => {
+  if (statusFilter.value === 'ALL') return payments.value
+  return payments.value.filter((payment) => payment.status === statusFilter.value)
+})
+
 /**
  * Recently paid (`status === 'paid'`) is the one state with no button next to
  * it — there is nothing for the admin to do, and a row that only ever needs
@@ -180,13 +210,21 @@ async function deactivate(payment: AdminPayment): Promise<void> {
     <template v-else>
       <header class="payments__header">
         <h1>Վճարումներ</h1>
-        <div class="payments__search-wrap">
-          <AppInput v-model="search" placeholder="Փնտրել անունով կամ հեռախոսով…" class="payments__search" />
-          <span v-if="searching" class="payments__searching">Փնտրվում է…</span>
+        <div class="payments__filters">
+          <div class="payments__search-wrap">
+            <AppInput v-model="search" placeholder="Փնտրել անունով կամ հեռախոսով…" class="payments__search" />
+            <span v-if="searching" class="payments__searching">Փնտրվում է…</span>
+          </div>
+          <AppSelect
+            v-model="statusFilter"
+            :options="STATUS_FILTER_OPTIONS"
+            placeholder="Կարգավիճակ"
+            class="payments__status-filter"
+          />
         </div>
       </header>
 
-      <EmptyState v-if="payments.length === 0" title="Ոչինչ չի գտնվել" icon="search" />
+      <EmptyState v-if="visiblePayments.length === 0" title="Ոչինչ չի գտնվել" icon="search" />
 
       <div v-else class="payments__table-wrap">
         <table class="payments__table">
@@ -198,7 +236,7 @@ async function deactivate(payment: AdminPayment): Promise<void> {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="payment in payments" :key="payment.id">
+            <tr v-for="payment in visiblePayments" :key="payment.id">
               <td>{{ payment.driverName }}</td>
               <td>{{ payment.phone }}</td>
               <td class="payments__status">
@@ -266,6 +304,13 @@ async function deactivate(payment: AdminPayment): Promise<void> {
     }
   }
 
+  &__filters {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+  }
+
   &__search-wrap {
     display: flex;
     align-items: center;
@@ -275,6 +320,11 @@ async function deactivate(payment: AdminPayment): Promise<void> {
   &__search {
     width: 100%;
     max-width: 280px;
+  }
+
+  &__status-filter {
+    width: 100%;
+    max-width: 200px;
   }
 
   &__searching {

@@ -24,7 +24,14 @@ import { formatCoordinates } from '~/utils/coordinates'
 import { extractErrorMessage } from '~/utils/errors'
 import { formatDateNumeric } from '~/utils/formatters'
 import { armenianPhoneInputValue } from '~/utils/formatPhone'
-import { cityOrDistrictLabel, findCityLocation, regionLabel } from '~/utils/geography'
+import {
+  buildCityOptions,
+  buildRegionOptions,
+  cityOrDistrictLabel,
+  findCityLocation,
+  regionLabel,
+} from '~/utils/geography'
+import { towTruckLocationParams } from '~/utils/adminTowTruckLocation'
 import { composeLocationName, placementFor } from '~/utils/primaryArea'
 import { isPhone, required, validateField } from '~/utils/validators'
 
@@ -158,6 +165,30 @@ const towTruckTypeOptions = [
 ]
 
 const towTruckTypeFilter = ref<TowTruckTypeFilter>('ALL')
+
+/**
+ * Base-location filter for the tow-trucks list — same marz → settlement
+ * cascade the hero search uses (`buildRegionOptions`/`buildCityOptions`,
+ * see `useLocationSearch`), but local state rather than the shared
+ * `useLocationStore`: this narrows the admin table in place, it does not
+ * navigate anywhere.
+ *
+ * '' means "no filter" for both — `towTruckCityOptions` is empty and the
+ * select disabled until a marz is chosen, same as `PrimaryAreaPicker`.
+ */
+const towTruckRegionFilter = ref('')
+const towTruckCityFilter = ref('')
+
+const towTruckRegionOptions = computed(() => buildRegionOptions())
+const towTruckCityOptions = computed(() =>
+  towTruckRegionFilter.value ? buildCityOptions(towTruckRegionFilter.value) : [],
+)
+
+/** Changing the marz invalidates whatever settlement was chosen under the old one */
+watch(towTruckRegionFilter, () => {
+  towTruckCityFilter.value = ''
+})
+
 
 /**
  * Admin listings are paginated server-side (see backend AdminListQuery): these
@@ -535,6 +566,7 @@ async function loadTowTrucks(append = false): Promise<void> {
       limit: ADMIN_PAGE_SIZE,
       offset,
       vehicleType: towTruckTypeFilter.value === 'ALL' ? undefined : towTruckTypeFilter.value,
+      ...towTruckLocationParams(towTruckRegionFilter.value, towTruckCityFilter.value),
     })
     towTrucks.value = append ? [...towTrucks.value, ...page] : page
     hasMoreTowTrucks.value = page.length === ADMIN_PAGE_SIZE
@@ -1144,6 +1176,14 @@ watch(towTruckTypeFilter, () => {
   if (apiEnabled) void loadTowTrucks()
 })
 
+// `towTruckCityFilter` is reset by the region watcher above the instant the
+// region changes, and Vue batches both into one tick — a single watcher here
+// (rather than one per select) means changing the marz reloads exactly once,
+// not once with the stale city and once more right after.
+watch([towTruckRegionFilter, towTruckCityFilter], () => {
+  if (apiEnabled) void loadTowTrucks()
+})
+
 /* ── Telegram link hand-off (shown after approval and after a reset) ── */
 const telegramLinkModalOpen = ref(false)
 const telegramLinkModalTitle = ref('')
@@ -1529,6 +1569,23 @@ async function rejectReview(review: AdminReview): Promise<void> {
             v-model="towTruckTypeFilter"
             :options="towTruckTypeOptions"
             placeholder="Տեսակ"
+            class="admin-section__filter"
+          />
+
+          <!-- Same marz → settlement cascade as everywhere else on the site
+               (see towTruckLocationParams) — the city select stays empty and
+               disabled until a marz is chosen, same as PrimaryAreaPicker. -->
+          <AppSelect
+            v-model="towTruckRegionFilter"
+            :options="towTruckRegionOptions"
+            placeholder="Բոլոր մարզերը"
+            class="admin-section__filter"
+          />
+          <AppSelect
+            v-model="towTruckCityFilter"
+            :options="towTruckCityOptions"
+            :placeholder="towTruckRegionFilter ? 'Ամբողջ մարզը' : 'Նախ ընտրեք մարզը'"
+            :disabled="!towTruckRegionFilter"
             class="admin-section__filter"
           />
 

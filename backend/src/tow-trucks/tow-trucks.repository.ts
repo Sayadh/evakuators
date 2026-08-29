@@ -81,6 +81,21 @@ const GENERAL_DISCOVERY_VEHICLE_TYPE = {
 export type TowTruckCardRow = Prisma.TowTruckGetPayload<{ select: typeof CARD_SELECT }>
 export type TowTruckCoverageRow = Prisma.TowTruckGetPayload<{ select: typeof COVERAGE_SELECT }>
 
+/**
+ * `findAllForAdmin`'s filters — see that method's own comment for why these
+ * are plain equality and not `buildWhere`'s coverage OR. Mirrors
+ * `AdminTowTrucksQuery` field-for-field; kept as its own type here rather
+ * than importing that DTO, so this module (the more fundamental of the two)
+ * never depends on the admin one.
+ */
+export interface AdminTowTruckFilters {
+  vehicleType?: string
+  regionSlug?: string
+  citySlug?: string
+  districtSlug?: string
+  yerevan?: boolean
+}
+
 /** All TowTruck database access lives here — services never touch Prisma directly */
 @Injectable()
 export class TowTrucksRepository {
@@ -329,19 +344,35 @@ export class TowTrucksRepository {
   /**
    * Admin-only — unlike the public listing, this intentionally includes
    * inactive trucks, and it is paginated: the admin table is the one listing
-   * that grows monotonically and is never filtered down by geography.
+   * that grows without bound.
    */
   /**
-   * `vehicleType`, when given, is plain equality on the raw column — not the
-   * manipulator/heavy-duty union `buildWhere` applies for the public listing
-   * (see `AdminTowTrucksQuery`'s own comment for why the two must differ).
+   * Every filter here is plain equality on the truck's own raw column —
+   * never the manipulator/heavy-duty union or the serviceAreas-coverage OR
+   * `buildWhere` applies for the public listing (see `AdminTowTrucksQuery`'s
+   * own comment for why the two must differ: this answers "where is this
+   * driver based", not "who can help in this city").
    */
   findAllForAdmin(
     page: { limit: number; offset: number },
-    vehicleType?: string,
+    filters: AdminTowTruckFilters = {},
   ): Promise<(TowTruckWithImages & { privacyConsents: DriverPrivacyConsent[] })[]> {
+    const where: Prisma.TowTruckWhereInput = {}
+    if (filters.vehicleType) where.vehicleType = filters.vehicleType
+    if (filters.regionSlug) where.regionSlug = filters.regionSlug
+    if (filters.citySlug) where.citySlug = filters.citySlug
+    if (filters.districtSlug) {
+      where.districtSlug = filters.districtSlug
+    } else if (filters.yerevan) {
+      // "Every Yerevan-based driver" — there is no shared slug to match, so
+      // this is the one branch that isn't a plain equality: any non-null
+      // district means the truck is based in Yerevan. See
+      // `AdminTowTrucksQuery.yerevan`.
+      where.districtSlug = { not: null }
+    }
+
     return this.prisma.towTruck.findMany({
-      where: vehicleType ? { vehicleType } : undefined,
+      where: Object.keys(where).length > 0 ? where : undefined,
       include: {
         images: { orderBy: IMAGE_ORDER },
         // Filtered rather than "latest overall": this answers exactly the

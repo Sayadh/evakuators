@@ -820,7 +820,13 @@ export class AdminService {
    * reuse the public listing's manipulator/heavy-duty union.
    */
   async listTowTrucks(query: AdminTowTrucksQuery): Promise<AdminTowTruckSummary[]> {
-    const trucks = await this.towTrucksRepository.findAllForAdmin(query, query.vehicleType)
+    const trucks = await this.towTrucksRepository.findAllForAdmin(query, {
+      vehicleType: query.vehicleType,
+      regionSlug: query.regionSlug,
+      citySlug: query.citySlug,
+      districtSlug: query.districtSlug,
+      yerevan: query.yerevan,
+    })
     return trucks.map(toAdminTowTruckSummary)
   }
 

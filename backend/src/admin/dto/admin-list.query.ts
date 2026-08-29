@@ -1,4 +1,4 @@
-import { IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator'
+import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator'
 import { RegistrationStatus } from '@prisma/client'
 import {
   ADMIN_LIST_DEFAULT_LIMIT,
@@ -56,4 +56,54 @@ export class AdminTowTrucksQuery extends AdminListQuery {
   @IsString()
   @MaxLength(40)
   vehicleType?: string
+
+  /**
+   * Base-location filters — plain equality on the truck's own
+   * regionSlug/citySlug/districtSlug columns, unlike the public listing's
+   * `region`/`city`/`district` (see `TowTrucksRepository.buildWhere`), which
+   * additionally matches *coverage* (serviceAreas) and widens for
+   * marz-wide/uncapped specialists. Here the question is only ever "where is
+   * this driver based", so there is no OR, no corridor fallback and no
+   * specialist exemption to reason about — see
+   * `TowTrucksRepository.findAllForAdmin`.
+   *
+   * Cascades the way the geography select does everywhere else on the site:
+   * `regionSlug` alone is every driver based anywhere in that marz;
+   * `regionSlug` + `citySlug` narrows to one town in it. Composable but
+   * normally sent together — the admin panel's own filter always sends
+   * `citySlug` alongside the `regionSlug` it belongs to.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  regionSlug?: string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  citySlug?: string
+
+  /**
+   * Yerevan's districts stand in for cities there — same column, same
+   * meaning as everywhere else in the schema (see TowTruck.districtSlug).
+   * Mutually exclusive with `regionSlug`/`citySlug` in practice: a truck
+   * carries one or the other, never both, and the filter UI only ever sends
+   * one branch.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  districtSlug?: string
+
+  /**
+   * "Every Yerevan-based driver, no specific district chosen" — the one case
+   * `districtSlug` alone cannot express, since there is no shared value to
+   * match against. Mirrors `ListTowTrucksQuery.yerevan` on the public
+   * listing for exactly the same reason: Yerevan is a pseudo-region with no
+   * `regionSlug` of its own (see CLAUDE.md), so "just Yerevan" needs its own
+   * flag rather than a slug.
+   */
+  @IsOptional()
+  @IsBoolean()
+  yerevan?: boolean
 }

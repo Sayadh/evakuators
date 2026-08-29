@@ -353,10 +353,22 @@ export interface AdminListParams {
   offset?: number
 }
 
-/** `listTowTrucks`'s own extra param — see its own comment */
+/** `listTowTrucks`'s own extra params — see its own comment */
 export interface AdminTowTrucksParams extends AdminListParams {
   /** Plain equality on the raw column — see `listTowTrucks`'s own comment */
   vehicleType?: string
+  /**
+   * Base-location filters — plain equality on the truck's own columns, same
+   * cascade as the hero search (`useLocationSearch`): `regionSlug` alone is
+   * every driver based anywhere in that marz, `regionSlug` + `citySlug`
+   * narrows to one town. `districtSlug`/`yerevan` are Yerevan's branch of the
+   * same cascade — see backend `AdminTowTrucksQuery`'s own comment for why
+   * Yerevan needs a separate flag rather than a shared slug.
+   */
+  regionSlug?: string
+  citySlug?: string
+  districtSlug?: string
+  yerevan?: boolean
 }
 
 /** All moderation reads/writes against the backend admin endpoints */
@@ -543,7 +555,15 @@ export const adminRepository = {
    */
   listTowTrucks(params: AdminTowTrucksParams = {}): Promise<AdminTowTruck[]> {
     return apiFetch<AdminTowTruck[]>('/admin/tow-trucks', {
-      query: { limit: params.limit, offset: params.offset, vehicleType: params.vehicleType },
+      query: {
+        limit: params.limit,
+        offset: params.offset,
+        vehicleType: params.vehicleType,
+        regionSlug: params.regionSlug,
+        citySlug: params.citySlug,
+        districtSlug: params.districtSlug,
+        yerevan: params.yerevan,
+      },
       headers: authHeader(),
     })
   },

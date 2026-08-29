@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common'
+import { armeniaDateTimeLabel } from '../common/armenia-day'
 import { AdminTelegramService } from './admin-telegram.service'
 import { AdminUserRepository } from './admin-user.repository'
 
@@ -8,6 +9,17 @@ export interface NewRegistrationNotice {
   phone: string
   vehicleBrand: string
   vehicleModel?: string | null
+}
+
+export interface NewFreeRouteNotice {
+  driverName: string
+  companyName: string | null
+  phone: string
+  startRegionSlug: string
+  startCitySlug: string
+  endRegionSlug: string
+  endCitySlug: string
+  departureAt: Date
 }
 
 /**
@@ -52,6 +64,42 @@ export class AdminNotificationService {
           })
           .catch((error) => {
             this.logger.warn(`Failed to notify admin #${admin.id} of new registration: ${String(error)}`)
+          }),
+      ),
+    )
+  }
+
+  /**
+   * Fires when a driver posts a new free route (FreeRoutesService.create() —
+   * never on the reactivate-on-edit path, so an admin isn't paged for a typo
+   * fix). Mirrors notifyNewRegistration in every respect that matters:
+   * best-effort per admin, no geography resolution (the backend only ever
+   * sees slugs — see CLAUDE.md), a button instead of trying to cram the
+   * route into a lock-screen-sized line.
+   */
+  async notifyNewFreeRoute(route: NewFreeRouteNotice): Promise<void> {
+    if (!this.telegram.isConfigured) return
+
+    const admins = await this.adminUserRepository.findAllWithTelegramLinked()
+    if (admins.length === 0) return
+
+    const driver = route.companyName ? `${route.driverName} (${route.companyName})` : route.driverName
+    const text =
+      '🚚 Նոր ազատ երթուղի Evakuators.am-ում\n\n' +
+      `${driver}\n` +
+      `Հեռ.՝ ${route.phone}\n` +
+      `${route.startRegionSlug}/${route.startCitySlug} → ${route.endRegionSlug}/${route.endCitySlug}\n` +
+      `Մեկնում՝ ${armeniaDateTimeLabel(route.departureAt)}`
+
+    await Promise.all(
+      admins.map((admin) =>
+        this.telegram
+          .sendMessage(admin.telegramChatId as bigint, text, {
+            text: 'Տեսնել ազատ երթուղիները',
+            url: `${this.telegram.frontendUrl}/free-routes`,
+          })
+          .catch((error) => {
+            this.logger.warn(`Failed to notify admin #${admin.id} of new free route: ${String(error)}`)
           }),
       ),
     )

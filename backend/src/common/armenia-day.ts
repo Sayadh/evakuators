@@ -48,3 +48,34 @@ const dateKeyFormatter = new Intl.DateTimeFormat('en-CA', {
 export function armeniaDateKey(instant: Date): string {
   return dateKeyFormatter.format(instant)
 }
+
+/**
+ * `en-GB` for the same reason `armeniaDateKey` uses `en-CA`: it's an
+ * English-locale variant, so it's present even under Node's default
+ * small-icu build, and its field order needs no rearranging for day-first
+ * output — only the separators are swapped from `formatToParts` output.
+ */
+const dateTimeFormatter = new Intl.DateTimeFormat('en-GB', {
+  timeZone: ARMENIA_TIMEZONE,
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+})
+
+/**
+ * Instant → `"29.08.2026, 14:30"` (Armenia time) — plain numeric label for
+ * backend-authored text (Telegram notices, logs) that has no SSR/hydration
+ * concern and therefore no reason to hand-roll the Armenian month table
+ * `frontend/utils/formatters.ts` keeps for the browser (see CLAUDE.md §
+ * "Never ask the runtime to localise a string" — that rule is about the
+ * frontend, where the server and the browser must agree; this runs only on
+ * the backend).
+ */
+export function armeniaDateTimeLabel(instant: Date): string {
+  const parts = dateTimeFormatter.formatToParts(instant)
+  const get = (type: string): string => parts.find((part) => part.type === type)?.value ?? ''
+  return `${get('day')}.${get('month')}.${get('year')}, ${get('hour')}:${get('minute')}`
+}

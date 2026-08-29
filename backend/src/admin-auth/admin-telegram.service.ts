@@ -19,6 +19,8 @@ export class AdminTelegramService {
   private readonly botToken: string
   readonly botUsername: string
   readonly adminPanelUrl: string
+  /** Same value adminPanelUrl is built from — exposed for callers that need another page, e.g. AdminNotificationService's free-route notice. */
+  readonly frontendUrl: string
   readonly isConfigured: boolean
 
   constructor(config: ConfigService) {
@@ -26,7 +28,8 @@ export class AdminTelegramService {
     this.botToken = adminTelegram.botToken
     this.botUsername = adminTelegram.botUsername
     this.isConfigured = this.botToken !== '' && this.botUsername !== ''
-    this.adminPanelUrl = `${config.getOrThrow<AppConfig['frontendUrl']>('frontendUrl')}/admin`
+    this.frontendUrl = config.getOrThrow<AppConfig['frontendUrl']>('frontendUrl')
+    this.adminPanelUrl = `${this.frontendUrl}/admin`
   }
 
   /** Builds the one-time deep link an admin taps to connect their Telegram (see admin:telegram-link script) */

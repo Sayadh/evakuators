@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { Cron, CronExpression } from '@nestjs/schedule'
 import type { FreeRoute } from '@prisma/client'
+import { AdminNotificationService } from '../admin-auth/admin-notification.service'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
 import type { CreateFreeRouteDto } from './dto/create-free-route.dto'
 import type { UpdateFreeRouteDto } from './dto/update-free-route.dto'
@@ -22,6 +23,7 @@ export class FreeRoutesService {
   constructor(
     private readonly freeRoutesRepository: FreeRoutesRepository,
     private readonly towTrucksRepository: TowTrucksRepository,
+    private readonly adminNotification: AdminNotificationService,
   ) {}
 
   async listPublic(): Promise<FreeRouteApi[]> {
@@ -46,6 +48,26 @@ export class FreeRoutesService {
       departureAt,
       description: dto.description,
     })
+
+    // Best-effort, same as RegistrationService's new-registration notice —
+    // AdminNotificationService catches its own per-admin send failures, a
+    // Telegram hiccup here must never fail the driver's request. Only fires
+    // for a genuinely new route: update() re-activates an existing one
+    // (a driver re-posting/fixing a typo), which isn't news to an admin.
+    const contact = await this.towTrucksRepository.findContactById(towTruckId)
+    if (contact) {
+      await this.adminNotification.notifyNewFreeRoute({
+        driverName: contact.driverName,
+        companyName: contact.companyName,
+        phone: contact.phone,
+        startRegionSlug: dto.startRegionSlug,
+        startCitySlug: dto.startCitySlug,
+        endRegionSlug: dto.endRegionSlug,
+        endCitySlug: dto.endCitySlug,
+        departureAt,
+      })
+    }
+
     return toMyFreeRouteApi(route)
   }
 

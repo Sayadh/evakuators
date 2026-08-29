@@ -77,6 +77,21 @@ fourth is a rule that drifts.
 (`FreeRoutesService.parseDepartureAt`) to be a real ISO date **strictly in
 the future** — rejects both malformed dates and past/present timestamps.
 
+## Admin notification
+
+`FreeRoutesService.create()` fires `AdminNotificationService.notifyNewFreeRoute()`
+(the same admin Telegram bot and pattern as the new-registration notice — see
+`docs/auth-and-security.md` § "Admin 2FA — a second, dedicated Telegram bot")
+right after a route is saved: every admin with a linked Telegram gets a
+heads-up naming the driver, phone, the route's raw region/city slugs (no
+geography resolution on the backend, same reasoning as the registration
+notice) and the departure time (`armeniaDateTimeLabel()`,
+`backend/src/common/armenia-day.ts`), with a button to the public
+`/free-routes` listing. **Only `create()` fires it** — `update()`'s
+reactivate-on-edit path does not, so a driver fixing a typo doesn't re-page
+every admin. Best-effort like every other admin notice: a Telegram failure
+here must never fail the driver's request.
+
 ## Frontend
 
 - `frontend/pages/free-routes/index.vue` — public listing

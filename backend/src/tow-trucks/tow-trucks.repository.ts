@@ -36,6 +36,8 @@ const CARD_SELECT = {
   // Read by the public filter sidebar's «2-հարկանի էվակուատոր» checkbox, which
   // filters client-side over this shape — see TowTruckCardApi.vehicle.
   doubleDeck: true,
+  // Same reasoning, same filter sidebar — see TowTruckCardApi.vehicle.towHitch.
+  towHitch: true,
   services: true,
   serviceAreas: true,
   regionSlug: true,
@@ -201,6 +203,22 @@ export class TowTrucksRepository {
     return this.prisma.towTruck.findUnique({
       where: { id },
       select: { id: true, isActive: true },
+    })
+  }
+
+  /**
+   * The three columns AdminNotificationService.notifyNewFreeRoute needs, and
+   * nothing else — same lean-select reasoning as findStatusById/
+   * findNotificationTargetById above, called once per FreeRoutesService.create().
+   */
+  findContactById(id: number): Promise<{
+    driverName: string
+    companyName: string | null
+    phone: string
+  } | null> {
+    return this.prisma.towTruck.findUnique({
+      where: { id },
+      select: { driverName: true, companyName: true, phone: true },
     })
   }
 

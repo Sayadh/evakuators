@@ -23,16 +23,6 @@ function onServicesUpdate(services: ServiceType[]): void {
     </fieldset>
 
     <fieldset class="filters__group">
-      <legend class="filters__legend">Ծառայություններ</legend>
-      <ServiceCategoryPicker
-        :model-value="store.services"
-        :categories="SERVICE_CATEGORIES"
-        mode="filter"
-        @update:model-value="onServicesUpdate"
-      />
-    </fieldset>
-
-    <fieldset class="filters__group">
       <legend class="filters__legend">Տեխնիկա</legend>
       <AppCheckbox
         v-for="option in GENERAL_LISTING_VEHICLE_TYPE_OPTIONS"
@@ -40,6 +30,17 @@ function onServicesUpdate(services: ServiceType[]): void {
         :model-value="store.vehicleType === option.value"
         :label="option.label"
         @update:model-value="store.setVehicleType(option.value)"
+      />
+    </fieldset>
+
+    <fieldset class="filters__group">
+      <legend class="filters__legend">Բեռնատարողություն</legend>
+      <AppCheckbox
+        v-for="option in CAPACITY_RANGE_OPTIONS"
+        :key="option.value"
+        :model-value="store.capacity === option.value"
+        :label="option.label"
+        @update:model-value="store.setCapacity(option.value)"
       />
     </fieldset>
 
@@ -54,16 +55,20 @@ function onServicesUpdate(services: ServiceType[]): void {
         label="2-հարկանի էվակուատոր"
         @update:model-value="store.toggleDoubleDeck()"
       />
+      <AppCheckbox
+        :model-value="store.towHitch"
+        label="Ունի կցորդ (կարող է տանել նաև 2 մեքենա)"
+        @update:model-value="store.toggleTowHitch()"
+      />
     </fieldset>
 
     <fieldset class="filters__group">
-      <legend class="filters__legend">Բեռնատարողություն</legend>
-      <AppCheckbox
-        v-for="option in CAPACITY_RANGE_OPTIONS"
-        :key="option.value"
-        :model-value="store.capacity === option.value"
-        :label="option.label"
-        @update:model-value="store.setCapacity(option.value)"
+      <legend class="filters__legend">Ծառայություններ</legend>
+      <ServiceCategoryPicker
+        :model-value="store.services"
+        :categories="SERVICE_CATEGORIES"
+        mode="filter"
+        @update:model-value="onServicesUpdate"
       />
     </fieldset>
 

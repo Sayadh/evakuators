@@ -2,6 +2,7 @@
 import type { TowTruckVehicle } from '~/types/towTruck'
 import {
   asksDoubleDeck,
+  asksTowHitch,
   asksWheelSkates,
   capacityDisplayText,
   hasManipulator,
@@ -98,6 +99,15 @@ const rows = computed<InfoRow[]>(() => {
       label: '2-հարկանի էվակուատոր',
       value: vehicle.doubleDeck ? 'Այո' : 'Ոչ',
       hint: 'Երկհարկանի հարթակով էվակուատորը կարող է միաժամանակ տեղափոխել երկու մեքենա՝ մեկը վերին հարկում, մյուսը՝ ներքևում։',
+    })
+  }
+
+  // Own predicate, not `asksDoubleDeck` — see `asksTowHitch`.
+  if (asksTowHitch(vehicle.type)) {
+    result.push({
+      label: 'Ունի կցորդ',
+      value: vehicle.towHitch ? 'Այո' : 'Ոչ',
+      hint: 'Կցորդով էվակուատորը կարող է հարթակի վրայի մեքենայից բացի քարշակել նաև երկրորդ մեքենան։',
     })
   }
 

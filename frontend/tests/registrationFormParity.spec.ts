@@ -94,6 +94,7 @@ describe('the shared component asks every question', () => {
     'model.manipulator',
     'model.wheelSkates',
     'model.doubleDeck',
+    'model.towHitch',
     'model.regionSlugs',
     'model.citySlugs',
     'model.coordinates',

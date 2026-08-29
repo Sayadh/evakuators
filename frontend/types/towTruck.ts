@@ -14,6 +14,12 @@ export interface TowTruckCardVehicle {
    * client-side over this, in `matchesFilters`.
    */
   doubleDeck: boolean
+  /**
+   * A tow hitch — the truck can pull a second car in tow. Same reasoning as
+   * `doubleDeck` above: on the card shape because the «Ունի կցորդ» filter
+   * also runs client-side over this.
+   */
+  towHitch: boolean
 }
 
 export interface TowTruckVehicle extends TowTruckCardVehicle {

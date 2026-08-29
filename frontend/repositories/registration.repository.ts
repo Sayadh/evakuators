@@ -29,6 +29,7 @@ export interface RegistrationPayload {
   manipulator: boolean
   wheelSkates: boolean
   doubleDeck: boolean
+  towHitch: boolean
   /**
    * «Ծանր տեխնիկայի տեղափոխում», proposed by the driver and confirmed by the
    * moderator — see `RegistrationProfileDto.heavyEquipment` for why this is a

@@ -8,6 +8,7 @@ import {
 } from '~/constants/serviceAreaLimits'
 import {
   asksDoubleDeck,
+  asksTowHitch,
   asksWheelSkates,
   CAPACITY_RANGE_OPTIONS,
   specialistSpecFieldsFor,
@@ -103,6 +104,7 @@ const specFields = computed(() => specialistSpecFieldsFor(model.value.vehicleTyp
 const showCapacityBand = computed(() => !usesExactCapacity(model.value.vehicleType))
 const showWheelSkates = computed(() => asksWheelSkates(model.value.vehicleType))
 const showDoubleDeck = computed(() => asksDoubleDeck(model.value.vehicleType))
+const showTowHitch = computed(() => asksTowHitch(model.value.vehicleType))
 
 /** «Հաշիվ-ապրանքագիր» as a plain boolean over one slug in `services` */
 const providesInvoice = computed<boolean>({
@@ -389,6 +391,19 @@ const whatsappModel = armenianPhoneModel('whatsapp')
           <AppTooltip label="2-հարկանի էվակուատորի բացատրություն">
             Երկհարկանի հարթակով էվակուատորը կարող է միաժամանակ տեղափոխել երկու մեքենա՝
             մեկը վերին հարկում, մյուսը՝ ներքևում։
+          </AppTooltip>
+        </template>
+      </AppCheckbox>
+      <!-- Own predicate, not `showDoubleDeck` — see `asksTowHitch`. -->
+      <AppCheckbox
+        v-if="showTowHitch"
+        v-model="model.towHitch"
+        label="Ունի կցորդ"
+      >
+        <template #label-suffix>
+          <AppTooltip label="Կցորդի բացատրություն">
+            Կցորդով էվակուատորը կարող է հարթակի վրայի մեքենայից բացի քարշակել նաև
+            երկրորդ մեքենան։
           </AppTooltip>
         </template>
       </AppCheckbox>

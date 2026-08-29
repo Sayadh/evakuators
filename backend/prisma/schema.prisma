@@ -172,6 +172,16 @@ model TowTruck {
   /// is no «2-հարկանի» type in the taxonomy, so the checkbox is the only
   /// source and there is no second answer for it to contradict.
   doubleDeck      Boolean @default(false)
+  /// A tow hitch — the truck can pull a second car behind it (in tow) at the
+  /// same time it carries one on the platform, rather than only the one.
+  ///
+  /// Same driver-answered equipment-boolean shape as `doubleDeck` right above
+  /// (its own column, its own predicate `asksTowHitch` in
+  /// frontend/constants/vehicles.ts — not derived from `doubleDeck`, even
+  /// though both currently exclude the same two vehicle types: a two-tier
+  /// deck and a hitch are two independent ways to answer "how many cars", and
+  /// a future vehicle type could plausibly have one without the other).
+  towHitch        Boolean @default(false)
   /// Whether this truck can move heavy machinery — what puts it on
   /// `/tsanr-tehnika`. UNLIKE every other boolean here it is NOT a driver
   /// answer: it is set by an admin only (there is no registration field and no
@@ -636,6 +646,8 @@ model RegistrationRequest {
   wheelSkates          Boolean @default(false)
   /// See TowTruck.doubleDeck — carried over as-is by AdminService.approve()
   doubleDeck           Boolean @default(false)
+  /// See TowTruck.towHitch — carried over as-is by AdminService.approve()
+  towHitch             Boolean @default(false)
   /// The driver's own claim to «Ծանր տեխնիկայի տեղափոխում».
   ///
   /// This is a REQUEST, not the flag. `TowTruck.heavyEquipment` still means

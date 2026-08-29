@@ -69,6 +69,7 @@ export const EDITABLE_PROFILE_FIELDS = [
   'manipulator',
   'wheelSkates',
   'doubleDeck',
+  'towHitch',
   // Proposable, not self-granted: this list is an allow-list for a diff a
   // MODERATOR approves, so putting «Ծանր տեխնիկայի տեղափոխում» on it is what
   // lets a driver ask for /tsanr-tehnika without being able to put themselves

@@ -349,6 +349,10 @@ export class AdminService {
             // `manipulator` below: no vehicle type implies a two-tier deck, so
             // the checkbox is the only answer there is.
             doubleDeck: dto.doubleDeck,
+            // Copied verbatim, same as doubleDeck directly above — see
+            // TowTruck.towHitch for why this is its own answer and not
+            // derived from it.
+            towHitch: dto.towHitch,
             // NOT derived, unlike `manipulator` directly above — and the
             // asymmetry is deliberate. This column stores *only what an admin
             // decided*; whether a truck appears on /tsanr-tehnika is the union

@@ -24,6 +24,13 @@ const chips = computed<ActiveChip[]>(() => {
       remove: () => store.toggleDoubleDeck(),
     })
 
+  if (store.towHitch)
+    result.push({
+      key: 'towHitch',
+      label: 'Կցորդով',
+      remove: () => store.toggleTowHitch(),
+    })
+
   if (store.vehicleType !== null) {
     const option = GENERAL_LISTING_VEHICLE_TYPE_OPTIONS.find(
       (item) => item.value === store.vehicleType,

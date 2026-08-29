@@ -231,6 +231,10 @@ export class RegistrationProfileDto {
   @IsBoolean()
   doubleDeck!: boolean
 
+  /** Tow hitch — pulls a second car in tow. See TowTruck.towHitch */
+  @IsBoolean()
+  towHitch!: boolean
+
   /**
    * The driver's claim to «Ծանր տեխնիկայի տեղափոխում», and the moderator's
    * verdict on it — the same field submitted twice, which is the whole point of

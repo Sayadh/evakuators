@@ -39,6 +39,8 @@ export interface RegistrationFormState {
   wheelSkates: boolean
   /** «2-հարկանի էվակուատոր» — a two-tier platform, see `asksDoubleDeck` */
   doubleDeck: boolean
+  /** «Ունի կցորդ» — pulls a second car in tow, see `asksTowHitch` */
+  towHitch: boolean
   /** «Ծանր տեխնիկայի տեղափոխում» — a claim the moderator confirms, see the DTO */
   heavyEquipment: boolean
   /**
@@ -164,6 +166,7 @@ export function buildRegistrationPayload(
     manipulator: form.manipulator,
     wheelSkates: form.wheelSkates,
     doubleDeck: form.doubleDeck,
+    towHitch: form.towHitch,
     heavyEquipment: form.heavyEquipment,
     servesAllArmenia: form.servesAllArmenia,
     // Fully optional — only combine into a value when both sides are filled

@@ -310,14 +310,14 @@ and with the `vehicleType` of `HEAVY_DUTY_PAGE` in
 
 ### The equipment booleans, and the three predicates that gate them
 
-`winch`, `manipulator`, `wheelSkates` and `doubleDeck` are all driver-answered
-booleans on the same column shape, but only the last two are *conditional* —
-they are hidden for the vehicles the question makes no sense for, and the
-answer is cleared when a type change hides them (`syncVehicleDependentFields`).
-Without that clearing, an answer whose question has disappeared is invisible,
-uncorrectable, and still published.
+`winch`, `manipulator`, `wheelSkates`, `doubleDeck` and `towHitch` are all
+driver-answered booleans on the same column shape, but only the last three are
+*conditional* — they are hidden for the vehicles the question makes no sense
+for, and the answer is cleared when a type change hides them
+(`syncVehicleDependentFields`). Without that clearing, an answer whose question
+has disappeared is invisible, uncorrectable, and still published.
 
-Three predicates currently exclude the same two vehicle types, and all three
+Four predicates currently exclude the same two vehicle types, and all four
 are written out separately on purpose:
 
 | Predicate | Question it answers |
@@ -325,18 +325,21 @@ are written out separately on purpose:
 | `isSpecialistVehicleType` | should this be hidden from general discovery |
 | `asksWheelSkates` | does this truck load cars by rolling them |
 | `asksDoubleDeck` | does this truck's deck hold more than one car |
+| `asksTowHitch` | can this truck pull a second car in tow |
 
-They agree today only because of which vehicles happen to exist. A fourth type
+They agree today only because of which vehicles happen to exist. A fifth type
 — a low-loader, say — would be hidden from general discovery, would never touch
-a skate, and could plausibly be two-tier. Collapsing them into one predicate
-would make that impossible to express without untangling every caller first.
+a skate, could plausibly be two-tier, and could plausibly lack a hitch mount.
+Collapsing them into one predicate would make that impossible to express
+without untangling every caller first.
 
-«2-հարկանի էվակուատոր» (`doubleDeck`) is also the one equipment boolean that is
-**not** asked twice: there is no two-tier option in the vehicle-type select, so
-unlike `manipulator` there is no second answer to union with, and every layer —
-filter, profile row, card — reads the column directly. It is on the card shape
-(unlike `heavyEquipment`) because it is a public filter checkbox and the
-filtering runs client-side over cards.
+«2-հարկանի էվակուատոր» (`doubleDeck`) and «Ունի կցորդ» (`towHitch`) are also the
+only two equipment booleans that are **not** asked twice: there is no two-tier
+or hitch option in the vehicle-type select, so unlike `manipulator` neither has
+a second answer to union with, and every layer — filter, profile row, card —
+reads the column directly. Both are on the card shape (unlike `heavyEquipment`)
+because both are public filter checkboxes and the filtering runs client-side
+over cards.
 
 ## Geography — `frontend/data/{regions,cities,districts}.ts`
 

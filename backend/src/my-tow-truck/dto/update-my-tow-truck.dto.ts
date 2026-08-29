@@ -182,6 +182,10 @@ export class UpdateMyTowTruckDto {
   @IsBoolean()
   doubleDeck?: boolean
 
+  @IsOptional()
+  @IsBoolean()
+  towHitch?: boolean
+
   /**
    * The specialist technical answers — the same four columns registration
    * collects, editable here for the same reason everything else is: a field a

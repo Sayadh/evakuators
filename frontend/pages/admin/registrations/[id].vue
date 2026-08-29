@@ -159,6 +159,7 @@ function fillForm(data: AdminRegistrationRequest): void {
     manipulator: data.manipulator,
     wheelSkates: data.wheelSkates,
     doubleDeck: data.doubleDeck,
+    towHitch: data.towHitch,
     // The driver's CLAIM to «Ծանր տեխնիկայի տեղափոխում», shown as a normal
     // ticked box the moderator may untick. That is the whole moderation step:
     // what leaves this page is what goes live, so an unticked box here means

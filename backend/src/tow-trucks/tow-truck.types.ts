@@ -72,6 +72,8 @@ export interface TowTruckCardApi {
      * omitted it could not be matched at all.
      */
     doubleDeck: boolean
+    /** Same reasoning as doubleDeck above — «Ունի կցորդ» is also a filter sidebar checkbox */
+    towHitch: boolean
   }
   services: string[]
   serviceAreas: ServiceAreaJson[]
@@ -190,6 +192,7 @@ export interface TowTruckApi {
     manipulator: boolean
     wheelSkates: boolean
     doubleDeck: boolean
+    towHitch: boolean
     /**
      * «Ծանր տեխնիկայի տեղափոխում», as approved by a moderator.
      *

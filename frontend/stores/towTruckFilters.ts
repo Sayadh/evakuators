@@ -17,6 +17,9 @@ export const useTowTruckFiltersStore = defineStore('towTruckFilters', {
     toggleDoubleDeck() {
       this.doubleDeck = !this.doubleDeck
     },
+    toggleTowHitch() {
+      this.towHitch = !this.towHitch
+    },
     setVehicleType(vehicleType: VehicleType | null) {
       this.vehicleType = this.vehicleType === vehicleType ? null : vehicleType
     },

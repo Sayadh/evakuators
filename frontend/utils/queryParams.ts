@@ -14,6 +14,7 @@ export function buildFilterQueryParams(
     services: filters.services.length > 0 ? filters.services.join(',') : undefined,
     capacity: filters.capacity ?? undefined,
     doubleDeck: filters.doubleDeck ? '1' : undefined,
+    towHitch: filters.towHitch ? '1' : undefined,
     sort: filters.sort !== SortOption.Recommended ? filters.sort : undefined,
   }
 }
@@ -32,6 +33,8 @@ export function parseFilterQueryParams(query: LocationQuery): TowTruckFilterStat
   // value to encode, so anything else (including `?doubleDeck=0`) is simply
   // not the filter being on.
   if (parseQueryValue(query.doubleDeck) === '1') state.doubleDeck = true
+  // Same `'1' or absent` shape as `doubleDeck` right above.
+  if (parseQueryValue(query.towHitch) === '1') state.towHitch = true
   // `?manipulator=1` was a real query param before the filter checkbox was
   // removed (see docs/taxonomies.md § "Landing-page-only vehicle types") — an
   // old bookmark or shared link carrying it is simply ignored now, same as any

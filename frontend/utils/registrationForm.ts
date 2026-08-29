@@ -5,6 +5,7 @@ import {
 import { servicesAllowedFor } from '~/constants/services'
 import {
   asksDoubleDeck,
+  asksTowHitch,
   asksWheelSkates,
   specialistSpecFieldsFor,
   usesExactCapacity,
@@ -78,6 +79,7 @@ export function createRegistrationFormState(): RegistrationFormState {
     manipulator: false,
     wheelSkates: false,
     doubleDeck: false,
+    towHitch: false,
     heavyEquipment: false,
     servesAllArmenia: false,
     workingHoursStart: '',
@@ -394,6 +396,7 @@ export function syncVehicleDependentFields<TService extends string>(
     heavyEquipment: boolean
     wheelSkates: boolean
     doubleDeck: boolean
+    towHitch: boolean
     servesAllArmenia: boolean
     services: TService[]
     capacity: string
@@ -417,6 +420,10 @@ export function syncVehicleDependentFields<TService extends string>(
   // not one function even though they currently exclude the same types. A
   // crane truck advertising a second car deck is a platform it does not have.
   if (!asksDoubleDeck(form.vehicleType)) form.doubleDeck = false
+
+  // Same rule, own predicate — see `asksTowHitch` for why it is not just
+  // `asksDoubleDeck` reused, even though they agree on every type today.
+  if (!asksTowHitch(form.vehicleType)) form.towHitch = false
 
   if (!hasUncappedCoverage(form)) form.servesAllArmenia = false
 

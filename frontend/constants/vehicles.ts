@@ -291,6 +291,26 @@ export function asksDoubleDeck(vehicleType: string): boolean {
 }
 
 /**
+ * Does this truck have a tow hitch — can it pull a second car in tow at the
+ * same time it carries one on the platform?
+ *
+ * Its own function rather than a reuse of `asksDoubleDeck`, on purpose, for
+ * the same reason that one is separate from `asksWheelSkates`: all three
+ * currently exclude the same two vehicle types, and all three are written out
+ * separately because they answer different questions — a future vehicle type
+ * could plausibly answer this one differently from `asksDoubleDeck` even
+ * though today they agree. See `asksDoubleDeck`'s own comment for the fuller
+ * "why separate functions" reasoning.
+ *
+ * Nothing derives this from the vehicle type either: there is no hitch option
+ * in the vehicle-type select, so the checkbox is the only place the answer
+ * exists.
+ */
+export function asksTowHitch(vehicleType: string): boolean {
+  return vehicleType !== VehicleType.Manipulator && vehicleType !== VehicleType.HeavyDuty
+}
+
+/**
  * Does this truck have a manipulator (crane)?
  *
  * ## Why this is a function and not just `vehicle.manipulator`

@@ -30,6 +30,7 @@ export interface AdminRegistrationRequest {
   manipulator: boolean
   wheelSkates: boolean
   doubleDeck: boolean
+  towHitch: boolean
   /**
    * The driver's CLAIM to «Ծանր տեխնիկայի տեղափոխում» — optional because every
    * request filed before the question existed carries none, which is not the

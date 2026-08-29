@@ -18,5 +18,10 @@ export interface TowTruckFilterState {
    * definitely cannot carry a second car.
    */
   doubleDeck: boolean
+  /**
+   * «Ունի կցորդ» — can tow a second car. Same one-way-narrowing shape as
+   * `doubleDeck` right above, for the same reason.
+   */
+  towHitch: boolean
   sort: SortOption
 }

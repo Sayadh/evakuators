@@ -99,6 +99,7 @@ export function toTowTruckApi(
       manipulator: truck.manipulator,
       wheelSkates: truck.wheelSkates,
       doubleDeck: truck.doubleDeck,
+      towHitch: truck.towHitch,
       // Owner-only — see TowTruckApiOptions.includeOwnerFields
       ...(options.includeOwnerFields ? { heavyEquipment: truck.heavyEquipment } : {}),
       // Withheld server-side when the driver opted out, not just hidden by the
@@ -181,6 +182,7 @@ export function toTowTruckCardApi(
       capacityTons: truck.capacityTons,
       manipulator: truck.manipulator,
       doubleDeck: truck.doubleDeck,
+      towHitch: truck.towHitch,
     },
     services: truck.services,
     serviceAreas: (truck.serviceAreas as unknown as ServiceAreaJson[]) ?? [],

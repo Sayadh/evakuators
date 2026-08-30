@@ -1,6 +1,7 @@
 import type { TowTruckContactable } from '~/types/towTruck'
 import { trackPhoneClick, trackTelegramClick, trackWhatsAppClick } from '~/utils/analytics'
 import { getPhoneHref, getTelegramUrl, getWhatsAppUrl } from '~/utils/formatPhone'
+import { trackMetaPixelContact } from '~/utils/trackMetaPixelContact'
 
 /**
  * Call / WhatsApp / Telegram links plus the tracking that goes with them.
@@ -11,10 +12,13 @@ import { getPhoneHref, getTelegramUrl, getWhatsAppUrl } from '~/utils/formatPhon
  * counted automatically, and there is no way to add a contact button that
  * silently isn't tracked.
  *
- * Each handler fires two independent trackers, on purpose:
+ * Each handler fires up to three independent trackers, on purpose:
  * - `utils/analytics.ts` — external product analytics (GA/Matomo), keyed by slug
  * - `useAnalyticsTracking` — this driver's own dashboard counters, keyed by id,
  *   deduplicated to once per visitor per calendar day (see docs/analytics.md)
+ * - `trackMetaPixelContact` — Meta's `Contact` ad-conversion event, phone and
+ *   WhatsApp only (not Telegram: no ad campaign optimizes on it today).
+ *   Already a no-op unless the Pixel actually loaded — see that file.
  */
 export function usePhoneActions(truck: MaybeRefOrGetter<TowTruckContactable>) {
   const analytics = useAnalyticsTracking()
@@ -44,11 +48,13 @@ export function usePhoneActions(truck: MaybeRefOrGetter<TowTruckContactable>) {
       const value = toValue(truck)
       trackPhoneClick(value.slug)
       analytics.trackPhoneClick(value.id)
+      trackMetaPixelContact('phone', value.slug)
     },
     onWhatsAppClick: (): void => {
       const value = toValue(truck)
       trackWhatsAppClick(value.slug)
       analytics.trackWhatsAppClick(value.id)
+      trackMetaPixelContact('whatsapp', value.slug)
     },
     onTelegramClick: (): void => {
       const value = toValue(truck)

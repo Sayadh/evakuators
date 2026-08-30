@@ -11,6 +11,15 @@ export interface TowTruckFilterState {
   /** CAPACITY_RANGE_OPTIONS value slug (~/constants/vehicles), or null for "any" */
   capacity: string | null
   /**
+   * «Առկա են անիվային ռոլիկներ» — wheel skates, for loading a vehicle with
+   * locked/non-rotating wheels.
+   *
+   * A one-way narrowing like `works24Hours`, not a tri-state: false means "do
+   * not care", never "must NOT have skates". Nobody searches for a truck that
+   * definitely has none.
+   */
+  wheelSkates: boolean
+  /**
    * «2-հարկանի էվակուատոր» — carries two cars at once.
    *
    * A one-way narrowing like `works24Hours`, not a tri-state: false means "do

@@ -181,6 +181,7 @@ export function toTowTruckCardApi(
       type: truck.vehicleType,
       capacityTons: truck.capacityTons,
       manipulator: truck.manipulator,
+      wheelSkates: truck.wheelSkates,
       doubleDeck: truck.doubleDeck,
       towHitch: truck.towHitch,
     },

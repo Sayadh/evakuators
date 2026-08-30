@@ -17,6 +17,13 @@ const chips = computed<ActiveChip[]>(() => {
   if (store.works24Hours)
     result.push({ key: '24h', label: '24/7', remove: () => store.toggleWorks24Hours() })
 
+  if (store.wheelSkates)
+    result.push({
+      key: 'wheelSkates',
+      label: 'Ռոլիկներով',
+      remove: () => store.toggleWheelSkates(),
+    })
+
   if (store.doubleDeck)
     result.push({
       key: 'doubleDeck',

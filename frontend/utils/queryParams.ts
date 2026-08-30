@@ -13,6 +13,7 @@ export function buildFilterQueryParams(
     vehicleType: filters.vehicleType ?? undefined,
     services: filters.services.length > 0 ? filters.services.join(',') : undefined,
     capacity: filters.capacity ?? undefined,
+    wheelSkates: filters.wheelSkates ? '1' : undefined,
     doubleDeck: filters.doubleDeck ? '1' : undefined,
     towHitch: filters.towHitch ? '1' : undefined,
     sort: filters.sort !== SortOption.Recommended ? filters.sort : undefined,
@@ -29,6 +30,8 @@ export function parseFilterQueryParams(query: LocationQuery): TowTruckFilterStat
   const state = createDefaultFilterState()
 
   if (parseQueryValue(query['24h']) === '1') state.works24Hours = true
+  // Same `'1' or absent` shape as `24h` right above.
+  if (parseQueryValue(query.wheelSkates) === '1') state.wheelSkates = true
   // Same `'1' or absent` shape as `24h` — a boolean narrowing has no third
   // value to encode, so anything else (including `?doubleDeck=0`) is simply
   // not the filter being on.

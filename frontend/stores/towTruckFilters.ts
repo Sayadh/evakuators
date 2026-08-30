@@ -14,6 +14,9 @@ export const useTowTruckFiltersStore = defineStore('towTruckFilters', {
     toggleWorks24Hours() {
       this.works24Hours = !this.works24Hours
     },
+    toggleWheelSkates() {
+      this.wheelSkates = !this.wheelSkates
+    },
     toggleDoubleDeck() {
       this.doubleDeck = !this.doubleDeck
     },

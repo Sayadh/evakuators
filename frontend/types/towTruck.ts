@@ -9,6 +9,12 @@ export interface TowTruckCardVehicle {
   /** Used by the "manipulator" filter checkbox */
   manipulator: boolean
   /**
+   * Wheel skates — for loading a vehicle with locked/non-rotating wheels. On
+   * the card shape (not just the full profile) because the «Առկա են անիվային
+   * ռոլիկներ» filter runs client-side over this, in `matchesFilters`.
+   */
+  wheelSkates: boolean
+  /**
    * Two-tier platform — the truck carries two cars at once. On the card shape
    * (not just the full profile) because the «2-հարկանի էվակուատոր» filter runs
    * client-side over this, in `matchesFilters`.
@@ -40,8 +46,6 @@ export interface TowTruckVehicle extends TowTruckCardVehicle {
   maxLoadTons?: number
   platformLoadHeightCm?: number
   winch: boolean
-  /** Wheel skates — for loading a vehicle with locked/non-rotating wheels */
-  wheelSkates: boolean
   /**
    * «Ծանր տեխնիկայի տեղափոխում», as approved by a moderator.
    *

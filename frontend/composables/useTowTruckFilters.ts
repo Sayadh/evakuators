@@ -10,7 +10,7 @@ import { applyTowTruckFilters, type BasePlace } from '~/utils/towTruckFilters'
  * param instead of leaving the old value behind — a key missing from this list
  * is one that can never be cleared from a shared link.
  */
-const FILTER_QUERY_KEYS = ['24h', 'vehicleType', 'services', 'capacity', 'doubleDeck', 'towHitch', 'sort']
+const FILTER_QUERY_KEYS = ['24h', 'vehicleType', 'services', 'capacity', 'wheelSkates', 'doubleDeck', 'towHitch', 'sort']
 
 /**
  * Connects the filter store to a tow truck list:

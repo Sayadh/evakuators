@@ -51,6 +51,11 @@ function onServicesUpdate(services: ServiceType[]): void {
     <fieldset class="filters__group">
       <legend class="filters__legend">Հագեցվածություն</legend>
       <AppCheckbox
+        :model-value="store.wheelSkates"
+        label="Առկա են անիվային ռոլիկներ"
+        @update:model-value="store.toggleWheelSkates()"
+      />
+      <AppCheckbox
         :model-value="store.doubleDeck"
         label="2-հարկանի էվակուատոր"
         @update:model-value="store.toggleDoubleDeck()"

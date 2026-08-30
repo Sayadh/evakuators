@@ -33,6 +33,9 @@ const CARD_SELECT = {
   vehicleType: true,
   capacityTons: true,
   manipulator: true,
+  // Read by the public filter sidebar's «Առկա են անիվային ռոլիկներ» checkbox,
+  // which filters client-side over this shape — see TowTruckCardApi.vehicle.
+  wheelSkates: true,
   // Read by the public filter sidebar's «2-հարկանի էվակուատոր» checkbox, which
   // filters client-side over this shape — see TowTruckCardApi.vehicle.
   doubleDeck: true,

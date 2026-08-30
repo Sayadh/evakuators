@@ -11,6 +11,7 @@ export function createDefaultFilterState(): TowTruckFilterState {
     services: [],
     vehicleType: null,
     capacity: null,
+    wheelSkates: false,
     doubleDeck: false,
     towHitch: false,
     sort: SortOption.Recommended,
@@ -19,6 +20,11 @@ export function createDefaultFilterState(): TowTruckFilterState {
 
 export function matchesFilters(truck: TowTruckCard, filters: TowTruckFilterState): boolean {
   if (filters.works24Hours && !truck.works24Hours) return false
+  // One-way, exactly like works24Hours above: ticked narrows to trucks with
+  // wheel skates, unticked does not exclude them. Read straight off the
+  // column with no union predicate — unlike «Մանիպուլյատոր», no vehicle type
+  // answers this question a second time (see `asksWheelSkates`).
+  if (filters.wheelSkates && !truck.vehicle.wheelSkates) return false
   // One-way, exactly like works24Hours above: ticked narrows to two-tier
   // trucks, unticked does not exclude them. Read straight off the column with
   // no union predicate — unlike «Մանիպուլյատոր», no vehicle type answers this
@@ -241,6 +247,7 @@ export function countActiveFilters(filters: TowTruckFilterState): number {
   if (filters.works24Hours) count += 1
   if (filters.vehicleType !== null) count += 1
   if (filters.capacity !== null) count += 1
+  if (filters.wheelSkates) count += 1
   if (filters.doubleDeck) count += 1
   if (filters.towHitch) count += 1
   return count

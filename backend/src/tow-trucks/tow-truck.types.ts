@@ -67,6 +67,12 @@ export interface TowTruckCardApi {
     /** Needed by the public filter sidebar */
     manipulator: boolean
     /**
+     * Also the filter sidebar's — «Առկա են անիվային ռոլիկներ» is a checkbox
+     * there, and the filtering runs client-side over this card shape, so a
+     * card that omitted it could not be matched at all.
+     */
+    wheelSkates: boolean
+    /**
      * Also the filter sidebar's — «2-հարկանի էվակուատոր» is a checkbox there,
      * and the filtering runs client-side over this card shape, so a card that
      * omitted it could not be matched at all.

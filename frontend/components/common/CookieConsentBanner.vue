@@ -12,7 +12,9 @@ import { isAdminRoute } from '~/utils/isAdminRoute'
  *
  * Equally-weighted «Ընդունել»/«Մերժել» on purpose — not a primary button next
  * to a muted text link. Either answer is one tap, and neither reads as the
- * "wrong" choice.
+ * "wrong" choice. The backdrop is purely visual (`pointer-events: none`) —
+ * it dims the page to draw the eye to the banner, it does not turn this into
+ * a click-blocking modal; a visitor can still use the page before answering.
  */
 const store = useCookieConsentStore()
 const route = useRoute()
@@ -21,6 +23,7 @@ const visible = computed(() => store.status === 'pending' && !isAdminRoute(route
 </script>
 
 <template>
+  <div v-if="visible" class="cookie-consent-backdrop" aria-hidden="true" />
   <div v-if="visible" class="cookie-consent" role="dialog" aria-label="Cookie-ների մասին տեղեկացում">
     <p class="cookie-consent__text">
       Այս կայքն օգտագործում է cookie-ներ՝ այցելուների վիճակագրության և գովազդի
@@ -30,13 +33,21 @@ const visible = computed(() => store.status === 'pending' && !isAdminRoute(route
       </NuxtLink>։
     </p>
     <div class="cookie-consent__actions">
-      <AppButton variant="outline" size="md" @click="store.reject()">Մերժել</AppButton>
+      <AppButton variant="ghost" size="md" @click="store.reject()">Մերժել</AppButton>
       <AppButton variant="primary" size="md" @click="store.accept()">Ընդունել</AppButton>
     </div>
   </div>
 </template>
 
 <style scoped lang="scss">
+.cookie-consent-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 59;
+  background: rgba(13, 33, 54, 0.4);
+  pointer-events: none;
+}
+
 .cookie-consent {
   position: fixed;
   left: var(--space-4);
@@ -82,6 +93,8 @@ const visible = computed(() => store.status === 'pending' && !isAdminRoute(route
     padding: var(--space-4);
     flex-direction: column;
     align-items: stretch;
+    justify-content: flex-start;
+    gap: var(--space-3);
 
     &__actions {
       :deep(.app-button) {

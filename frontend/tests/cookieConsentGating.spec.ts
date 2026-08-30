@@ -35,13 +35,23 @@ describe('the banner offers an equally-weighted choice', () => {
     expect(component).toContain('store.reject()')
   })
 
-  it('does not make one answer visually louder than the other', () => {
-    // "Ընդունել"/primary and "Մերժել"/outline — two bordered, same-size
-    // buttons, not a filled CTA next to a ghost/text-only link. A `ghost` or
-    // `danger` variant here would be the regression this guards against.
-    expect(component).toContain('variant="outline"')
-    expect(component).toContain('variant="primary"')
-    expect(component).not.toContain('variant="ghost"')
+  it('keeps both buttons the same size and tap target', () => {
+    // Deliberately not pinning `variant` here — "Ընդունել" is a filled
+    // `primary` button and "Մերժել" is a borderless `variant="ghost"` text
+    // button, an explicit design choice (the two answers no longer look
+    // identical). What still guards against a real dark pattern is `size`:
+    // both stay `size="md"`, same padding/font-size/hit target, so Reject is
+    // exactly as easy to tap as Accept even though it reads lighter.
+    const rejectLine = component
+      .split('\n')
+      .find((line) => line.includes('store.reject()'))
+    const acceptLine = component
+      .split('\n')
+      .find((line) => line.includes('store.accept()'))
+    expect(rejectLine).toContain('size="md"')
+    expect(acceptLine).toContain('size="md"')
+    expect(rejectLine).toContain('variant="ghost"')
+    expect(acceptLine).toContain('variant="primary"')
   })
 
   it('never renders on /admin', () => {

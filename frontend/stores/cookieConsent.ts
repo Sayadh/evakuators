@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { clearAnalyticsCookies } from '~/utils/clearAnalyticsCookies'
 
 export type CookieConsentStatus = 'pending' | 'accepted' | 'rejected'
 
@@ -48,9 +49,35 @@ export const useCookieConsentStore = defineStore('cookieConsent', {
       if (import.meta.client) localStorage.setItem(STORAGE_KEY, 'accepted')
     },
 
+    /**
+     * Also the revoke action — see `revisit()` below. Whether this is a
+     * fresh visitor's first answer or someone reversing an earlier
+     * `'accepted'` from the footer's «Cookie-ների կարգավորումներ» link, both
+     * paths land here, so both get the same treatment: no further tracking
+     * (the two plugins already refuse anything but `'accepted'`) AND any
+     * cookie either tracker already set before this answer is removed.
+     */
     reject() {
       this.status = 'rejected'
-      if (import.meta.client) localStorage.setItem(STORAGE_KEY, 'rejected')
+      if (import.meta.client) {
+        localStorage.setItem(STORAGE_KEY, 'rejected')
+        clearAnalyticsCookies()
+      }
+    },
+
+    /**
+     * Reopens the banner without touching localStorage — the footer's
+     * «Cookie-ների կարգավորումներ» link, for a visitor who wants to change
+     * or withdraw an answer they already gave. `status` going back to
+     * `'pending'` is exactly what `CookieConsentBanner.vue`'s `visible`
+     * already renders on, so no separate settings UI exists — the visitor
+     * sees the same choice again and answers it through `accept()`/
+     * `reject()` as normal. If they navigate away without choosing, the
+     * previous answer is still the one in localStorage and stays
+     * authoritative on the next visit.
+     */
+    revisit() {
+      this.status = 'pending'
     },
   },
 })

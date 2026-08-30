@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { FOOTER_PAGES } from '~/constants/navigation'
 import { CONTACT_PHONE, SITE_DESCRIPTION, SOCIAL_LINKS } from '~/constants/site'
+import { useCookieConsentStore } from '~/stores/cookieConsent'
 import {
   getDistrictRoute,
   getRegionRoute,
@@ -30,6 +31,9 @@ const currentYear = new Date().getFullYear()
  * this replaced a CSS-only attempt at the same thing.
  */
 const isWideFooter = useMediaQuery('(min-width: 640px)')
+
+/** «Cookie-ների կարգավորումներ» below — see `stores/cookieConsent.ts`'s `revisit()`. */
+const cookieConsent = useCookieConsentStore()
 </script>
 
 <template>
@@ -138,6 +142,9 @@ const isWideFooter = useMediaQuery('(min-width: 640px)')
 
       <div class="footer__bottom">
         <p>© {{ currentYear }} Evakuators.am</p>
+        <button type="button" class="footer__cookie-settings" @click="cookieConsent.revisit()">
+          Cookie-ների կարգավորումներ
+        </button>
       </div>
     </div>
   </footer>
@@ -326,9 +333,29 @@ const isWideFooter = useMediaQuery('(min-width: 640px)')
     border-top: 1px solid rgba(255, 255, 255, 0.12);
     font-size: 0.85rem;
     color: rgba(255, 255, 255, 0.6);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
 
     p {
       margin: 0;
+    }
+  }
+
+  &__cookie-settings {
+    border: none;
+    background: none;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    text-decoration: underline;
+
+    &:hover,
+    &:focus-visible {
+      color: var(--color-accent);
     }
   }
 }

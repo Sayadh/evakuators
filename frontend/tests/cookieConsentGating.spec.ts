@@ -47,6 +47,37 @@ describe('the banner offers an equally-weighted choice', () => {
   it('never renders on /admin', () => {
     expect(component).toContain('isAdminRoute')
   })
+
+  it('links visibly to the privacy policy', () => {
+    expect(component).toContain('to="/privacy"')
+  })
+})
+
+describe('a visitor can change or withdraw their answer later', () => {
+  it('the footer offers a settings link that reopens the banner', () => {
+    const footer = read('components/layout/AppFooter.vue')
+    expect(footer).toContain('cookieConsent.revisit()')
+    expect(footer).toContain('Cookie-ների կարգավորումներ')
+  })
+
+  it('reject() — first refusal or a revoked earlier acceptance, same action — clears the trackers’ cookies', () => {
+    const store = read('stores/cookieConsent.ts')
+    // The real method definitions, not their own doc comments — each JSDoc
+    // above mentions the OTHER method by name, so a bare `.indexOf('reject()')`
+    // matches inside a comment first.
+    const reject = store.slice(store.indexOf('\n    reject() {'), store.indexOf('\n    revisit() {'))
+    expect(reject).toContain('clearAnalyticsCookies()')
+  })
+
+  it('revisit() never overwrites the previously stored answer by itself', () => {
+    // Only actually choosing again (`accept()`/`reject()`) may touch
+    // localStorage — reopening the banner must not, or a visitor who opens
+    // settings and navigates away without picking anything would silently
+    // lose their original answer on the next visit.
+    const store = read('stores/cookieConsent.ts')
+    const revisit = store.slice(store.indexOf('\n    revisit() {'))
+    expect(revisit).not.toContain('localStorage')
+  })
 })
 
 describe('the store persists the answer client-side only', () => {

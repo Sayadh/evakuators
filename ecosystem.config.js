@@ -32,6 +32,14 @@ module.exports = {
         // through this same tag via a link made in Google's own UI, so
         // setting/unsetting this one line controls both.
         NUXT_PUBLIC_GTAG_ID: 'G-HEN3RVMTRG',
+        // Meta Pixel id. Read at runtime by `plugins/meta-pixel.client.ts`
+        // (frontend/nuxt.config.ts defaults `public.metaPixelId` to '' — off
+        // — so this is the only place the real one is written). Same
+        // defensive shape as the GA4 id above: `shouldLoadPixel()`
+        // (frontend/utils/shouldLoadPixel.ts) refuses this SPECIFIC id from
+        // any hostname but evakuators.am even if this line is ever copied
+        // into a non-production config by mistake.
+        NUXT_PUBLIC_META_PIXEL_ID: '1596253742133677',
       },
       instances: 1,
       autorestart: true,

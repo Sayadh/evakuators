@@ -1,4 +1,5 @@
 import { useAdminAuthStore } from '~/stores/adminAuth'
+import { useCookieConsentStore } from '~/stores/cookieConsent'
 import { useDriverAuthStore } from '~/stores/driverAuth'
 import { useRecentlyViewedStore } from '~/stores/recentlyViewed'
 
@@ -7,4 +8,5 @@ export default defineNuxtPlugin(() => {
   useRecentlyViewedStore().init()
   useDriverAuthStore().init()
   useAdminAuthStore().init()
+  useCookieConsentStore().init()
 })

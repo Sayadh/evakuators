@@ -49,6 +49,14 @@ module.exports = {
         // staging analytics is genuinely needed, put a SEPARATE GA4
         // property's test id here — never production's.
         NUXT_PUBLIC_GTAG_ID: '',
+        // Same reasoning as NUXT_PUBLIC_GTAG_ID right above, for the Meta
+        // Pixel: deliberately empty, not production's id copied over.
+        // `shouldLoadPixel()` (frontend/utils/shouldLoadPixel.ts) refuses
+        // production's real pixel id from any hostname but evakuators.am
+        // even if this line is ever set wrong. A separate test pixel id can
+        // go here if staging tracking is genuinely needed — never
+        // production's.
+        NUXT_PUBLIC_META_PIXEL_ID: '',
       },
       instances: 1,
       autorestart: true,

@@ -1,0 +1,69 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { describe, expect, it } from 'vitest'
+
+/**
+ * Source-text assertions, not a mounted store — `stores/cookieConsent.ts`
+ * uses Nuxt's Pinia auto-imports and `import.meta.client`, neither of which
+ * exist under this repo's plain-Vitest/node config (`vitest.config.ts`,
+ * `docs/testing.md`), the same reason none of the other localStorage-backed
+ * stores (`driverAuth`, `recentlyViewed`, `adminAuth`) have a direct unit
+ * test either. What IS pinned here is the one thing worth a regression test:
+ * that both trackers actually wait on this gate, and that the banner offers
+ * a real choice rather than one obvious button next to a muted link.
+ */
+
+const ROOT = fileURLToPath(new URL('..', import.meta.url))
+const read = (path: string): string => readFileSync(`${ROOT}${path}`, 'utf8')
+
+describe('both third-party trackers wait on consent', () => {
+  it.each(['plugins/gtag-gate.client.ts', 'plugins/meta-pixel.client.ts'])(
+    '%s only starts once status is accepted, and re-checks on a consent change',
+    (file) => {
+      const source = read(file)
+      expect(source).toContain("consent.status === 'accepted'")
+      expect(source).toContain('watch(() => consent.status')
+    },
+  )
+})
+
+describe('the banner offers an equally-weighted choice', () => {
+  const component = read('components/common/CookieConsentBanner.vue')
+
+  it('wires both buttons to the store', () => {
+    expect(component).toContain('store.accept()')
+    expect(component).toContain('store.reject()')
+  })
+
+  it('does not make one answer visually louder than the other', () => {
+    // "Ընդունել"/primary and "Մերժել"/outline — two bordered, same-size
+    // buttons, not a filled CTA next to a ghost/text-only link. A `ghost` or
+    // `danger` variant here would be the regression this guards against.
+    expect(component).toContain('variant="outline"')
+    expect(component).toContain('variant="primary"')
+    expect(component).not.toContain('variant="ghost"')
+  })
+
+  it('never renders on /admin', () => {
+    expect(component).toContain('isAdminRoute')
+  })
+})
+
+describe('the store persists the answer client-side only', () => {
+  const store = read('stores/cookieConsent.ts')
+
+  it('defaults to pending, not answered', () => {
+    expect(store).toContain("status: 'pending'")
+  })
+
+  it('guards init, accept and reject each behind their own client check', () => {
+    // `init()` guards with an early-return (`if (!import.meta.client...)
+    // return`, same shape as `driverAuth.ts`/`recentlyViewed.ts`); `accept()`
+    // and `reject()` guard their one `localStorage.setItem` call inline. Both
+    // shapes are real guards, so this counts occurrences rather than
+    // requiring one exact line shape everywhere.
+    const clientChecks = store.match(/import\.meta\.client/g) ?? []
+    const localStorageCalls = store.match(/localStorage\.(get|set)Item/g) ?? []
+    expect(clientChecks.length).toBeGreaterThanOrEqual(localStorageCalls.length)
+  })
+})

@@ -206,6 +206,12 @@ export default defineNuxtConfig({
           "'nonce-{{nonce}}'",
           "'strict-dynamic'",
           'https://www.googletagmanager.com',
+          // `fbevents.js` — `plugins/meta-pixel.client.ts` injects this host's
+          // script tag itself rather than through a nonced loader (see that
+          // file's `installFbqStub`/`loadPixelScript`), so it needs the bare
+          // host here the same way `googletagmanager.com` does for browsers
+          // that ignore `strict-dynamic`.
+          'https://connect.facebook.net',
         ],
 
         /**
@@ -250,6 +256,10 @@ export default defineNuxtConfig({
           // `connect-src` would swap one blocked-console-error for another on
           // exactly the browsers that take the fallback path.
           'https://googleads.g.doubleclick.net',
+          // The Meta Pixel's own beacon (`/tr`) — same both-entries reasoning
+          // as the view-through conversion beacon right above: `fbq` sends it
+          // as a fetch when it can and falls back to a 1×1 image otherwise.
+          'https://www.facebook.com',
         ],
 
         'font-src': ["'self'", 'data:'],
@@ -323,6 +333,9 @@ export default defineNuxtConfig({
           // is Google's tag/measurement subdomain rather than the ad-serving
           // tree. Two hosts is not yet enough to justify the wildcard.
           'https://googleads.g.doubleclick.net',
+          // The Meta Pixel's `/tr` beacon, fetch path — see the matching
+          // `img-src` entry above for the fallback path and why both exist.
+          'https://www.facebook.com',
         ],
 
         'object-src': ["'none'"],
@@ -375,6 +388,16 @@ export default defineNuxtConfig({
        * when it is set — see `getApiBase()` in repositories/apiClient.ts.
        */
       apiBaseUrl: '',
+      /**
+       * Meta Pixel id. `''` by default — same "off unless a real environment
+       * says otherwise" pattern as `apiBaseUrl` and the `gtag` id below.
+       * Nuxt auto-replaces this with `NUXT_PUBLIC_META_PIXEL_ID` at runtime;
+       * production's real id lives only in `ecosystem.config.js`, staging's
+       * own file leaves it `''`. The only reader is
+       * `plugins/meta-pixel.client.ts`, gated through `utils/shouldLoadPixel.ts`
+       * exactly like `gtag.id` is gated through `shouldLoadGtag.ts`.
+       */
+      metaPixelId: '',
     },
   },
 

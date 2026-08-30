@@ -27,6 +27,20 @@ describe('both third-party trackers wait on consent', () => {
   )
 })
 
+describe('the Meta Pixel refuses to fire during local development', () => {
+  // `shouldLoadPixel()` only refuses one hardcoded production id off the
+  // production hostname — a developer's own (or copied-over) `.env` with a
+  // different, real, currently-active pixel id would otherwise fire on
+  // every local click. `import.meta.dev` is a static, bundler-resolved flag
+  // (not testable through the pure id/hostname function), so it is pinned
+  // here as a source-text check on the plugin instead — the same reason the
+  // consent-gate above is.
+  it('meta-pixel.client.ts checks import.meta.dev before allowing the pixel to load', () => {
+    const source = read('plugins/meta-pixel.client.ts')
+    expect(source).toContain('!import.meta.dev')
+  })
+})
+
 describe('the banner offers an equally-weighted choice', () => {
   const component = read('components/common/CookieConsentBanner.vue')
 

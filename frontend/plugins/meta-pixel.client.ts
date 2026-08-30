@@ -62,7 +62,7 @@ function loadPixelScript(): void {
 
 /**
  * Gates and drives the Meta Pixel — the direct counterpart to
- * `plugins/gtag-gate.client.ts`, and gated on the same three things:
+ * `plugins/gtag-gate.client.ts`, and gated on four things:
  *
  * 1. **Is there a real id for this environment, on this hostname** —
  *    `shouldLoadPixel()`, same two rules as `shouldLoadGtag()`.
@@ -73,6 +73,17 @@ function loadPixelScript(): void {
  *    the other two, this can change mid-session (the banner is answered
  *    after the plugin has already run once), so it is re-checked on its own
  *    watcher, not only at startup.
+ * 4. **Is this `npm run dev`** — `import.meta.dev`. `shouldLoadPixel()` only
+ *    refuses the one hardcoded production id off the production hostname; a
+ *    DIFFERENT id — a developer's own `.env`, or a copied-over `.env` that
+ *    happens to carry a real, currently-active pixel id — is otherwise
+ *    allowed through on any hostname, including `localhost`, which would
+ *    mean every click during local development fires a real event at
+ *    whatever Meta property that id belongs to. This gate stays out of
+ *    `shouldLoadPixel()` itself, same reason `isAdminRoute()` and the
+ *    consent check do: it is a static, compile-time flag, not something the
+ *    id/hostname pair alone can decide, and folding it in would make the one
+ *    pure, directly-tested piece of this gate depend on the bundler.
  *
  * `initialize()` (here, `start()`) runs at most once — guarded by `started`,
  * exactly like `gtag-gate`'s own flag — and sends the FIRST `PageView` itself
@@ -89,6 +100,7 @@ export default defineNuxtPlugin(() => {
   const consent = useCookieConsentStore()
 
   const allowed = (path: string): boolean =>
+    !import.meta.dev &&
     shouldLoadPixel(metaPixelId, window.location.hostname) &&
     !isAdminRoute(path) &&
     consent.status === 'accepted'

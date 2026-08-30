@@ -26,20 +26,23 @@ describe('trackMetaPixelContact', () => {
   })
 })
 
-describe('usePhoneActions wires the Meta Pixel Contact event to phone and WhatsApp only', () => {
+describe('usePhoneActions wires the Meta Pixel Contact event to WhatsApp only', () => {
   const source = read('composables/usePhoneActions.ts')
 
-  it('fires on phone and WhatsApp clicks', () => {
-    const phoneHandler = source.slice(
-      source.indexOf('onPhoneClick:'),
-      source.indexOf('onWhatsAppClick:'),
-    )
+  it('fires on WhatsApp clicks', () => {
     const whatsappHandler = source.slice(
       source.indexOf('onWhatsAppClick:'),
       source.indexOf('onTelegramClick:'),
     )
-    expect(phoneHandler).toContain("trackMetaPixelContact('phone'")
-    expect(whatsappHandler).toContain("trackMetaPixelContact('whatsapp'")
+    expect(whatsappHandler).toContain('trackMetaPixelContact(')
+  })
+
+  it('does NOT fire on phone clicks — meta-pixel.client.ts already tracks every tel: link itself, and firing here too would double-count the same click', () => {
+    const phoneHandler = source.slice(
+      source.indexOf('onPhoneClick:'),
+      source.indexOf('onWhatsAppClick:'),
+    )
+    expect(phoneHandler).not.toContain('trackMetaPixelContact')
   })
 
   it('does NOT fire on Telegram — no ad campaign optimizes on it today', () => {

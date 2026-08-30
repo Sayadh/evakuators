@@ -16,9 +16,14 @@ import { trackMetaPixelContact } from '~/utils/trackMetaPixelContact'
  * - `utils/analytics.ts` — external product analytics (GA/Matomo), keyed by slug
  * - `useAnalyticsTracking` — this driver's own dashboard counters, keyed by id,
  *   deduplicated to once per visitor per calendar day (see docs/analytics.md)
- * - `trackMetaPixelContact` — Meta's `Contact` ad-conversion event, phone and
- *   WhatsApp only (not Telegram: no ad campaign optimizes on it today).
- *   Already a no-op unless the Pixel actually loaded — see that file.
+ * - `trackMetaPixelContact` — Meta's `Contact` ad-conversion event, WhatsApp
+ *   only (not Telegram: no ad campaign optimizes on it today). NOT phone:
+ *   `plugins/meta-pixel.client.ts` already tracks every `tel:` link click
+ *   itself, via a single document-level listener (`trackContact`), so
+ *   calling `trackMetaPixelContact` here too for `onPhoneClick` would send
+ *   Meta two `Contact` events for the same one click. WhatsApp has no such
+ *   listener — its link isn't a `tel:` href — so it still needs firing
+ *   here. Already a no-op unless the Pixel actually loaded — see that file.
  */
 export function usePhoneActions(truck: MaybeRefOrGetter<TowTruckContactable>) {
   const analytics = useAnalyticsTracking()
@@ -48,13 +53,14 @@ export function usePhoneActions(truck: MaybeRefOrGetter<TowTruckContactable>) {
       const value = toValue(truck)
       trackPhoneClick(value.slug)
       analytics.trackPhoneClick(value.id)
-      trackMetaPixelContact('phone', value.slug)
+      // No Meta Pixel call here on purpose — see the doc comment above:
+      // the plugin's own document-level tel: listener already covers it.
     },
     onWhatsAppClick: (): void => {
       const value = toValue(truck)
       trackWhatsAppClick(value.slug)
       analytics.trackWhatsAppClick(value.id)
-      trackMetaPixelContact('whatsapp', value.slug)
+      trackMetaPixelContact(value.slug)
     },
     onTelegramClick: (): void => {
       const value = toValue(truck)

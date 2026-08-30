@@ -1,6 +1,8 @@
 import { useCookieConsentStore } from '~/stores/cookieConsent'
 import { isAdminRoute } from '~/utils/isAdminRoute'
+import { pixelContactSource } from '~/utils/pixelContactSource'
 import { shouldLoadPixel } from '~/utils/shouldLoadPixel'
+import { shouldTrackPixelContact } from '~/utils/shouldTrackPixelContact'
 import { shouldTrackPixelPageView } from '~/utils/shouldTrackPixelPageView'
 
 /** The subset of Meta's `fbq` queue-stub shape this file actually touches. */
@@ -91,6 +93,11 @@ function loadPixelScript(): void {
  * navigates again still counts as one view. Every `PageView` after that,
  * initial or route-change, goes through `shouldTrackPixelPageView` so the
  * same path can never fire twice in a row.
+ *
+ * `start()` also wires up `trackContact` — a single delegated click listener
+ * for the whole document, not one handler per button — so any `tel:` link,
+ * present now or added later, is covered without this file needing to know
+ * where it lives.
  */
 export default defineNuxtPlugin(() => {
   const route = useRoute()
@@ -107,11 +114,53 @@ export default defineNuxtPlugin(() => {
 
   let started = false
   let lastTrackedPath: string | null = null
+  let lastContactKey: string | null = null
 
   const trackPageView = (path: string): void => {
     if (!shouldTrackPixelPageView(lastTrackedPath, path)) return
     lastTrackedPath = path
     window.fbq?.('track', 'PageView')
+  }
+
+  /**
+   * Delegated click handler, registered once on `document` inside `start()`
+   * — see that function for why `capture: true`.
+   *
+   * Re-checks `allowed(route.path)` on every click, unlike `trackPageView`
+   * above: `trackPageView` only ever runs from `sync`, which already checked
+   * `allowed()` immediately before calling it, but a click never goes
+   * through `sync` — this listener, once attached, fires on every click for
+   * the rest of the page's life. Of the four gates `allowed()` checks, three
+   * cannot flip back to false once `start()` has run (the id/hostname
+   * result and the dev-mode flag are both fixed for the life of the page,
+   * and consent only ever moves in the direction that already let `start()`
+   * run) — but `isAdminRoute()` can: a visitor who lands on a public page
+   * (where this listener gets attached) can still navigate into `/admin`
+   * without a reload, and this listener must not fire on clicks made there.
+   *
+   * The phone number itself is deliberately absent from the event
+   * parameters below: it is personal data, and Meta's business tools terms
+   * treat unhashed personal data passed as an event parameter as grounds to
+   * have that parameter blocked outright — `content_category` and
+   * `content_name` carry everything the ad account needs (which kind of
+   * contact, which page it happened on) without ever sending the number.
+   */
+  const trackContact = (event: Event): void => {
+    const target = event.target
+    if (!(target instanceof Element)) return
+    const link = target.closest('a[href^="tel:"]')
+    if (!(link instanceof HTMLAnchorElement)) return
+    if (!allowed(route.path)) return
+
+    const source = pixelContactSource([...link.classList])
+    const key = `${source}:${link.getAttribute('href') ?? ''}`
+    if (!shouldTrackPixelContact(lastContactKey, key)) return
+    lastContactKey = key
+
+    window.fbq?.('track', 'Contact', {
+      content_category: source,
+      content_name: route.path,
+    })
   }
 
   const start = (path: string): void => {
@@ -120,6 +169,13 @@ export default defineNuxtPlugin(() => {
     loadPixelScript()
     window.fbq?.('init', metaPixelId)
     trackPageView(path)
+    // Capture phase, not bubble: a `tel:` link hands off to the device's
+    // dialer, and on mobile that handoff can tear the page down before a
+    // bubbled listener would ever get to run. Registered here, inside
+    // `start()`, rather than unconditionally at plugin setup, so a visitor
+    // who never gets a pixel at all (no consent yet, `npm run dev`, or
+    // `/admin`) never gets this listener attached either.
+    document.addEventListener('click', trackContact, { capture: true })
   }
 
   const sync = (path: string): void => {

@@ -15,6 +15,18 @@ import { isAdminRoute } from '~/utils/isAdminRoute'
  * "wrong" choice. The backdrop is purely visual (`pointer-events: none`) —
  * it dims the page to draw the eye to the banner, it does not turn this into
  * a click-blocking modal; a visitor can still use the page before answering.
+ *
+ * `<ClientOnly>` is load-bearing, not decoration: `store.status` comes from
+ * localStorage (`stores/cookieConsent.ts`), which SSR has no access to and
+ * always renders as the `'pending'` default. `plugins/initStores.client.ts`
+ * resolves the real status before this component ever mounts on the client,
+ * so a returning visitor who already answered gets `visible === false` on
+ * the very first client render while the server still rendered it `true` —
+ * a genuine SSR/client content mismatch, not a cosmetic one. Since this
+ * banner has nothing worth server-rendering anyway (no SEO/no-JS value in a
+ * consent prompt), skipping SSR for it entirely is the fix, not a
+ * workaround: server sends nothing for it, client mounts it once already
+ * knows the real status, so the two never have anything to disagree about.
  */
 const store = useCookieConsentStore()
 const route = useRoute()
@@ -23,20 +35,22 @@ const visible = computed(() => store.status === 'pending' && !isAdminRoute(route
 </script>
 
 <template>
-  <div v-if="visible" class="cookie-consent-backdrop" aria-hidden="true" />
-  <div v-if="visible" class="cookie-consent" role="dialog" aria-label="Cookie-ների մասին տեղեկացում">
-    <p class="cookie-consent__text">
-      Այս կայքն օգտագործում է cookie-ներ՝ այցելուների վիճակագրության և գովազդի
-      արդյունավետության չափման համար։ Մանրամասները՝
-      <NuxtLink to="/privacy" class="cookie-consent__link">
-        Գաղտնիության քաղաքականությունում
-      </NuxtLink>։
-    </p>
-    <div class="cookie-consent__actions">
-      <AppButton variant="ghost" size="md" @click="store.reject()">Մերժել</AppButton>
-      <AppButton variant="primary" size="md" @click="store.accept()">Ընդունել</AppButton>
+  <ClientOnly>
+    <div v-if="visible" class="cookie-consent-backdrop" aria-hidden="true" />
+    <div v-if="visible" class="cookie-consent" role="dialog" aria-label="Cookie-ների մասին տեղեկացում">
+      <p class="cookie-consent__text">
+        Այս կայքն օգտագործում է cookie-ներ՝ այցելուների վիճակագրության և գովազդի
+        արդյունավետության չափման համար։ Մանրամասները՝
+        <NuxtLink to="/privacy" class="cookie-consent__link">
+          Գաղտնիության քաղաքականությունում
+        </NuxtLink>։
+      </p>
+      <div class="cookie-consent__actions">
+        <AppButton variant="ghost" size="md" @click="store.reject()">Մերժել</AppButton>
+        <AppButton variant="primary" size="md" @click="store.accept()">Ընդունել</AppButton>
+      </div>
     </div>
-  </div>
+  </ClientOnly>
 </template>
 
 <style scoped lang="scss">

@@ -38,7 +38,7 @@ describe('SupabaseStorageService read-only mode', () => {
     const service = new SupabaseStorageService(fakeConfig(true))
 
     await expect(service.uploadWebp(Buffer.from('x'), 'registrations')).rejects.toThrow(
-      /read-only/i,
+      /անջատված/,
     )
     expect(storageFrom).not.toHaveBeenCalled()
   })
@@ -47,7 +47,7 @@ describe('SupabaseStorageService read-only mode', () => {
     storageFrom.mockClear()
     const service = new SupabaseStorageService(fakeConfig(true))
 
-    await expect(service.remove(['registrations/some-photo.webp'])).rejects.toThrow(/read-only/i)
+    await expect(service.remove(['registrations/some-photo.webp'])).rejects.toThrow(/անջատված/)
     expect(storageFrom).not.toHaveBeenCalled()
   })
 
@@ -76,5 +76,37 @@ describe('SupabaseStorageService read-only mode', () => {
       url: 'https://x/y.webp',
     })
     expect(storageFrom).toHaveBeenCalled()
+  })
+
+
+  /**
+   * A real Supabase failure (bucket outage, quota, network) must never reach
+   * a driver as the provider's own English error text — see
+   * `all-exceptions.filter.ts`'s doc comment for why leaking third-party
+   * error detail is the same class of problem as a bare "Internal server
+   * error". The real message still has to go somewhere — the server log.
+   */
+  it('never leaks the raw Supabase error text when uploadWebp() fails', async () => {
+    storageFrom.mockClear()
+    storageFrom.mockReturnValue({
+      upload: vi.fn(async () => ({ error: { message: 'bucket quota exceeded: internal detail' } })),
+    })
+    const service = new SupabaseStorageService(fakeConfig(false))
+
+    await expect(service.uploadWebp(Buffer.from('x'), 'registrations')).rejects.toThrow(
+      'Նկարի բեռնումը ձախողվեց, փորձեք կրկին',
+    )
+  })
+
+  it('never leaks the raw Supabase error text when remove() fails', async () => {
+    storageFrom.mockClear()
+    storageFrom.mockReturnValue({
+      remove: vi.fn(async () => ({ error: { message: 'object not found: internal detail' } })),
+    })
+    const service = new SupabaseStorageService(fakeConfig(false))
+
+    await expect(service.remove(['registrations/some-photo.webp'])).rejects.toThrow(
+      'Նկարի ջնջումը ձախողվեց, փորձեք կրկին',
+    )
   })
 })

@@ -4,6 +4,8 @@ import { NestFactory } from '@nestjs/core'
 import type { NestExpressApplication } from '@nestjs/platform-express'
 import helmet from 'helmet'
 import { AppModule } from './app.module'
+import { AllExceptionsFilter } from './common/all-exceptions.filter'
+import { buildValidationException } from './common/validation-exception.factory'
 
 async function bootstrap(): Promise<void> {
   // Typed as the Express app so `app.set()` (trust proxy, below) is available
@@ -54,8 +56,19 @@ async function bootstrap(): Promise<void> {
       forbidNonWhitelisted: true,
       transform: true,
       transformOptions: { enableImplicitConversion: true },
+      // Replaces class-validator's raw ValidationError[] (English, one entry
+      // per failing constraint) with one readable Armenian BadRequestException
+      // — see validation-exception.factory.ts for why this lives here instead
+      // of on each of the 26 DTOs.
+      exceptionFactory: buildValidationException,
     }),
   )
+
+  // Every uncaught exception in the API passes through this — Prisma errors,
+  // Multer errors, rate-limit hits, and any genuine bug all get a clear
+  // Armenian message instead of a bare "Internal server error" — see
+  // common/all-exceptions.filter.ts and common/exception-response.ts.
+  app.useGlobalFilters(new AllExceptionsFilter())
 
   app.enableShutdownHooks()
 

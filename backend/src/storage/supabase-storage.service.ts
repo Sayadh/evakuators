@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, InternalServerErrorException } from '@nestjs/common'
+import { ForbiddenException, Injectable, InternalServerErrorException, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { SupabaseClient, createClient } from '@supabase/supabase-js'
 import { randomUUID } from 'node:crypto'
@@ -16,12 +16,16 @@ export interface StoredObject {
   url: string
 }
 
+const UPLOAD_FAILED_MESSAGE = 'Նկարի բեռնումը ձախողվեց, փորձեք կրկին'
+const REMOVAL_FAILED_MESSAGE = 'Նկարի ջնջումը ձախողվեց, փորձեք կրկին'
+
 /**
  * The ONLY place in the whole project that talks to Supabase.
  * Uses Supabase Storage exclusively — never its Database or Auth.
  */
 @Injectable()
 export class SupabaseStorageService {
+  private readonly logger = new Logger(SupabaseStorageService.name)
   private readonly client: SupabaseClient
   private readonly bucket: string
   /**
@@ -56,9 +60,10 @@ export class SupabaseStorageService {
    */
   private assertWritable(): void {
     if (this.writesDisabled) {
-      throw new ForbiddenException(
-        'Image storage is read-only in this environment (SUPABASE_STORAGE_READ_ONLY) — uploads and deletions are disabled.',
-      )
+      // Staging only (docs/deployment.md § "Staging environment") — but the
+      // message still has to be one a real person can read if they ever hit
+      // it while testing, not the English env-var name that used to be here.
+      throw new ForbiddenException('Այս միջավայրում նկարների բեռնումն ու ջնջումն անջատված են')
     }
   }
 
@@ -73,7 +78,12 @@ export class SupabaseStorageService {
     })
 
     if (error) {
-      throw new InternalServerErrorException(`Image upload failed: ${error.message}`)
+      // The real Supabase error (bucket/network/quota detail) is for the logs
+      // only — never send raw third-party provider text to a driver, and
+      // AllExceptionsFilter can't help here since this exception is thrown
+      // with a message already, not left to fall through to it.
+      this.logger.error(`Supabase Storage upload failed: ${error.message}`, error.stack)
+      throw new InternalServerErrorException(UPLOAD_FAILED_MESSAGE)
     }
 
     const { data } = this.client.storage.from(this.bucket).getPublicUrl(path)
@@ -85,7 +95,8 @@ export class SupabaseStorageService {
     this.assertWritable()
     const { error } = await this.client.storage.from(this.bucket).remove(paths)
     if (error) {
-      throw new InternalServerErrorException(`Image removal failed: ${error.message}`)
+      this.logger.error(`Supabase Storage removal failed: ${error.message}`, error.stack)
+      throw new InternalServerErrorException(REMOVAL_FAILED_MESSAGE)
     }
   }
 }

@@ -27,6 +27,51 @@ describe('both third-party trackers wait on consent', () => {
   )
 })
 
+/**
+ * The bug this pins was live in production and cost every consenting
+ * visitor's analytics: `disableAnalytics()` writes Google's own opt-out
+ * switch, `window['ga-disable-<id>']`, and NOTHING in nuxt-gtag's
+ * `initialize()` removes it. Because this plugin runs before
+ * `initStores.client.ts` (Nuxt orders plugins by filename, `g` < `i`), the
+ * first `sync()` always sees the pre-hydration `'pending'` status and trips
+ * that switch — so a visitor who had already accepted got the script
+ * injected, the `config` command pushed, and then every hit silently
+ * dropped. Measured on production before the fix: `script[data-gtag]`
+ * present, gtag.js downloaded, zero `/g/collect` requests.
+ */
+describe('opening the gates also un-does Google’s opt-out switch', () => {
+  const source = read('plugins/gtag-gate.client.ts')
+  /**
+   * Comments stripped before the ordering assertions: `start()`'s own comment
+   * explains the bug by naming `initialize()` and `started`, so matching on
+   * the raw text would compare against the explanation rather than the code.
+   */
+  const start = source
+    .slice(source.indexOf('const start ='), source.indexOf('const sync ='))
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '')
+
+  it('takes enableAnalytics from useGtag, not just initialize and disableAnalytics', () => {
+    expect(source).toContain('enableAnalytics')
+    expect(source).toContain('} = useGtag()')
+  })
+
+  it('clears the flag before configuring the tag', () => {
+    expect(start.indexOf('enableAnalytics()')).toBeGreaterThan(-1)
+    expect(start.indexOf('enableAnalytics()')).toBeLessThan(start.indexOf('initialize()'))
+  })
+
+  /**
+   * `started` only records that the script was injected once. The flag can be
+   * re-set any number of times after that — navigating into `/admin` (gate 2)
+   * or withdrawing consent (gate 3) both call `disableAnalytics()` — so coming
+   * back out has to clear it again, which an early return would skip.
+   */
+  it('clears the flag outside the one-shot `started` guard, so a second pass still re-enables', () => {
+    expect(start.indexOf('enableAnalytics()')).toBeLessThan(start.indexOf('if (started) return'))
+  })
+})
+
 describe('the Meta Pixel refuses to fire during local development', () => {
   // `shouldLoadPixel()` only refuses one hardcoded production id off the
   // production hostname — a developer's own (or copied-over) `.env` with a

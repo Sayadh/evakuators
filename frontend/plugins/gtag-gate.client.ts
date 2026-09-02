@@ -44,12 +44,15 @@ import { useCookieConsentStore } from '~/stores/cookieConsent'
  *   already-present script, but no more events go out from that point on.
  * - Navigating OUT of a blocked state (or the consent gate turning on),
  *   having never initialized: starts normally, exactly as a fresh visit
- *   already past every gate would have.
+ *   already past every gate would have — including clearing the
+ *   `ga-disable-<id>` flag a previous blocked `sync()` set, which is what
+ *   `enableAnalytics()` in `start()` is for. Without it the gates open but
+ *   Google's opt-out switch stays on, and nothing is ever sent.
  */
 export default defineNuxtPlugin(() => {
   const route = useRoute()
   const { public: { gtag: gtagConfig } } = useRuntimeConfig()
-  const { initialize, disableAnalytics } = useGtag()
+  const { initialize, enableAnalytics, disableAnalytics } = useGtag()
   const consent = useCookieConsentStore()
 
   const allowed = (path: string): boolean =>
@@ -59,6 +62,24 @@ export default defineNuxtPlugin(() => {
 
   let started = false
   const start = (): void => {
+    // Undo whatever `disableAnalytics()` set, BEFORE the tag is configured.
+    //
+    // On a normal page load this plugin runs before `initStores.client.ts`
+    // (Nuxt orders plugins by filename, and `g` < `i`), so `consent.status`
+    // is still the pre-hydration `'pending'` on the first `sync()` and gate 3
+    // refuses — `disableAnalytics()` writes `window['ga-disable-<id>'] = true`,
+    // Google's own opt-out switch. The store then hydrates to `'accepted'`,
+    // the watcher re-runs `sync`, and `initialize()` injects gtag.js and
+    // pushes `config` — but nothing in `initialize()` clears that flag, so
+    // gtag.js loads and then silently drops every hit. Verified in production
+    // before this line existed: script present, zero `/g/collect` requests.
+    //
+    // Deliberately OUTSIDE the `started` guard below. `started` only tracks
+    // whether the script was injected once; the flag can be re-set any number
+    // of times afterwards by navigating into `/admin` (gate 2) or withdrawing
+    // consent (gate 3), and coming back out has to clear it again.
+    enableAnalytics()
+
     if (started) return
     started = true
     initialize()

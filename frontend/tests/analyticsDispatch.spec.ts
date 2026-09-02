@@ -57,6 +57,26 @@ describe('utils/analytics dispatch', () => {
     expect(code(source)).not.toContain('isAdminRoute')
     expect(code(source)).not.toContain('cookieConsent')
   })
+
+  /**
+   * The regression this guards against was observed on production: with cookie
+   * consent unanswered, `window.dataLayer` already exists (nuxt-gtag's `js` and
+   * `config` commands are in it) while `gtag.js` was never requested. Pushing
+   * an event then queues it, and the queue is delivered in full the moment a
+   * visitor later accepts — turning a pre-consent phone click into a post-
+   * consent hit. Checking that the tag script is actually present is the
+   * observable outcome of the gates, not a second copy of them.
+   */
+  it('pushes only once the gtag script is actually loaded, not merely when a dataLayer exists', () => {
+    expect(code(source)).toContain("document.head.querySelector('script[data-gtag]')")
+    const dispatchBody = source.slice(
+      source.indexOf('function dispatch('),
+      source.indexOf('export const trackPhoneClick'),
+    )
+    expect(dispatchBody.indexOf('script[data-gtag]')).toBeLessThan(
+      dispatchBody.indexOf("gtagCommand('event'"),
+    )
+  })
 })
 
 describe('phone clicks still funnel through usePhoneActions', () => {

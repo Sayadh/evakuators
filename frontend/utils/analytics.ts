@@ -27,15 +27,24 @@
  * at call time. The push below is exactly what `nuxt-gtag`'s own `gtag()`
  * helper does, so this is the module's mechanism rather than a parallel one.
  *
- * ## Why there is no gating here
+ * ## The one thing this file does check, and why it is not a second copy of the gates
  *
- * There is nothing left to gate. `window.dataLayer` exists only after
- * `plugins/gtag-gate.client.ts` has called `initialize()`, and that plugin is
- * the only caller: it already enforces the production id/hostname rule
- * (`shouldLoadGtag`), excludes `/admin` (`isAdminRoute`) and requires cookie
- * consent to be exactly `'accepted'`. If any gate refused, `dataLayer` is
- * `undefined` and the optional chain makes every call below a silent no-op —
- * a second copy of that logic here would only be one more thing to drift.
+ * `window.dataLayer` existing is NOT proof that the gates opened. Verified on
+ * production: with cookie consent still unanswered, `dataLayer` is present and
+ * already holds nuxt-gtag's `js` and `config` commands, while `gtag.js` itself
+ * was never requested and `window['ga-disable-<id>']` is `true`. Pushing an
+ * event in that state does not send it anywhere — but it does sit in the queue,
+ * and gtag.js processes the whole queue when it eventually loads. A visitor who
+ * pressed "call" before answering the banner would have that click delivered to
+ * Google the moment they pressed accept, which is exactly what the consent gate
+ * exists to prevent.
+ *
+ * So the check below is for the observable OUTCOME of the gates — is the tag
+ * actually loaded — not a re-implementation of them. `script[data-gtag]` is
+ * nuxt-gtag's own marker (it uses this same selector as its idempotency guard
+ * in `useGtag().initialize()`), so it stays true to whatever
+ * `plugins/gtag-gate.client.ts` decided, with no id, hostname, route or consent
+ * rule duplicated here to drift out of sync.
  */
 /**
  * gtag.js's command queue.
@@ -76,6 +85,10 @@ function dispatch(event: string, payload?: AnalyticsPayload): void {
   // `utils/` modules carry no client-only guarantee of their own, unlike the
   // `.client.ts` plugins — same guard, and same reason, as trackMetaPixelContact.
   if (!import.meta.client) return
+
+  // Not "has a dataLayer" — see the doc comment above for why that is not the
+  // same question as "did the gates open".
+  if (!document.head.querySelector('script[data-gtag]')) return
 
   gtagCommand('event', event, payload ?? {})
 }

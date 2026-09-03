@@ -33,6 +33,7 @@ export { imageRepository } from './image.repository'
 export type { UploadedImage } from './image.repository'
 export { myFreeRoutesRepository } from './myFreeRoutes.repository'
 export type { FreeRoutePayload } from './myFreeRoutes.repository'
+export { mySubscriptionsRepository } from './mySubscriptions.repository'
 export { myTowTruckRepository } from './myTowTruck.repository'
 export type {
   DriverProfileChangeStatus,

@@ -11,6 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common'
 import { AuthenticatedDriverRequest, DriverJwtGuard } from '../driver-auth/driver-jwt.guard'
+import { SubscriptionActiveGuard } from '../subscriptions/subscription-active.guard'
 import { CreateFreeRouteDto } from './dto/create-free-route.dto'
 import { UpdateFreeRouteDto } from './dto/update-free-route.dto'
 import type { MyFreeRouteApi } from './free-route.types'
@@ -27,6 +28,9 @@ export class MyFreeRoutesController {
     return this.freeRoutesService.listMine(request.towTruckId)
   }
 
+  // The three writes are guarded, the list above is not: a driver whose
+  // subscription lapsed may still see what they posted, just not post more.
+  @UseGuards(SubscriptionActiveGuard)
   @Post()
   create(
     @Req() request: AuthenticatedDriverRequest,
@@ -35,6 +39,7 @@ export class MyFreeRoutesController {
     return this.freeRoutesService.create(request.towTruckId, dto)
   }
 
+  @UseGuards(SubscriptionActiveGuard)
   @Patch(':id')
   update(
     @Req() request: AuthenticatedDriverRequest,
@@ -44,6 +49,7 @@ export class MyFreeRoutesController {
     return this.freeRoutesService.update(request.towTruckId, id, dto)
   }
 
+  @UseGuards(SubscriptionActiveGuard)
   @Delete(':id')
   remove(
     @Req() request: AuthenticatedDriverRequest,

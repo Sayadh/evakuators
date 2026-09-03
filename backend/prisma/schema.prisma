@@ -57,6 +57,43 @@ enum FreeRouteStatus {
   FINISHED
 }
 
+/// Why an admin took a driver off the site.
+///
+/// Two values and not free text, because this is not a note an admin writes to
+/// themselves — it decides what the DRIVER is then shown and whether they can
+/// get back in at all (see DriverAuthService.login):
+/// - UNPAID is recoverable by the driver alone. They can still sign in, and
+///   their dashboard becomes the payment block plus an explanation.
+/// - OTHER is not. Sign-in is refused outright with the contact number, since
+///   whatever the reason was, only a person can undo it.
+///
+/// Null means the driver is active, or was deactivated before this column
+/// existed — both read as "no reason recorded", and login treats an
+/// unexplained deactivation as OTHER: refusing is the safe direction when we
+/// cannot tell whether someone was banned.
+enum DeactivationReason {
+  UNPAID
+  OTHER
+}
+
+/// Where a driver's subscription payment stands.
+///
+/// Only PENDING is reachable today: pressing «Վճարել» records the driver's
+/// INTENT to buy a plan, and no money moves — there is no payment provider
+/// wired up yet. The other three exist because they are the states that
+/// provider will report back, and adding them now keeps the column's meaning
+/// stable rather than redefining it in the next migration.
+enum SubscriptionPaymentStatus {
+  /// Driver asked to buy a plan. Nothing has been charged, nothing is granted.
+  PENDING
+  /// The provider confirmed the money arrived.
+  PAID
+  /// The provider refused or the attempt errored.
+  FAILED
+  /// Abandoned — the driver walked away, or it was superseded/expired.
+  CANCELLED
+}
+
 /// Every interaction a visitor can have with a tow truck profile that a driver
 /// is allowed to see in their own dashboard. Deliberately a closed enum rather
 /// than a free-text event name: the dashboard has one card per value, and a
@@ -294,30 +331,34 @@ model TowTruck {
   priceNightSurchargePercent Int?
   priceExtraLoading          Int?
 
-  isActive   Boolean  @default(true)
+  isActive           Boolean             @default(true)
+  /// Set when `isActive` goes false, cleared when it goes back true — so it is
+  /// only ever readable for a driver who is actually deactivated right now,
+  /// and a reactivated driver carries no stale explanation. See
+  /// AdminService.setTowTruckActive and DeactivationReason.
+  deactivationReason DeactivationReason?
   /// Admin-curated "best tow trucks" homepage pick — see FeaturedTowTrucksSection
   /// on the frontend. Purely editorial, has no effect on public search/filter
   /// results elsewhere.
-  isFeatured Boolean  @default(false)
-  /// When an admin last marked this driver's payment as received — bookkeeping
-  /// for US, not a claim about the driver: never read by the public site, the
-  /// driver's own dashboard, or `isActive`.
+  isFeatured         Boolean             @default(false)
+  /// LEGACY — no longer read or written by anything. Kept only because it is
+  /// the record of what the manual bookkeeping said before subscriptions
+  /// existed.
   ///
-  /// Deliberately ONE timestamp and not a payments-history table: the panel
-  /// only ever needs "paid this month or not", and that is answered by
-  /// comparing this instant's Armenia calendar month (`armeniaMonthKey`,
-  /// backend/src/common/armenia-day.ts) to the current one — see
-  /// AdminService.setTowTruckPayment. A month has no explicit reset job as a
-  /// result: it lapses back to "not paid" on its own the moment the calendar
-  /// turns over, simply because the stored month no longer matches.
+  /// It used to be the whole payment system: one timestamp an admin set by
+  /// hand, with `/admin/payments` deriving "paid / due soon / overdue" from
+  /// how many days ago it was. That encoded a monthly cadence into the status,
+  /// which broke the moment a driver could buy four months at once — see
+  /// `subscriptions/subscription-status.ts`.
   ///
-  /// Null means "no payment recorded yet" (every row before this column
-  /// existed, and any row an admin has since unmarked) — indistinguishable
-  /// from "paid last month and it lapsed", which is fine: both read as
-  /// unpaid right now, and that is the only question this column answers.
-  lastPaymentAt DateTime?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  /// Every non-null value here was copied into a PAID SubscriptionPayment row
+  /// by migration `20260902140000_backfill_subscription_payments`, and that
+  /// table is now the only thing the status is computed from. The column is
+  /// left in place rather than dropped in the same change that replaced it:
+  /// dropping data is irreversible, and nothing costs anything by keeping it.
+  lastPaymentAt      DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 
   images     TowTruckImage[]
   reviews    Review[]
@@ -334,6 +375,11 @@ model TowTruck {
   /// never been asked, which is exactly true of everyone published before the
   /// dialog existed.
   privacyConsents DriverPrivacyConsent[]
+
+  /// Every plan this driver has asked to buy — see SubscriptionPayment.
+  /// Cascades on delete like everything else here, so
+  /// AdminService.deleteTowTruck() needs no extra cleanup step.
+  subscriptionPayments SubscriptionPayment[]
 
   // Provider analytics — see docs/analytics.md. Both cascade on delete, so
   // AdminService.deleteTowTruck() needs no extra cleanup step.
@@ -915,4 +961,63 @@ model AdminOtp {
   createdAt  DateTime  @default(now())
 
   @@index([userId])
+}
+
+/// One driver pressing «Վճարել» on one plan.
+///
+/// ## Why the plans themselves are NOT a table
+///
+/// There are two, they change roughly never, and their price is a boundary
+/// the API has to own rather than a row an admin edits — so they live as
+/// frozen constants in `backend/src/subscriptions/subscription-plans.ts`,
+/// exactly like every other never-changing list in this project (CLAUDE.md
+/// § "Core architectural decision: where does data live?"). `planCode` below
+/// stores which one was bought, as its code, with no foreign key to point at.
+///
+/// ## Why amount/currency/durationMonths are copied onto the row
+///
+/// They are the plan's values AT THE MOMENT OF PURCHASE, never read back
+/// from the constants at display time. Raising a price must not silently
+/// rewrite what someone already paid — a payment record whose amount is
+/// derived from today's price list is not a record of anything.
+///
+/// ## This table replaced TowTruck.lastPaymentAt
+///
+/// It is now the ONLY thing `/admin/payments` computes a driver's status
+/// from — see `subscriptions/subscription-status.ts`. The old column held one
+/// timestamp and the status counted days since it, which encoded a monthly
+/// cadence and therefore read a 4-month subscriber as overdue on day 31.
+/// Migration `20260902140000_backfill_subscription_payments` copied every
+/// value it held into a PAID row here, so nothing changed status on the
+/// deploy that switched over.
+model SubscriptionPayment {
+  id         Int      @id @default(autoincrement())
+  towTruckId Int
+  towTruck   TowTruck @relation(fields: [towTruckId], references: [id], onDelete: Cascade)
+
+  /// SubscriptionPlanCode — `'ONE_MONTH' | 'FOUR_MONTHS'`. A plain string, not
+  /// an enum: the plan list is a backend constant, and a code that no longer
+  /// exists must still read back on an old row rather than break the query.
+  planCode String
+
+  /// Whole drams. AMD has no minor unit in use here, and every price in this
+  /// project is already an Int (see TowTruck's price* columns).
+  amount         Int
+  currency       String
+  /// Copied from the plan, so `periodEnd` stays explainable from the row alone.
+  durationMonths Int
+
+  /// The access window this payment is FOR. Computed when the row is created,
+  /// from that instant — see `subscription-period.ts`. It is what the driver
+  /// was quoted, not proof of access: nothing grants access until the status
+  /// is PAID.
+  periodStart DateTime
+  periodEnd   DateTime
+
+  status    SubscriptionPaymentStatus @default(PENDING)
+  createdAt DateTime                  @default(now())
+  updatedAt DateTime                  @updatedAt
+
+  /// The driver's own history list, newest first.
+  @@index([towTruckId, createdAt])
 }

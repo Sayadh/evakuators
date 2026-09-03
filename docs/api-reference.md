@@ -53,6 +53,10 @@ from the server itself (Nuxt SSR over loopback) skip throttling entirely — see
 | `GET` | `/my/analytics/charts` | Daily series for the same periods, zero-filled per day |
 | `GET` | `/my/analytics/reviews` | Own reviews **including unmoderated ones**. `?status=CONFIRMED\|PENDING\|ALL&limit=` (limit capped at 100) |
 | `GET` | `/my/analytics/ratings` | Star histogram 1→5 split confirmed/pending, plus both averages (`null`, not `0`, when there are none) |
+| `GET` | `/my/subscription-plans` | `{ items: SubscriptionPlanApi[] }` — the two plans on sale, straight from the constants in `backend/src/subscriptions/subscription-plans.ts` (no table, see § "Subscription payments"). `id` **is** the plan's code (`ONE_MONTH` / `FOUR_MONTHS`) |
+| `GET` | `/my/subscription-payments/status` | `{ status, paidUntil?, daysLeft, locked }` — what the dashboard decides its gate from. Read on every load, never cached in the session: a session lasts 30 days and a subscription does not |
+| `GET` | `/my/subscription-payments` | Own payment requests, newest first, capped at 50 |
+| `POST` | `/my/subscription-payments` | Body is `{ planId }` and **nothing else** — see § "Subscription payments". 10/60s. Answers the created record: amount, currency, months, `periodStart`/`periodEnd`, `status`, and the `towTruckId` the server derived |
 
 ### `?vehicleType=` on `GET /tow-trucks`
 
@@ -97,6 +101,137 @@ A consumer that genuinely needs every published truck — the sitemap is the onl
 one — asks for each listing in turn (the general one plus one per landing page)
 and dedupes, rather than being handed a flag that turns the rule off.
 
+### Subscription payments
+
+A driver buys platform access from their own dashboard («Վճարումներ»). Two
+things about this endpoint are deliberate and load-bearing.
+
+**The request body is one plan code.** Not the price, not the number of
+months, not the driver id, not the status:
+
+```
+POST /api/v1/my/subscription-payments
+Authorization: Bearer <driver JWT>
+
+{ "planId": "FOUR_MONTHS" }
+```
+
+The price and duration come from `subscription-plans.ts`, the driver from
+`request.towTruckId` (the JWT — a driver cannot express a request to pay on
+someone else's behalf), and the status from the column default. Sending any of
+them anyway is a **400, not a silent strip**: the global `ValidationPipe` runs
+with `forbidNonWhitelisted`, so a frontend that starts sending `amount` finds
+out immediately instead of appearing to work while the server ignores it.
+
+**The plans are constants, not rows.** Two plans that change roughly never are
+static data, and this project keeps static data in typed constants (CLAUDE.md
+§ "Core architectural decision"). What has to be server-side is the *price*,
+and it is — the file is backend-only. `SubscriptionPayment.planCode` stores
+which plan was bought, with no foreign key to point at.
+
+**Nothing is charged automatically yet.** There is no payment provider wired
+up, so a driver's own request lands as `PENDING` and grants nothing until a
+person confirms the money arrived — see § "Confirming a payment" below.
+`amount`, `currency` and `durationMonths` are copied onto each row at purchase
+time rather than read back from the plan list, so a later price change cannot
+rewrite what a driver was quoted.
+
+### Confirming a payment
+
+`SubscriptionPayment` is the **only** thing `/admin/payments` computes a
+driver's status from. `TowTruck.lastPaymentAt` — the old single-timestamp
+bookkeeping — is legacy, read and written by nothing; migration
+`20260902140000_backfill_subscription_payments` copied every value it held
+into a PAID row so no driver's status changed on the deploy.
+
+That replacement was forced by the 4-month plan. The old rule counted days
+since `lastPaymentAt` (25 → due soon, 30 → overdue), which encoded a monthly
+cadence into the status itself: a driver who had paid for four months read as
+**overdue on day 31**. Status now comes from `paidUntil` — the furthest
+`periodEnd` among that driver's PAID payments — so plan length stops mattering
+(`subscriptions/subscription-status.ts`).
+
+Two ways a payment becomes PAID, and a third coming:
+
+| | Who | What it writes |
+| --- | --- | --- |
+| Driver requests | `POST /my/subscription-payments` | a PENDING row — grants nothing |
+| Admin confirms | `PATCH /admin/subscription-payments/:id` `{ status: 'PAID' }` | flips it to PAID and **recomputes** the period |
+| Admin records an offline payment | `POST /admin/subscription-payments` `{ towTruckId, planId, paidAt? }` | a PAID row directly |
+| *(later)* the provider | its webhook | the same PAID row — nothing else changes |
+
+Confirmation recomputes the window rather than honouring the one stored at
+request time, because that one was a quote: days may have passed, and honouring
+it would sell less than the plan says. It also **extends** live coverage
+instead of restarting it (`renewalPeriod`), so renewing a week early is not a
+week lost.
+
+An admin picks a **plan**, never an amount — the price and duration come from
+the same constants the driver was quoted from, so the two ways money gets
+recorded cannot disagree about what a month costs.
+
+### Being taken off the site
+
+`PATCH /admin/tow-trucks/:id/active` requires a **reason** when deactivating
+(`UNPAID` or `OTHER` — `DeactivationReason`), and it is not bookkeeping: it
+decides whether that driver can sign in again at all.
+
+| Reason | Login | What the driver sees |
+| --- | --- | --- |
+| `UNPAID` | allowed | Dashboard replaced by the payment block, with a dialog saying the page is off the site and to pay |
+| `OTHER`, or none recorded | **refused, 403** | The login page shows the contact number and asks them to call |
+
+The split exists because one of these is a bill the driver can settle alone and
+the other is a decision only a person can undo. Refusing an `UNPAID` driver
+would put the payment block — the only way out — behind the very login being
+refused; issuing a session to an `OTHER` one would hand a banned driver a
+working token back.
+
+A deactivation recorded before this column existed reads as "no reason", and
+login treats that as `OTHER`. Refusing is the safe direction: after the fact we
+cannot tell a ban from an unpaid bill.
+
+`login` answers **401** for every credential failure and **403** only here, and
+the deactivation check deliberately runs AFTER the password comparison — so the
+403 can never become an oracle for "this number exists and is banned". The
+login page tells the two apart by that status code alone, which is why the
+contact number lives in `frontend/constants/site.ts` (`CONTACT_PHONE`) and not
+in the API's message.
+
+Nothing else changed: `GET /my/tow-truck` still refuses a deactivated driver
+outright, and every write path already went through that same check. The
+dashboard learns *why* it cannot load a profile from
+`GET /my/subscription-payments/status`, which carries `isActive` and the reason.
+
+### When a subscription lapses
+
+An `overdue` driver's dashboard is replaced by the payment block alone, and
+`SubscriptionActiveGuard` refuses the same driver's **writes** at the API with
+**402 Payment Required** — the profile edit, the coordinates edit, and posting,
+editing or deleting a free route. Reads, the password change, the privacy
+consent and every subscription route stay open: a paywall that also blocks
+paying is a wall.
+
+402 and not 401 on purpose. `apiFetch` treats a 401 on a `/my/*` path as an
+expired session and signs the driver out (`repositories/apiClient.ts`), which
+would eject someone whose session is fine and whose actual problem is a bill.
+
+**`unpaid` is never locked — only `overdue`.** Both fail to clear a driver, but
+one has never been billed at all: every driver an admin never marked paid, and
+everyone who signed up before any of this existed. Locking that group would
+take the platform's drivers offline on the deploy that ships it, for money
+nobody ever asked them for. The rule is "you had it and it ran out"
+(`isLockedOut`).
+
+Five days out — the same threshold `due-soon` already uses — the dashboard
+shows a dismissible dialog naming the date. It reappears on every visit while
+that window is open: it is the last thing standing between a driver and a
+locked dashboard.
+
+Nothing here touches the public site. An overdue driver's profile and free
+routes stay listed; taking a driver off the site is still an admin's explicit
+decision (`isActive`), exactly as it was.
+
 ## Admin-authenticated (`Authorization: Bearer <admin JWT>`, `AdminJwtGuard`)
 
 | Method | Path | Notes |
@@ -133,6 +268,10 @@ and dedupes, rather than being handed a flag that turns the rule off.
 | `GET` | `/admin/tow-trucks/:id/analytics/reviews` | |
 | `GET` | `/admin/tow-trucks/:id/analytics/ratings` | |
 | `GET` | `/admin/site-analytics` | Site-wide traffic, no tow truck involved: visits + Free Routes views, each as distinct people and as daily-summed visits, for `?period=` and all time. Also `callers` — distinct people who pressed "Զանգահարել" on ANY truck's profile in the period, plus daily-summed and all-time call totals; read platform-wide from the per-truck analytics tables with no `towTruckId` filter, not from the site-visit tables above. The only report in the analytics module that isn't scoped to a driver, which is why it has its own controller. See `docs/analytics.md` § "Platform-wide active callers" |
+| `GET` | `/admin/subscription-payments/plans` | The same plan constants the driver's dashboard reads — so the admin's «record a payment» picker cannot drift from what is on sale |
+| `GET` | `/admin/subscription-payments/pending` | Every request waiting on a decision, oldest first, each with the driver who made it |
+| `POST` | `/admin/subscription-payments` | Records an off-platform payment as PAID. `{ towTruckId, planId, paidAt? }` — a plan, never an amount. A future `paidAt` is rejected |
+| `PATCH` | `/admin/subscription-payments/:id` | `{ status: 'PAID' \| 'CANCELLED' }`. Guarded against two admins deciding the same request — the second gets a 409, not a silent overwrite |
 
 ### Reviewing a registration
 

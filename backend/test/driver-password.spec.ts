@@ -143,7 +143,7 @@ describe('DriverAuthService', () => {
   const KNOWN_PASSWORD = 'driver-chosen-password'
 
   let repository: {
-    findActiveByMainPhone: ReturnType<typeof vi.fn>
+    findByMainPhoneAnyStatus: ReturnType<typeof vi.fn>
     findById: ReturnType<typeof vi.fn>
     setPassword: ReturnType<typeof vi.fn>
   }
@@ -165,7 +165,7 @@ describe('DriverAuthService', () => {
 
   beforeEach(() => {
     repository = {
-      findActiveByMainPhone: vi.fn(),
+      findByMainPhoneAnyStatus: vi.fn(),
       findById: vi.fn(),
       setPassword: vi.fn().mockResolvedValue(undefined),
     }
@@ -176,11 +176,13 @@ describe('DriverAuthService', () => {
     it(
       'issues a session for the right password',
       async () => {
-        repository.findActiveByMainPhone.mockResolvedValue({
+        repository.findByMainPhoneAnyStatus.mockResolvedValue({
           id: 7,
           slug: 'test-truck',
           passwordHash: await bcrypt.hash(KNOWN_PASSWORD, 4),
           mustChangePassword: true,
+          isActive: true,
+          deactivationReason: null,
         })
 
         const session = await service.login('+37491000001', KNOWN_PASSWORD)
@@ -197,11 +199,13 @@ describe('DriverAuthService', () => {
     it(
       'rejects the wrong password',
       async () => {
-        repository.findActiveByMainPhone.mockResolvedValue({
+        repository.findByMainPhoneAnyStatus.mockResolvedValue({
           id: 7,
           slug: 'test-truck',
           passwordHash: await bcrypt.hash(KNOWN_PASSWORD, 4),
           mustChangePassword: false,
+          isActive: true,
+          deactivationReason: null,
         })
 
         await expect(service.login('+37491000001', 'not-it')).rejects.toBeInstanceOf(
@@ -218,11 +222,13 @@ describe('DriverAuthService', () => {
         // string is the case worth pinning: bcrypt.compare('', null) must not
         // become a way in, which is why the null check is separate from the
         // comparison rather than folded into it.
-        repository.findActiveByMainPhone.mockResolvedValue({
+        repository.findByMainPhoneAnyStatus.mockResolvedValue({
           id: 7,
           slug: 'test-truck',
           passwordHash: null,
           mustChangePassword: false,
+          isActive: true,
+          deactivationReason: null,
         })
 
         await expect(service.login('+37491000001', '')).rejects.toBeInstanceOf(
@@ -235,18 +241,20 @@ describe('DriverAuthService', () => {
     it(
       'gives an unknown number the same answer as a wrong password',
       async () => {
-        repository.findActiveByMainPhone.mockResolvedValue(null)
+        repository.findByMainPhoneAnyStatus.mockResolvedValue(null)
 
         // Same exception AND same message: a different one would turn this
         // endpoint into a way to find out which numbers are registered.
         const unknown = await service.login('+37491000009', 'whatever').catch((e: Error) => e)
         expect(unknown).toBeInstanceOf(UnauthorizedException)
 
-        repository.findActiveByMainPhone.mockResolvedValue({
+        repository.findByMainPhoneAnyStatus.mockResolvedValue({
           id: 7,
           slug: 'test-truck',
           passwordHash: await bcrypt.hash(KNOWN_PASSWORD, 4),
           mustChangePassword: false,
+          isActive: true,
+          deactivationReason: null,
         })
         const wrong = await service.login('+37491000001', 'not-it').catch((e: Error) => e)
 
@@ -266,6 +274,8 @@ describe('DriverAuthService', () => {
           id: 7,
           passwordHash: null,
           mustChangePassword: false,
+          isActive: true,
+          deactivationReason: null,
         })
 
         const password = await service.issueTemporaryPassword(7)
@@ -287,6 +297,8 @@ describe('DriverAuthService', () => {
           id: 7,
           passwordHash: 'hash-of-an-earlier-temporary-password',
           mustChangePassword: true,
+          isActive: true,
+          deactivationReason: null,
         })
 
         const first = await service.issueTemporaryPassword(7)
@@ -307,6 +319,8 @@ describe('DriverAuthService', () => {
           id: 7,
           passwordHash: 'hash-of-a-password-the-driver-picked',
           mustChangePassword: false,
+          isActive: true,
+          deactivationReason: null,
         })
 
         // THE security rule of the Telegram handover: a link proves possession
@@ -328,6 +342,8 @@ describe('DriverAuthService', () => {
           id: 7,
           passwordHash: await bcrypt.hash('TEMP1234', 4),
           mustChangePassword: true,
+          isActive: true,
+          deactivationReason: null,
         })
 
         await service.changePassword(7, 'TEMP1234', 'a-password-of-my-own')
@@ -351,6 +367,8 @@ describe('DriverAuthService', () => {
           id: 7,
           passwordHash: await bcrypt.hash('TEMP1234', 4),
           mustChangePassword: true,
+          isActive: true,
+          deactivationReason: null,
         })
 
         // Not a preference: the frontend logs a driver out on ANY 401 from a

@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common'
-import { Prisma, RegistrationStatus } from '@prisma/client'
+import { Prisma, RegistrationStatus, type DeactivationReason } from '@prisma/client'
 import { randomBytes } from 'node:crypto'
 import { assertWithinArmenia } from '../common/coordinates'
 import { assertServiceAreasWithinLimit } from '../tow-trucks/service-area-limits'
@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service'
 import { PrivacyConsentService } from '../privacy-consent/privacy-consent.service'
 import { ReviewsRepository, ReviewWithTruck } from '../reviews/reviews.repository'
 import { SupabaseStorageService } from '../storage/supabase-storage.service'
+import { SubscriptionsRepository } from '../subscriptions/subscriptions.repository'
 import { telegramTokenFingerprint } from '../telegram/token-fingerprint'
 import { TelegramService } from '../telegram/telegram.service'
 import { assertPlacementIsServed } from '../tow-trucks/placement'
@@ -22,8 +23,6 @@ import {
 } from './admin-registration.mapper'
 import {
   AdminPaymentSummary,
-  derivePaymentStatus,
-  PaymentStatus,
   sortPaymentsByUrgency,
   toAdminPaymentSummary,
 } from './admin-payment.mapper'
@@ -63,6 +62,9 @@ export class AdminService {
     // — see the call inside approve()'s transaction. No consent is ever
     // created here: an admin cannot consent on a driver's behalf.
     private readonly privacyConsent: PrivacyConsentService,
+    // Read-only here: /admin/payments needs each driver's coverage, and
+    // writing a payment is the subscriptions module's own admin service.
+    private readonly subscriptionsRepository: SubscriptionsRepository,
   ) {}
 
   async listRegistrations(query: AdminRegistrationsQuery): Promise<AdminRegistrationSummary[]> {
@@ -870,7 +872,11 @@ export class AdminService {
    * could still resurrect a duplicate from data created before that
    * invariant existed, so it's checked here too rather than assumed safe.
    */
-  async setTowTruckActive(id: number, isActive: boolean): Promise<{ id: number; isActive: boolean }> {
+  async setTowTruckActive(
+    id: number,
+    isActive: boolean,
+    reason?: DeactivationReason,
+  ): Promise<{ id: number; isActive: boolean }> {
     const towTruck = await this.towTrucksRepository.findById(id)
     if (!towTruck) throw new NotFoundException(`Էվակուատոր #${id}-ը չի գտնվել`)
 
@@ -883,7 +889,7 @@ export class AdminService {
       }
     }
 
-    const updated = await this.towTrucksRepository.setActive(id, isActive)
+    const updated = await this.towTrucksRepository.setActive(id, isActive, reason ?? null)
     return { id: updated.id, isActive: updated.isActive }
   }
 
@@ -1241,41 +1247,6 @@ export class AdminService {
    * again the instant September starts, simply because the stored month no
    * longer matches — nothing has to run to make that happen.
    */
-  /**
-   * `paidAt` is required (DTO-enforced) whenever `paid` is true — the admin
-   * picks the actual payment date by hand. Re-validated here too (not just
-   * trusted from the DTO's `@IsISO8601`) because that only checks the string
-   * is a real date, not that it makes sense as a payment date: malformed
-   * enough to fail `Date` parsing anyway is defense in depth, and a date in
-   * the future would let a driver read as "paid" before they actually paid.
-   */
-  async setTowTruckPayment(
-    id: number,
-    paid: boolean,
-    paidAt?: string,
-  ): Promise<{ id: number; lastPaymentAt?: string; status: PaymentStatus }> {
-    const towTruck = await this.towTrucksRepository.findById(id)
-    if (!towTruck) throw new NotFoundException(`Էվակուատոր #${id}-ը չի գտնվել`)
-
-    let lastPaymentAt: Date | null = null
-    if (paid) {
-      const date = new Date(paidAt!)
-      if (Number.isNaN(date.getTime())) {
-        throw new BadRequestException('Սխալ ամսաթիվ')
-      }
-      if (date.getTime() > Date.now()) {
-        throw new BadRequestException('Վճարման ամսաթիվը չի կարող ապագայում լինել')
-      }
-      lastPaymentAt = date
-    }
-
-    const updated = await this.towTrucksRepository.setPayment(id, lastPaymentAt)
-    return {
-      id: updated.id,
-      lastPaymentAt: updated.lastPaymentAt?.toISOString(),
-      status: derivePaymentStatus(updated.lastPaymentAt),
-    }
-  }
 
   /**
    * Every driver's payment status — see `/admin/payments`, AdminPaymentSummary.
@@ -1285,7 +1256,18 @@ export class AdminService {
    */
   async listTowTruckPayments(search?: string): Promise<AdminPaymentSummary[]> {
     const trucks = await this.towTrucksRepository.findAllForPayments(search)
-    return sortPaymentsByUrgency(trucks.map(toAdminPaymentSummary))
+    // One grouped query for the whole page rather than one per driver — see
+    // SubscriptionsRepository.findCoverage.
+    const coverage = await this.subscriptionsRepository.findCoverage(trucks.map((truck) => truck.id))
+
+    return sortPaymentsByUrgency(
+      trucks.map((truck) =>
+        toAdminPaymentSummary(
+          truck,
+          coverage.get(truck.id) ?? { paidUntil: null, lastPaidAt: null, pendingCount: 0 },
+        ),
+      ),
+    )
   }
 
   /**

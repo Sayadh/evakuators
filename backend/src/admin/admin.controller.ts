@@ -14,7 +14,7 @@ import { ProfileChangeStatus, RegistrationStatus } from '@prisma/client'
 import { AdminJwtGuard } from '../admin-auth/admin-jwt.guard'
 import { SetCoordinatesDto } from '../common/set-coordinates.dto'
 import type { AdminRegistrationSummary } from './admin-registration.mapper'
-import type { AdminPaymentSummary, PaymentStatus } from './admin-payment.mapper'
+import type { AdminPaymentSummary } from './admin-payment.mapper'
 import { toProfileChangeApi } from '../profile-changes/profile-change.mapper'
 import type { ProfileChangeApi } from '../profile-changes/profile-change.types'
 import { ProfileChangesService } from '../profile-changes/profile-changes.service'
@@ -32,7 +32,6 @@ import { SetPrimaryAreaDto } from './dto/set-primary-area.dto'
 import { SetTowTruckActiveDto } from './dto/set-tow-truck-active.dto'
 import { SetTowTruckFeaturedDto } from './dto/set-tow-truck-featured.dto'
 import { SetTowTruckHeavyEquipmentDto } from './dto/set-tow-truck-heavy-equipment.dto'
-import { SetTowTruckPaymentDto } from './dto/set-tow-truck-payment.dto'
 import { SetTowTruckPhoneDto } from './dto/set-tow-truck-phone.dto'
 
 /** Moderation endpoints — every route requires a valid admin JWT (see AdminAuthModule) */
@@ -268,13 +267,17 @@ export class AdminController {
     return this.adminService.listTowTruckPayments(query.search)
   }
 
-  /** Deactivate/reactivate — non-destructive, reversible, hides from public listing */
+  /**
+   * Deactivate/reactivate — non-destructive, reversible, hides from public
+   * listing. Deactivating requires a reason (see SetTowTruckActiveDto): it is
+   * what the driver is then shown, and whether they can sign in at all.
+   */
   @Patch('tow-trucks/:id/active')
   setActive(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: SetTowTruckActiveDto,
   ): Promise<{ id: number; isActive: boolean }> {
-    return this.adminService.setTowTruckActive(id, dto.isActive)
+    return this.adminService.setTowTruckActive(id, dto.isActive, dto.reason)
   }
 
   /** Toggle the homepage "best tow trucks" pick — purely editorial */
@@ -304,21 +307,12 @@ export class AdminController {
     return this.adminService.setTowTruckHeavyEquipment(id, dto.heavyEquipment)
   }
 
-  /**
-   * Marks/unmarks a payment as received — purely informational bookkeeping
-   * for the admin, with no effect on `isActive` or any public page. `paidAt`
-   * is the date the admin picked by hand (required when `dto.paid` is true —
-   * see `SetTowTruckPaymentDto`), not the moment this request happened. See
-   * AdminService.setTowTruckPayment for how the day-count status derives
-   * from it with no reset job.
-   */
-  @Patch('tow-trucks/:id/payment')
-  setPayment(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: SetTowTruckPaymentDto,
-  ): Promise<{ id: number; lastPaymentAt?: string; status: PaymentStatus }> {
-    return this.adminService.setTowTruckPayment(id, dto.paid, dto.paidAt)
-  }
+  /* PATCH tow-trucks/:id/payment lived here — one boolean plus a date, writing
+     TowTruck.lastPaymentAt. It could not express a 4-month plan (a boolean has
+     no duration), so recording money is now
+     POST /admin/subscription-payments, which names a PLAN. See
+     subscriptions/admin-subscriptions.controller.ts. */
+
 
   /**
    * Corrects the main login phone — the driver's own dashboard can't touch

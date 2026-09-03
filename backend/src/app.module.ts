@@ -21,6 +21,7 @@ import { PrismaModule } from './prisma/prisma.module'
 import { RegistrationModule } from './registration/registration.module'
 import { ReviewsModule } from './reviews/reviews.module'
 import { StorageModule } from './storage/storage.module'
+import { SubscriptionsModule } from './subscriptions/subscriptions.module'
 import { TelegramModule } from './telegram/telegram.module'
 import { TowTrucksModule } from './tow-trucks/tow-trucks.module'
 
@@ -57,6 +58,7 @@ import { TowTrucksModule } from './tow-trucks/tow-trucks.module'
     NearestModule,
     ProfileChangesModule,
     PrivacyConsentModule,
+    SubscriptionsModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: SsrAwareThrottlerGuard }],
 })

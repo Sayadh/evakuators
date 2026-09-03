@@ -2,11 +2,18 @@
 import { SITE_NAME } from '~/constants/site'
 import { adminRepository, isApiEnabled, type AdminPayment, type PaymentStatus } from '~/repositories'
 import { useAdminAuthStore } from '~/stores/adminAuth'
+import type {
+  AdminPendingPayment,
+  DeactivationReason,
+  SubscriptionPlan,
+  SubscriptionPlanCode,
+} from '~/types/subscription'
 import { extractErrorMessage } from '~/utils/errors'
 import { formatDateNumeric } from '~/utils/formatters'
+import { formatPrice } from '~/utils/formatPrice'
 
 /**
- * One question per driver: has this month's payment come in.
+ * One question per driver: how far are they covered.
  *
  * Deliberately its own page rather than a column on `/admin` — that list is
  * already the busiest one in the panel (vehicle specs, coverage, photos,
@@ -14,6 +21,14 @@ import { formatDateNumeric } from '~/utils/formatters'
  * checks on its own, independent of everything else a truck's card shows.
  * This page shows exactly three things — who, their phone, and whether
  * they're settled — so scanning fifty rows for the unpaid ones stays fast.
+ *
+ * Two ways money gets recorded, both landing in the same table:
+ * - a driver pressed «Վճարել» on their dashboard, and their request waits in
+ *   the queue at the top of this page until an admin confirms it;
+ * - or they paid offline, and an admin records it directly on their row.
+ * Both write a PAID SubscriptionPayment, so when a real payment provider is
+ * wired up it simply becomes a third writer of the same thing — nothing on
+ * this page has to change again.
  */
 useSeoMetaData({
   title: `Վճարումներ | ${SITE_NAME}`,
@@ -60,7 +75,11 @@ async function load(options: { showFullLoading?: boolean } = {}): Promise<void> 
   }
 }
 
-onMounted(() => load())
+onMounted(() => {
+  void load()
+  void loadPending()
+  void loadPlans()
+})
 // Same reasoning as the registration-review page: the admin token is read
 // from localStorage by a client plugin that can land after this page mounts,
 // so a first paint with no session is normal and a reload once it arrives is
@@ -68,7 +87,10 @@ onMounted(() => load())
 watch(
   () => adminAuth.isLoggedIn,
   (loggedIn) => {
-    if (loggedIn && payments.value.length === 0) void load()
+    if (loggedIn && payments.value.length === 0) {
+      void load()
+      void loadPending()
+    }
   },
 )
 
@@ -90,6 +112,47 @@ watch(search, () => {
 })
 
 onBeforeUnmount(() => clearTimeout(searchDebounceTimer))
+
+/**
+ * The queue of requests drivers have made. Loaded alongside the list rather
+ * than behind a tab: an unconfirmed request is the one thing on this page
+ * that someone is actively waiting on.
+ */
+const pending = ref<AdminPendingPayment[]>([])
+const pendingError = ref('')
+const decidingId = ref<number | null>(null)
+
+async function loadPending(): Promise<void> {
+  if (!apiEnabled || !adminAuth.isLoggedIn) return
+  pendingError.value = ''
+  try {
+    pending.value = await adminRepository.listPendingSubscriptionPayments()
+  } catch (error) {
+    pendingError.value = extractErrorMessage(error, 'Հայտերը բեռնել չհաջողվեց։')
+  }
+}
+
+/**
+ * Confirming grants coverage, so the driver's row on the list below is now
+ * stale — reload it rather than patching it here, since the backend decides
+ * the new period (it extends live coverage instead of restarting it) and
+ * guessing that in the browser would be a second copy of that rule.
+ */
+async function decide(request: AdminPendingPayment, status: 'PAID' | 'CANCELLED'): Promise<void> {
+  if (status === 'CANCELLED' && !confirm(`Չեղարկե՞լ ${request.driver.name}-ի հայտը։`)) return
+
+  decidingId.value = request.id
+  pendingError.value = ''
+  try {
+    await adminRepository.decideSubscriptionPayment(request.id, status)
+    pending.value = pending.value.filter((row) => row.id !== request.id)
+    await load({ showFullLoading: false })
+  } catch (error) {
+    pendingError.value = extractErrorMessage(error, 'Հայտը մշակել չհաջողվեց։')
+  } finally {
+    decidingId.value = null
+  }
+}
 
 const STATUS_LABEL: Record<PaymentStatus, string> = {
   unpaid: 'Չվճարված',
@@ -147,18 +210,41 @@ function showsPayButton(status: PaymentStatus): boolean {
 }
 
 /**
- * The payment date is chosen by hand, not stamped with the moment this
- * button gets clicked — a driver often pays a few days before or after an
- * admin gets around to marking it, and `derivePaymentStatus`'s day-count is
- * only honest if `lastPaymentAt` is the real payment date. Defaults the
- * picker to today (the common case) but nothing is sent until the admin
- * confirms, so it stays a deliberate choice, not an accident.
+ * Recording a payment that arrived offline.
+ *
+ * Two things the admin chooses, and one they cannot. The PLAN, because the
+ * status depends on how long the driver is covered — "they paid" is not an
+ * answer any more, "they paid for one month" is. The DATE, because a driver
+ * often pays days before an admin gets to it, and coverage should start when
+ * the money arrived. The PRICE is never theirs: it comes from the same
+ * constants the driver's dashboard is quoted from, so the two ways money gets
+ * recorded cannot disagree about what a month costs.
  */
+const plans = ref<SubscriptionPlan[]>([])
 const payModalOpen = ref(false)
 const payTarget = ref<AdminPayment | null>(null)
+const payPlan = ref<SubscriptionPlanCode>('ONE_MONTH')
 const payDate = ref('')
 const payError = ref('')
 const paySubmitting = ref(false)
+
+const planOptions = computed(() =>
+  plans.value.map((plan) => ({
+    value: plan.id,
+    label: `${plan.title} — ${formatPrice(plan.price)}`,
+  })),
+)
+
+async function loadPlans(): Promise<void> {
+  if (!apiEnabled || !adminAuth.isLoggedIn || plans.value.length > 0) return
+  try {
+    plans.value = (await adminRepository.listSubscriptionPlans()).items
+  } catch {
+    // Non-fatal: the picker simply stays empty and the modal says so, rather
+    // than the whole page failing over a list of two constants.
+    plans.value = []
+  }
+}
 
 function todayDateKey(): string {
   const now = new Date()
@@ -169,9 +255,11 @@ function todayDateKey(): string {
 
 function openPayModal(payment: AdminPayment): void {
   payTarget.value = payment
+  payPlan.value = plans.value[0]?.id ?? 'ONE_MONTH'
   payDate.value = todayDateKey()
   payError.value = ''
   payModalOpen.value = true
+  void loadPlans()
 }
 
 async function confirmPay(): Promise<void> {
@@ -195,36 +283,56 @@ async function confirmPay(): Promise<void> {
   paySubmitting.value = true
   payError.value = ''
   try {
-    const updated = await adminRepository.setTowTruckPayment(payment.id, true, chosenDate.toISOString())
-    payment.lastPaymentAt = updated.lastPaymentAt
-    payment.status = updated.status
+    await adminRepository.grantSubscriptionPayment(payment.id, payPlan.value, chosenDate.toISOString())
     payModalOpen.value = false
+    // Reload rather than patch the row: the new coverage end is the backend's
+    // to compute (it extends live coverage instead of restarting it), and
+    // working it out here would be a second copy of that rule.
+    await load({ showFullLoading: false })
   } catch (error) {
-    payError.value = extractErrorMessage(error, 'Վճարումը նշել չհաջողվեց։')
+    payError.value = extractErrorMessage(error, 'Վճարումը գրանցել չհաջողվեց։')
   } finally {
     paySubmitting.value = false
   }
 }
+
+const deactivateDialogOpen = ref(false)
+const deactivateTarget = ref<AdminPayment | null>(null)
+const deactivateSubmitting = ref(false)
+const deactivateError = ref('')
 
 /**
  * A convenience, not an automatic consequence of going overdue — nothing
  * deactivates a driver on its own. Only offered on a row that is both
  * `overdue` and still `isActive`; disappears the moment either stops being
  * true, so there is never a button promising to do something already done.
- * Reuses the same endpoint/reasoning as `toggleTowTruckActive` on `/admin`
- * (including its own conflict/confirm behaviour) rather than a copy.
+ *
+ * Asks WHY first, through the same dialog `/admin` uses: the answer decides
+ * whether the driver can sign in and pay their own way back, or has to call
+ * us. From this page it is almost always «չի վճարել», but the dialog does not
+ * assume that — an admin standing on the payments screen may still be
+ * deactivating someone for something else entirely.
  */
-async function deactivate(payment: AdminPayment): Promise<void> {
-  if (!confirm(`Ապաակտիվացնե՞լ ${payment.driverName}-ի պրոֆիլը։`)) return
+function openDeactivate(payment: AdminPayment): void {
+  deactivateTarget.value = payment
+  deactivateError.value = ''
+  deactivateDialogOpen.value = true
+}
 
-  actioningId.value = payment.id
+async function confirmDeactivate(reason: DeactivationReason): Promise<void> {
+  const payment = deactivateTarget.value
+  if (!payment) return
+
+  deactivateSubmitting.value = true
+  deactivateError.value = ''
   try {
-    const updated = await adminRepository.setTowTruckActive(payment.id, false)
+    const updated = await adminRepository.setTowTruckActive(payment.id, false, reason)
     payment.isActive = updated.isActive
+    deactivateDialogOpen.value = false
   } catch (error) {
-    loadError.value = extractErrorMessage(error, 'Կարգավիճակը փոխել չհաջողվեց։')
+    deactivateError.value = extractErrorMessage(error, 'Կարգավիճակը փոխել չհաջողվեց։')
   } finally {
-    actioningId.value = null
+    deactivateSubmitting.value = false
   }
 }
 </script>
@@ -268,6 +376,43 @@ async function deactivate(payment: AdminPayment): Promise<void> {
         </div>
       </header>
 
+      <!-- Above the list: an unconfirmed request is the only thing on this
+           page someone is actively waiting on. Hidden entirely when the queue
+           is empty rather than shown as an empty box — this is a to-do list,
+           and a permanent "nothing to do" panel is noise. -->
+      <section v-if="pending.length > 0" class="payments__queue">
+        <h2 class="payments__queue-title">Հաստատման սպասող հայտեր ({{ pending.length }})</h2>
+        <p v-if="pendingError" class="payments__error" role="alert">{{ pendingError }}</p>
+        <ul class="payments__queue-list">
+          <li v-for="request in pending" :key="request.id" class="payments__queue-item">
+            <div class="payments__queue-info">
+              <span class="payments__queue-driver">{{ request.driver.name }}</span>
+              <span class="payments__muted">{{ request.driver.phone }}</span>
+              <span>{{ request.planTitle }} — {{ formatPrice(request.amount) }}</span>
+              <span class="payments__muted">Հայտի օրը՝ {{ formatDateNumeric(request.createdAt) }}</span>
+            </div>
+            <div class="payments__queue-actions">
+              <AppButton
+                variant="success"
+                size="sm"
+                :disabled="decidingId === request.id"
+                @click="decide(request, 'PAID')"
+              >
+                Հաստատել
+              </AppButton>
+              <AppButton
+                variant="outline"
+                size="sm"
+                :disabled="decidingId === request.id"
+                @click="decide(request, 'CANCELLED')"
+              >
+                Չեղարկել
+              </AppButton>
+            </div>
+          </li>
+        </ul>
+      </section>
+
       <EmptyState v-if="visiblePayments.length === 0" title="Ոչինչ չի գտնվել" icon="search" />
 
       <div v-else class="payments__table-wrap">
@@ -287,8 +432,11 @@ async function deactivate(payment: AdminPayment): Promise<void> {
                 <AppBadge :variant="STATUS_BADGE_VARIANT[payment.status]">
                   {{ STATUS_LABEL[payment.status] }}
                 </AppBadge>
-                <span v-if="payment.lastPaymentAt" class="payments__muted">
-                  {{ payment.status === 'paid' ? '' : 'Վճարել է՝ ' }}{{ formatDateNumeric(payment.lastPaymentAt) }}
+                <span v-if="payment.paidUntil" class="payments__muted">
+                  Մինչև՝ {{ formatDateNumeric(payment.paidUntil) }}
+                </span>
+                <span v-if="payment.pendingCount > 0" class="payments__muted">
+                  · {{ payment.pendingCount }} սպասող հայտ
                 </span>
                 <AppButton
                   v-if="showsPayButton(payment.status)"
@@ -297,7 +445,7 @@ async function deactivate(payment: AdminPayment): Promise<void> {
                   :disabled="actioningId === payment.id"
                   @click="openPayModal(payment)"
                 >
-                  Վճարել
+                  Գրանցել վճարում
                 </AppButton>
                 <!-- Only on a row that is both overdue and still active — see deactivate() -->
                 <AppButton
@@ -305,7 +453,7 @@ async function deactivate(payment: AdminPayment): Promise<void> {
                   variant="danger"
                   size="sm"
                   :disabled="actioningId === payment.id"
-                  @click="deactivate(payment)"
+                  @click="openDeactivate(payment)"
                 >
                   Ապաակտիվացնել
                 </AppButton>
@@ -317,20 +465,93 @@ async function deactivate(payment: AdminPayment): Promise<void> {
       </div>
     </template>
 
-    <AppModal v-model="payModalOpen" title="Նշել վճարումը">
+    <AppModal v-model="payModalOpen" title="Գրանցել վճարում">
       <form class="pay-form" @submit.prevent="confirmPay">
-        <p class="payments__muted">{{ payTarget?.driverName }} — նշեք վճարման ամսաթիվը։</p>
+        <p class="payments__muted">
+          {{ payTarget?.driverName }} — ընտրեք փաթեթը և նշեք, երբ է գումարը ստացվել։
+        </p>
+        <AppSelect
+          v-model="payPlan"
+          :options="planOptions"
+          label="Փաթեթ"
+          hint="Գինը և ժամկետը փաթեթից են՝ գումարը ձեռքով չի մուտքագրվում"
+        />
         <AppInput v-model="payDate" type="date" label="Վճարման ամսաթիվ" required />
+        <p class="payments__muted">
+          Եթե վարորդի ժամկետը դեռ չի սպառվել, նոր փաթեթը ավելանում է մնացածի վրա։
+        </p>
         <p v-if="payError" class="payments__error" role="alert">{{ payError }}</p>
         <AppButton type="submit" variant="accent" block :disabled="paySubmitting">
-          {{ paySubmitting ? 'Պահպանվում է…' : 'Հաստատել' }}
+          {{ paySubmitting ? 'Պահպանվում է…' : 'Գրանցել' }}
         </AppButton>
       </form>
     </AppModal>
+
+    <DeactivateReasonDialog
+      v-model="deactivateDialogOpen"
+      :driver-name="deactivateTarget?.driverName"
+      :submitting="deactivateSubmitting"
+      :error="deactivateError"
+      @confirm="confirmDeactivate"
+    />
   </div>
 </template>
 
 <style scoped lang="scss">
+/* The pending queue. Accent-tinted like the driver dashboard's own payments
+   block and .dashboard-review--pending — the shared meaning across the app is
+   "something is waiting on a person", not a success or a failure. */
+.payments__queue {
+  margin-bottom: var(--space-5);
+  padding: var(--space-4);
+  border: 1px solid rgba(246, 168, 33, 0.45);
+  border-radius: var(--radius-lg);
+  background: rgba(246, 168, 33, 0.1);
+
+  &-title {
+    margin: 0 0 var(--space-3);
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+  &-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  &-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+  }
+
+  &-info {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-2);
+    font-size: 0.9rem;
+  }
+
+  &-driver {
+    font-weight: 600;
+  }
+
+  &-actions {
+    display: flex;
+    gap: var(--space-2);
+  }
+}
+
 .payments {
   padding-top: var(--space-6);
   padding-bottom: var(--space-8);

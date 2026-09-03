@@ -18,7 +18,8 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "admin:create": "node scripts/create-admin-user.js",
-    "admin:telegram-link": "node scripts/generate-admin-telegram-link.js"
+    "admin:telegram-link": "node scripts/generate-admin-telegram-link.js",
+    "driver:create-test": "node scripts/create-test-driver.js"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",

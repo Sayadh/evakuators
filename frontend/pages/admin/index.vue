@@ -21,6 +21,7 @@ import { useAdminAuthStore } from '~/stores/adminAuth'
 import { LocationType, VehicleType } from '~/types/enums'
 import type { ServiceType } from '~/types/enums'
 import { formatCoordinates } from '~/utils/coordinates'
+import type { DeactivationReason } from '~/types/subscription'
 import { extractErrorMessage } from '~/utils/errors'
 import { formatDateNumeric } from '~/utils/formatters'
 import { armenianPhoneInputValue } from '~/utils/formatPhone'
@@ -612,8 +613,16 @@ async function downloadDriversCsv(): Promise<void> {
 /** Reversible — hides from public listing and blocks driver login, nothing is deleted */
 async function toggleTowTruckActive(truck: AdminTowTruck): Promise<void> {
   const nextActive = !truck.isActive
-  const verb = nextActive ? 'ակտիվացնե՞լ' : 'ապաակտիվացնե՞լ'
-  if (!confirm(`${verb} ${truck.driverName}-ի պրոֆիլը։`)) return
+  // Deactivating asks WHY first — the answer decides whether this driver can
+  // sign in again (see DeactivateReasonDialog). Reactivating asks nothing:
+  // there is only one way to be active.
+  if (!nextActive) {
+    deactivateTarget.value = truck
+    deactivateError.value = ''
+    deactivateDialogOpen.value = true
+    return
+  }
+  if (!confirm(`Ակտիվացնե՞լ ${truck.driverName}-ի պրոֆիլը։`)) return
 
   actioningId.value = truck.id
   try {
@@ -626,6 +635,30 @@ async function toggleTowTruckActive(truck: AdminTowTruck): Promise<void> {
     towTrucksError.value = extractErrorMessage(error, 'Կարգավիճակը փոխել չհաջողվեց։')
   } finally {
     actioningId.value = null
+  }
+}
+
+const deactivateDialogOpen = ref(false)
+const deactivateTarget = ref<AdminTowTruck | null>(null)
+const deactivateSubmitting = ref(false)
+const deactivateError = ref('')
+
+async function confirmDeactivate(reason: DeactivationReason): Promise<void> {
+  const truck = deactivateTarget.value
+  if (!truck) return
+
+  deactivateSubmitting.value = true
+  deactivateError.value = ''
+  try {
+    const updated = await adminRepository.setTowTruckActive(truck.id, false, reason)
+    truck.isActive = updated.isActive
+    deactivateDialogOpen.value = false
+    // The total is unchanged, but the active/inactive split just moved.
+    void loadTowTruckCounts()
+  } catch (error) {
+    deactivateError.value = extractErrorMessage(error, 'Կարգավիճակը փոխել չհաջողվեց։')
+  } finally {
+    deactivateSubmitting.value = false
   }
 }
 
@@ -2146,6 +2179,14 @@ async function rejectReview(review: AdminReview): Promise<void> {
       v-model="lightboxOpen"
       :images="lightboxImages"
       :start-index="lightboxIndex"
+    />
+
+    <DeactivateReasonDialog
+      v-model="deactivateDialogOpen"
+      :driver-name="deactivateTarget?.driverName"
+      :submitting="deactivateSubmitting"
+      :error="deactivateError"
+      @confirm="confirmDeactivate"
     />
   </div>
 </template>

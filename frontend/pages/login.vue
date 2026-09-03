@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { SITE_NAME } from '~/constants/site'
+import { CONTACT_PHONE, SITE_NAME } from '~/constants/site'
 import { driverAuthRepository, isApiEnabled } from '~/repositories'
 import { useDriverAuthStore } from '~/stores/driverAuth'
+import { FetchError } from 'ofetch'
 import { extractErrorMessage } from '~/utils/errors'
-import { armenianPhoneInputValue } from '~/utils/formatPhone'
+import { armenianPhoneInputValue, getPhoneHref } from '~/utils/formatPhone'
 import { isPhone, required, validateField } from '~/utils/validators'
 
 /**
@@ -43,9 +44,24 @@ const phoneModel = computed<string>({
 const password = ref('')
 const submitting = ref(false)
 const error = ref('')
+/**
+ * A deactivation, as opposed to a wrong password.
+ *
+ * Told apart by the status code alone: login answers **401** for every
+ * credential failure and **403** only when the account itself was taken off
+ * the site (see backend DriverAuthService.login). That is why the contact
+ * number lives here and not in the backend's message — labels are the
+ * frontend's, and a phone number copied into an API string is one that drifts
+ * away from `CONTACT_PHONE`.
+ *
+ * A driver deactivated for NOT PAYING never lands here: they are let in, and
+ * their dashboard becomes the payment block instead.
+ */
+const deactivated = ref(false)
 
 async function submit(): Promise<void> {
   error.value = ''
+  deactivated.value = false
 
   // Only shape checks, and only the two that stop a request we know cannot
   // succeed. No minimum length: this form has to accept whatever password
@@ -63,7 +79,10 @@ async function submit(): Promise<void> {
     const session = await driverAuthRepository.login(phone.value.trim(), password.value)
     driverAuth.login(session)
   } catch (err) {
-    error.value = extractErrorMessage(err, 'Մուտք գործել չհաջողվեց, փորձեք կրկին')
+    deactivated.value = err instanceof FetchError && err.statusCode === 403
+    error.value = deactivated.value
+      ? ''
+      : extractErrorMessage(err, 'Մուտք գործել չհաջողվեց, փորձեք կրկին')
     return
   } finally {
     submitting.value = false
@@ -126,6 +145,18 @@ async function submit(): Promise<void> {
             autocomplete="current-password"
           />
           <p v-if="error" class="login-error">{{ error }}</p>
+
+          <!-- Not an error message: nothing the driver typed was wrong, and
+               nothing they can type will fix it. -->
+          <div v-if="deactivated" class="login-deactivated" role="alert">
+            <p class="login-deactivated__contact">
+              <AppIcon name="phone" :size="16" />
+              <a :href="getPhoneHref(CONTACT_PHONE)">{{ CONTACT_PHONE }}</a>
+            </p>
+            <p>
+              Ձեր էջն ապաակտիվացվել է։ Խնդրում ենք կապվել մեզ հետ՝ պատճառը պարզելու համար։
+            </p>
+          </div>
           <AppButton type="submit" variant="success" block :disabled="submitting">
             {{ submitting ? 'Ստուգվում է…' : 'Մուտք' }}
           </AppButton>
@@ -181,6 +212,32 @@ async function submit(): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+}
+
+.login-deactivated {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid rgba(246, 168, 33, 0.45);
+  border-radius: var(--radius-md);
+  background: rgba(246, 168, 33, 0.1);
+  font-size: 0.92rem;
+
+  p {
+    margin: 0;
+  }
+
+  &__contact {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-weight: 600;
+
+    a {
+      color: var(--color-primary);
+    }
+  }
 }
 
 .login-error {

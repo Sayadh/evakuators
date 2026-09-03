@@ -30,10 +30,12 @@ function buildAuth(overrides: { requiresConsent?: boolean } = {}) {
     // and a faked comparison could not demonstrate that.
     passwordHash: '$2b$04$doY9EdZtwbCq0WDnykggSeS/w.Tm/T4X/atjBiHCBJrgzwjaQHegK',
     mustChangePassword: false,
+    isActive: true,
+    deactivationReason: null,
   }
 
   const towTrucksRepository = {
-    findActiveByMainPhone: vi.fn(() => Promise.resolve(towTruck)),
+    findByMainPhoneAnyStatus: vi.fn(() => Promise.resolve(towTruck)),
     findById: vi.fn(() => Promise.resolve(towTruck)),
     setPassword: vi.fn(() => Promise.resolve(towTruck)),
   }

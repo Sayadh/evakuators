@@ -5,6 +5,7 @@ import { DriverAuthService } from '../driver-auth/driver-auth.service'
 import { ChangePasswordDto } from '../driver-auth/dto/change-password.dto'
 import { AuthenticatedDriverRequest, DriverJwtGuard } from '../driver-auth/driver-jwt.guard'
 import { ProfileChangesService } from '../profile-changes/profile-changes.service'
+import { SubscriptionActiveGuard } from '../subscriptions/subscription-active.guard'
 import type { DriverProfileChangeStatusApi } from '../profile-changes/profile-change.types'
 import { toDriverProfileChangeStatus } from '../profile-changes/profile-change.mapper'
 import type { TowTruckApi } from '../tow-trucks/tow-truck.types'
@@ -40,6 +41,9 @@ export class MyTowTruckController {
    * whether or not it was touched, so opening it and pressing save is a normal
    * way to reach that, and it is not an error.
    */
+  // Guarded: editing the public profile is the thing the subscription pays
+  // for. Reads below stay open — see SubscriptionActiveGuard.
+  @UseGuards(SubscriptionActiveGuard)
   @Patch()
   async updateMine(
     @Req() request: AuthenticatedDriverRequest,
@@ -83,6 +87,7 @@ export class MyTowTruckController {
    * location is as public a claim as a service area, and leaving it as the one
    * self-service field would make it the obvious way around the review.
    */
+  @UseGuards(SubscriptionActiveGuard)
   @Patch('coordinates')
   async updateCoordinates(
     @Req() request: AuthenticatedDriverRequest,

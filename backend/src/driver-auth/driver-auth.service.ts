@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -8,6 +9,7 @@ import {
   forwardRef,
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
+import { DeactivationReason } from '@prisma/client'
 import { JwtService } from '@nestjs/jwt'
 import bcrypt from 'bcrypt'
 import { PrivacyConsentService } from '../privacy-consent/privacy-consent.service'
@@ -105,7 +107,12 @@ export class DriverAuthService {
   }
 
   async login(phone: string, password: string): Promise<DriverSession> {
-    const towTruck = await this.towTrucksRepository.findActiveByMainPhone(phone)
+    // ANY status, not just active. A driver taken off the site for not paying
+    // has to be able to sign in — the payment block is behind the dashboard,
+    // so refusing them here would mean the only way out of a lapsed
+    // subscription is to phone us. Every other kind of deactivation is still
+    // refused, a few lines below, AFTER the password check.
+    const towTruck = await this.towTrucksRepository.findByMainPhoneAnyStatus(phone)
 
     // Always runs, even with no match and even when the row has no hash yet —
     // see DUMMY_HASH. `bcrypt.compare` against the dummy can only ever be
@@ -120,6 +127,25 @@ export class DriverAuthService {
       throw new UnauthorizedException(
         'Սխալ հեռախոսահամար կամ գաղտնաբառ։ Եթե դեռ գաղտնաբառ չեք ստացել, դիմեք ադմինիստրատորին։',
       )
+    }
+
+    // Only ever reached by someone who proved they own this account, so it
+    // leaks nothing about which numbers exist — the check deliberately sits
+    // after the password comparison, not before it.
+    //
+    // UNPAID is the one deactivation a driver can undo alone, so they are let
+    // through to a dashboard that is nothing but the payment block (see
+    // MySubscriptionStatusApi). Anything else — including a deactivation from
+    // before this reason was recorded, which reads as null — is refused here:
+    // whatever it was, only a person can undo it, and issuing a session would
+    // hand a banned driver back a working token.
+    if (!towTruck.isActive && towTruck.deactivationReason !== DeactivationReason.UNPAID) {
+      // 403, and login's only other failure is 401 — so that status alone
+      // tells the login page which of the two happened, and it renders the
+      // contact number itself. The number lives in `frontend/constants/site.ts`
+      // (CONTACT_PHONE) and deliberately not here: labels are the frontend's,
+      // and a phone number copied into the backend is a number that drifts.
+      throw new ForbiddenException('Ձեր պրոֆիլն ապաակտիվացված է։ Խնդրում ենք կապվել մեզ հետ։')
     }
 
     // Read AFTER authentication succeeded, never before: it is one more query,

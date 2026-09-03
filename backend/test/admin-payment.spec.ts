@@ -1,125 +1,132 @@
 import 'reflect-metadata'
 import { describe, expect, it } from 'vitest'
 import {
-  derivePaymentStatus,
-  PAYMENT_DUE_SOON_AFTER_DAYS,
-  PAYMENT_OVERDUE_AFTER_DAYS,
   sortPaymentsByUrgency,
   toAdminPaymentSummary,
 } from '../src/admin/admin-payment.mapper'
-import type { AdminPaymentSummary, PaymentStatus } from '../src/admin/admin-payment.mapper'
+import type { AdminPaymentSummary } from '../src/admin/admin-payment.mapper'
+import {
+  derivePaymentStatus,
+  PAYMENT_DUE_SOON_WITHIN_DAYS,
+} from '../src/subscriptions/subscription-status'
+import type { PaymentStatus } from '../src/subscriptions/subscription-status'
 
 /**
- * A monthly-recurring flag with no reset job: the state is entirely a
- * function of "how long ago was `lastPaymentAt`", recomputed on every read.
- * These pin the day-count boundaries exactly, since an off-by-one here is
- * the difference between an admin trusting the "due soon" warning and a
- * driver being called overdue a day early.
+ * The `/admin/payments` status, now a function of WHEN THE DRIVER'S PERIOD
+ * ENDS rather than how many days ago someone ticked a box.
+ *
+ * The boundaries are pinned exactly, since an off-by-one here is the
+ * difference between an admin trusting the "due soon" warning and a driver
+ * being called overdue a day early. The case that motivated the rewrite —
+ * a 4-month plan — gets its own test at the bottom.
  */
 
 const NOW = new Date('2026-08-29T12:00:00Z')
-const daysAgo = (days: number): Date => new Date(NOW.getTime() - days * 24 * 60 * 60 * 1000)
+const DAY_MS = 24 * 60 * 60 * 1000
+const inDays = (days: number): Date => new Date(NOW.getTime() + days * DAY_MS)
 
 describe('derivePaymentStatus', () => {
-  it('is "unpaid" for a driver never marked at all', () => {
+  it('is "unpaid" when no payment was ever confirmed', () => {
     expect(derivePaymentStatus(null, NOW)).toBe('unpaid')
   })
 
-  it('is "paid" right after being marked, and for the first 24 days', () => {
-    expect(derivePaymentStatus(daysAgo(0), NOW)).toBe('paid')
-    expect(derivePaymentStatus(daysAgo(24), NOW)).toBe('paid')
+  it('is "paid" while the period still has room to run', () => {
+    expect(derivePaymentStatus(inDays(30), NOW)).toBe('paid')
+    expect(derivePaymentStatus(inDays(PAYMENT_DUE_SOON_WITHIN_DAYS + 1), NOW)).toBe('paid')
   })
 
-  it('turns "due-soon" exactly at the configured threshold, not a day before', () => {
-    expect(derivePaymentStatus(daysAgo(PAYMENT_DUE_SOON_AFTER_DAYS - 1), NOW)).toBe('paid')
-    expect(derivePaymentStatus(daysAgo(PAYMENT_DUE_SOON_AFTER_DAYS), NOW)).toBe('due-soon')
+  it('turns "due-soon" exactly at the configured warning window, not a day before', () => {
+    expect(derivePaymentStatus(inDays(PAYMENT_DUE_SOON_WITHIN_DAYS), NOW)).toBe('due-soon')
+    expect(derivePaymentStatus(inDays(1), NOW)).toBe('due-soon')
   })
 
-  it('turns "overdue" exactly at the configured threshold, not a day before', () => {
-    expect(derivePaymentStatus(daysAgo(PAYMENT_OVERDUE_AFTER_DAYS - 1), NOW)).toBe('due-soon')
-    expect(derivePaymentStatus(daysAgo(PAYMENT_OVERDUE_AFTER_DAYS), NOW)).toBe('overdue')
+  it('turns "overdue" the moment the period ends, not a day later', () => {
+    expect(derivePaymentStatus(NOW, NOW)).toBe('overdue')
+    expect(derivePaymentStatus(inDays(-1), NOW)).toBe('overdue')
   })
 
   it('stays "overdue" arbitrarily far in the past — there is no fifth state', () => {
-    expect(derivePaymentStatus(daysAgo(365), NOW)).toBe('overdue')
+    expect(derivePaymentStatus(inDays(-365), NOW)).toBe('overdue')
+  })
+
+  it('reads a 4-month subscriber as paid a month in — the bug this replaced', () => {
+    // The old rule counted days since the payment and called anything past 30
+    // "overdue", so a driver who had paid for four months was chased for money
+    // on day 31. Their period is what decides now.
+    const boughtFourMonths = new Date('2026-12-01T12:00:00Z')
+    const oneMonthIn = new Date('2026-09-29T12:00:00Z')
+    expect(derivePaymentStatus(boughtFourMonths, oneMonthIn)).toBe('paid')
   })
 })
 
 describe('toAdminPaymentSummary', () => {
-  function truck(overrides: Partial<Parameters<typeof toAdminPaymentSummary>[0]> = {}) {
-    return {
-      id: 1,
-      driverName: 'Վարորդ',
-      companyName: null,
-      phone: '+37491000001',
-      lastPaymentAt: null,
-      isActive: true,
-      ...overrides,
-    }
+  const truck = {
+    id: 4,
+    driverName: 'Արամ Պետրոսյան',
+    companyName: null,
+    phone: '+37491000001',
+    isActive: true,
   }
 
-  it('carries the driver identity fields through unchanged', () => {
-    const summary = toAdminPaymentSummary(truck({ driverName: 'Արամ Առաքելյան', phone: '+37491000002' }))
-    expect(summary.driverName).toBe('Արամ Առաքելյան')
-    expect(summary.phone).toBe('+37491000002')
+  it('projects coverage into the row the admin page reads', () => {
+    const summary = toAdminPaymentSummary(truck, {
+      paidUntil: inDays(20),
+      lastPaidAt: inDays(-10),
+      pendingCount: 0,
+    })
+
+    expect(summary).toMatchObject({
+      id: 4,
+      driverName: 'Արամ Պետրոսյան',
+      phone: '+37491000001',
+      status: 'paid',
+      pendingCount: 0,
+      isActive: true,
+    })
+    expect(summary.paidUntil).toBe(inDays(20).toISOString())
+    expect(summary.companyName).toBeUndefined()
   })
 
-  it('omits companyName when null rather than sending it as null', () => {
-    expect(toAdminPaymentSummary(truck({ companyName: null })).companyName).toBeUndefined()
-    expect(toAdminPaymentSummary(truck({ companyName: 'ՍՊԸ' })).companyName).toBe('ՍՊԸ')
-  })
-
-  it('omits lastPaymentAt when never paid, and serialises it to ISO when set', () => {
-    expect(toAdminPaymentSummary(truck({ lastPaymentAt: null })).lastPaymentAt).toBeUndefined()
-    const paidAt = new Date('2026-08-01T10:00:00Z')
-    expect(toAdminPaymentSummary(truck({ lastPaymentAt: paidAt })).lastPaymentAt).toBe(paidAt.toISOString())
-  })
-
-  it('derives status from lastPaymentAt through the same function derivePaymentStatus exposes', () => {
-    expect(toAdminPaymentSummary(truck({ lastPaymentAt: null })).status).toBe('unpaid')
-  })
-
-  it('carries isActive through unchanged — the "deactivate" button on an overdue row depends on it', () => {
-    expect(toAdminPaymentSummary(truck({ isActive: true })).isActive).toBe(true)
-    expect(toAdminPaymentSummary(truck({ isActive: false })).isActive).toBe(false)
+  it('is "unpaid" — not "paid" — for a driver whose only request is still pending', () => {
+    // The property that keeps the page honest: a request is not a payment.
+    const summary = toAdminPaymentSummary(truck, {
+      paidUntil: null,
+      lastPaidAt: null,
+      pendingCount: 1,
+    })
+    expect(summary.status).toBe('unpaid')
+    expect(summary.pendingCount).toBe(1)
   })
 })
 
 describe('sortPaymentsByUrgency', () => {
-  function summary(id: number, status: PaymentStatus, driverName = `Driver ${id}`): AdminPaymentSummary {
-    return { id, driverName, phone: '+37491000001', status, isActive: true }
+  function row(driverName: string, status: PaymentStatus): AdminPaymentSummary {
+    return {
+      id: 1,
+      driverName,
+      phone: '+37491000001',
+      pendingCount: 0,
+      status,
+      isActive: true,
+    }
   }
 
-  it('puts every overdue row before every due-soon row, before everyone else', () => {
-    const input = [
-      summary(1, 'paid'),
-      summary(2, 'overdue'),
-      summary(3, 'unpaid'),
-      summary(4, 'due-soon'),
-    ]
-    expect(sortPaymentsByUrgency(input).map((s) => s.id)).toEqual([2, 4, 1, 3])
+  it('puts overdue first, then due-soon, then everyone else', () => {
+    const sorted = sortPaymentsByUrgency([
+      row('paid', 'paid'),
+      row('overdue', 'overdue'),
+      row('unpaid', 'unpaid'),
+      row('due-soon', 'due-soon'),
+    ])
+    expect(sorted.map((r) => r.driverName)).toEqual(['overdue', 'due-soon', 'paid', 'unpaid'])
   })
 
-  it('treats paid and unpaid as the same group — neither outranks the other', () => {
-    const input = [summary(1, 'paid', 'Բ'), summary(2, 'unpaid', 'Ա')]
-    // Stable sort: equal urgency means the incoming (already alphabetical)
-    // order survives untouched, not a status-based tiebreak.
-    expect(sortPaymentsByUrgency(input).map((s) => s.id)).toEqual([1, 2])
-  })
-
-  it('is stable — preserves alphabetical order within each urgency group', () => {
-    const input = [
-      summary(1, 'overdue', 'Վ'),
-      summary(2, 'overdue', 'Ա'),
-      summary(3, 'overdue', 'Բ'),
-    ]
-    expect(sortPaymentsByUrgency(input).map((s) => s.id)).toEqual([1, 2, 3])
-  })
-
-  it('does not mutate the input array', () => {
-    const input = [summary(1, 'paid'), summary(2, 'overdue')]
-    const original = [...input]
-    sortPaymentsByUrgency(input)
-    expect(input).toEqual(original)
+  it('keeps the query’s alphabetical order inside each group (stable sort)', () => {
+    const sorted = sortPaymentsByUrgency([
+      row('Ա', 'overdue'),
+      row('Բ', 'overdue'),
+      row('Գ', 'paid'),
+    ])
+    expect(sorted.map((r) => r.driverName)).toEqual(['Ա', 'Բ', 'Գ'])
   })
 })

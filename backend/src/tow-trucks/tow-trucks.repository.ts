@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common'
-import type { DriverPrivacyConsent, Prisma, TowTruck } from '@prisma/client'
+import type { DeactivationReason, DriverPrivacyConsent, Prisma, TowTruck } from '@prisma/client'
 import { IMAGE_ORDER } from '../images/image-order'
 import { PrismaService } from '../prisma/prisma.service'
 import { PRIVACY_POLICY_VERSION } from '../privacy-consent/privacy-consent.text'
@@ -217,10 +217,15 @@ export class TowTrucksRepository {
    * Returns null for an id that doesn't exist, so callers can distinguish
    * "no such truck" (404) from "exists but deactivated" (403 / ignore).
    */
-  findStatusById(id: number): Promise<{ id: number; isActive: boolean } | null> {
+  findStatusById(
+    id: number,
+  ): Promise<{ id: number; isActive: boolean; deactivationReason: DeactivationReason | null } | null> {
     return this.prisma.towTruck.findUnique({
       where: { id },
-      select: { id: true, isActive: true },
+      // The reason rides along with the flag it explains — every caller that
+      // cares whether a driver is active is one keystroke from needing to say
+      // why, and it costs nothing to select.
+      select: { id: true, isActive: true, deactivationReason: true },
     })
   }
 
@@ -515,8 +520,20 @@ export class TowTrucksRepository {
     })
   }
 
-  setActive(id: number, isActive: boolean): Promise<TowTruck> {
-    return this.prisma.towTruck.update({ where: { id }, data: { isActive } })
+  /**
+   * The reason is written and cleared in the SAME statement as the flag, so a
+   * reactivated driver can never keep a stale explanation and a deactivated
+   * one can never be missing theirs — the pair is only ever consistent.
+   */
+  setActive(
+    id: number,
+    isActive: boolean,
+    deactivationReason: DeactivationReason | null,
+  ): Promise<TowTruck> {
+    return this.prisma.towTruck.update({
+      where: { id },
+      data: { isActive, deactivationReason: isActive ? null : deactivationReason },
+    })
   }
 
   setFeatured(id: number, isFeatured: boolean): Promise<TowTruck> {
@@ -528,23 +545,11 @@ export class TowTrucksRepository {
     return this.prisma.towTruck.update({ where: { id }, data: { heavyEquipment } })
   }
 
-  /**
-   * Admin-recorded "paid this month" marker — see
-   * AdminService.setTowTruckPayment. `paid: false` clears the timestamp
-   * rather than merely being ignored, so unmarking is a real correction and
-   * not just a hidden button that reappears next reload.
-   */
-  /**
-   * `lastPaymentAt` straight through — `null` clears it (unmarking a
-   * mistaken click), any other value stamps it exactly, chosen by the admin
-   * rather than defaulted to "now" (see `SetTowTruckPaymentDto.paidAt`).
-   */
-  setPayment(id: number, lastPaymentAt: Date | null): Promise<TowTruck> {
-    return this.prisma.towTruck.update({
-      where: { id },
-      data: { lastPaymentAt },
-    })
-  }
+  /* setPayment() lived here, writing the "paid this month" marker an admin
+     clicked. Payments are SubscriptionPayment rows now — see
+     subscriptions/admin-subscriptions.service.ts — and TowTruck.lastPaymentAt
+     is legacy, read and written by nothing (schema.prisma says so at the
+     column itself). */
 
   /**
    * Lean select for `/admin/payments` — mirrors `findAllForExport`'s own
@@ -572,7 +577,6 @@ export class TowTrucksRepository {
       driverName: string
       companyName: string | null
       phone: string
-      lastPaymentAt: Date | null
       isActive: boolean
     }[]
   > {
@@ -593,7 +597,6 @@ export class TowTrucksRepository {
         driverName: true,
         companyName: true,
         phone: true,
-        lastPaymentAt: true,
         isActive: true,
       },
       orderBy: { driverName: 'asc' },

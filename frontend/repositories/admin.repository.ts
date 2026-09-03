@@ -1,4 +1,11 @@
 import { apiFetch } from './apiClient'
+import type {
+  AdminPendingPayment,
+  DeactivationReason,
+  SubscriptionPayment,
+  SubscriptionPlan,
+  SubscriptionPlanCode,
+} from '~/types/subscription'
 import type { RegistrationPayload } from './registration.repository'
 import { useAdminAuthStore } from '~/stores/adminAuth'
 
@@ -227,16 +234,27 @@ export interface AdminTowTruck {
   } | null
 }
 
-/** Mirrors backend PaymentStatus (admin-payment.mapper.ts) */
+/** Mirrors backend PaymentStatus (subscriptions/subscription-status.ts) */
 export type PaymentStatus = 'unpaid' | 'paid' | 'due-soon' | 'overdue'
 
-/** Mirrors backend AdminPaymentSummary — the lean shape behind `/admin/payments` */
+/**
+ * Mirrors backend AdminPaymentSummary — the lean shape behind `/admin/payments`.
+ *
+ * `status` now comes from how long the driver's subscription runs, not from
+ * how many days ago someone marked them paid: a 4-month plan has to read as
+ * paid in month two, which a day-count could not express.
+ */
 export interface AdminPayment {
   id: number
   driverName: string
   companyName?: string
   phone: string
-  lastPaymentAt?: string
+  /** ISO datetime — how far this driver is covered. Undefined = no payment ever confirmed. */
+  paidUntil?: string
+  /** ISO datetime — when the last confirmed payment's period began */
+  lastPaidAt?: string
+  /** Requests this driver has made that nobody has confirmed or cancelled yet */
+  pendingCount: number
   status: PaymentStatus
   /** Lets the payments page offer "Ապաակտիվացնել" on an overdue row and hide it once already inactive */
   isActive: boolean
@@ -579,10 +597,14 @@ export const adminRepository = {
   },
 
   /** Deactivate (isActive: false) hides the truck publicly and blocks driver login — reversible */
-  setTowTruckActive(id: number, isActive: boolean): Promise<{ id: number; isActive: boolean }> {
+  setTowTruckActive(
+    id: number,
+    isActive: boolean,
+    reason?: DeactivationReason,
+  ): Promise<{ id: number; isActive: boolean }> {
     return apiFetch<{ id: number; isActive: boolean }>(`/admin/tow-trucks/${id}/active`, {
       method: 'PATCH',
-      body: { isActive },
+      body: { isActive, reason },
       headers: authHeader(),
     })
   },
@@ -616,26 +638,61 @@ export const adminRepository = {
   },
 
   /**
-   * Marks this driver's payment as received (or, with `paid: false`,
-   * corrects a mistaken click) — see `/admin/payments`, the only page that
-   * calls this. Purely informational, with no effect on `isActive` or any
-   * public page.
-   *
-   * `paidAt` is the date the admin picked by hand — required (backend-
-   * enforced) whenever `paid` is true, since there is no "now" to default to
-   * once the date is a deliberate choice rather than a timestamp of the
-   * click. Omitted when `paid` is false; the backend ignores it either way.
+   * The plans on sale — the same constants the driver's dashboard reads,
+   * served on the admin route so the «record a payment» picker cannot drift
+   * from what is actually being sold.
    */
-  setTowTruckPayment(
-    id: number,
-    paid: boolean,
-    paidAt?: string,
-  ): Promise<{ id: number; lastPaymentAt?: string; status: PaymentStatus }> {
-    return apiFetch<{ id: number; lastPaymentAt?: string; status: PaymentStatus }>(
-      `/admin/tow-trucks/${id}/payment`,
-      { method: 'PATCH', body: { paid, paidAt }, headers: authHeader() },
-    )
+  listSubscriptionPlans(): Promise<{ items: SubscriptionPlan[] }> {
+    return apiFetch<{ items: SubscriptionPlan[] }>('/admin/subscription-payments/plans', {
+      headers: authHeader(),
+    })
   },
+
+  /**
+   * The queue of payment requests drivers have made that nobody has decided
+   * on yet — see `/admin/payments`.
+   */
+  listPendingSubscriptionPayments(): Promise<AdminPendingPayment[]> {
+    return apiFetch<AdminPendingPayment[]>('/admin/subscription-payments/pending', {
+      headers: authHeader(),
+    })
+  },
+
+  /**
+   * Confirms («the money arrived») or cancels one request.
+   *
+   * Confirming is what actually grants coverage, and the backend recomputes
+   * the period at that moment rather than honouring the one quoted when the
+   * driver pressed the button — see backend `renewalPeriod`.
+   */
+  decideSubscriptionPayment(id: number, status: 'PAID' | 'CANCELLED'): Promise<SubscriptionPayment> {
+    return apiFetch<SubscriptionPayment>(`/admin/subscription-payments/${id}`, {
+      method: 'PATCH',
+      body: { status },
+      headers: authHeader(),
+    })
+  },
+
+  /**
+   * Records a payment that arrived outside the platform (cash, transfer).
+   *
+   * Takes a PLAN, not an amount: the price and the duration are the server's,
+   * so an offline payment and a driver's own request can never disagree about
+   * what a month costs. `paidAt` is the real date the money arrived, chosen by
+   * hand — coverage starts from it, not from the moment of the click.
+   */
+  grantSubscriptionPayment(
+    towTruckId: number,
+    planId: SubscriptionPlanCode,
+    paidAt?: string,
+  ): Promise<SubscriptionPayment> {
+    return apiFetch<SubscriptionPayment>('/admin/subscription-payments', {
+      method: 'POST',
+      body: { towTruckId, planId, paidAt },
+      headers: authHeader(),
+    })
+  },
+
 
   /**
    * Every driver's payment status — the lean shape behind `/admin/payments`.

@@ -5,6 +5,7 @@ import { ProfileChangesModule } from '../profile-changes/profile-changes.module'
 import { TowTrucksModule } from '../tow-trucks/tow-trucks.module'
 import { MyTowTruckController } from './my-tow-truck.controller'
 import { MyTowTruckService } from './my-tow-truck.service'
+import { SubscriptionsModule } from '../subscriptions/subscriptions.module'
 
 // No StorageModule: this module no longer touches Supabase Storage directly —
 // ImagesService's nightly purge is the single owner of object deletion.
@@ -13,7 +14,7 @@ import { MyTowTruckService } from './my-tow-truck.service'
   // ProfileChangesService, and that service applies an approved one back
   // through MyTowTruckService — a genuine cycle, declared rather than broken by
   // duplicating the write.
-  imports: [TowTrucksModule, DriverAuthModule, ImagesModule, forwardRef(() => ProfileChangesModule)],
+  imports: [TowTrucksModule, DriverAuthModule, ImagesModule, forwardRef(() => ProfileChangesModule), SubscriptionsModule],
   controllers: [MyTowTruckController],
   providers: [MyTowTruckService],
   exports: [MyTowTruckService],

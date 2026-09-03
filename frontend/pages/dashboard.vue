@@ -7,7 +7,7 @@ import {
   validateServiceAreaSelection,
   type CoverageMode,
 } from '~/constants/serviceAreaLimits'
-import { SITE_NAME } from '~/constants/site'
+import { CONTACT_PHONE, SITE_NAME } from '~/constants/site'
 import {
   asksDoubleDeck,
   asksTowHitch,
@@ -22,6 +22,7 @@ import {
 } from '~/constants/vehicles'
 import {
   imageRepository,
+  mySubscriptionsRepository,
   myTowTruckRepository,
   privacyConsentRepository,
   type DriverProfileChangeStatus,
@@ -34,10 +35,11 @@ import { LocationType, ServiceType, VehicleType } from '~/types/enums'
 import type { SelectOption } from '~/types/common'
 import type { TowTruck } from '~/types/towTruck'
 import { formatCoordinates, type Coordinates } from '~/utils/coordinates'
+import type { MySubscriptionStatus } from '~/types/subscription'
 import { extractErrorMessage } from '~/utils/errors'
-import { formatDateNumeric } from '~/utils/formatters'
+import { formatDateLong, formatDateNumeric } from '~/utils/formatters'
 import { formatProfileValue, profileFieldLabel } from '~/utils/profileChangeLabels'
-import { armenianPhoneInputValue } from '~/utils/formatPhone'
+import { armenianPhoneInputValue, getPhoneHref } from '~/utils/formatPhone'
 import {
   findCityLocation,
   findServiceZoneLocation,
@@ -485,12 +487,70 @@ function fillFormFromTruck(data: TowTruck): void {
   newImagePreviews.value = []
 }
 
+/**
+ * The subscription gate.
+ *
+ * Two states this page reacts to, both decided by the backend rather than by
+ * comparing dates here — `SubscriptionActiveGuard` enforces the same rule on
+ * the API, and a second copy of it in the browser is how the two end up
+ * disagreeing about whether a driver may edit their profile.
+ *
+ * - `locked` replaces the entire dashboard with the payment block. Structural,
+ *   like the password gate above it: there is nothing behind it to tab into.
+ * - `due-soon` shows the reminder dialog below, and leaves everything usable.
+ *
+ * A driver who has never been billed is neither (see `isLockedOut` on the
+ * backend), so nothing here changes for them.
+ */
+const subscription = ref<MySubscriptionStatus | null>(null)
+const paymentReminderOpen = ref(false)
+
+/**
+ * One dialog, three moments — each a different thing to say, and the last one
+ * is a different thing to say it ABOUT: by then the profile is already off the
+ * site, so a warning about what will happen would be describing the past.
+ */
+type PaymentMoment = 'due-soon' | 'overdue' | 'deactivated'
+
+const paymentMoment = computed<PaymentMoment | null>(() => {
+  const status = subscription.value
+  if (!status) return null
+  if (!status.isActive) return 'deactivated'
+  if (status.locked) return 'overdue'
+  return status.status === 'due-soon' ? 'due-soon' : null
+})
+
+const PAYMENT_MOMENT_TITLE: Record<PaymentMoment, string> = {
+  'due-soon': 'Վճարման ժամկետը մոտենում է',
+  overdue: 'Վճարման ժամկետը սպառվել է',
+  deactivated: 'Ձեր էջն ապաակտիվացված է',
+}
+
+async function loadSubscription(): Promise<void> {
+  try {
+    subscription.value = await mySubscriptionsRepository.getStatus()
+    // Every visit, in both states, not once-and-remembered: before the lapse
+    // this is the last thing standing between a driver and a locked dashboard,
+    // and after it, it is the only place the consequence is spelled out. A
+    // dismissal they made four days ago is not a reason to stop telling them.
+    paymentReminderOpen.value = paymentMoment.value !== null
+  } catch {
+    // Never surfaced, and deliberately fails OPEN: if this read breaks, the
+    // dashboard behaves exactly as it did before any of this existed rather
+    // than locking a paid-up driver out over a failed request.
+    subscription.value = null
+  }
+}
+
 async function load(): Promise<void> {
   loading.value = true
   loadError.value = ''
   try {
-    truck.value = await myTowTruckRepository.getMine()
-    fillFormFromTruck(truck.value)
+    // Together: the gate below decides what renders, so the page must not
+    // paint the editable dashboard while the answer is still in flight.
+    const [profile] = await Promise.all([myTowTruckRepository.getMine(), loadSubscription()])
+    truck.value = profile
+    fillFormFromTruck(profile)
   } catch (error) {
     loadError.value = extractErrorMessage(error, 'Պրոֆիլը բեռնել չհաջողվեց։ Կրկին մուտք գործեք։')
   } finally {
@@ -950,6 +1010,31 @@ async function logout(): Promise<void> {
 
     <p v-else-if="loadError" class="dashboard-error">{{ loadError }}</p>
 
+    <!-- The whole dashboard, replaced by the one thing a driver whose
+         subscription lapsed can still do. Rendered INSTEAD of the page rather
+         than over it — same reasoning as the password gate above: there is
+         nothing behind to tab into and no dialog to dismiss. The API refuses
+         the same driver's writes (SubscriptionActiveGuard), so this is the
+         visible half of a real lock, not a suggestion. -->
+    <section v-else-if="subscription?.locked" class="dashboard-payment-gate">
+      <template v-if="paymentMoment === 'deactivated'">
+        <h2>Ձեր էջն ապաակտիվացված է</h2>
+        <p>Վճարումը կատարելուց հետո էջը կվերականգնվի։</p>
+      </template>
+      <template v-else>
+        <h2>Ձեր բաժանորդագրության ժամկետը սպառվել է</h2>
+        <p>
+          Էջի կառավարումը կրկին կբացվի վճարումը հաստատվելուց հետո։ Ձեր պրոֆիլը կայքում
+          դեռ մնում է տեղում։
+        </p>
+      </template>
+      <p class="dashboard-payment-gate__contact">
+        Հարցերի դեպքում՝
+        <a :href="getPhoneHref(CONTACT_PHONE)">{{ CONTACT_PHONE }}</a>
+      </p>
+      <SubscriptionPayments />
+    </section>
+
     <template v-else-if="truck">
       <p class="dashboard-hint">
         <strong>{{ truck.driverName }}</strong> · {{ truck.vehicle.brand }}
@@ -994,7 +1079,22 @@ async function logout(): Promise<void> {
         </p>
       </section>
 
-      <!-- Analytics first: it's what a driver opens the dashboard to check -->
+      <!-- First on the page, and the only section with its own colour: it is
+           the one thing here a driver has to act on rather than read, and it
+           has no other entry point in the app. Still collapsed like every
+           other section — the plans render when it is opened. -->
+      <details class="dashboard-section dashboard-section--payments">
+        <summary class="dashboard-summary">Վճարումներ</summary>
+        <div class="dashboard-details-content">
+          <p class="dashboard-hint">
+            Ընտրեք ձեզ հարմար փաթեթը։ Գինը և ժամկետը որոշվում են համակարգի կողմից։
+          </p>
+          <SubscriptionPayments />
+        </div>
+      </details>
+
+      <!-- Then analytics: what a driver opens the dashboard to CHECK, after the
+           one thing they may need to DO. -->
       <details class="dashboard-section">
         <summary class="dashboard-summary">Վիճակագրություն</summary>
         <div class="dashboard-details-content">
@@ -1444,6 +1544,54 @@ async function logout(): Promise<void> {
          showing. `mandatory`, unlike the registration page's copy: cancelling
          here signs the driver out, so a stray backdrop click must not be able
          to trigger it. -->
+    <!-- Outside the `v-if` chain, like the consent dialog below: it belongs to
+         whichever branch is showing. Dismissible, unlike that one — the
+         subscription has not lapsed yet, and a driver in this window is still
+         free to work. -->
+    <AppModal v-model="paymentReminderOpen" :title="paymentMoment ? PAYMENT_MOMENT_TITLE[paymentMoment] : ''">
+      <div class="dashboard-payment-reminder">
+        <!-- The number first, before the explanation: whatever the message
+             says, "who do I call about this" is the question a driver reading
+             it actually has. -->
+        <p class="dashboard-payment-reminder__contact">
+          <AppIcon name="phone" :size="16" />
+          <a :href="getPhoneHref(CONTACT_PHONE)">{{ CONTACT_PHONE }}</a>
+        </p>
+
+        <template v-if="paymentMoment === 'deactivated'">
+          <p>
+            Դուք չեք կատարել վճարումը, և Ձեր էջն ապաակտիվացվել է կայքից։
+          </p>
+          <p>Խնդրում ենք կատարել վճարումը՝ էջը վերականգնելու համար։</p>
+        </template>
+
+        <template v-else-if="paymentMoment === 'overdue'">
+          <p v-if="subscription?.paidUntil">
+            Ձեր վճարման օրը՝ <strong>{{ formatDateLong(subscription.paidUntil) }}</strong> — արդեն
+            անցել է։
+          </p>
+          <p>Խնդրում ենք վճարել։ Հակառակ դեպքում Ձեր պրոֆիլը կհանվի կայքից։</p>
+        </template>
+
+        <template v-else>
+          <p v-if="subscription?.paidUntil">
+            Ձեր վճարման օրը՝ <strong>{{ formatDateLong(subscription.paidUntil) }}</strong>։
+            Մնացել է {{ subscription.daysLeft }} օր։
+          </p>
+          <p>
+            Խնդրում ենք վճարել մինչև այդ օրը։ Հակառակ դեպքում Ձեր էջի կառավարումը կկասեցվի,
+            և կկարողանաք միայն վճարել։
+          </p>
+        </template>
+
+        <!-- Dismissible in every state, including the locked ones: what is
+             behind it is already nothing but the payment block, so trapping a
+             driver in a dialog would stop them reaching the very thing it is
+             telling them to do. -->
+        <AppButton block @click="paymentReminderOpen = false">Հասկացա</AppButton>
+      </div>
+    </AppModal>
+
     <PrivacyConsentDialog
       v-model="requiresConsent"
       mandatory
@@ -1584,6 +1732,33 @@ details[open] .dashboard-summary::after {
     font-size: 0.82rem;
     line-height: 1.5;
     color: var(--color-text-secondary);
+  }
+}
+
+/* The one section that is not the same white card as the rest.
+   Accent (the brand gold, --color-accent) rather than success/danger, which
+   would claim a state this block does not have — nothing here is finished or
+   wrong, it is simply the thing to act on. Tint + border rather than a solid
+   fill, matching .dashboard-review--pending below: a full accent block behind
+   this much text fails contrast, and the plan cards inside stay white so they
+   still read as the clickable layer.
+   Full width, not the form's 640px column: it sits above the analytics block,
+   and a narrow card followed by a wide one reads as a mistake. */
+.dashboard-section--payments {
+  margin-bottom: var(--space-4);
+  background: rgba(246, 168, 33, 0.1);
+  border-color: rgba(246, 168, 33, 0.45);
+
+  .dashboard-summary {
+    color: var(--color-primary);
+  }
+
+  &[open] .dashboard-summary {
+    border-bottom-color: rgba(246, 168, 33, 0.35);
+  }
+
+  .dashboard-hint {
+    margin-bottom: var(--space-3);
   }
 }
 

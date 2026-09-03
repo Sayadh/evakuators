@@ -6,6 +6,7 @@ import { ProfileChangesModule } from '../profile-changes/profile-changes.module'
 import { RegistrationModule } from '../registration/registration.module'
 import { ReviewsModule } from '../reviews/reviews.module'
 import { StorageModule } from '../storage/storage.module'
+import { SubscriptionsModule } from '../subscriptions/subscriptions.module'
 import { TelegramModule } from '../telegram/telegram.module'
 import { TowTrucksModule } from '../tow-trucks/tow-trucks.module'
 import { AdminController } from './admin.controller'
@@ -30,6 +31,10 @@ import { AdminService } from './admin.service'
     // creates. Nothing here ever writes a consent — an admin cannot consent on
     // a driver's behalf, which is why the module exposes no admin route at all.
     PrivacyConsentModule,
+    // For SubscriptionsRepository — /admin/payments reads each driver's
+    // coverage. Writing a payment lives in that module's own admin service, so
+    // there is no cycle: SubscriptionsModule knows nothing about AdminModule.
+    SubscriptionsModule,
   ],
   controllers: [AdminController],
   providers: [AdminService],

@@ -221,12 +221,28 @@ answer `REFUSED`, and the driver's dashboard shows no payment block. That is
 correct behaviour, not a broken setup (see `subscription-rollout.ts` and
 `idram-config.ts`), so set them before expecting to see anything.
 
-Then a driver to test with:
+Then drivers to test with — one per state, in one command:
 
 ```bash
-node scripts/create-test-driver.js +37491000001 'test-password' unpaid
-node scripts/create-test-driver.js +37491000002 'test-password' due-soon
-node scripts/create-test-driver.js +37491000003 'test-password' overdue
+node scripts/create-test-driver.js all 'test-password'
+```
+
+| Phone | State |
+| --- | --- |
+| `+37491000001` | `unpaid` — never billed. Must stay fully usable; this is the deploy-day case |
+| `+37491000002` | `due-soon` — 3 days left, the reminder dialog fires on every visit |
+| `+37491000003` | `overdue` — lapsed, dashboard replaced by the payment block, writes refused with 402 |
+| `+37491000004` | `paid` — 25 days left, «Վճարել» disabled (see § "Paying twice") |
+| `+37491000005` | `off-unpaid` — deactivated for non-payment; can sign in, sees the payment block |
+| `+37491000006` | `off-other` — deactivated for any other reason; sign-in refused, login shows the contact number |
+
+Re-run it any time to reset: it **replaces** each driver's payment rows and
+rewrites `isActive`/`deactivationReason`, so a local database goes back to a
+known starting point without a `migrate reset` and without re-creating the
+admin user. A single driver can also be moved to one state:
+
+```bash
+node scripts/create-test-driver.js +37491000001 'test-password' overdue
 ```
 
 ### The flow

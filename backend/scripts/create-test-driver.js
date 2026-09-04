@@ -19,10 +19,14 @@
  * password-minting path.
  *
  * Usage, from backend/:
- *   node scripts/create-test-driver.js +37491000001 'test-password'
- *   node scripts/create-test-driver.js +37491000002 'test-password' paid
- *   node scripts/create-test-driver.js +37491000003 'test-password' due-soon
- *   node scripts/create-test-driver.js +37491000004 'test-password' overdue
+ *   node scripts/create-test-driver.js all 'test-password'          # one per state
+ *   node scripts/create-test-driver.js +37491000001 'test-password' # just this one
+ *   node scripts/create-test-driver.js +37491000001 'test-password' overdue
+ *
+ * `all` is the reset button: it puts one driver into each state below, at a
+ * fixed phone number per state (see ALL_STATES_PHONES), so re-running it
+ * returns a local database to a known starting point without touching anything
+ * else in it — no `migrate reset`, no re-creating the admin user.
  *
  * States (what each one is for):
  *   unpaid    no payment rows at all — a driver nobody ever billed. Must NOT
@@ -128,32 +132,30 @@ async function applyState(prisma, towTruckId, state) {
   return periodEnd
 }
 
-async function main() {
-  const [phone, password, state = 'unpaid'] = process.argv.slice(2)
+/**
+ * One phone per state, so `all` produces a complete, predictable set to test
+ * against — the same numbers every time, so a bookmark or a saved login keeps
+ * working across resets.
+ */
+const ALL_STATES_PHONES = {
+  '+37491000001': 'unpaid',
+  '+37491000002': 'due-soon',
+  '+37491000003': 'overdue',
+  '+37491000004': 'paid',
+  '+37491000005': 'off-unpaid',
+  '+37491000006': 'off-other',
+}
 
-  if (!phone || !password) {
-    console.error("Usage: node scripts/create-test-driver.js <+374XXXXXXXX> '<password>' [state]")
-    console.error(`States: ${Object.keys(STATE_COVERAGE_DAYS).join(', ')}`)
-    process.exit(1)
-  }
-  if (!PHONE_PATTERN.test(phone)) {
-    console.error(`Phone must look like +37491000001 (got "${phone}")`)
-    process.exit(1)
-  }
-  if (password.length < PASSWORD_MIN_LENGTH || password.length > PASSWORD_MAX_LENGTH) {
-    console.error(`Password must be ${PASSWORD_MIN_LENGTH}-${PASSWORD_MAX_LENGTH} characters`)
-    process.exit(1)
-  }
-  if (!(state in STATE_COVERAGE_DAYS)) {
-    console.error(`Unknown state "${state}". Use one of: ${Object.keys(STATE_COVERAGE_DAYS).join(', ')}`)
-    process.exit(1)
-  }
-
-  assertNotProduction()
-
-  const prisma = new PrismaClient()
+/**
+ * Creates or RESETS one driver into the given state.
+ *
+ * Reset, not top-up: `applyState` replaces this driver's payment rows rather
+ * than adding to them, and the credentials block below rewrites `isActive` and
+ * `deactivationReason` too. So re-running this is how a local database goes
+ * back to a known state — no database wipe, and nothing else in it is touched.
+ */
+async function applyDriver(prisma, phone, password, state) {
   const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS)
-
   const existing = await prisma.towTruck.findUnique({ where: { phone } })
 
   // mustChangePassword: false on purpose — true would send the dashboard
@@ -190,12 +192,59 @@ async function main() {
 
   const coveredUntil = await applyState(prisma, towTruck.id, state)
 
-  console.log(`Database: ${databaseLabel()}`)
-  console.log(`${existing ? 'Updated' : 'Created'} test driver #${towTruck.id} (${towTruck.slug}) — state: ${state}`)
-  console.log(coveredUntil ? `Covered until: ${coveredUntil.toISOString()}` : 'No payments — never billed')
-  if (deactivationReason) console.log(`Deactivated — reason: ${deactivationReason}`)
-  console.log(`Log in at http://localhost:3002/login — phone ${phone}, password "${password}"`)
-  await prisma.$disconnect()
+  const covered = coveredUntil ? `until ${coveredUntil.toISOString().slice(0, 10)}` : 'never billed'
+  console.log(
+    `  ${phone}  #${String(towTruck.id).padEnd(4)} ${state.padEnd(11)} ${covered}` +
+      `${deactivationReason ? `  · deactivated (${deactivationReason})` : ''}`,
+  )
+}
+
+function usage() {
+  console.error("Usage: node scripts/create-test-driver.js <+374XXXXXXXX|all> '<password>' [state]")
+  console.error(`States: ${Object.keys(STATE_COVERAGE_DAYS).join(', ')}`)
+  console.error("`all` resets one driver per state — see ALL_STATES_PHONES.")
+}
+
+async function main() {
+  const [phone, password, state = 'unpaid'] = process.argv.slice(2)
+
+  if (!phone || !password) {
+    usage()
+    process.exit(1)
+  }
+  if (password.length < PASSWORD_MIN_LENGTH || password.length > PASSWORD_MAX_LENGTH) {
+    console.error(`Password must be ${PASSWORD_MIN_LENGTH}-${PASSWORD_MAX_LENGTH} characters`)
+    process.exit(1)
+  }
+
+  const everyState = phone === 'all'
+  if (!everyState && !PHONE_PATTERN.test(phone)) {
+    console.error(`Phone must look like +37491000001, or "all" (got "${phone}")`)
+    process.exit(1)
+  }
+  if (!everyState && !(state in STATE_COVERAGE_DAYS)) {
+    console.error(`Unknown state "${state}". Use one of: ${Object.keys(STATE_COVERAGE_DAYS).join(', ')}`)
+    process.exit(1)
+  }
+
+  assertNotProduction()
+
+  const prisma = new PrismaClient()
+  try {
+    console.log(`Database: ${databaseLabel()}\n`)
+
+    if (everyState) {
+      for (const [statePhone, stateName] of Object.entries(ALL_STATES_PHONES)) {
+        await applyDriver(prisma, statePhone, password, stateName)
+      }
+    } else {
+      await applyDriver(prisma, phone, password, state)
+    }
+
+    console.log(`\nLog in at http://localhost:3002/login — password "${password}"`)
+  } finally {
+    await prisma.$disconnect()
+  }
 }
 
 main().catch((error) => {

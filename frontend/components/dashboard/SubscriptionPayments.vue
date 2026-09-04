@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { mySubscriptionsRepository } from '~/repositories'
-import type { SubscriptionPayment, SubscriptionPlan, SubscriptionPlanCode } from '~/types/subscription'
+import { computed, ref } from 'vue'
+import type {
+  MySubscriptionStatus,
+  SubscriptionPayment,
+  SubscriptionPlan,
+  SubscriptionPlanCode,
+} from '~/types/subscription'
 import { extractErrorMessage } from '~/utils/errors'
 import { formatDateLong } from '~/utils/formatters'
 import { formatPrice } from '~/utils/formatPrice'
@@ -18,6 +24,34 @@ import { submitPaymentForm } from '~/utils/submitPaymentForm'
  * payment went through when nothing was charged is the one thing this screen
  * must not do.
  */
+
+/**
+ * The driver's current subscription state, from `GET
+ * /my/subscription-payments/status`. The parent already holds it (it decides
+ * the whole dashboard's gate from the same object), so it is passed down
+ * rather than fetched a second time here.
+ *
+ * Optional, and its absence means "do not block": the backend refuses a
+ * duplicate payment on its own (`createPayment` answers 409), so the worst a
+ * missing prop can produce is a clear error instead of a disabled button —
+ * whereas defaulting to blocked would hide the pay button from someone who
+ * needs it, over a prop nobody passed.
+ */
+const props = defineProps<{
+  status?: MySubscriptionStatus['status']
+  paidUntil?: string
+}>()
+
+/**
+ * Covered, with more than the warning window left — the one state in which
+ * paying again is a mistake rather than a renewal.
+ *
+ * Keyed on the backend's own `status` rather than on a date compared here, for
+ * the same reason the dashboard's lock is: `createPayment` decides this
+ * server-side, and a second copy of the rule in the browser is how the button
+ * and the API end up disagreeing.
+ */
+const alreadyCovered = computed(() => props.status === 'paid')
 
 const plans = ref<SubscriptionPlan[]>([])
 const payments = ref<SubscriptionPayment[]>([])
@@ -80,7 +114,7 @@ const REDIRECT_FAILED_MESSAGE =
   'Վճարման էջը բացել չհաջողվեց։ Փորձեք կրկին, իսկ եթե խնդիրը կրկնվի՝ զանգահարեք մեզ։'
 
 async function pay(plan: SubscriptionPlan): Promise<void> {
-  if (submittingPlan.value) return
+  if (submittingPlan.value || alreadyCovered.value) return
   submittingPlan.value = plan.id
   submitError.value = ''
   lastCreated.value = null
@@ -132,6 +166,15 @@ async function pay(plan: SubscriptionPlan): Promise<void> {
     <p v-else-if="loadError" class="subscription-payments__error">{{ loadError }}</p>
 
     <template v-else>
+      <!-- Said once, above the cards, rather than repeated on every disabled
+           button: a driver who cannot pay needs to know WHY and until when,
+           and a greyed-out button on its own reads as a broken page. -->
+      <p v-if="alreadyCovered" class="subscription-payments__covered">
+        Ձեր բաժանորդագրությունն ակտիվ է<template v-if="paidUntil">
+          մինչև <strong>{{ formatDateLong(paidUntil) }}</strong></template>։
+        Նոր վճարում կարող եք կատարել ժամկետի ավարտին մոտ։
+      </p>
+
       <ul class="subscription-payments__plans">
         <li v-for="plan in plans" :key="plan.id" class="subscription-payments__plan">
           <div class="subscription-payments__plan-head">
@@ -144,7 +187,7 @@ async function pay(plan: SubscriptionPlan): Promise<void> {
           </ul>
           <AppButton
             block
-            :disabled="submittingPlan !== null"
+            :disabled="submittingPlan !== null || alreadyCovered"
             @click="pay(plan)"
           >
             {{ submittingPlan === plan.id ? 'Ուղարկվում է…' : 'Վճարել' }}
@@ -316,6 +359,20 @@ async function pay(plan: SubscriptionPlan): Promise<void> {
     dd {
       margin: 0;
       font-size: 0.92rem;
+    }
+  }
+
+  &__covered {
+    margin: 0;
+    padding: var(--space-3);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    font-size: 0.9rem;
+    color: var(--color-text-secondary);
+
+    strong {
+      color: var(--color-text);
     }
   }
 

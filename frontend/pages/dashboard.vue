@@ -1041,7 +1041,11 @@ async function logout(): Promise<void> {
            (an expiry cannot lock anyone in that state). The phone number above
            is the whole answer for them — a plan card whose Վճարել leads
            nowhere would only send them somewhere that refuses. -->
-      <SubscriptionPayments v-if="subscription.paymentsEnabled" />
+      <SubscriptionPayments
+        v-if="subscription.paymentsEnabled"
+        :status="subscription.status"
+        :paid-until="subscription.paidUntil"
+      />
     </section>
 
     <template v-else-if="truck">
@@ -1103,7 +1107,10 @@ async function logout(): Promise<void> {
           <p class="dashboard-hint">
             Ընտրեք ձեզ հարմար փաթեթը։ Գինը և ժամկետը որոշվում են համակարգի կողմից։
           </p>
-          <SubscriptionPayments />
+          <SubscriptionPayments
+            :status="subscription?.status"
+            :paid-until="subscription?.paidUntil"
+          />
         </div>
       </details>
 

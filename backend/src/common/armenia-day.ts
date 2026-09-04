@@ -66,13 +66,25 @@ const dateTimeFormatter = new Intl.DateTimeFormat('en-GB', {
 })
 
 /**
- * Instant → `"29.08.2026, 14:30"` (Armenia time) — plain numeric label for
- * backend-authored text (Telegram notices, logs) that has no SSR/hydration
- * concern and therefore no reason to hand-roll the Armenian month table
- * `frontend/utils/formatters.ts` keeps for the browser (see CLAUDE.md §
- * "Never ask the runtime to localise a string" — that rule is about the
- * frontend, where the server and the browser must agree; this runs only on
- * the backend).
+ * Instant → `"29.08.2026"` (Armenia time) — the date alone, for text where a
+ * time of day would be noise: a subscription runs out on a DAY, and telling a
+ * driver it ends at 14:30 invites them to wonder what happens at 14:31.
+ *
+ * Plain numeric, like `armeniaDateTimeLabel` below and for the same reason:
+ * backend-authored text has no SSR/hydration concern, so there is no reason to
+ * hand-roll the Armenian month table `frontend/utils/formatters.ts` keeps for
+ * the browser (see CLAUDE.md § "Never ask the runtime to localise a string" —
+ * that rule is about the frontend, where server and browser must agree; this
+ * runs only on the backend).
+ */
+export function armeniaDateLabel(instant: Date): string {
+  const parts = dateTimeFormatter.formatToParts(instant)
+  const get = (type: string): string => parts.find((part) => part.type === type)?.value ?? ''
+  return `${get('day')}.${get('month')}.${get('year')}`
+}
+
+/**
+ * Instant → `"29.08.2026, 14:30"` (Armenia time).
  */
 export function armeniaDateTimeLabel(instant: Date): string {
   const parts = dateTimeFormatter.formatToParts(instant)

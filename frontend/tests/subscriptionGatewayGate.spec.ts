@@ -53,7 +53,11 @@ describe('dashboard payment gate', () => {
   })
 
   it('does not offer plan cards inside the lock gate without a gateway', () => {
-    expect(source()).toContain('<SubscriptionPayments v-if="subscription.paymentsEnabled" />')
+    // Matched across lines: the element carries props now, and the thing worth
+    // pinning is the condition on it, not its formatting.
+    const gate = source().match(/<SubscriptionPayments\b[^>]*\/>/s)
+    expect(gate).not.toBeNull()
+    expect(gate![0]).toContain('v-if="subscription.paymentsEnabled"')
   })
 })
 
@@ -85,5 +89,37 @@ describe('CSP form-action', () => {
     expect(match).not.toBeNull()
     const origin = new URL(match![1]).origin
     expect(readFileSync(NUXT_CONFIG, 'utf8')).toContain(`'${origin}'`)
+  })
+})
+
+/**
+ * Paying twice by accident — the button half of a rule the backend enforces
+ * with a 409 (`createPayment`). Pinned because the two must agree on WHEN:
+ * both key on the backend's `status`, so the block lifts by itself inside the
+ * warning window and a driver can always renew before lapsing.
+ */
+describe('paying while already covered', () => {
+  const COMPONENT = fileURLToPath(
+    new URL('../components/dashboard/SubscriptionPayments.vue', import.meta.url),
+  )
+
+  function component(): string {
+    return readFileSync(COMPONENT, 'utf8')
+  }
+
+  it("blocks on the backend's status, never on a date compared in the browser", () => {
+    expect(component()).toContain("const alreadyCovered = computed(() => props.status === 'paid')")
+  })
+
+  it('disables every plan button and refuses the click', () => {
+    // Both, not either: `disabled` is a rendering, and a component can still be
+    // driven from outside it.
+    expect(component()).toContain(':disabled="submittingPlan !== null || alreadyCovered"')
+    expect(component()).toContain('if (submittingPlan.value || alreadyCovered.value) return')
+  })
+
+  it('says why, rather than leaving a grey button to explain itself', () => {
+    expect(component()).toContain('v-if="alreadyCovered"')
+    expect(component()).toContain('Ձեր բաժանորդագրությունն ակտիվ է')
   })
 })

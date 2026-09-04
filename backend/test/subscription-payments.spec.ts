@@ -1,5 +1,5 @@
 import 'reflect-metadata'
-import { BadRequestException } from '@nestjs/common'
+import { BadRequestException, ConflictException } from '@nestjs/common'
 import { CONTROLLER_WATERMARK, GUARDS_METADATA, PATH_METADATA } from '@nestjs/common/constants'
 import type { ConfigService } from '@nestjs/config'
 import { plainToInstance } from 'class-transformer'
@@ -54,9 +54,21 @@ interface CreatedRow {
   data: SubscriptionPaymentCreateData
 }
 
-function fakeRepository(): { repository: SubscriptionsRepository; created: CreatedRow[] } {
+/**
+ * `paidUntil` is what `createPayment` now reads before it will create
+ * anything — null (never covered) is the state every existing test here means.
+ */
+function fakeRepository(paidUntil: Date | null = null): {
+  repository: SubscriptionsRepository
+  created: CreatedRow[]
+} {
   const created: CreatedRow[] = []
   const repository = {
+    findCoverage: vi.fn(async (ids: number[]) => {
+      const map = new Map()
+      for (const id of ids) map.set(id, { towTruckId: id, paidUntil, lastPaidAt: null, pendingCount: 0 })
+      return map
+    }),
     create: vi.fn(async (towTruckId: number, data: SubscriptionPaymentCreateData) => {
       created.push({ towTruckId, data })
       return {
@@ -72,6 +84,57 @@ function fakeRepository(): { repository: SubscriptionsRepository; created: Creat
   }
   return { repository: repository as unknown as SubscriptionsRepository, created }
 }
+
+const inDays = (days: number): Date => new Date(Date.now() + days * 24 * 60 * 60 * 1000)
+
+/**
+ * Paying twice by accident, and the narrow window where paying again is not an
+ * accident at all.
+ *
+ * The rule is keyed on the STATUS rather than on "has any coverage", so it
+ * lifts by itself in the last `PAYMENT_DUE_SOON_WITHIN_DAYS` days — the same
+ * window the dashboard already spends telling the driver to pay. Blocking on
+ * coverage alone would mean nobody could renew before running out: every
+ * driver would have to lapse, get locked out, and pay from behind the paywall,
+ * once a month, forever.
+ */
+describe('createPayment while already covered', () => {
+  it('refuses a driver with coverage to spare', async () => {
+    const { repository, created } = fakeRepository(inDays(20))
+    const attempt = buildService(repository).createPayment(7, 'ONE_MONTH')
+
+    await expect(attempt).rejects.toBeInstanceOf(ConflictException)
+    // Nothing was written: a refused request must not leave a PENDING row
+    // behind for an admin to wonder about.
+    expect(created).toHaveLength(0)
+  })
+
+  it('names the date the driver is covered until', async () => {
+    // "You already paid" without saying until when sends someone to the phone.
+    const { repository } = fakeRepository(new Date('2026-11-04T10:00:00.000Z'))
+    await expect(buildService(repository).createPayment(7, 'ONE_MONTH')).rejects.toThrow(/04\.11\.2026/)
+  })
+
+  it('lets a driver inside the warning window renew', async () => {
+    // The whole point of keying on status: renewal has to be possible BEFORE
+    // the lapse, or the paywall becomes a monthly outage for paying customers.
+    const { repository, created } = fakeRepository(inDays(3))
+    await buildService(repository).createPayment(7, 'ONE_MONTH')
+    expect(created).toHaveLength(1)
+  })
+
+  it('lets a lapsed driver pay', async () => {
+    const { repository, created } = fakeRepository(inDays(-10))
+    await buildService(repository).createPayment(7, 'ONE_MONTH')
+    expect(created).toHaveLength(1)
+  })
+
+  it('lets a driver who has never been billed pay', async () => {
+    const { repository, created } = fakeRepository(null)
+    await buildService(repository).createPayment(7, 'FOUR_MONTHS')
+    expect(created).toHaveLength(1)
+  })
+})
 
 function driverRequest(towTruckId: number): AuthenticatedDriverRequest {
   return { towTruckId } as AuthenticatedDriverRequest

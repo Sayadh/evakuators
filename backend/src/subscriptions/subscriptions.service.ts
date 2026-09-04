@@ -1,5 +1,6 @@
-import { BadRequestException, Inject, Injectable, Logger, forwardRef } from '@nestjs/common'
+import { BadRequestException, ConflictException, Inject, Injectable, Logger, forwardRef } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
+import { armeniaDateLabel } from '../common/armenia-day'
 import type { AppConfig } from '../config/configuration'
 import { UNKNOWN_PLAN_MESSAGE } from './dto/create-subscription-payment.dto'
 import { renewalPeriod, subscriptionPeriod } from './subscription-period'
@@ -7,7 +8,7 @@ import { isInSubscriptionRollout, parseSubscriptionRollout } from './subscriptio
 import type { SubscriptionRollout } from './subscription-rollout'
 import { findSubscriptionPlan, SUBSCRIPTION_PLANS } from './subscription-plans'
 import { toSubscriptionPaymentApi, toSubscriptionPlanApi } from './subscription.mapper'
-import { derivePaymentStatus, isLockedOut } from './subscription-status'
+import { derivePaymentStatus, isLockedOut, PAYMENT_DUE_SOON_WITHIN_DAYS } from './subscription-status'
 import type {
   CreatedSubscriptionPaymentApi,
   MySubscriptionStatusApi,
@@ -28,6 +29,37 @@ const DAY_MS = 24 * 60 * 60 * 1000
 function daysUntil(until: Date | null): number {
   if (until === null) return 0
   return Math.max(0, Math.floor((until.getTime() - Date.now()) / DAY_MS))
+}
+
+/**
+ * Refuses a driver who is comfortably covered — the guard against paying
+ * twice by accident, on the button and here.
+ *
+ * ## Why `'paid'` and not "any coverage at all"
+ *
+ * The refusal is keyed on the STATUS, so it lifts by itself inside the
+ * `due-soon` window (`PAYMENT_DUE_SOON_WITHIN_DAYS`, 5 days). That window is
+ * already the one where the dashboard tells a driver to pay, so the rule reads
+ * as one sentence: you can pay exactly when we are asking you to.
+ *
+ * Blocking on `paidUntil > now` instead would mean nobody could ever renew
+ * BEFORE running out — every driver would have to lapse, get locked out, and
+ * pay from behind the paywall, once a month, forever. Guarding against a
+ * double payment is not worth manufacturing a monthly outage for everyone.
+ *
+ * ## Creation only, never confirmation
+ *
+ * This refuses to START a payment. It must never refuse to CREDIT one: by the
+ * time a confirmation arrives the money has moved, and the only honest thing
+ * to do with a real payment is extend the driver's coverage (`renewalPeriod`).
+ * Refusing there would take someone's money and give them nothing.
+ */
+function alreadyCoveredMessage(paidUntil: Date | null): string {
+  const until = paidUntil ? ` մինչև ${armeniaDateLabel(paidUntil)}` : ''
+  return (
+    `Ձեր բաժանորդագրությունն արդեն ակտիվ է${until}։ ` +
+    `Նոր վճարում կարող եք կատարել ժամկետի ավարտից ${PAYMENT_DUE_SOON_WITHIN_DAYS} օր առաջ`
+  )
 }
 
 @Injectable()
@@ -181,6 +213,12 @@ export class SubscriptionsService {
     // rejected anything else. This exists so the service is still safe when
     // called from somewhere that isn't that controller.
     if (!plan) throw new BadRequestException(UNKNOWN_PLAN_MESSAGE)
+
+    const coverage = await this.subscriptionsRepository.findCoverage([towTruckId])
+    const paidUntil = coverage.get(towTruckId)?.paidUntil ?? null
+    if (derivePaymentStatus(paidUntil) === 'paid') {
+      throw new ConflictException(alreadyCoveredMessage(paidUntil))
+    }
 
     const period = subscriptionPeriod(new Date(), plan.durationMonths)
     const payment = await this.subscriptionsRepository.create(towTruckId, {

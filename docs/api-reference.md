@@ -56,7 +56,7 @@ from the server itself (Nuxt SSR over loopback) skip throttling entirely — see
 | `GET` | `/my/subscription-plans` | `{ items: SubscriptionPlanApi[] }` — the two plans on sale, straight from the constants in `backend/src/subscriptions/subscription-plans.ts` (no table, see § "Subscription payments"). `id` **is** the plan's code (`ONE_MONTH` / `FOUR_MONTHS`) |
 | `GET` | `/my/subscription-payments/status` | `{ status, paidUntil?, daysLeft, locked, paymentsEnabled, isActive, deactivationReason? }` — what the dashboard decides its gate from. `paymentsEnabled: false` (no Idram credentials) hides the whole driver-facing side and forces `locked: false` Read on every load, never cached in the session: a session lasts 30 days and a subscription does not |
 | `GET` | `/my/subscription-payments` | Own payment requests, newest first, capped at 50 |
-| `POST` | `/my/subscription-payments` | Body is `{ planId }` and **nothing else** — see § "Subscription payments". 10/60s. Answers the created record: amount, currency, months, `periodStart`/`periodEnd`, `status`, and the `towTruckId` the server derived |
+| `POST` | `/my/subscription-payments` | Body is `{ planId }` and **nothing else** — see § "Subscription payments". 10/60s. Answers the created record: amount, currency, months, `periodStart`/`periodEnd`, `status`, and the `towTruckId` the server derived. **409** while the driver is comfortably covered (`status === 'paid'`) — see § "Paying twice" |
 
 ### `?vehicleType=` on `GET /tow-trucks`
 
@@ -243,6 +243,25 @@ locking them out over a bill they have no way to settle is the one failure this
 feature could not survive. Setting both variables switches it on with a
 restart, not a redeploy — see `docs/deployment.md` § "Turning Idram payments
 on".
+
+### Paying twice
+
+`POST /my/subscription-payments` answers **409** when the driver's status is
+`paid`, and the dashboard disables its plan buttons on the same value.
+
+Keyed on the status rather than on "has any coverage", which means the block
+lifts by itself in the last `PAYMENT_DUE_SOON_WITHIN_DAYS` (5) days — exactly
+the window the dashboard already spends telling the driver to pay. The rule
+reads as one sentence: **you can pay when we are asking you to.** Blocking on
+`paidUntil > now` instead would mean nobody could renew before running out —
+every driver lapsing, getting locked out, and paying from behind the paywall
+once a month, forever. That is a worse failure than the one being prevented.
+
+**Creation only, never confirmation.** This refuses to START a payment. A
+confirmation that arrives for an already-covered driver is still credited
+(`renewalPeriod` extends from `paidUntil`, so no days are lost): by then the
+money has moved, and refusing would take it and give nothing back. The same
+applies to an admin grant, which is a correction and deliberately unrestricted.
 
 ### Paying through Idram
 

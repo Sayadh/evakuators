@@ -177,15 +177,20 @@ export class SubscriptionsService {
     const payment = await this.subscriptionsRepository.findById(paymentId)
     if (!payment) return null
 
-    const coverage = await this.subscriptionsRepository.findCoverage([payment.towTruckId])
-    const period = renewalPeriod(
-      coverage.get(payment.towTruckId)?.paidUntil ?? null,
-      new Date(),
+    // The coverage read, the date arithmetic and the write all happen inside
+    // one transaction, serialised per driver — see the comment on
+    // `confirm()`. Doing them here, as three round trips, let two
+    // confirmations for one driver both read the same `paidUntil` and both
+    // grant the same period: two payments, one month of coverage.
+    const confirmed = await this.subscriptionsRepository.confirm(
+      paymentId,
+      payment.towTruckId,
       payment.durationMonths,
+      renewalPeriod,
+      source,
     )
-
-    const confirmed = await this.subscriptionsRepository.confirm(paymentId, period, source)
     if (!confirmed) return null
+    const period = { start: confirmed.periodStart, end: confirmed.periodEnd }
 
     this.logger.warn(
       `Subscription payment #${paymentId} confirmed for TowTruck #${payment.towTruckId}: ` +

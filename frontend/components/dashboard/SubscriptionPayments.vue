@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { mySubscriptionsRepository } from '~/repositories'
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type {
   MySubscriptionStatus,
   SubscriptionPayment,
@@ -15,14 +15,17 @@ import { submitPaymentForm } from '~/utils/submitPaymentForm'
 /**
  * The driver's own billing section.
  *
- * ## What this step does and does not do
+ * ## What pressing «Վճարել» does
  *
- * Pressing «Վճարել» records the driver's INTENT to buy a plan and nothing
- * else: no money moves, and the payment comes back PENDING. There is no
- * payment provider wired up yet — that is the next step, and it is why the
- * copy below says «գրանցվեց» rather than «վճարվեց». Promising a driver their
- * payment went through when nothing was charged is the one thing this screen
- * must not do.
+ * It records the driver's INTENT — a PENDING row — and only then hands them to
+ * Idram. Nothing is charged here, and nothing on this screen may say otherwise:
+ * the row becomes PAID when the provider's callback reaches the backend
+ * (`IdramService`), or when an admin records money received another way.
+ *
+ * The «գրանցվեց» copy below is the no-gateway path, still reachable when this
+ * deployment has no Idram credentials — the request is kept for an admin to
+ * confirm by hand. Telling a driver their payment went through when nothing
+ * was charged is the one thing this screen must not do.
  */
 
 /**
@@ -123,6 +126,37 @@ const REDIRECT_TIMEOUT_MS = 8000
 const REDIRECT_FAILED_MESSAGE =
   'Վճարման էջը բացել չհաջողվեց։ Փորձեք կրկին, իսկ եթե խնդիրը կրկնվի՝ զանգահարեք մեզ։'
 
+/**
+ * The pending redirect timer, cleared whenever this page stops being the one
+ * the driver is looking at.
+ *
+ * A cross-origin navigation is commonly restored from the back/forward cache
+ * rather than reloaded: press «Վճարել», reach Idram, press Back, and the page
+ * returns exactly as it left — `submittingPlan` still set, every button
+ * disabled and reading «Ուղարկվում է…» — with the paused timer resuming to
+ * announce a failure to someone whose handoff worked. `pagehide` is what fires
+ * on the way out in that case; `beforeunload` does not, and would suppress the
+ * bfcache if it did.
+ */
+let redirectTimer: number | undefined
+
+function cancelRedirectTimer(): void {
+  if (redirectTimer !== undefined) {
+    window.clearTimeout(redirectTimer)
+    redirectTimer = undefined
+  }
+  submittingPlan.value = null
+}
+
+onMounted(() => {
+  window.addEventListener('pagehide', cancelRedirectTimer)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('pagehide', cancelRedirectTimer)
+  if (redirectTimer !== undefined) window.clearTimeout(redirectTimer)
+})
+
 async function pay(plan: SubscriptionPlan): Promise<void> {
   if (submittingPlan.value || alreadyCovered.value) return
   submittingPlan.value = plan.id
@@ -151,7 +185,7 @@ async function pay(plan: SubscriptionPlan): Promise<void> {
       // «Ուղարկվում է…» for as long as the driver was willing to wait. This
       // page is normally gone before the timer fires; when it is still here,
       // that is the bug, and saying so beats a spinner that never ends.
-      window.setTimeout(() => {
+      redirectTimer = window.setTimeout(() => {
         submittingPlan.value = null
         submitError.value = REDIRECT_FAILED_MESSAGE
       }, REDIRECT_TIMEOUT_MS)

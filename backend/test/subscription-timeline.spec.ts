@@ -82,9 +82,24 @@ function timelineRepository(): { repository: SubscriptionsRepository; rows: Row[
       return map
     },
 
-    confirm: async (id: number, period: { start: Date; end: Date }) => {
-      const row = rows.find((candidate) => candidate.id === id && candidate.status === 'PENDING')
+    // Mirrors the real `confirm`: the coverage read and the date arithmetic
+    // happen HERE, atomically with the write, rather than in the service —
+    // see the comment on SubscriptionsRepository.confirm.
+    confirm: async (
+      id: number,
+      towTruckId: number,
+      durationMonths: number,
+      computePeriod: (paidUntil: Date | null, now: Date, months: number) => { start: Date; end: Date },
+    ) => {
+      const row = rows.find((candidate) => candidate.id === id && candidate.status !== 'PAID')
       if (!row) return null
+
+      const paid = rows.filter((other) => other.towTruckId === towTruckId && other.status === 'PAID')
+      const paidUntil = paid.length
+        ? new Date(Math.max(...paid.map((other) => other.periodEnd.getTime())))
+        : null
+      const period = computePeriod(paidUntil, new Date(), durationMonths)
+
       row.status = 'PAID'
       row.periodStart = period.start
       row.periodEnd = period.end

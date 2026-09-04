@@ -268,6 +268,50 @@ response body, so throwing here would make it retry a payment already recorded.
 Because it lives in `confirmPayment`, this covers the admin's manual "mark
 paid" as well as Idram's callback.
 
+### A confirmation is never refused for a bill that has left PENDING
+
+Idram reads the response BODY and retries anything it did not hear `OK` from.
+So a refusal the retry cannot clear is not a refusal — it is a payment that
+never lands, plus an email loop for the merchant, while the driver is out the
+money. Nothing moves a row back to PENDING, so any status-based refusal on the
+confirmation was permanent.
+
+Both routes into it are ordinary: an admin working `/admin/payments` while a
+driver is on Idram's page, and either cancelling the request or confirming it
+by hand. Now:
+
+| Bill status when the confirmation arrives | Answer |
+| --- | --- |
+| `PENDING` | credited normally |
+| `PAID` | `OK`, coverage untouched, and the transaction id stamped if the column is still null |
+| `CANCELLED` / `FAILED` | credited anyway, logged at `error` |
+
+Stamping the id on an already-PAID row is what makes accepting it safe rather
+than merely quiet: it lets the payment be reconciled against Idram's statement,
+stops the same transaction being credited again by an admin grant, and arms the
+replay check so the next retry short-circuits.
+
+The **preliminary** request still refuses anything but `PENDING` — there is
+nothing to accept on an order that is finished or called off, and answering YES
+would invite a charge against it.
+
+### Confirming is serialised per driver
+
+The period a confirmation grants starts from the driver's existing coverage
+(`renewalPeriod`), so confirming is a read of `MAX(periodEnd)`, a calculation,
+and a write. As three round trips, two confirmations for the SAME driver
+interleave: both read `paidUntil = X`, both compute `X + duration`, both write
+it — two payments, one month of coverage, because coverage is `MAX(periodEnd)`.
+Two Idram callbacks, or a callback meeting an admin's manual confirmation, are
+enough; a single Node process is enough.
+
+`SubscriptionsRepository.confirm` now does the read, the arithmetic and the
+write inside one transaction, behind `pg_advisory_xact_lock` on the tow-truck
+id — the actual unit of contention, released when the transaction ends however
+it ends, and never making two different drivers wait on each other. The date
+arithmetic is passed in rather than reimplemented in SQL, so it stays in
+`subscription-period.ts` where the clamping and leap-year cases are tested.
+
 ### Paying twice
 
 `POST /my/subscription-payments` answers **409** when the driver's status is

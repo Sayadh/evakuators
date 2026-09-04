@@ -114,8 +114,18 @@ export class IdramService {
    * never takes the money.
    */
   private async handlePrecheck(callback: IdramPrecheck): Promise<boolean> {
-    const payment = await this.findPendingPayment(callback.billNo)
+    const payment = await this.findBilledPayment(callback.billNo)
     if (!payment) return false
+
+    // Nothing to accept on an order that is already finished or was called
+    // off: the driver is not on their way to pay it, and answering YES would
+    // invite a charge against a bill that can no longer be the reason for one.
+    if (payment.status !== SubscriptionPaymentStatus.PENDING) {
+      this.logger.warn(
+        `Idram precheck refused: payment #${payment.id} is ${payment.status}, not PENDING`,
+      )
+      return false
+    }
 
     if (!idramAmountMatches(callback.amount, payment.amount)) {
       this.logger.warn(
@@ -169,8 +179,43 @@ export class IdramService {
       return true
     }
 
-    const payment = await this.findPendingPayment(callback.billNo)
+    const payment = await this.findBilledPayment(callback.billNo)
     if (!payment) return false
+
+    if (payment.status === SubscriptionPaymentStatus.PAID) {
+      // Already credited — by an admin confirming the queue by hand while the
+      // driver was paying, or by our own earlier commit whose response never
+      // reached Idram. Coverage is right either way, so the answer is OK:
+      // refusing would start a retry-and-email loop over a payment that
+      // worked, and nothing could ever end it.
+      //
+      // Stamping the transaction id (only where the column is still null) is
+      // what makes that safe rather than merely quiet: it lets the payment be
+      // reconciled against Idram's statement, stops the same transaction being
+      // credited again by an admin grant, and arms the replay check above so
+      // the next retry short-circuits before reaching here.
+      const recorded = await this.subscriptionsRepository.recordProviderTransaction(payment.id, {
+        provider: IDRAM_PROVIDER,
+        transactionId: callback.transId,
+      })
+      this.logger.warn(
+        `Idram confirmation for payment #${payment.id} arrived after it was already PAID — ` +
+          `${recorded ? 'recorded' : 'kept the existing'} transaction (${callback.transId}). ` +
+          `Check it against Idram's statement.`,
+      )
+      return true
+    }
+
+    if (payment.status !== SubscriptionPaymentStatus.PENDING) {
+      // CANCELLED or FAILED, and the money moved regardless. Credited below
+      // anyway — a driver must never be charged for nothing — but logged at
+      // error, because a person decided this order was dead and a payment has
+      // just overruled them.
+      this.logger.error(
+        `Idram confirmation for payment #${payment.id} arrived while it was ${payment.status} — ` +
+          `crediting it anyway (trans ${callback.transId}, payer ${callback.payerAccount})`,
+      )
+    }
 
     if (!idramAmountMatches(callback.amount, payment.amount)) {
       // Should be unreachable: the preliminary request already refused a
@@ -208,14 +253,26 @@ export class IdramService {
   }
 
   /**
-   * The PENDING payment this bill number refers to, or `null` with the reason
-   * logged.
+   * The payment this bill number refers to, whatever status it is in, or
+   * `null` with the reason logged.
    *
-   * PENDING and no other status: a cancelled order must not become paid
-   * because a callback arrived late, and an already-paid one is handled by the
-   * transaction-id check above, not here.
+   * ## Why not "PENDING only"
+   *
+   * Because the money has already moved by the time a confirmation arrives,
+   * and every status other than PAID still means "this driver paid and has
+   * nothing to show for it".
+   *
+   * The case that made this concrete: an admin sees the request in the queue
+   * while the driver is on Idram's page, and either cancels it or confirms it
+   * by hand. With a PENDING-only lookup the real confirmation is then refused
+   * — forever, since nothing can move the row back — so Idram retries and
+   * emails the merchant indefinitely while the driver is out the money.
+   * CANCELLED is a bookkeeping act; a completed payment overrides it.
+   *
+   * PAID is genuinely finished and is handled before this is reached (see
+   * `handleConfirmation`), not here.
    */
-  private async findPendingPayment(billNo: string): Promise<SubscriptionPayment | null> {
+  private async findBilledPayment(billNo: string): Promise<SubscriptionPayment | null> {
     const id = parseIdramBillNo(billNo)
     if (id === null) {
       this.logger.warn(`Idram callback refused: EDP_BILL_NO "${billNo}" is not a bill number`)
@@ -225,10 +282,6 @@ export class IdramService {
     const payment = await this.subscriptionsRepository.findById(id)
     if (!payment) {
       this.logger.warn(`Idram callback refused: no payment #${id}`)
-      return null
-    }
-    if (payment.status !== SubscriptionPaymentStatus.PENDING) {
-      this.logger.warn(`Idram callback refused: payment #${id} is ${payment.status}, not PENDING`)
       return null
     }
     return payment

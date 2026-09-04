@@ -62,7 +62,15 @@ export interface MySubscriptionStatus {
   paidUntil?: string
   /** Whole days until `paidUntil`, floored, never negative */
   daysLeft: number
-  /** True when the dashboard must show nothing but the payment block. Always false while `paymentsEnabled` is false. */
+  /**
+   * True when the dashboard must show nothing but the payment block.
+   *
+   * Two independent reasons, and only one of them is billing: an expired
+   * subscription (suppressed entirely while `paymentsEnabled` is false — there
+   * is no paywall without a way to pay) and DEACTIVATION, which is an admin's
+   * decision and locks regardless. So this is NOT always false when
+   * `paymentsEnabled` is false.
+   */
   locked: boolean
   /**
    * Whether this deployment can take payments at all — false when the backend

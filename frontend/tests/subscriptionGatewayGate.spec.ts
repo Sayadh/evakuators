@@ -52,12 +52,15 @@ describe('dashboard payment gate', () => {
     )
   })
 
-  it('does not offer plan cards inside the lock gate without a gateway', () => {
-    // Matched across lines: the element carries props now, and the thing worth
-    // pinning is the condition on it, not its formatting.
+  it('offers plan cards in the lock gate only when they could work', () => {
+    // Two ways a card there could only refuse, and both must be excluded: no
+    // gateway configured, and a driver who is still covered (deactivated for
+    // something a payment does not answer — `createPayment` answers 409, so
+    // the button would be disabled under a heading promising restoration).
     const gate = source().match(/<SubscriptionPayments\b[^>]*\/>/s)
     expect(gate).not.toBeNull()
-    expect(gate![0]).toContain('v-if="subscription.paymentsEnabled"')
+    expect(gate![0]).toContain('subscription.paymentsEnabled')
+    expect(gate![0]).toContain("subscription.status !== 'paid'")
   })
 })
 
@@ -162,5 +165,22 @@ describe('the lock gate outranks the load error', () => {
     expect(gate).toBeGreaterThan(-1)
     expect(error).toBeGreaterThan(-1)
     expect(gate).toBeLessThan(error)
+  })
+})
+
+
+/**
+ * `getMine()` is refused with 403 for a deactivated driver by design, so the
+ * profile read is EXPECTED to reject for exactly the driver the lock gate
+ * exists for. `Promise.all` would reject on it without waiting for the status
+ * read, leaving `subscription` null while `loading` goes false — the gate
+ * could not render and the error branch would win, undoing the branch ordering
+ * pinned above one line earlier.
+ */
+describe('the dashboard load waits for the subscription status', () => {
+  it('settles both reads instead of short-circuiting on the profile', () => {
+    const text = readFileSync(fileURLToPath(new URL('../pages/dashboard.vue', import.meta.url)), 'utf8')
+    expect(text).toContain('await Promise.allSettled([')
+    expect(text).not.toMatch(/await Promise\.all\(\[\s*myTowTruckRepository\.getMine/)
   })
 })

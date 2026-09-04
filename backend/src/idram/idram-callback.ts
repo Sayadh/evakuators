@@ -44,7 +44,14 @@ export type IdramCallback = IdramPrecheck | IdramConfirmation
 
 /** A present, non-empty string field, or `null` — form bodies arrive as strings or not at all */
 function field(body: IdramCallbackBody, name: string): string | null {
-  const value = body[name]
+  const raw = body[name]
+  // Express parses a repeated key (`a=1&a=2`) into an array. Taking the LAST
+  // value rather than giving up is deliberate: for a confirmation, refusing
+  // means money that has already moved is never credited, and since the retry
+  // carries the same duplicate it could never clear. Nothing is weakened —
+  // whatever is chosen still has to satisfy the checksum, which is computed
+  // over these exact strings.
+  const value = Array.isArray(raw) ? raw[raw.length - 1] : raw
   if (typeof value !== 'string') return null
   const trimmed = value.trim()
   return trimmed.length > 0 ? trimmed : null
@@ -90,10 +97,25 @@ export function parseIdramCallback(body: IdramCallbackBody): IdramCallback | nul
  * Strict on purpose: `Number("12abc")` is NaN but `parseInt("12abc")` is 12,
  * and a bill number we half-understood is a payment credited to the wrong row.
  */
+/**
+ * The upper bound is `SubscriptionPayment.id`'s column type, not JavaScript's.
+ *
+ * Prisma hands the value straight to Postgres, and an INT4 column raises
+ * "Unable to fit integer value ... into an INT4" for anything larger — an
+ * exception, from a public unauthenticated endpoint that documents itself as
+ * never throwing. `AllExceptionsFilter` would then answer JSON where Idram
+ * expects plain text, and write a full stack trace per request, which at
+ * 600/min is a free log amplifier for anyone who can reach the URL.
+ *
+ * A bill number that cannot be one of our ids is simply not one of our ids, so
+ * it is refused here rather than in the database.
+ */
+const MAX_INT4 = 2_147_483_647
+
 export function parseIdramBillNo(billNo: string): number | null {
   if (!/^\d+$/.test(billNo)) return null
   const id = Number(billNo)
-  return Number.isSafeInteger(id) && id > 0 ? id : null
+  return Number.isSafeInteger(id) && id > 0 && id <= MAX_INT4 ? id : null
 }
 
 /**

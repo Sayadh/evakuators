@@ -188,3 +188,35 @@ describe('parseIdramCallback', () => {
     expect(parseIdramCallback({})).toBeNull()
   })
 })
+
+/**
+ * Two ways a well-formed callback used to be refused permanently. Both matter
+ * because Idram retries what it did not hear "OK" from, so a refusal that the
+ * retry cannot clear is a payment that never lands and an email loop for the
+ * merchant.
+ */
+describe('callbacks that must not be refused forever', () => {
+  it('takes the last value when a field arrives twice', () => {
+    // Express turns a repeated key into an array. Giving up on it refused a
+    // confirmation whose retry carried the same duplicate — permanently.
+    // Whatever is chosen still has to satisfy the checksum.
+    const parsed = parseIdramCallback({
+      EDP_PRECHECK: 'YES',
+      EDP_BILL_NO: ['11', '11'] as unknown as string,
+      EDP_REC_ACCOUNT: '110009990',
+      EDP_AMOUNT: '3000.00',
+    })
+    expect(parsed).not.toBeNull()
+    expect(parsed?.billNo).toBe('11')
+  })
+
+  it('refuses a bill number too large for the id column instead of throwing', () => {
+    // SubscriptionPayment.id is INT4. Passing more than that to Prisma raises
+    // inside a public endpoint documented as never throwing, which turns into
+    // a JSON body Idram cannot read plus a stack trace per request.
+    expect(parseIdramBillNo('2147483647')).toBe(2147483647)
+    expect(parseIdramBillNo('2147483648')).toBeNull()
+    expect(parseIdramBillNo('3000000000')).toBeNull()
+    expect(parseIdramBillNo('99999999999999999999')).toBeNull()
+  })
+})

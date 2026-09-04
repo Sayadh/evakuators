@@ -64,7 +64,12 @@ function buildService(truck: TruckRow, conflict: TruckRow | null = null) {
       for (const id of ids) map.set(id, { towTruckId: id, paidUntil: null, lastPaidAt: null, pendingCount: 0 })
       return map
     },
-    confirm: async () => ({
+    confirm: async (
+      _id: number,
+      _towTruckId: number,
+      _durationMonths: number,
+      computePeriod: (paidUntil: Date | null, now: Date, months: number) => { start: Date; end: Date },
+    ) => ({
       id: 1,
       towTruckId: truck.id,
       planCode: 'ONE_MONTH',
@@ -72,8 +77,9 @@ function buildService(truck: TruckRow, conflict: TruckRow | null = null) {
       amount: 3000,
       currency: 'AMD',
       durationMonths: 1,
-      periodStart: new Date(),
-      periodEnd: new Date(),
+      ...computePeriod(null, new Date(), 1),
+      periodStart: computePeriod(null, new Date(), 1).start,
+      periodEnd: computePeriod(null, new Date(), 1).end,
       status: 'PAID',
       createdAt: new Date(),
       updatedAt: new Date(),

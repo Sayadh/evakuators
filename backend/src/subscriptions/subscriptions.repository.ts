@@ -12,6 +12,20 @@ import type { SubscriptionPeriod } from './subscription-period'
  */
 const OWN_PAYMENTS_LIMIT = 50
 
+/**
+ * Upper bound on the admin's pending queue, for the same reason
+ * `OWN_PAYMENTS_LIMIT` exists — except here the person deciding how large the
+ * response gets is not the person receiving it.
+ *
+ * Nothing dedups or expires a PENDING row: every abandoned «Վճարել» leaves one
+ * behind, and one driver may create 10 a minute (`@Throttle` on
+ * `MySubscriptionPaymentsController`). Unbounded, that is 14k rows a day from
+ * a single account, each joined to its driver — enough to make the queue page
+ * unusable for the admin who needs it most. Oldest first, so the cap drops the
+ * newest rather than hiding the requests that have waited longest.
+ */
+const PENDING_QUEUE_LIMIT = 200
+
 /** What one driver's confirmed payments add up to — see DriverPaymentCoverage in admin-payment.mapper.ts */
 export interface PaymentCoverageRow {
   towTruckId: number
@@ -116,6 +130,7 @@ export class SubscriptionsRepository {
       // Oldest first: a request that has been waiting longest is the one an
       // admin should decide on next.
       orderBy: { createdAt: 'asc' },
+      take: PENDING_QUEUE_LIMIT,
     })
   }
 
@@ -150,22 +165,96 @@ export class SubscriptionsRepository {
    * Guarded on the current status like `setStatus` above, so two admins
    * confirming the same request cannot both extend the driver's coverage.
    */
+  /**
+   * Confirms one payment, deriving its period inside the same transaction as
+   * the coverage it extends.
+   *
+   * ## Why the whole read-compute-write is in here
+   *
+   * The period starts from the driver's existing coverage
+   * (`renewalPeriod`), so confirming is a read of MAX(periodEnd), a
+   * calculation, and a write. Done as three separate round trips, two
+   * confirmations for the SAME DRIVER interleave at the `await` boundaries:
+   * both read `paidUntil = X`, both compute `X + duration`, both write it, and
+   * the driver has paid twice for one month — coverage is MAX(periodEnd), so
+   * the second payment buys nothing. Two Idram callbacks, or a callback
+   * meeting an admin's manual confirmation, are enough; a single Node process
+   * is enough. Nothing about the per-row status guard below prevents it,
+   * because the two writes are to different rows.
+   *
+   * `pg_advisory_xact_lock` on the tow-truck id serialises confirmations per
+   * DRIVER — the actual unit of contention — and is released when the
+   * transaction ends, however it ends. Different drivers never wait on each
+   * other.
+   *
+   * `computePeriod` is passed in rather than inlined so the date arithmetic
+   * stays in `subscription-period.ts`, where it is tested against clamping,
+   * leap years and month rollovers, instead of being reimplemented in SQL.
+   *
+   * ## `not: PAID`, not `= PENDING`
+   *
+   * A payment that has already been PAID is done, and the caller handles that
+   * separately. Anything else — including a row an admin CANCELLED while the
+   * driver was on the provider's page — must still be confirmable: the money
+   * moved, and refusing to record it would leave someone charged with nothing
+   * to show for it. The guard still makes this idempotent: two confirmations
+   * of the same row serialise on the row lock, and the loser re-evaluates the
+   * predicate against a row that is now PAID and matches nothing.
+   */
   async confirm(
     id: number,
-    period: SubscriptionPeriod,
+    towTruckId: number,
+    durationMonths: number,
+    computePeriod: (paidUntil: Date | null, now: Date, months: number) => SubscriptionPeriod,
     source?: { provider: string; transactionId: string },
   ): Promise<SubscriptionPayment | null> {
-    const { count } = await this.prisma.subscriptionPayment.updateMany({
-      where: { id, status: SubscriptionPaymentStatus.PENDING },
-      data: {
-        status: SubscriptionPaymentStatus.PAID,
-        periodStart: period.start,
-        periodEnd: period.end,
-        provider: source?.provider,
-        providerTransactionId: source?.transactionId,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${towTruckId}::bigint)`
+
+      const coverage = await tx.subscriptionPayment.aggregate({
+        where: { towTruckId, status: SubscriptionPaymentStatus.PAID },
+        _max: { periodEnd: true },
+      })
+      const period = computePeriod(coverage._max.periodEnd ?? null, new Date(), durationMonths)
+
+      const { count } = await tx.subscriptionPayment.updateMany({
+        where: { id, status: { not: SubscriptionPaymentStatus.PAID } },
+        data: {
+          status: SubscriptionPaymentStatus.PAID,
+          periodStart: period.start,
+          periodEnd: period.end,
+          provider: source?.provider,
+          providerTransactionId: source?.transactionId,
+        },
+      })
+      if (count === 0) return null
+      return tx.subscriptionPayment.findUnique({ where: { id } })
     })
-    return count === 0 ? null : this.findById(id)
+  }
+
+  /**
+   * Records which provider transaction paid a bill that is ALREADY PAID.
+   *
+   * For the case where an admin confirmed a request by hand while the driver
+   * was paying through the gateway: coverage is right, but the transaction id
+   * is missing, so the payment cannot be reconciled against the provider's
+   * statement — and nothing would stop the same transaction being credited
+   * again later. Writing it also arms the replay check
+   * (`findByProviderTransactionId`), which is what stops the provider retrying
+   * a callback we have in fact accepted.
+   *
+   * Conditional on the column still being null, so it can never overwrite a
+   * transaction id we already recorded.
+   */
+  async recordProviderTransaction(
+    id: number,
+    source: { provider: string; transactionId: string },
+  ): Promise<boolean> {
+    const { count } = await this.prisma.subscriptionPayment.updateMany({
+      where: { id, providerTransactionId: null },
+      data: { provider: source.provider, providerTransactionId: source.transactionId },
+    })
+    return count > 0
   }
 
   /**

@@ -538,7 +538,15 @@ async function loadSubscription(): Promise<void> {
     // this is the last thing standing between a driver and a locked dashboard,
     // and after it, it is the only place the consequence is spelled out. A
     // dismissal they made four days ago is not a reason to stop telling them.
-    paymentReminderOpen.value = paymentMoment.value !== null
+    //
+    // Never at the same time as the consent dialog, though. Both teleport to
+    // `body` at the same z-index, so the mandatory one covers this one
+    // completely — its «Հասկացա» unreachable — and closing the consent dialog
+    // then resets the shared `body.overflow` while this one is still open,
+    // leaving the page scrolling behind a fixed overlay. Consent is mandatory
+    // and comes first; this is shown on the next load, which for a driver in
+    // either payment state is minutes away.
+    paymentReminderOpen.value = paymentMoment.value !== null && !requiresConsent.value
   } catch {
     // Never surfaced, and deliberately fails OPEN: if this read breaks, the
     // dashboard behaves exactly as it did before any of this existed rather
@@ -551,11 +559,25 @@ async function load(): Promise<void> {
   loading.value = true
   loadError.value = ''
   try {
-    // Together: the gate below decides what renders, so the page must not
-    // paint the editable dashboard while the answer is still in flight.
-    const [profile] = await Promise.all([myTowTruckRepository.getMine(), loadSubscription()])
-    truck.value = profile
-    fillFormFromTruck(profile)
+    // `allSettled`, not `all`, and that is not a style choice.
+    //
+    // `getMine()` is refused with 403 for a DEACTIVATED driver by design
+    // (`MyTowTruckService.getMine`). `Promise.all` rejects the moment it does,
+    // WITHOUT waiting for the status read — so `loading` would go false with
+    // `subscription` still null, the gate below (which needs it) could not
+    // render, and the error branch would win. That is exactly the failure the
+    // branch ordering was changed to fix, reintroduced one line earlier.
+    //
+    // Both settle here, so by the time anything renders the gate has its
+    // answer. `loadSubscription` never rejects — it has its own catch — so
+    // only the profile's rejection is re-thrown.
+    const [profile] = await Promise.allSettled([
+      myTowTruckRepository.getMine(),
+      loadSubscription(),
+    ])
+    if (profile.status === 'rejected') throw profile.reason
+    truck.value = profile.value
+    fillFormFromTruck(profile.value)
   } catch (error) {
     loadError.value = extractErrorMessage(error, 'Պրոֆիլը բեռնել չհաջողվեց։ Կրկին մուտք գործեք։')
   } finally {
@@ -577,13 +599,15 @@ async function load(): Promise<void> {
  * read is the authority; the cached flag exists only so the first paint is
  * right.
  *
- * ## Why it starts from the cached flag rather than from `false`
+ * ## Why `false` here is not a flash of the dashboard
  *
- * Initialising to `false` would render the whole dashboard for the moment
- * between mount and the response — a driver who owes a consent would see, and
- * could start typing into, the profile they are not yet allowed to manage. The
- * cached value is usually correct, so starting there means the common case
- * never flashes and the rare stale case corrects itself a moment later.
+ * It starts `false` and is set from the cached flag when the page mounts (see
+ * `load()`), which is after the first render — so the initial value is what
+ * the server renders, and `false` would show the whole dashboard to a driver
+ * who owes a consent if anything else were ready. Nothing else is: `loading`
+ * is `true` until the profile arrives, and the consent gate is checked ahead
+ * of it in the branch chain below. That ordering is what makes the initial
+ * value harmless, so leave it as one.
  */
 const requiresConsent = ref(false)
 const consentSubmitting = ref(false)
@@ -1032,7 +1056,20 @@ async function logout(): Promise<void> {
     <section v-else-if="subscription?.locked" class="dashboard-payment-gate">
       <template v-if="paymentMoment === 'deactivated'">
         <h2>Ձեր էջն ապաակտիվացված է</h2>
-        <p>Վճարումը կատարելուց հետո էջը կվերականգնվի։</p>
+        <!-- Two different people arrive here. Someone whose subscription has
+             actually run out can pay their way back on, and is told so. But an
+             admin can deactivate a driver whose coverage is still running —
+             and telling THEM "pay and the page comes back" is a dead end:
+             `createPayment` answers 409 while they are covered, so the plan
+             cards below would be disabled with «Ձեր բաժանորդագրությունն ակտիվ
+             է» printed above them. Nothing they could do would help. For them
+             the phone number is the whole answer. -->
+        <p v-if="subscription.status === 'paid'">
+          Ձեր բաժանորդագրությունն ակտիվ է<template v-if="subscription.paidUntil">
+            մինչև <strong>{{ formatDateLong(subscription.paidUntil) }}</strong></template>,
+          սակայն էջը հանված է կայքից։ Խնդրում ենք կապ հաստատել մեզ հետ։
+        </p>
+        <p v-else>Վճարումը կատարելուց հետո էջը կվերականգնվի։</p>
       </template>
       <template v-else>
         <h2>Ձեր բաժանորդագրության ժամկետը սպառվել է</h2>
@@ -1045,12 +1082,12 @@ async function logout(): Promise<void> {
         Հարցերի դեպքում՝
         <a :href="getPhoneHref(CONTACT_PHONE)">{{ CONTACT_PHONE }}</a>
       </p>
-      <!-- Only reachable here by a deactivated driver while payments are off
-           (an expiry cannot lock anyone in that state). The phone number above
-           is the whole answer for them — a plan card whose Վճարել leads
-           nowhere would only send them somewhere that refuses. -->
+      <!-- Hidden in the two cases where a plan card could only refuse: no
+           gateway configured, and a driver who is already covered (deactivated
+           for something a payment does not answer — see above). The phone
+           number is the whole answer in both. -->
       <SubscriptionPayments
-        v-if="subscription.paymentsEnabled"
+        v-if="subscription.paymentsEnabled && subscription.status !== 'paid'"
         :status="subscription.status"
         :paid-until="subscription.paidUntil"
       />

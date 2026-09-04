@@ -41,11 +41,13 @@ function build(options: Options = {}) {
   )
 
   const subscriptions = { confirmPayment } as unknown as SubscriptionsService
+  const recordProviderTransaction = vi.fn(async () => true)
   const repository = {
     findById: vi.fn(async () => (payment ? { ...payment, currency: 'AMD' } : null)),
     findByProviderTransactionId: vi.fn(async () =>
       options.alreadySeenTransaction ? { id: 1806 } : null,
     ),
+    recordProviderTransaction,
   } as unknown as SubscriptionsRepository
 
   const config = {
@@ -55,7 +57,11 @@ function build(options: Options = {}) {
         : { recAccount: REC_ACCOUNT, secretKey: SECRET },
   } as unknown as ConfigService
 
-  return { service: new IdramService(config, subscriptions, repository), confirmPayment }
+  return {
+    service: new IdramService(config, subscriptions, repository),
+    confirmPayment,
+    recordProviderTransaction,
+  }
 }
 
 const CONFIRMATION_FIELDS = {
@@ -200,5 +206,59 @@ describe('IdramService.paymentForm', () => {
   it('never puts the secret key in something the browser receives', () => {
     const { service } = build()
     expect(JSON.stringify(service.paymentForm(1, 3000, 'plan'))).not.toContain(SECRET)
+  })
+})
+
+
+/**
+ * A confirmation arriving for a bill that is no longer PENDING.
+ *
+ * This used to answer REFUSED in every case, and nothing could ever clear it:
+ * no status moves back to PENDING, so Idram retried and emailed the merchant
+ * indefinitely while the driver was out the money. Both routes into it are
+ * ordinary — an admin working the queue while a driver is on Idram's page.
+ */
+describe('IdramService — a bill that has left PENDING', () => {
+  const paid = (status: SubscriptionPaymentStatus) => ({ id: 1806, amount: 3000, status })
+
+  it('accepts a confirmation for a bill an admin already marked PAID', async () => {
+    const { service, confirmPayment } = build({ payment: paid(SubscriptionPaymentStatus.PAID) })
+
+    await expect(service.handleCallback(confirmationBody())).resolves.toBe(true)
+    // Coverage is already right — confirming again would grant a second period.
+    expect(confirmPayment).not.toHaveBeenCalled()
+  })
+
+  it('records the transaction id on that bill so it can be reconciled', async () => {
+    // Without it the payment cannot be matched to Idram's statement, an admin
+    // grant could credit the same transaction again, and the replay check
+    // would not short-circuit the next retry.
+    const { service, recordProviderTransaction } = build({
+      payment: paid(SubscriptionPaymentStatus.PAID),
+    })
+
+    await service.handleCallback(confirmationBody())
+    expect(recordProviderTransaction).toHaveBeenCalledWith(1806, {
+      provider: 'IDRAM',
+      transactionId: CONFIRMATION_FIELDS.transId,
+    })
+  })
+
+  it('credits a payment that arrives for a bill an admin CANCELLED', async () => {
+    // The money moved. Cancelling was bookkeeping; being charged for nothing
+    // is not something a driver can be asked to absorb.
+    const { service, confirmPayment } = build({
+      payment: paid(SubscriptionPaymentStatus.CANCELLED),
+    })
+
+    await expect(service.handleCallback(confirmationBody())).resolves.toBe(true)
+    expect(confirmPayment).toHaveBeenCalled()
+  })
+
+  it('still REFUSES the preliminary request on a bill that is not PENDING', async () => {
+    // The other direction: nothing to accept on a finished or called-off
+    // order, and answering YES would invite a charge against it.
+    const { service } = build({ payment: paid(SubscriptionPaymentStatus.CANCELLED) })
+    await expect(service.handleCallback(precheckBody())).resolves.toBe(false)
   })
 })

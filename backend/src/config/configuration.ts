@@ -178,8 +178,15 @@ export default (): AppConfig => ({
     ),
   },
   idram: {
-    recAccount: process.env.IDRAM_REC_ACCOUNT ?? '',
-    secretKey: process.env.IDRAM_SECRET_KEY ?? '',
+    // Trimmed, because these are pasted by hand into an ecosystem.config.js or
+    // a .env and a trailing newline is the ordinary way that goes wrong. Every
+    // callback field is trimmed before use (see `field` in idram-callback.ts),
+    // so an untrimmed secret here would mismatch every checksum — or an
+    // untrimmed account id would fail every account check — while
+    // `isIdramConfigured` still reported the gateway as ready, and the only
+    // symptom would be a permanent retry loop.
+    recAccount: (process.env.IDRAM_REC_ACCOUNT ?? '').trim(),
+    secretKey: (process.env.IDRAM_SECRET_KEY ?? '').trim(),
   },
   subscriptions: {
     pilotTowTruckIds: process.env.SUBSCRIPTIONS_PILOT_TOW_TRUCK_IDS ?? '',

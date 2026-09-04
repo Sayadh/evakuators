@@ -69,6 +69,16 @@ onMounted(() => {
   void load()
 })
 
+/**
+ * How long to wait for the browser to leave for the provider before treating
+ * the handoff as failed. Generous on purpose: a slow connection still has to
+ * win, and this only ever fires on a page that should no longer exist.
+ */
+const REDIRECT_TIMEOUT_MS = 8000
+
+const REDIRECT_FAILED_MESSAGE =
+  'Վճարման էջը բացել չհաջողվեց։ Փորձեք կրկին, իսկ եթե խնդիրը կրկնվի՝ զանգահարեք մեզ։'
+
 async function pay(plan: SubscriptionPlan): Promise<void> {
   if (submittingPlan.value) return
   submittingPlan.value = plan.id
@@ -91,6 +101,16 @@ async function pay(plan: SubscriptionPlan): Promise<void> {
     if (created.gateway) {
       redirecting = true
       submitPaymentForm(created.gateway)
+      // A submitted form is not a guaranteed navigation: a CSP `form-action`
+      // that does not list the provider blocks it SILENTLY — no request, no
+      // error, only a console violation — and the button would then sit on
+      // «Ուղարկվում է…» for as long as the driver was willing to wait. This
+      // page is normally gone before the timer fires; when it is still here,
+      // that is the bug, and saying so beats a spinner that never ends.
+      window.setTimeout(() => {
+        submittingPlan.value = null
+        submitError.value = REDIRECT_FAILED_MESSAGE
+      }, REDIRECT_TIMEOUT_MS)
       return
     }
 

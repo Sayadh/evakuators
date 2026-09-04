@@ -56,3 +56,34 @@ describe('dashboard payment gate', () => {
     expect(source()).toContain('<SubscriptionPayments v-if="subscription.paymentsEnabled" />')
   })
 })
+
+/**
+ * The CSP directive that decides whether a driver ever reaches the provider.
+ *
+ * `form-action` does not fall back to `default-src`, and a blocked submission
+ * is silent — no request, no error, only a console violation. Losing this
+ * entry breaks paying entirely while every test that mounts a component still
+ * passes, which is precisely why it is pinned in a test rather than trusted to
+ * a comment.
+ */
+describe('CSP form-action', () => {
+  const NUXT_CONFIG = fileURLToPath(new URL('../nuxt.config.ts', import.meta.url))
+
+  it("allows Idram's payment host as well as 'self'", () => {
+    const config = readFileSync(NUXT_CONFIG, 'utf8')
+    expect(config).toContain("'form-action': [\"'self'\", 'https://banking.idram.am']")
+  })
+
+  it('keeps the host in step with the backend constant', () => {
+    // IDRAM_PAYMENT_URL is where the form actually posts; the CSP entry is its
+    // origin. If one moves without the other, payments stop.
+    const constants = readFileSync(
+      fileURLToPath(new URL('../../backend/src/idram/idram.constants.ts', import.meta.url)),
+      'utf8',
+    )
+    const match = constants.match(/IDRAM_PAYMENT_URL = '([^']+)'/)
+    expect(match).not.toBeNull()
+    const origin = new URL(match![1]).origin
+    expect(readFileSync(NUXT_CONFIG, 'utf8')).toContain(`'${origin}'`)
+  })
+})

@@ -340,7 +340,26 @@ export default defineNuxtConfig({
 
         'object-src': ["'none'"],
         'base-uri': ["'self'"],
-        'form-action': ["'self'"],
+
+        /**
+         * `'self'` plus Idram's payment page, and that second entry is not
+         * optional: handing a driver over to a payment provider IS a
+         * cross-origin form POST (`utils/submitPaymentForm.ts` builds the form
+         * from what `POST /my/subscription-payments` returned and submits it).
+         *
+         * `form-action` does not fall back to `default-src`, and a blocked
+         * submission is **silent** — no request, no thrown error, nothing but a
+         * console violation. The visible symptom is a «Վճարել» button that sits
+         * on «Ուղարկվում է…» forever, which reads as a broken backend rather
+         * than as a policy. That is exactly how this was found.
+         *
+         * The exact host, not a wildcard, for the same reason every Google host
+         * above is listed one at a time — and far more so here, since this is
+         * the directive that decides where a driver's credentials may be
+         * posted. Keep it in step with `IDRAM_PAYMENT_URL`
+         * (`backend/src/idram/idram.constants.ts`).
+         */
+        'form-action': ["'self'", 'https://banking.idram.am'],
         'frame-ancestors': ["'none'"],
         'upgrade-insecure-requests': true,
       },

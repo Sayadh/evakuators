@@ -1,6 +1,10 @@
 import { BadRequestException, Inject, Injectable, Logger, forwardRef } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
+import type { AppConfig } from '../config/configuration'
 import { UNKNOWN_PLAN_MESSAGE } from './dto/create-subscription-payment.dto'
 import { renewalPeriod, subscriptionPeriod } from './subscription-period'
+import { isInSubscriptionRollout, parseSubscriptionRollout } from './subscription-rollout'
+import type { SubscriptionRollout } from './subscription-rollout'
 import { findSubscriptionPlan, SUBSCRIPTION_PLANS } from './subscription-plans'
 import { toSubscriptionPaymentApi, toSubscriptionPlanApi } from './subscription.mapper'
 import { derivePaymentStatus, isLockedOut } from './subscription-status'
@@ -41,7 +45,19 @@ export class SubscriptionsService {
     // from the browser, or a copy of the confirmation rules on the Idram side.
     @Inject(forwardRef(() => IdramService))
     private readonly idram: IdramService,
-  ) {}
+    config: ConfigService,
+  ) {
+    this.rollout = parseSubscriptionRollout(
+      config.getOrThrow<AppConfig['subscriptions']>('subscriptions').pilotTowTruckIds,
+    )
+  }
+
+  /**
+   * Who the driver-facing side is switched on for — see
+   * `subscription-rollout.ts`. Read once at construction: it is env, it cannot
+   * change without a restart, and `getMyStatus` runs on every dashboard load.
+   */
+  private readonly rollout: SubscriptionRollout
 
   /** Synchronous on purpose — the plans are constants, there is nothing to await (see subscription-plans.ts) */
   listPlans(): SubscriptionPlansApi {
@@ -69,7 +85,12 @@ export class SubscriptionsService {
     ])
     const paidUntil = coverage.get(towTruckId)?.paidUntil ?? null
     const status = derivePaymentStatus(paidUntil)
-    const paymentsEnabled = this.idram.isConfigured
+    // Both halves, exactly as SubscriptionActiveGuard computes them: a
+    // gateway to pay through, and this driver being inside the rollout. If
+    // these two ever diverge, a driver sees a paywall the API does not
+    // enforce — or, far worse, the reverse.
+    const paymentsEnabled =
+      this.idram.isConfigured && isInSubscriptionRollout(this.rollout, towTruckId)
 
     return {
       status,

@@ -40,15 +40,22 @@ describe('isLockedOut', () => {
   })
 })
 
-/** A ConfigService that answers `idram` with credentials, or with blanks (= gateway off) */
-function configWith(configured: boolean): ConfigService {
+/**
+ * A ConfigService answering both keys the paywall reads: `idram` (are there
+ * credentials) and `subscriptions` (whose dashboard the feature is on for).
+ */
+function configWith(configured: boolean, rollout = 'all'): ConfigService {
   return {
-    getOrThrow: () =>
-      configured ? { recAccount: '11112222', secretKey: 'secret' } : { recAccount: '', secretKey: '' },
+    getOrThrow: (key: string) =>
+      key === 'subscriptions'
+        ? { pilotTowTruckIds: rollout }
+        : configured
+          ? { recAccount: '11112222', secretKey: 'secret' }
+          : { recAccount: '', secretKey: '' },
   } as unknown as ConfigService
 }
 
-function guardWith(paidUntil: Date | null, gateway = true): SubscriptionActiveGuard {
+function guardWith(paidUntil: Date | null, gateway = true, rollout = 'all'): SubscriptionActiveGuard {
   const repository = {
     findCoverage: vi.fn(async (ids: number[]) => {
       const map = new Map()
@@ -56,7 +63,7 @@ function guardWith(paidUntil: Date | null, gateway = true): SubscriptionActiveGu
       return map
     }),
   } as unknown as SubscriptionsRepository
-  return new SubscriptionActiveGuard(configWith(gateway), repository)
+  return new SubscriptionActiveGuard(configWith(gateway, rollout), repository)
 }
 
 function contextFor(towTruckId: unknown): ExecutionContext {
@@ -116,7 +123,12 @@ describe('SubscriptionActiveGuard', () => {
  * guard would let through, or the driver sees a paywall the API does not
  * enforce — and, worse, the reverse.
  */
-function statusServiceWith(paidUntil: Date | null, gateway: boolean, isActive = true): SubscriptionsService {
+function statusServiceWith(
+  paidUntil: Date | null,
+  gateway: boolean,
+  isActive = true,
+  rollout = 'all',
+): SubscriptionsService {
   const repository = {
     findCoverage: async (ids: number[]) => {
       const map = new Map()
@@ -128,7 +140,7 @@ function statusServiceWith(paidUntil: Date | null, gateway: boolean, isActive = 
     findStatusById: async () => ({ isActive, deactivationReason: isActive ? null : 'UNPAID' }),
   } as unknown as TowTrucksRepository
   const idram = { isConfigured: gateway } as unknown as IdramService
-  return new SubscriptionsService(repository, trucks, idram)
+  return new SubscriptionsService(repository, trucks, idram, configWith(gateway, rollout))
 }
 
 describe('getMyStatus', () => {
@@ -160,6 +172,56 @@ describe('getMyStatus', () => {
     const status = await statusServiceWith(inDays(30), false, false).getMyStatus(7)
     expect(status.paymentsEnabled).toBe(false)
     expect(status.locked).toBe(true)
+  })
+})
+
+/**
+ * The rollout, in both enforcers at once. This is the pair that ships to
+ * production carrying Idram's TEST credentials: the gateway is real and live,
+ * and exactly the listed driver ids may be locked by it.
+ */
+describe('the pilot rollout', () => {
+  const LAPSED = inDays(-30)
+
+  it('locks a listed driver — the gateway is real, and so is the paywall for them', async () => {
+    const status = await statusServiceWith(LAPSED, true, true, '7,9').getMyStatus(7)
+    expect(status.paymentsEnabled).toBe(true)
+    expect(status.locked).toBe(true)
+    await expect(guardWith(LAPSED, true, '7,9').canActivate(contextFor(7))).rejects.toBeInstanceOf(
+      HttpException,
+    )
+  })
+
+  it('leaves an unlisted driver completely untouched, same credentials', async () => {
+    // The property the whole test phase depends on: a real driver on the live
+    // site, overdue by the backfill, keeps working while we pay with Idram's
+    // test account next to them.
+    const status = await statusServiceWith(LAPSED, true, true, '7,9').getMyStatus(1234)
+    expect(status.paymentsEnabled).toBe(false)
+    expect(status.locked).toBe(false)
+    await expect(guardWith(LAPSED, true, '7,9').canActivate(contextFor(1234))).resolves.toBe(true)
+  })
+
+  it('leaves EVERY driver untouched while the list is unset', async () => {
+    // "I set the credentials and forgot the list" has to be the harmless
+    // mistake — see subscription-rollout.ts.
+    const status = await statusServiceWith(LAPSED, true, true, '').getMyStatus(7)
+    expect(status.paymentsEnabled).toBe(false)
+    expect(status.locked).toBe(false)
+    await expect(guardWith(LAPSED, true, '').canActivate(contextFor(7))).resolves.toBe(true)
+  })
+
+  it('reaches everyone on `all` — the launch', async () => {
+    const status = await statusServiceWith(LAPSED, true, true, 'all').getMyStatus(1234)
+    expect(status.paymentsEnabled).toBe(true)
+    expect(status.locked).toBe(true)
+  })
+
+  it('still needs credentials: a full rollout with no gateway locks nobody', async () => {
+    const status = await statusServiceWith(LAPSED, false, true, 'all').getMyStatus(7)
+    expect(status.paymentsEnabled).toBe(false)
+    expect(status.locked).toBe(false)
+    await expect(guardWith(LAPSED, false, 'all').canActivate(contextFor(7))).resolves.toBe(true)
   })
 })
 

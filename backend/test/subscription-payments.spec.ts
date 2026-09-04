@@ -1,6 +1,7 @@
 import 'reflect-metadata'
 import { BadRequestException } from '@nestjs/common'
 import { CONTROLLER_WATERMARK, GUARDS_METADATA, PATH_METADATA } from '@nestjs/common/constants'
+import type { ConfigService } from '@nestjs/config'
 import { plainToInstance } from 'class-transformer'
 import { validateSync } from 'class-validator'
 import { describe, expect, it, vi } from 'vitest'
@@ -26,9 +27,18 @@ import type { TowTrucksRepository } from '../src/tow-trucks/tow-trucks.repositor
 const noTrucks = {} as TowTrucksRepository
 const noGateway = { isConfigured: false, paymentForm: () => undefined } as unknown as IdramService
 
+/**
+ * A ConfigService answering `subscriptions` — `all` because these tests are
+ * about creating a payment, not about who the feature is switched on for; the
+ * rollout itself is covered in `subscription-lockout.spec.ts`.
+ */
+const rolloutAll = {
+  getOrThrow: () => ({ pilotTowTruckIds: 'all' }),
+} as unknown as ConfigService
+
 /** SubscriptionsService with only the collaborator each test actually uses */
 function buildService(repository: SubscriptionsRepository): SubscriptionsService {
-  return new SubscriptionsService(repository, noTrucks, noGateway)
+  return new SubscriptionsService(repository, noTrucks, noGateway, rolloutAll)
 }
 
 /**

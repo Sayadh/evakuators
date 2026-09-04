@@ -112,6 +112,18 @@ export interface AppConfig {
     /** Shared secret, third field of the checksum string. Never leaves the backend. */
     secretKey: string
   }
+  subscriptions: {
+    /**
+     * Raw `SUBSCRIPTIONS_PILOT_TOW_TRUCK_IDS`, parsed by
+     * `parseSubscriptionRollout` at the two places that read it.
+     *
+     * Kept as the raw string here rather than parsed in this file: the parse
+     * has real rules (blank = nobody, `all`, junk ids dropped) that belong
+     * next to the predicate using them and want their own tests, and this
+     * module is a flat map of env → value with no logic in it.
+     */
+    pilotTowTruckIds: string
+  }
 }
 
 const driverJwtSecret = (): string => process.env.DRIVER_JWT_SECRET ?? ''
@@ -168,5 +180,8 @@ export default (): AppConfig => ({
   idram: {
     recAccount: process.env.IDRAM_REC_ACCOUNT ?? '',
     secretKey: process.env.IDRAM_SECRET_KEY ?? '',
+  },
+  subscriptions: {
+    pilotTowTruckIds: process.env.SUBSCRIPTIONS_PILOT_TOW_TRUCK_IDS ?? '',
   },
 })

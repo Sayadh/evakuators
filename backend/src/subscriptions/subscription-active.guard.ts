@@ -4,6 +4,8 @@ import { ConfigService } from '@nestjs/config'
 import type { AppConfig } from '../config/configuration'
 import type { AuthenticatedDriverRequest } from '../driver-auth/driver-jwt.guard'
 import { isIdramConfigured } from '../idram/idram-config'
+import { isInSubscriptionRollout, parseSubscriptionRollout } from './subscription-rollout'
+import type { SubscriptionRollout } from './subscription-rollout'
 import { derivePaymentStatus, isLockedOut } from './subscription-status'
 import { SubscriptionsRepository } from './subscriptions.repository'
 
@@ -24,16 +26,21 @@ export const SUBSCRIPTION_EXPIRED_MESSAGE =
  *
  * ## Nothing is refused until payments can actually be made
  *
- * Without merchant credentials this guard passes everyone, and the dashboard
- * hides its payment block for the same reason (`getMyStatus`'s
- * `paymentsEnabled`). A paywall on an environment that cannot take a payment
- * tells a driver to pay and then gives them no way to — and since every driver
- * who predates this feature reads as `overdue` the moment the backfill lands,
- * enforcing it early would eject the existing fleet over a bill nobody could
- * settle. So the credentials are the feature's switch: the endpoints, the
- * callback and the admin queue all ship live and inert, and setting
- * `IDRAM_REC_ACCOUNT`/`IDRAM_SECRET_KEY` turns the paywall on with a restart
- * rather than a second deploy. See `docs/deployment.md`.
+ * Two conditions, and BOTH have to hold before anyone is refused:
+ *
+ * 1. merchant credentials exist (`isIdramConfigured`) — a paywall on an
+ *    environment that cannot take a payment tells a driver to pay and then
+ *    gives them no way to;
+ * 2. this driver is inside the rollout (`SUBSCRIPTIONS_PILOT_TOW_TRUCK_IDS`,
+ *    blank by default = nobody) — because the merchant account issues TEST
+ *    credentials first, against these same production URLs, and turning them
+ *    on must not put a live paywall in front of the fleet.
+ *
+ * Since the `20260902140000` backfill makes every driver who predates this
+ * feature read as `overdue`, getting either condition wrong ejects most of the
+ * site. `getMyStatus` computes exactly the same pair as `paymentsEnabled` and
+ * the dashboard hides its payment block on it, so the two never disagree. See
+ * `docs/deployment.md` § "Turning Idram payments on".
  *
  * ## What it does NOT block
  *
@@ -59,19 +66,23 @@ export const SUBSCRIPTION_EXPIRED_MESSAGE =
  */
 @Injectable()
 export class SubscriptionActiveGuard implements CanActivate {
-  private readonly paymentsEnabled: boolean
+  private readonly gatewayConfigured: boolean
+  private readonly rollout: SubscriptionRollout
 
   constructor(
     config: ConfigService,
     private readonly subscriptionsRepository: SubscriptionsRepository,
   ) {
-    this.paymentsEnabled = isIdramConfigured(config.getOrThrow<AppConfig['idram']>('idram'))
+    this.gatewayConfigured = isIdramConfigured(config.getOrThrow<AppConfig['idram']>('idram'))
+    this.rollout = parseSubscriptionRollout(
+      config.getOrThrow<AppConfig['subscriptions']>('subscriptions').pilotTowTruckIds,
+    )
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    // Read before touching the request: with no gateway there is nothing to
+    // Checked before touching the request: with no gateway there is nothing to
     // enforce, and this saves a coverage query on every profile save too.
-    if (!this.paymentsEnabled) return true
+    if (!this.gatewayConfigured) return true
 
     const request = context.switchToHttp().getRequest<AuthenticatedDriverRequest>()
     const { towTruckId } = request
@@ -81,6 +92,11 @@ export class SubscriptionActiveGuard implements CanActivate {
     if (typeof towTruckId !== 'number') {
       throw new HttpException(SUBSCRIPTION_EXPIRED_MESSAGE, HttpStatus.PAYMENT_REQUIRED)
     }
+
+    // Outside the rollout: this driver is not being asked to pay yet, so
+    // nothing of theirs is refused. Placed after the id check on purpose — a
+    // missing id is a wiring bug and must still be refused.
+    if (!isInSubscriptionRollout(this.rollout, towTruckId)) return true
 
     const coverage = await this.subscriptionsRepository.findCoverage([towTruckId])
     const status = derivePaymentStatus(coverage.get(towTruckId)?.paidUntil ?? null)

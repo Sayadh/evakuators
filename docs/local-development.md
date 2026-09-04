@@ -189,6 +189,83 @@ call made on this project so far is: **don't bother** — test the Telegram
 flow directly on production instead, and treat local dev as sufficient for
 everything else (this was an explicit decision, not an unresolved TODO).
 
+## Idram payments locally
+
+The browser half works locally; the server half needs a helper, because the
+confirmation is server-to-server. Idram POSTs it to RESULT_URL, and RESULT_URL
+is a public address that cannot reach `localhost` — so the one part of this
+integration that moves money is the one part a browser cannot exercise here.
+
+### Setup
+
+In `backend/.env` (never `.env.example` — that file is committed and the repo
+is public):
+
+```bash
+IDRAM_REC_ACCOUNT="<test IdramID>"
+IDRAM_SECRET_KEY="<test secret>"
+SUBSCRIPTIONS_PILOT_TOW_TRUCK_IDS="all"   # local DB has only test drivers
+```
+
+Both credentials blank is the "gateway off" state — the endpoints stay live and
+answer `REFUSED`, and the driver's dashboard shows no payment block. That is
+correct behaviour, not a broken setup (see `subscription-rollout.ts` and
+`idram-config.ts`), so set them before expecting to see anything.
+
+Then a driver to test with:
+
+```bash
+node scripts/create-test-driver.js +37491000001 'test-password' unpaid
+node scripts/create-test-driver.js +37491000002 'test-password' due-soon
+node scripts/create-test-driver.js +37491000003 'test-password' overdue
+```
+
+### The flow
+
+1. Sign in at `/login`, open `/dashboard`. «Վճարումներ» is the first section.
+2. Press «Վճարել». `POST /my/subscription-payments` creates a **PENDING** row
+   and answers with it — note the `id` in the network tab, it is the
+   `EDP_BILL_NO`. The browser then form-POSTs to Idram's real page.
+3. **Do not complete the payment on Idram's page from localhost.** Idram would
+   send the confirmation to the *production* RESULT_URL, carrying a bill number
+   that only exists in your local database — production would (correctly)
+   refuse it, and the local payment would stay PENDING forever. Check the form
+   fields in DevTools, then go back.
+4. Play Idram's server yourself:
+
+```bash
+node scripts/idram-callback.js <paymentId>
+```
+
+That posts the preliminary request and then the confirmation, with a correct
+MD5 checksum built independently of the backend's own implementation.
+
+### The cases worth running
+
+| Command | Expected |
+| --- | --- |
+| `idram-callback.js 12` | `OK`, `OK` — the payment becomes PAID and the dashboard unlocks |
+| `idram-callback.js 12 --confirm` again | `OK`, still one period — the replay guard, not a second month |
+| `idram-callback.js 12 --confirm --amount 1` | `REFUSED` — the tamper check, the most important one in the integration |
+| `idram-callback.js 12 --confirm --bad-checksum` | `REFUSED` — a forged signature |
+| `idram-callback.js 99999` | refuses to start — no such bill |
+
+Watch the backend log while doing this: every refusal is logged at `warn` or
+above on purpose, because a silent refusal is a driver whose money vanished
+with nothing to explain it.
+
+### Testing the paywall itself
+
+`create-test-driver.js`'s states are the fastest way in: `overdue` replaces the
+dashboard with the payment block and makes profile writes answer 402,
+`due-soon` fires the reminder dialog on every visit, and `unpaid` must stay
+fully usable — that last one is the deploy-day case, and a regression there
+would take the real fleet offline.
+
+To check the rollout switch rather than the states, set
+`SUBSCRIPTIONS_PILOT_TOW_TRUCK_IDS` to a single truck id and confirm that an
+`overdue` driver *not* in the list keeps working while one in it is locked.
+
 ## Local vs production data — never a live connection, by design
 
 Local Postgres and production Postgres are two entirely independent

@@ -82,6 +82,13 @@ const envSchema = z.object({
   // when they are missing — see IdramService.
   IDRAM_REC_ACCOUNT: z.string().optional().default(''),
   IDRAM_SECRET_KEY: z.string().optional().default(''),
+
+  // Which drivers see the payment block and are held to the paywall, once the
+  // credentials above exist: blank (nobody), a comma-separated list of
+  // TowTruck ids, or the literal `all`. Blank failing CLOSED is deliberate and
+  // the opposite of TELEGRAM_OUTBOUND_ALLOWED_CHAT_IDS above — see
+  // subscriptions/subscription-rollout.ts.
+  SUBSCRIPTIONS_PILOT_TOW_TRUCK_IDS: z.string().optional().default(''),
 })
 
 export type Env = z.infer<typeof envSchema>

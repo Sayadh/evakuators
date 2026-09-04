@@ -186,8 +186,12 @@ async function pay(plan: SubscriptionPlan): Promise<void> {
         </p>
       </div>
 
-      <section v-if="payments.length" class="subscription-payments__history">
-        <h3 class="subscription-payments__history-title">Հայտերի պատմություն</h3>
+      <!-- Collapsed by default, like every section on the dashboard itself.
+           What a driver comes here to do is pay; what they already paid is a
+           reference they open on purpose, and leaving it expanded pushed the
+           plan cards up out of a phone's first screen. -->
+      <details v-if="payments.length" class="subscription-payments__history">
+        <summary class="subscription-payments__history-title">Հայտերի պատմություն</summary>
         <ul class="subscription-payments__list">
           <li v-for="payment in payments" :key="payment.id" class="subscription-payments__item">
             <span class="subscription-payments__item-plan">{{ payment.planTitle }}</span>
@@ -200,7 +204,7 @@ async function pay(plan: SubscriptionPlan): Promise<void> {
             <span class="subscription-payments__item-status">{{ STATUS_LABELS[payment.status] }}</span>
           </li>
         </ul>
-      </section>
+      </details>
     </template>
   </div>
 </template>
@@ -322,15 +326,49 @@ async function pay(plan: SubscriptionPlan): Promise<void> {
   }
 
   &__history {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
+    border-top: 1px solid var(--color-border);
+    padding-top: var(--space-3);
   }
 
   &__history-title {
     margin: 0;
     font-size: 0.95rem;
     font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+
+    /* Same treatment as .dashboard-summary on the page itself: the native
+       marker is replaced by a chevron that rotates on open. Repeated rather
+       than shared because that rule lives in dashboard.vue's scoped block and
+       a scoped style does not reach inside a child component. */
+    list-style: none;
+
+    &::-webkit-details-marker {
+      display: none;
+    }
+
+    &::after {
+      content: '';
+      flex: none;
+      width: 20px;
+      height: 20px;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23333' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: center;
+      transition: transform 0.3s ease;
+    }
+  }
+
+  &__history[open] &__history-title::after {
+    transform: rotate(180deg);
+  }
+
+  &__history > .subscription-payments__list {
+    margin-top: var(--space-3);
   }
 
   &__list {

@@ -27,13 +27,22 @@
  *   node scripts/idram-callback.js 12 --confirm       # confirmation only
  *   node scripts/idram-callback.js 12 --confirm --amount 1     # tampered amount
  *   node scripts/idram-callback.js 12 --confirm --bad-checksum # forged signature
- *   node scripts/idram-callback.js 12 --confirm --trans-id 999 # replay a used id
+ *   node scripts/idram-callback.js 12 --replay       # resend the SAME transaction
+ *   node scripts/idram-callback.js 12 --confirm --trans-id 999 # a chosen id
  *
  * Expected answers (the body is what Idram reads, never the status):
  *   precheck on a PENDING payment .................. OK
  *   confirmation, everything correct ............... OK      → payment becomes PAID
- *   the same confirmation again .................... OK      → idempotent, no second period
+ *   --replay (the SAME EDP_TRANS_ID) ............... OK      → nothing changes
+ *   --confirm again (a NEW id, bill already paid) .. REFUSED → no second transaction
  *   --amount / --bad-checksum / unknown bill ....... REFUSED → payment stays PENDING
+ *
+ * The middle two are different guards and both matter. `--replay` is the one
+ * Idram itself triggers: it retries any callback it did not hear "OK" from, so
+ * the same transaction WILL arrive twice, and answering anything but OK would
+ * make it keep trying. A new transaction against a bill that is already paid is
+ * not a retry — that is someone paying twice, or someone else's message, and it
+ * is refused.
  *
  * Local only, for the same reasons as create-test-driver.js: it refuses
  * NODE_ENV=production, a non-local database and a non-local API host. Its
@@ -178,13 +187,25 @@ async function main() {
     // Using their shape here is the point — the backend must compare the
     // NUMBER, not the string (see idramAmountMatches).
     const sentAmount = option('amount', null) ?? `${payment.amount}.00`
-    const transId = option('trans-id', `LOCAL-${Date.now()}`)
+
+    // --replay resends the transaction id already recorded against this
+    // payment, which is the only way to exercise the guard that matters most:
+    // Idram retries a callback it did not hear "OK" from, so the same
+    // EDP_TRANS_ID arrives more than once by design. A fresh id would test a
+    // different thing entirely (a second payment for a paid bill).
+    if (flag('replay') && !payment.providerTransactionId) {
+      console.error(`Payment #${payment.id} has no recorded transaction to replay — confirm it first.`)
+      process.exit(1)
+    }
+    const transId = flag('replay')
+      ? payment.providerTransactionId
+      : option('trans-id', `LOCAL-${Date.now()}`)
     const transDate = new Date().toISOString().slice(0, 19).replace('T', ' ')
 
     console.log(`payment #${payment.id} · ${payment.planCode} · ${payment.amount} ${payment.currency} · ${payment.status} · towTruck ${payment.towTruckId}`)
     console.log(`posting to ${apiUrl}${RESULT_PATH}`)
 
-    const only = flag('precheck') || flag('confirm')
+    const only = flag('precheck') || flag('confirm') || flag('replay')
 
     if (!only || flag('precheck')) {
       await post(
@@ -199,7 +220,7 @@ async function main() {
       )
     }
 
-    if (!only || flag('confirm')) {
+    if (!only || flag('confirm') || flag('replay')) {
       const fields = {
         EDP_BILL_NO: String(payment.id),
         EDP_REC_ACCOUNT: recAccount,
@@ -212,7 +233,8 @@ async function main() {
         ? '0'.repeat(32)
         : buildChecksum(fields, secretKey)
 
-      await post(apiUrl, fields, 'confirmation')
+      await post(apiUrl, fields, flag('replay') ? 'replay' : 'confirmation')
+      console.log(`  transaction     ${transId}`)
 
       const after = await prisma.subscriptionPayment.findUnique({ where: { id: payment.id } })
       console.log(`  payment is now ${after.status}${after.periodEnd ? ` · covered until ${after.periodEnd.toISOString().slice(0, 10)}` : ''}`)

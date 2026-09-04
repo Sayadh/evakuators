@@ -260,10 +260,22 @@ MD5 checksum built independently of the backend's own implementation.
 | Command | Expected |
 | --- | --- |
 | `idram-callback.js 12` | `OK`, `OK` — the payment becomes PAID and the dashboard unlocks |
-| `idram-callback.js 12 --confirm` again | `OK`, still one period — the replay guard, not a second month |
+| `idram-callback.js 12 --replay` | `OK`, and `periodEnd` unchanged |
+| `idram-callback.js 12 --confirm` | `REFUSED` — a *new* transaction against a paid bill |
 | `idram-callback.js 12 --confirm --amount 1` | `REFUSED` — the tamper check, the most important one in the integration |
 | `idram-callback.js 12 --confirm --bad-checksum` | `REFUSED` — a forged signature |
-| `idram-callback.js 99999` | refuses to start — no such bill |
+| `idram-callback.js 99999` | lists the real ids instead — no such bill |
+
+The two middle rows look alike and are opposite guards. `--replay` resends the
+`EDP_TRANS_ID` already recorded against the payment, which is what Idram itself
+does — it retries any callback it did not hear `OK` from, so the same
+transaction arrives more than once by design, and answering anything but `OK`
+would make it keep trying. A plain `--confirm` on an already-paid bill invents a
+*new* transaction id, which is not a retry: it is a second payment, or someone
+else's message, and it is refused because the bill is no longer PENDING.
+
+Running `--confirm` twice and expecting `OK` is the easy mistake here — the
+second one is supposed to be `REFUSED`.
 
 Watch the backend log while doing this: every refusal is logged at `warn` or
 above on purpose, because a silent refusal is a driver whose money vanished

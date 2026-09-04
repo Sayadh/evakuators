@@ -63,8 +63,18 @@ const submittingPlan = ref<SubscriptionPlanCode | null>(null)
 const submitError = ref('')
 const lastCreated = ref<SubscriptionPayment | null>(null)
 
+/**
+ * PENDING is «Վճարումը չի կատարվել», not «Սպասում է…». The row is created the
+ * moment a driver presses «Վճարել», before they are handed to Idram, so most
+ * PENDING rows belong to someone who started a payment and did not finish it.
+ * "Waiting" describes the system's state and reads as reassurance — a driver
+ * who has not actually paid should be told that plainly, not told to wait.
+ *
+ * A PENDING row is still confirmable: an Idram callback that lands later, or
+ * an admin recording money received another way, both turn it PAID.
+ */
 const STATUS_LABELS: Record<SubscriptionPayment['status'], string> = {
-  PENDING: 'Սպասում է վճարման',
+  PENDING: 'Վճարումը չի կատարվել',
   PAID: 'Վճարված',
   FAILED: 'Ձախողված',
   CANCELLED: 'Չեղարկված',

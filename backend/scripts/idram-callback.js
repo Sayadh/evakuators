@@ -21,6 +21,7 @@
  * all.
  *
  * Usage, from backend/ (with the backend running):
+ *   node scripts/idram-callback.js                    # list payments to pick from
  *   node scripts/idram-callback.js 12                 # precheck, then confirm
  *   node scripts/idram-callback.js 12 --precheck      # precheck only
  *   node scripts/idram-callback.js 12 --confirm       # confirmation only
@@ -110,28 +111,63 @@ function option(name, fallback) {
   return index === -1 ? fallback : process.argv[index + 1]
 }
 
-async function main() {
-  const paymentId = Number(process.argv[2])
-  const apiUrl = (process.env.LOCAL_API_URL ?? 'http://localhost:4002').replace(/\/$/, '')
+/**
+ * With no id, print the recent payments instead of guessing at one — the id is
+ * `EDP_BILL_NO`, it is minted when a driver presses «Վճարել», and hunting for
+ * it in the browser's network tab is the slowest part of testing this.
+ */
+async function listPayments(prisma) {
+  const payments = await prisma.subscriptionPayment.findMany({
+    orderBy: { id: 'desc' },
+    take: 10,
+    include: { towTruck: { select: { driverName: true, phone: true } } },
+  })
 
-  if (!Number.isInteger(paymentId) || paymentId <= 0) {
-    console.error('Usage: node scripts/idram-callback.js <paymentId> [--precheck|--confirm] [--amount N] [--bad-checksum] [--trans-id ID]')
-    process.exit(1)
+  if (payments.length === 0) {
+    console.log('No SubscriptionPayment rows yet. Sign in as a test driver, open /dashboard and press «Վճարել».')
+    return
   }
+
+  console.log('recent payments (newest first) — pass the id as the first argument:\n')
+  for (const payment of payments) {
+    const driver = `${payment.towTruck.driverName} ${payment.towTruck.phone}`
+    console.log(
+      `  #${String(payment.id).padEnd(5)} ${payment.status.padEnd(9)} ${String(payment.amount).padStart(6)} ${payment.currency}  ${payment.planCode.padEnd(12)} ${driver}`,
+    )
+  }
+  console.log('\n  node scripts/idram-callback.js <id>')
+}
+
+async function main() {
+  const apiUrl = (process.env.LOCAL_API_URL ?? 'http://localhost:4002').replace(/\/$/, '')
   assertLocalOnly(apiUrl)
 
-  const recAccount = process.env.IDRAM_REC_ACCOUNT ?? ''
-  const secretKey = process.env.IDRAM_SECRET_KEY ?? ''
-  if (!recAccount || !secretKey) {
-    console.error('IDRAM_REC_ACCOUNT and IDRAM_SECRET_KEY must be set in backend/.env — without them the backend refuses every callback by design.')
-    process.exit(1)
-  }
+  const paymentId = Number(process.argv[2])
+  const listOnly = process.argv[2] === undefined
 
   const prisma = new PrismaClient()
   try {
+    if (listOnly) {
+      await listPayments(prisma)
+      return
+    }
+
+    if (!Number.isInteger(paymentId) || paymentId <= 0) {
+      console.error('Usage: node scripts/idram-callback.js [paymentId] [--precheck|--confirm] [--amount N] [--bad-checksum] [--trans-id ID]')
+      console.error('Run with no arguments to list the payments you can pick from.')
+      process.exit(1)
+    }
+
     const payment = await prisma.subscriptionPayment.findUnique({ where: { id: paymentId } })
     if (!payment) {
       console.error(`No SubscriptionPayment with id ${paymentId}. Create one from the dashboard («Վճարել»), then pass the id it shows.`)
+      process.exit(1)
+    }
+
+    const recAccount = process.env.IDRAM_REC_ACCOUNT ?? ''
+    const secretKey = process.env.IDRAM_SECRET_KEY ?? ''
+    if (!recAccount || !secretKey) {
+      console.error('IDRAM_REC_ACCOUNT and IDRAM_SECRET_KEY must be set in backend/.env — without them the backend refuses every callback by design.')
       process.exit(1)
     }
 

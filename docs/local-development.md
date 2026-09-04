@@ -233,8 +233,14 @@ node scripts/create-test-driver.js +37491000003 'test-password' overdue
 
 1. Sign in at `/login`, open `/dashboard`. «Վճարումներ» is the first section.
 2. Press «Վճարել». `POST /my/subscription-payments` creates a **PENDING** row
-   and answers with it — note the `id` in the network tab, it is the
-   `EDP_BILL_NO`. The browser then form-POSTs to Idram's real page.
+   and answers with it. That row's `id` is the `EDP_BILL_NO` every step below
+   needs — read it from the network tab, or just ask:
+
+   ```bash
+   node scripts/idram-callback.js        # lists the 10 most recent, newest first
+   ```
+
+   The browser then form-POSTs to Idram's real page.
 3. **Do not complete the payment on Idram's page from localhost.** Idram would
    send the confirmation to the *production* RESULT_URL, carrying a bill number
    that only exists in your local database — production would (correctly)

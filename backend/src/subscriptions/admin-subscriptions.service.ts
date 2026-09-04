@@ -1,3 +1,4 @@
+import { armeniaDateKey } from '../common/armenia-day'
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { SubscriptionPaymentStatus } from '@prisma/client'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
@@ -112,13 +113,34 @@ export class AdminSubscriptionsService {
    * A future date would let a driver read as covered before they paid. Same
    * check, same reasoning, as the old `AdminService.setTowTruckPayment`.
    */
+  /**
+   * When the coverage this grant buys should START.
+   *
+   * ## Today or later, never in the past
+   *
+   * A back-dated start silently sells less than the plan says: a month bought
+   * from three weeks ago is one week of coverage, and far enough back it
+   * creates a subscription that is already expired — recorded as PAID, with
+   * the driver reading as `overdue` the moment it is saved. Whatever the money
+   * did last week, the access it buys begins when it is granted.
+   *
+   * Forward-dating is allowed, and is a real case: a driver pays now for a
+   * period that starts later. `renewalPeriod` already handles the interaction
+   * with live coverage — if their current period runs past the chosen date,
+   * the new one is stacked on the end of it and the date is moot.
+   *
+   * Compared by Armenia's calendar DAY, not by instant, because that is what
+   * the admin picked. `new Date('2026-09-08')` is midnight UTC — 04:00 in
+   * Yerevan — so an instant comparison would reject today's own date for the
+   * first four hours of every Armenian day.
+   */
   private parsePaidAt(paidAt?: string): Date {
     if (paidAt === undefined) return new Date()
 
     const date = new Date(paidAt)
     if (Number.isNaN(date.getTime())) throw new BadRequestException('Սխալ ամսաթիվ')
-    if (date.getTime() > Date.now()) {
-      throw new BadRequestException('Վճարման ամսաթիվը չի կարող ապագայում լինել')
+    if (armeniaDateKey(date) < armeniaDateKey(new Date())) {
+      throw new BadRequestException('Վճարման ամսաթիվը չի կարող անցյալում լինել')
     }
     return date
   }

@@ -275,8 +275,13 @@ async function confirmPay(): Promise<void> {
     payError.value = 'Սխալ ամսաթիվ'
     return
   }
-  if (chosenDate.getTime() > Date.now()) {
-    payError.value = 'Ամսաթիվը չի կարող ապագայում լինել'
+  // Today or later. A back-dated start silently sells less than the plan says
+  // — a month bought from three weeks ago is a week of coverage — and far
+  // enough back it records a subscription that is already expired. Forward
+  // dating is a real case: paid now, starts later. Same rule on the backend
+  // (`parsePaidAt`), which is the one that decides.
+  if (payDate.value < todayDateKey()) {
+    payError.value = 'Ամսաթիվը չի կարող անցյալում լինել'
     return
   }
 
@@ -476,9 +481,20 @@ async function confirmDeactivate(reason: DeactivationReason): Promise<void> {
           label="Փաթեթ"
           hint="Գինը և ժամկետը փաթեթից են՝ գումարը ձեռքով չի մուտքագրվում"
         />
-        <AppInput v-model="payDate" type="date" label="Վճարման ամսաթիվ" required />
+        <!-- `min` so the picker itself refuses a past date, rather than letting
+             an admin choose one and answering with an error afterwards. The
+             check below and the backend's `parsePaidAt` still stand: `min` is a
+             convenience, not a validation. -->
+        <AppInput
+          v-model="payDate"
+          type="date"
+          label="Վճարման ամսաթիվ"
+          required
+          :min="todayDateKey()"
+        />
         <p class="payments__muted">
-          Եթե վարորդի ժամկետը դեռ չի սպառվել, նոր փաթեթը ավելանում է մնացածի վրա։
+          Այսօր կամ ավելի ուշ։ Եթե վարորդի ժամկետը դեռ չի սպառվել, նոր փաթեթը
+          ավելանում է մնացածի վրա, և ընտրված ամսաթիվը նշանակություն չունի։
         </p>
         <p v-if="payError" class="payments__error" role="alert">{{ payError }}</p>
         <AppButton type="submit" variant="accent" block :disabled="paySubmitting">

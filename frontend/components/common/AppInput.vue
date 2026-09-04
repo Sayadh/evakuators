@@ -38,6 +38,20 @@ interface Props {
   hint?: string
   maxlength?: number
   /**
+   * Native lower bound — `YYYY-MM-DD` for `type="date"`, a number otherwise.
+   *
+   * A prop rather than a fall-through attribute because the root element here
+   * is the wrapper `div`, so an attribute written on this component would land
+   * there and quietly do nothing.
+   *
+   * A convenience, never a validation: it stops the picker from OFFERING a
+   * value out of range, which is a better experience than accepting one and
+   * answering with an error — but it is trivially bypassed by typing, so the
+   * real check stays where it always was, in the submit handler and on the
+   * backend.
+   */
+  min?: string
+  /**
    * Left undefined by default, which renders no attribute at all and lets the
    * browser guess — right for the many ordinary fields here (a truck's plate
    * number, a price) that no autofill category describes.
@@ -60,6 +74,7 @@ const props = withDefaults(defineProps<Props>(), {
   hint: undefined,
   maxlength: undefined,
   autocomplete: undefined,
+  min: undefined,
 })
 
 const emit = defineEmits<{ 'update:modelValue': [value: string]; blur: [] }>()
@@ -158,6 +173,7 @@ function onKeydown(event: KeyboardEvent): void {
       :placeholder="placeholder"
       :required="required"
       :maxlength="maxlength"
+      :min="min"
       :autocomplete="autocomplete"
       :aria-invalid="Boolean(error)"
       :aria-describedby="hint ? `${id}-hint` : undefined"

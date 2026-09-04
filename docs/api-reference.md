@@ -312,6 +312,24 @@ it ends, and never making two different drivers wait on each other. The date
 arithmetic is passed in rather than reimplemented in SQL, so it stays in
 `subscription-period.ts` where the clamping and leap-year cases are tested.
 
+### `paidAt` on an admin grant is today or later, never the past
+
+It names when the coverage **starts**, not when the cash changed hands, and
+back-dating it silently sells less than the plan says: a month granted from
+three weeks ago is a week of coverage, and far enough back it writes a
+subscription that is already expired — recorded PAID, with the driver reading
+as `overdue` the moment it is saved. Whatever the money did last week, the
+access it buys begins when it is granted.
+
+Forward-dating is allowed and is a real case: a driver pays now for a period
+that starts later. It interacts with live coverage the same way everything else
+does — `renewalPeriod` stacks the new period on the end of the current one, so
+for a driver who has not lapsed the chosen date makes no difference at all.
+
+Compared by Armenia's calendar DAY rather than by instant. `new Date('2026-09-08')`
+is midnight UTC, which is 04:00 in Yerevan — an instant comparison would reject
+today's own date for the first four hours of every Armenian day.
+
 ### Paying twice
 
 `POST /my/subscription-payments` answers **409** when the driver's status is
@@ -439,7 +457,7 @@ Other things worth knowing:
 | `GET` | `/admin/site-analytics` | Site-wide traffic, no tow truck involved: visits + Free Routes views, each as distinct people and as daily-summed visits, for `?period=` and all time. Also `callers` — distinct people who pressed "Զանգահարել" on ANY truck's profile in the period, plus daily-summed and all-time call totals; read platform-wide from the per-truck analytics tables with no `towTruckId` filter, not from the site-visit tables above. The only report in the analytics module that isn't scoped to a driver, which is why it has its own controller. See `docs/analytics.md` § "Platform-wide active callers" |
 | `GET` | `/admin/subscription-payments/plans` | The same plan constants the driver's dashboard reads — so the admin's «record a payment» picker cannot drift from what is on sale |
 | `GET` | `/admin/subscription-payments/pending` | Every request waiting on a decision, oldest first, each with the driver who made it |
-| `POST` | `/admin/subscription-payments` | Records an off-platform payment as PAID. `{ towTruckId, planId, paidAt? }` — a plan, never an amount. A future `paidAt` is rejected |
+| `POST` | `/admin/subscription-payments` | Records an off-platform payment as PAID. `{ towTruckId, planId, paidAt? }` — a plan, never an amount. `paidAt` is when the coverage STARTS: today or later, and a past date is rejected (see § "Paying twice" for why) |
 | `PATCH` | `/admin/subscription-payments/:id` | `{ status: 'PAID' \| 'CANCELLED' }`. Guarded against two admins deciding the same request — the second gets a 409, not a silent overwrite |
 
 ### Reviewing a registration

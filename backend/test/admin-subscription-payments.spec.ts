@@ -124,8 +124,9 @@ describe('AdminSubscriptionsService.grant', () => {
 
   it('starts the period at the date the admin chose, not at "now"', async () => {
     const { service, created } = build()
-    await service.grant(7, 'ONE_MONTH', '2026-08-01T09:00:00.000Z')
-    expect((created[0]!.data.periodStart as Date).toISOString()).toBe('2026-08-01T09:00:00.000Z')
+    const later = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+    await service.grant(7, 'ONE_MONTH', later)
+    expect((created[0]!.data.periodStart as Date).toISOString()).toBe(later)
   })
 
   it('extends existing coverage instead of restarting it', async () => {
@@ -138,12 +139,37 @@ describe('AdminSubscriptionsService.grant', () => {
     expect((created[0]!.data.periodEnd as Date).toISOString()).toBe('2027-02-15T09:00:00.000Z')
   })
 
-  it('refuses a payment date in the future', async () => {
+  it('refuses a payment date in the past', async () => {
+    // A back-dated start silently sells less than the plan says — a month
+    // bought from three weeks ago is a week of coverage — and far enough back
+    // it records a subscription that is already expired.
     const { service, created } = build()
-    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+    const lastWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
-    await expect(service.grant(7, 'ONE_MONTH', tomorrow)).rejects.toBeInstanceOf(BadRequestException)
+    await expect(service.grant(7, 'ONE_MONTH', lastWeek)).rejects.toBeInstanceOf(BadRequestException)
     expect(created).toHaveLength(0)
+  })
+
+  it('accepts a date in the future — paid now, starts later', async () => {
+    const { service, created } = build()
+    const nextMonth = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+
+    await service.grant(7, 'ONE_MONTH', nextMonth)
+    expect(created).toHaveLength(1)
+  })
+
+  it("accepts today's own date whatever the hour", async () => {
+    // Compared by Armenia's calendar DAY, not by instant: `new Date('...')` at
+    // midnight UTC is 04:00 in Yerevan, so an instant comparison would reject
+    // today for the first four hours of every Armenian day.
+    const { service, created } = build()
+    const now = new Date()
+    const todayMidnightUtc = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    ).toISOString()
+
+    await service.grant(7, 'ONE_MONTH', todayMidnightUtc)
+    expect(created).toHaveLength(1)
   })
 
   it('refuses a plan that is not on sale', async () => {

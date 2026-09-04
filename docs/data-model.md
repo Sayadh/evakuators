@@ -410,10 +410,41 @@ that are specifically about the data:
 
 Hand-authored SQL files in `backend/prisma/migrations/`, matching Prisma's
 generated style (`-- CreateEnum`, `-- CreateTable`, `-- CreateIndex`,
-`-- AddForeignKey`). Apply with `npx prisma migrate deploy` in production
-(applies pending migrations only, never generates new ones) or
-`npm run prisma:migrate` (`prisma migrate dev`) locally when you've changed
-`schema.prisma` and want a new migration generated + applied in one step.
+`-- AddForeignKey`). Apply with `npx prisma migrate deploy` — everywhere,
+production and local alike. It applies pending migrations and never generates
+new ones.
+
+### `prisma migrate dev` must never be run on this project
+
+Not "prefer not to": it will always want to write a migration, and the
+migration it wants is harmful.
+
+`TowTruck.location` is `GENERATED ALWAYS AS (...) STORED` (see above, and
+`docs/nearest-search.md` § PostGIS). Prisma has no way to express a generated
+column, so `schema.prisma` declares it as `Unsupported(...)` with no default.
+Prisma therefore reads the generation expression in the database as a default
+the schema does not have, and every diff it takes ends in the same line:
+
+```sql
+ALTER TABLE "TowTruck" ALTER COLUMN "location" DROP DEFAULT;
+```
+
+That diff is permanent — it reappears no matter what else changes — and
+applying it does nothing we want to the one column the nearest-driver search
+and its GiST index depend on. `migrate dev` shows it as a prompt for a
+migration name, which is easy to answer without reading, and the file it writes
+then travels to production like any other.
+
+So: new migrations are written **by hand**, as
+`prisma/migrations/<timestamp>_<name>/migration.sql`, and applied with
+`migrate deploy`. To check where a database stands, `npx prisma migrate status`.
+To see a real diff without writing anything,
+`npx prisma migrate diff --from-schema-datasource prisma/schema.prisma
+--to-schema-datamodel prisma/schema.prisma --script` — and expect the
+`DROP DEFAULT` line above in its output, always, as the baseline rather than a
+finding.
+
+`npm run prisma:migrate` runs `migrate deploy` for this reason.
 
 Always run `npx prisma generate` after pulling schema changes, before
 building — see `docs/deployment.md`'s "stale Prisma Client" gotcha.

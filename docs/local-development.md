@@ -189,6 +189,15 @@ call made on this project so far is: **don't bother** — test the Telegram
 flow directly on production instead, and treat local dev as sufficient for
 everything else (this was an explicit decision, not an unresolved TODO).
 
+## Never run `prisma migrate dev`
+
+`npx prisma migrate deploy` is the command, locally as well as in production.
+`migrate dev` will prompt for a migration name on a perfectly healthy database,
+and the migration it wants to write (`ALTER TABLE "TowTruck" ALTER COLUMN
+"location" DROP DEFAULT;`) targets the generated PostGIS column the
+nearest-driver search depends on. Full explanation in `docs/data-model.md`
+§ Migrations. If you have already been prompted: cancel, do not name it.
+
 ## Idram payments locally
 
 The browser half works locally; the server half needs a helper, because the

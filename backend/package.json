@@ -14,7 +14,7 @@
     "test:watch": "vitest",
     "check:di": "node scripts/check-di-graph.js",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate": "prisma migrate deploy",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "admin:create": "node scripts/create-admin-user.js",

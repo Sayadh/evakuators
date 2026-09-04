@@ -8,6 +8,7 @@ import { findSubscriptionPlan } from './subscription-plans'
 import { toAdminPendingPaymentApi, toSubscriptionPaymentApi } from './subscription.mapper'
 import type { AdminPendingPaymentApi, SubscriptionPaymentApi } from './subscription.types'
 import { SubscriptionsRepository } from './subscriptions.repository'
+import { SubscriptionsService } from './subscriptions.service'
 
 /**
  * The admin half of subscriptions: deciding requests drivers made, and
@@ -25,6 +26,7 @@ export class AdminSubscriptionsService {
   constructor(
     private readonly subscriptionsRepository: SubscriptionsRepository,
     private readonly towTrucksRepository: TowTrucksRepository,
+    private readonly subscriptions: SubscriptionsService,
   ) {}
 
   async listPending(): Promise<AdminPendingPaymentApi[]> {
@@ -57,21 +59,15 @@ export class AdminSubscriptionsService {
       return toSubscriptionPaymentApi(cancelled)
     }
 
-    const coverage = await this.subscriptionsRepository.findCoverage([payment.towTruckId])
-    const period = renewalPeriod(
-      coverage.get(payment.towTruckId)?.paidUntil ?? null,
-      new Date(),
-      payment.durationMonths,
-    )
-
-    const confirmed = await this.subscriptionsRepository.confirm(id, period)
+    // Delegated, not reimplemented: the period recomputation, the extension of
+    // live coverage and the race-safe status guard all live in one place, so
+    // an admin confirming and Idram confirming cannot drift apart. See
+    // SubscriptionsService.confirmPayment.
+    const confirmed = await this.subscriptions.confirmPayment(id)
     if (!confirmed) throw new ConflictException('Այս հայտի վերաբերյալ որոշում արդեն կայացվել է')
 
-    this.logger.warn(
-      `Subscription payment #${id} confirmed by an admin for TowTruck #${payment.towTruckId}: ` +
-        `${payment.planCode}, covered until ${period.end.toISOString()}`,
-    )
-    return toSubscriptionPaymentApi(confirmed)
+    this.logger.warn(`Subscription payment #${id} confirmed by an admin`)
+    return confirmed
   }
 
   /**

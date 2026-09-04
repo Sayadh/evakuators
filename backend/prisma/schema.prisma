@@ -1014,6 +1014,19 @@ model SubscriptionPayment {
   periodStart DateTime
   periodEnd   DateTime
 
+  /// Which system the money came through — `'IDRAM'`, or null for a payment an
+  /// admin recorded by hand (cash, transfer). A plain string rather than an
+  /// enum for the same reason `planCode` is one: a provider we stop using must
+  /// still read back on old rows instead of breaking the query.
+  provider              String?
+  /// The provider's own transaction id (Idram's EDP_TRANS_ID).
+  ///
+  /// Unique, and that uniqueness is load-bearing: a payment gateway retries a
+  /// callback it did not hear "OK" from, so the same transaction WILL arrive
+  /// more than once. Without this a retry would confirm a second time and hand
+  /// the driver another month for one payment. See IdramService.
+  providerTransactionId String? @unique
+
   status    SubscriptionPaymentStatus @default(PENDING)
   createdAt DateTime                  @default(now())
   updatedAt DateTime                  @updatedAt

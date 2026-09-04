@@ -5,3 +5,8 @@ node_modules
 dist
 .DS_Store
 *.log
+
+# vitest writes these beside vitest.config.ts while resolving it and usually
+# cleans them up; a killed run leaves them behind, where `eslint .` picks them
+# up as source and fails the lint on generated code.
+vitest.config.ts.timestamp-*.mjs

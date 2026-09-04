@@ -73,8 +73,24 @@ export interface MySubscriptionStatusApi {
   paidUntil?: string
   /** Whole days until `paidUntil`, floored, never negative. 0 once it has passed. */
   daysLeft: number
-  /** True when the dashboard must show nothing but the payment block — see isLockedOut */
+  /**
+   * True when the dashboard must show nothing but the payment block — see
+   * `isLockedOut`. Always false while `paymentsEnabled` is false.
+   */
   locked: boolean
+  /**
+   * Whether this deployment can take payments at all, and therefore whether
+   * the driver is shown a payment block and held to a paywall.
+   *
+   * False means no merchant credentials are set (`IDRAM_REC_ACCOUNT` /
+   * `IDRAM_SECRET_KEY` blank). The subscription API, the provider callback and
+   * the admin queue are all live in that state — what is off is everything the
+   * DRIVER would see, because asking someone to pay through a gateway that
+   * cannot be reached is worse than asking nothing. Carried to the browser
+   * rather than baked into the frontend build so that switching it on is an
+   * env change plus a restart, not a redeploy of both apps.
+   */
+  paymentsEnabled: boolean
   /**
    * Whether this driver is still listed on the site, and why not.
    *
@@ -88,4 +104,28 @@ export interface MySubscriptionStatusApi {
    */
   isActive: boolean
   deactivationReason?: DeactivationReason
+}
+
+/**
+ * Everything the browser needs to hand the driver over to the payment
+ * provider: where to POST, and what to POST.
+ *
+ * Sent as data rather than rendered markup — the browser has to do the POST
+ * itself (that is what carries the driver to Idram's page), and a blob of HTML
+ * built on the server would be both harder to test and a needless place for
+ * markup to go wrong.
+ *
+ * Absent when the environment has no merchant credentials: that is a working
+ * deploy which simply cannot take card payments yet, and the dashboard shows
+ * the request as recorded instead of redirecting anywhere.
+ */
+export interface PaymentGatewayFormApi {
+  provider: string
+  action: string
+  fields: Record<string, string>
+}
+
+/** A created payment, plus the handoff that starts it (when a provider is configured) */
+export interface CreatedSubscriptionPaymentApi extends SubscriptionPaymentApi {
+  gateway?: PaymentGatewayFormApi
 }

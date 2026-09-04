@@ -559,6 +559,45 @@ wrong link in Telegram messages.
 | `ROUTE_MATRIX_BASE_URL` | no, default `https://api.openrouteservice.org` | Only for pointing at a self-hosted instance |
 | `ANALYTICS_VISITOR_PEPPER` | no, falls back to `DRIVER_JWT_SECRET` | Pepper for hashing analytics visitor ids (see `docs/analytics.md`). Optional so analytics needs no new setup on an existing deploy. **Changing it makes every returning visitor count as new** from that point on; historical aggregates are unaffected |
 | `PRIVACY_CONSENT_IP_SECRET` | no, falls back to `DRIVER_JWT_SECRET` | HMAC key for the `ipHash` on a privacy-consent record (see `docs/auth-and-security.md` § "Privacy consent"). Optional for the same reason as the pepper above — an existing deploy must not silently stop recording consent because a new variable was missed. Rotating it only breaks "same IP as last time" comparisons across the rotation; it cannot affect who consented, to what, or when |
+| `IDRAM_REC_ACCOUNT` | no, default `''` | Our IdramID, issued by Idram. Echoed in every callback and checked against it (`IdramService.handleConfirmation`) |
+| `IDRAM_SECRET_KEY` | no, default `''` | The key the callback checksum is built from — see `src/idram/idram-checksum.ts`. **Never** sent to the browser: it appears in the MD5 only, never as a form field |
+
+### Turning Idram payments on
+
+Both Idram variables are optional and blank by default, and **blank is the
+switch for the entire driver-facing subscription feature** — the same
+convention `ROUTE_MATRIX_API_KEY` uses, for the same reason: a deploy without
+credentials has to be a working deploy.
+
+This exists because the three URLs have to be live before Idram will register
+them, and the credentials only arrive after that. So the code ships first and
+inert:
+
+| With both blank | With both set |
+| --- | --- |
+| `POST /api/v1/idram/result` is live and answers `REFUSED` — enough for Idram to register and reach the URL | Answers `OK` for a callback whose checksum verifies |
+| `/payment/idram/success` and `/failed` render | Same |
+| Driver's dashboard shows **no** «Վճարումներ» block, no reminder dialog, no lock | Block first on the page, reminder 5 days out, lock once the period ends |
+| `SubscriptionActiveGuard` refuses nothing | 402 on profile and free-route writes for a lapsed driver |
+| `/admin/payments` works in full, including granting a plan by hand | Same, plus the driver's own PENDING requests arriving in the queue |
+
+The reason the paywall is tied to the gateway rather than left on: the
+`20260902140000_backfill_subscription_payments` migration gives every driver
+who predates this feature a period ending one month after the date an admin
+last marked them paid, so most of the existing fleet reads as `overdue` on the
+day it lands. Enforcing that before there is anywhere to pay would take those
+drivers' pages offline over a bill they could not settle. See
+`subscription-active.guard.ts` and `getMyStatus`.
+
+To switch it on later, no redeploy is needed — add both variables to the `env`
+block in `ecosystem.config.js` and:
+
+```bash
+pm2 restart ecosystem.config.js
+```
+
+from the repo root (the **file**, not the process name, or the `env` block is
+not reloaded).
 
 ## Environment variables reference (frontend)
 

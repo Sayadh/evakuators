@@ -97,6 +97,21 @@ export interface AppConfig {
     apiKey: string
     baseUrl: string
   }
+  /**
+   * Idram, the payment provider drivers pay their subscription through.
+   *
+   * Both blank is a working deploy, not a broken one — the same convention
+   * `routeMatrix.apiKey` uses above. With no credentials the RESULT endpoint
+   * refuses every callback and the dashboard offers no «վճարել» handoff, which
+   * is exactly right for an environment that has not been given a merchant
+   * account: better to sell nothing than to take money we cannot verify.
+   */
+  idram: {
+    /** EDP_REC_ACCOUNT — our IdramID, echoed in every callback and checked against it */
+    recAccount: string
+    /** Shared secret, third field of the checksum string. Never leaves the backend. */
+    secretKey: string
+  }
 }
 
 const driverJwtSecret = (): string => process.env.DRIVER_JWT_SECRET ?? ''
@@ -149,5 +164,9 @@ export default (): AppConfig => ({
       /\/$/,
       '',
     ),
+  },
+  idram: {
+    recAccount: process.env.IDRAM_REC_ACCOUNT ?? '',
+    secretKey: process.env.IDRAM_SECRET_KEY ?? '',
   },
 })

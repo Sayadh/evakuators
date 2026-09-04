@@ -1,5 +1,6 @@
-import { Module } from '@nestjs/common'
+import { Module, forwardRef } from '@nestjs/common'
 import { AdminAuthModule } from '../admin-auth/admin-auth.module'
+import { IdramModule } from '../idram/idram.module'
 import { DriverAuthModule } from '../driver-auth/driver-auth.module'
 import { TowTrucksModule } from '../tow-trucks/tow-trucks.module'
 import { AdminSubscriptionsController } from './admin-subscriptions.controller'
@@ -15,7 +16,7 @@ import { SubscriptionsService } from './subscriptions.service'
 // TowTrucksModule for TowTrucksRepository (the admin grant checks the driver
 // exists before recording money against them).
 @Module({
-  imports: [DriverAuthModule, AdminAuthModule, TowTrucksModule],
+  imports: [DriverAuthModule, AdminAuthModule, TowTrucksModule, forwardRef(() => IdramModule)],
   controllers: [
     MySubscriptionPlansController,
     MySubscriptionPaymentsController,
@@ -29,7 +30,8 @@ import { SubscriptionsService } from './subscriptions.service'
   ],
   // AdminService reads coverage for the /admin/payments list; the guard is
   // attached to write routes on the driver's own controllers, which live in
-  // MyTowTruckModule and FreeRoutesModule.
-  exports: [SubscriptionsRepository, SubscriptionActiveGuard],
+  // MyTowTruckModule and FreeRoutesModule; and SubscriptionsService carries
+  // the one confirmation path, which IdramModule calls when a payment lands.
+  exports: [SubscriptionsService, SubscriptionsRepository, SubscriptionActiveGuard],
 })
 export class SubscriptionsModule {}

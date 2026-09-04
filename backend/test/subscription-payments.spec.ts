@@ -14,6 +14,22 @@ import type {
   SubscriptionsRepository,
 } from '../src/subscriptions/subscriptions.repository'
 import { SubscriptionsService } from '../src/subscriptions/subscriptions.service'
+import type { IdramService } from '../src/idram/idram.service'
+import type { TowTrucksRepository } from '../src/tow-trucks/tow-trucks.repository'
+
+/**
+ * The two collaborators these tests do not exercise, as the smallest thing
+ * that satisfies the constructor: the truck lookup belongs to `getMyStatus`,
+ * and the gateway form to an environment that has payment credentials —
+ * `undefined` here is exactly what an environment without them returns.
+ */
+const noTrucks = {} as TowTrucksRepository
+const noGateway = { isConfigured: false, paymentForm: () => undefined } as unknown as IdramService
+
+/** SubscriptionsService with only the collaborator each test actually uses */
+function buildService(repository: SubscriptionsRepository): SubscriptionsService {
+  return new SubscriptionsService(repository, noTrucks, noGateway)
+}
 
 /**
  * The property this whole feature rests on: **the client names a plan and
@@ -54,7 +70,7 @@ function driverRequest(towTruckId: number): AuthenticatedDriverRequest {
 describe('SubscriptionsService.createPayment', () => {
   it('takes the price and the duration from the plan, never from the caller', async () => {
     const { repository, created } = fakeRepository()
-    await new SubscriptionsService(repository).createPayment(12, 'FOUR_MONTHS')
+    await buildService(repository).createPayment(12, 'FOUR_MONTHS')
 
     expect(created).toHaveLength(1)
     expect(created[0]!.data).toMatchObject({
@@ -70,13 +86,13 @@ describe('SubscriptionsService.createPayment', () => {
     // below) — the point here is that the service writes it through unchanged
     // rather than reading an id from anywhere else.
     const { repository, created } = fakeRepository()
-    await new SubscriptionsService(repository).createPayment(3, 'ONE_MONTH')
+    await buildService(repository).createPayment(3, 'ONE_MONTH')
     expect(created[0]!.towTruckId).toBe(3)
   })
 
   it('computes the quoted period from the plan duration', async () => {
     const { repository, created } = fakeRepository()
-    await new SubscriptionsService(repository).createPayment(1, 'FOUR_MONTHS')
+    await buildService(repository).createPayment(1, 'FOUR_MONTHS')
 
     const { periodStart, periodEnd } = created[0]!.data
     const months =
@@ -87,19 +103,19 @@ describe('SubscriptionsService.createPayment', () => {
 
   it('comes back PENDING — nothing here charges anyone', async () => {
     const { repository } = fakeRepository()
-    const payment = await new SubscriptionsService(repository).createPayment(1, 'ONE_MONTH')
+    const payment = await buildService(repository).createPayment(1, 'ONE_MONTH')
     expect(payment.status).toBe('PENDING')
   })
 
   it('echoes the driver id the API derived, so a client can see it never sent one', async () => {
     const { repository } = fakeRepository()
-    const payment = await new SubscriptionsService(repository).createPayment(42, 'ONE_MONTH')
+    const payment = await buildService(repository).createPayment(42, 'ONE_MONTH')
     expect(payment.towTruckId).toBe(42)
   })
 
   it('refuses a plan that is not on sale, without writing anything', async () => {
     const { repository, created } = fakeRepository()
-    const service = new SubscriptionsService(repository)
+    const service = buildService(repository)
 
     await expect(service.createPayment(1, 'FREE_FOREVER')).rejects.toBeInstanceOf(BadRequestException)
     expect(created).toHaveLength(0)
@@ -109,7 +125,7 @@ describe('SubscriptionsService.createPayment', () => {
 describe('SubscriptionsService.listPlans', () => {
   it('returns both plans under `items`, with the code as the id', () => {
     const { repository } = fakeRepository()
-    const { items } = new SubscriptionsService(repository).listPlans()
+    const { items } = buildService(repository).listPlans()
 
     expect(items.map((plan) => plan.id)).toEqual(['ONE_MONTH', 'FOUR_MONTHS'])
     expect(items[0]).toMatchObject({ id: 'ONE_MONTH', code: 'ONE_MONTH', price: 3000 })

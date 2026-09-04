@@ -3,8 +3,10 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { SubscriptionPaymentStatus } from '@prisma/client'
 import { describe, expect, it, vi } from 'vitest'
 import { AdminSubscriptionsService } from '../src/subscriptions/admin-subscriptions.service'
+import { renewalPeriod } from '../src/subscriptions/subscription-period'
 import type { SubscriptionsRepository } from '../src/subscriptions/subscriptions.repository'
 import type { TowTrucksRepository } from '../src/tow-trucks/tow-trucks.repository'
+import type { SubscriptionsService } from '../src/subscriptions/subscriptions.service'
 
 /**
  * The admin half of subscriptions: confirming what a driver asked for, and
@@ -79,7 +81,25 @@ function build(options: {
     findById: vi.fn(async () => (options.truckExists === false ? null : { id: 7 })),
   } as unknown as TowTrucksRepository
 
-  return { service: new AdminSubscriptionsService(subscriptions, trucks), created, confirmed }
+  // confirmPayment is the shared path AdminSubscriptionsService now delegates
+  // its PAID half to — faked here so these tests stay about the ADMIN's rules
+  // (who may decide, and when), with the confirmation's own rules covered
+  // where they live, in subscription-period.spec.ts.
+  const subscriptionsService = {
+    confirmPayment: vi.fn(async (id: number) => {
+      const coverage = await subscriptions.findCoverage([options.payment?.towTruckId ?? 1])
+      const paidUntil = coverage.get(options.payment?.towTruckId ?? 1)?.paidUntil ?? null
+      const period = renewalPeriod(paidUntil, new Date(), options.payment?.durationMonths ?? 1)
+      confirmed.push({ id, start: period.start, end: period.end })
+      return { id, status: SubscriptionPaymentStatus.PAID }
+    }),
+  } as unknown as SubscriptionsService
+
+  return {
+    service: new AdminSubscriptionsService(subscriptions, trucks, subscriptionsService),
+    created,
+    confirmed,
+  }
 }
 
 describe('AdminSubscriptionsService.grant', () => {

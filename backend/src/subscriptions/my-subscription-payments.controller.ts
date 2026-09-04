@@ -2,7 +2,11 @@ import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common'
 import { Throttle } from '@nestjs/throttler'
 import { AuthenticatedDriverRequest, DriverJwtGuard } from '../driver-auth/driver-jwt.guard'
 import { CreateSubscriptionPaymentDto } from './dto/create-subscription-payment.dto'
-import type { MySubscriptionStatusApi, SubscriptionPaymentApi } from './subscription.types'
+import type {
+  CreatedSubscriptionPaymentApi,
+  MySubscriptionStatusApi,
+  SubscriptionPaymentApi,
+} from './subscription.types'
 import { SubscriptionsService } from './subscriptions.service'
 
 /** Driver self-service — every route here only ever touches the caller's own payments */
@@ -47,7 +51,7 @@ export class MySubscriptionPaymentsController {
   create(
     @Req() request: AuthenticatedDriverRequest,
     @Body() dto: CreateSubscriptionPaymentDto,
-  ): Promise<SubscriptionPaymentApi> {
+  ): Promise<CreatedSubscriptionPaymentApi> {
     return this.subscriptionsService.createPayment(request.towTruckId, dto.planId)
   }
 }

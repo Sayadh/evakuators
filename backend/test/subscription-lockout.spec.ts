@@ -2,16 +2,25 @@ import 'reflect-metadata'
 import { HttpException, HttpStatus } from '@nestjs/common'
 import type { ExecutionContext } from '@nestjs/common'
 import { GUARDS_METADATA } from '@nestjs/common/constants'
+import type { ConfigService } from '@nestjs/config'
 import { describe, expect, it, vi } from 'vitest'
 import { MyFreeRoutesController } from '../src/free-routes/my-free-routes.controller'
+import type { IdramService } from '../src/idram/idram.service'
 import { MyTowTruckController } from '../src/my-tow-truck/my-tow-truck.controller'
 import { SubscriptionActiveGuard } from '../src/subscriptions/subscription-active.guard'
 import { isLockedOut } from '../src/subscriptions/subscription-status'
 import type { SubscriptionsRepository } from '../src/subscriptions/subscriptions.repository'
+import { SubscriptionsService } from '../src/subscriptions/subscriptions.service'
+import type { TowTrucksRepository } from '../src/tow-trucks/tow-trucks.repository'
 
 /**
- * The paywall, in the two places that have to agree: the rule itself, and the
- * guard that enforces it on the routes a lapsed driver must not reach.
+ * The paywall, in the three places that have to agree: the rule itself, the
+ * guard that enforces it on the routes a lapsed driver must not reach, and the
+ * status the dashboard draws its own gate from.
+ *
+ * All three are additionally switched off wholesale while the deployment has
+ * no payment gateway — the property that lets this ship to production before
+ * Idram credentials exist without ejecting a single driver.
  */
 
 describe('isLockedOut', () => {
@@ -31,7 +40,15 @@ describe('isLockedOut', () => {
   })
 })
 
-function guardWith(paidUntil: Date | null): SubscriptionActiveGuard {
+/** A ConfigService that answers `idram` with credentials, or with blanks (= gateway off) */
+function configWith(configured: boolean): ConfigService {
+  return {
+    getOrThrow: () =>
+      configured ? { recAccount: '11112222', secretKey: 'secret' } : { recAccount: '', secretKey: '' },
+  } as unknown as ConfigService
+}
+
+function guardWith(paidUntil: Date | null, gateway = true): SubscriptionActiveGuard {
   const repository = {
     findCoverage: vi.fn(async (ids: number[]) => {
       const map = new Map()
@@ -39,7 +56,7 @@ function guardWith(paidUntil: Date | null): SubscriptionActiveGuard {
       return map
     }),
   } as unknown as SubscriptionsRepository
-  return new SubscriptionActiveGuard(repository)
+  return new SubscriptionActiveGuard(configWith(gateway), repository)
 }
 
 function contextFor(towTruckId: unknown): ExecutionContext {
@@ -71,12 +88,78 @@ describe('SubscriptionActiveGuard', () => {
     await expect(attempt).rejects.toMatchObject({ status: HttpStatus.PAYMENT_REQUIRED })
   })
 
+  it('refuses nothing at all while there is no payment gateway', async () => {
+    // The deploy-day property, second half: shipping this before Idram
+    // credentials exist must not eject the drivers the backfill turns
+    // `overdue`. There is no way for them to pay, so there is nothing to
+    // refuse — and getMyStatus reports `locked: false` to match.
+    await expect(guardWith(inDays(-1), false).canActivate(contextFor(7))).resolves.toBe(true)
+  })
+
+  it('still refuses a lapsed driver once the gateway is configured', async () => {
+    await expect(guardWith(inDays(-1), true).canActivate(contextFor(7))).rejects.toBeInstanceOf(
+      HttpException,
+    )
+  })
+
   it('refuses rather than guesses when no driver id was set', async () => {
     // i.e. DriverJwtGuard did not run first. "No id" must not read as
     // "nothing to check".
     await expect(guardWith(inDays(20)).canActivate(contextFor(undefined))).rejects.toBeInstanceOf(
       HttpException,
     )
+  })
+})
+
+/**
+ * The dashboard's half of the same decision. It must never lock someone the
+ * guard would let through, or the driver sees a paywall the API does not
+ * enforce — and, worse, the reverse.
+ */
+function statusServiceWith(paidUntil: Date | null, gateway: boolean, isActive = true): SubscriptionsService {
+  const repository = {
+    findCoverage: async (ids: number[]) => {
+      const map = new Map()
+      for (const id of ids) map.set(id, { towTruckId: id, paidUntil, lastPaidAt: null, pendingCount: 0 })
+      return map
+    },
+  } as unknown as SubscriptionsRepository
+  const trucks = {
+    findStatusById: async () => ({ isActive, deactivationReason: isActive ? null : 'UNPAID' }),
+  } as unknown as TowTrucksRepository
+  const idram = { isConfigured: gateway } as unknown as IdramService
+  return new SubscriptionsService(repository, trucks, idram)
+}
+
+describe('getMyStatus', () => {
+  it('reports the gateway as off, and locks nobody, without credentials', async () => {
+    const status = await statusServiceWith(inDays(-30), false).getMyStatus(7)
+    expect(status.paymentsEnabled).toBe(false)
+    // The status itself is still the truth — only the consequence is withheld.
+    expect(status.status).toBe('overdue')
+    expect(status.locked).toBe(false)
+  })
+
+  it('locks the same driver once credentials are set', async () => {
+    const status = await statusServiceWith(inDays(-30), true).getMyStatus(7)
+    expect(status.paymentsEnabled).toBe(true)
+    expect(status.locked).toBe(true)
+  })
+
+  it('agrees with the guard on a covered driver either way', async () => {
+    for (const gateway of [true, false]) {
+      const status = await statusServiceWith(inDays(20), gateway).getMyStatus(7)
+      expect(status.locked).toBe(false)
+      await expect(guardWith(inDays(20), gateway).canActivate(contextFor(7))).resolves.toBe(true)
+    }
+  })
+
+  it('keeps a deactivated driver locked even with no gateway', async () => {
+    // Not a billing state: an admin took the page off the site, and that is
+    // true whether or not there is anywhere to pay.
+    const status = await statusServiceWith(inDays(30), false, false).getMyStatus(7)
+    expect(status.paymentsEnabled).toBe(false)
+    expect(status.locked).toBe(true)
   })
 })
 

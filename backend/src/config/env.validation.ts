@@ -73,6 +73,15 @@ const envSchema = z.object({
   // outage produces, so it is a path that gets exercised either way.
   ROUTE_MATRIX_API_KEY: z.string().optional().default(''),
   ROUTE_MATRIX_BASE_URL: z.string().optional().default('https://api.openrouteservice.org'),
+
+  // Idram merchant credentials. Optional for the same reason the route-matrix
+  // key is: an environment without them is one that cannot take payments yet,
+  // which is a normal state (local, and production before the merchant
+  // agreement is signed) rather than a misconfiguration worth refusing to boot
+  // over. The RESULT endpoint checks for them itself and refuses callbacks
+  // when they are missing — see IdramService.
+  IDRAM_REC_ACCOUNT: z.string().optional().default(''),
+  IDRAM_SECRET_KEY: z.string().optional().default(''),
 })
 
 export type Env = z.infer<typeof envSchema>

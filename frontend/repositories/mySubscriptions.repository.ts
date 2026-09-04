@@ -1,6 +1,7 @@
 import { apiFetch } from './apiClient'
 import { useDriverAuthStore } from '~/stores/driverAuth'
 import type {
+  CreatedSubscriptionPayment,
   MySubscriptionStatus,
   SubscriptionPayment,
   SubscriptionPlan,
@@ -38,8 +39,8 @@ export const mySubscriptionsRepository = {
    * would be REJECTED, not ignored (the backend's ValidationPipe runs with
    * `forbidNonWhitelisted`). See backend/src/subscriptions/dto/create-subscription-payment.dto.ts.
    */
-  createPayment(planId: SubscriptionPlanCode): Promise<SubscriptionPayment> {
-    return apiFetch<SubscriptionPayment>('/my/subscription-payments', {
+  createPayment(planId: SubscriptionPlanCode): Promise<CreatedSubscriptionPayment> {
+    return apiFetch<CreatedSubscriptionPayment>('/my/subscription-payments', {
       method: 'POST',
       body: { planId },
       headers: useDriverAuthStore().authHeader,

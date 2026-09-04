@@ -62,8 +62,19 @@ export interface MySubscriptionStatus {
   paidUntil?: string
   /** Whole days until `paidUntil`, floored, never negative */
   daysLeft: number
-  /** True when the dashboard must show nothing but the payment block */
+  /** True when the dashboard must show nothing but the payment block. Always false while `paymentsEnabled` is false. */
   locked: boolean
+  /**
+   * Whether this deployment can take payments at all — false when the backend
+   * has no Idram merchant credentials.
+   *
+   * The whole driver-facing side of subscriptions is hidden while this is
+   * false: no «Վճարումներ» block, no reminder dialog, no lock. Asking a driver
+   * to pay through a gateway that is not reachable is worse than asking
+   * nothing, and the backend refuses nothing in that state either (see
+   * SubscriptionActiveGuard), so the two always agree.
+   */
+  paymentsEnabled: boolean
   /**
    * Whether this driver is still listed on the site, and why not.
    *
@@ -72,6 +83,24 @@ export interface MySubscriptionStatus {
    */
   isActive: boolean
   deactivationReason?: 'UNPAID' | 'OTHER'
+}
+
+/**
+ * Where to send the driver, and what to send, to start a payment — mirrors
+ * backend PaymentGatewayFormApi.
+ *
+ * Absent when the environment has no merchant credentials, which is a working
+ * deploy that simply cannot take card payments yet.
+ */
+export interface PaymentGatewayForm {
+  provider: string
+  action: string
+  fields: Record<string, string>
+}
+
+/** A created payment, plus the handoff that starts it */
+export interface CreatedSubscriptionPayment extends SubscriptionPayment {
+  gateway?: PaymentGatewayForm
 }
 
 /** Mirrors backend DeactivationReason — why an admin took a driver off the site */

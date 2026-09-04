@@ -54,7 +54,7 @@ from the server itself (Nuxt SSR over loopback) skip throttling entirely — see
 | `GET` | `/my/analytics/reviews` | Own reviews **including unmoderated ones**. `?status=CONFIRMED\|PENDING\|ALL&limit=` (limit capped at 100) |
 | `GET` | `/my/analytics/ratings` | Star histogram 1→5 split confirmed/pending, plus both averages (`null`, not `0`, when there are none) |
 | `GET` | `/my/subscription-plans` | `{ items: SubscriptionPlanApi[] }` — the two plans on sale, straight from the constants in `backend/src/subscriptions/subscription-plans.ts` (no table, see § "Subscription payments"). `id` **is** the plan's code (`ONE_MONTH` / `FOUR_MONTHS`) |
-| `GET` | `/my/subscription-payments/status` | `{ status, paidUntil?, daysLeft, locked }` — what the dashboard decides its gate from. Read on every load, never cached in the session: a session lasts 30 days and a subscription does not |
+| `GET` | `/my/subscription-payments/status` | `{ status, paidUntil?, daysLeft, locked, paymentsEnabled, isActive, deactivationReason? }` — what the dashboard decides its gate from. `paymentsEnabled: false` (no Idram credentials) hides the whole driver-facing side and forces `locked: false` Read on every load, never cached in the session: a session lasts 30 days and a subscription does not |
 | `GET` | `/my/subscription-payments` | Own payment requests, newest first, capped at 50 |
 | `POST` | `/my/subscription-payments` | Body is `{ planId }` and **nothing else** — see § "Subscription payments". 10/60s. Answers the created record: amount, currency, months, `periodStart`/`periodEnd`, `status`, and the `towTruckId` the server derived |
 
@@ -231,6 +231,79 @@ locked dashboard.
 Nothing here touches the public site. An overdue driver's profile and free
 routes stay listed; taking a driver off the site is still an admin's explicit
 decision (`isActive`), exactly as it was.
+
+**The whole paywall is off until the gateway is configured.** With
+`IDRAM_REC_ACCOUNT`/`IDRAM_SECRET_KEY` blank, `getMyStatus` answers
+`paymentsEnabled: false` and `locked: false`, `SubscriptionActiveGuard` refuses
+nothing, and the dashboard renders no payment block and no reminder — while the
+callback endpoint and `/admin/payments` stay fully live. This is what lets the
+three URLs be registered with Idram before their credentials exist: the
+backfill migration makes most of the existing fleet read as `overdue`, and
+locking them out over a bill they have no way to settle is the one failure this
+feature could not survive. Setting both variables switches it on with a
+restart, not a redeploy — see `docs/deployment.md` § "Turning Idram payments
+on".
+
+### Paying through Idram
+
+Three URLs are registered with Idram, and which host each one lives on is the
+whole design:
+
+| | Who goes there | Host |
+| --- | --- | --- |
+| SUCCESS_URL `/payment/idram/success` | the driver's **browser** | `evakuators.am` |
+| FAIL_URL `/payment/idram/failed` | the driver's **browser** | `evakuators.am` |
+| RESULT_URL `POST /api/v1/idram/result` | **Idram's server** | `api.evakuators.am` |
+
+The confirmation has to land where the database is, which is why RESULT_URL is
+on the API and not the site. The two browser pages prove nothing — anyone can
+open them — so the success page reads the real status back from
+`GET /my/subscription-payments/status` and tolerates arriving before the
+callback does.
+
+**The flow.** `POST /my/subscription-payments` creates the PENDING row *and*
+returns `gateway` — where to POST and what to POST. The browser submits that
+form, Idram asks us to confirm the order (`EDP_PRECHECK=YES`), the driver pays,
+and Idram posts the confirmation. Both callbacks hit the same URL and are told
+apart by `EDP_PRECHECK`.
+
+**The row exists before the handoff, and that ordering is required**: the
+preliminary callback asks whether this bill is a real order, and there would be
+nothing to answer with otherwise.
+
+**The amount check is the security boundary.** The payment form is in the
+driver's own browser, so nothing stops them editing `EDP_AMOUNT` to 1 before
+submitting. Idram then asks us, before charging, whether that is really the
+order — and refusing there is the entire reason a driver cannot buy four months
+for one dram (`idramAmountMatches`).
+
+**The reply body is what Idram reads**, not the status code: `OK` and nothing
+else means accepted. So the endpoint always answers 200 in plain text and never
+throws — a JSON error page from `AllExceptionsFilter` would be a perfectly good
+refusal and a much worse thing to read in a provider's logs. Refusals are loud
+in our logs instead.
+
+Refusing has consequences by design: on the preliminary request it stops the
+charge, and on the confirmation it makes Idram email the merchant address
+rather than consider us notified.
+
+Other things worth knowing:
+
+- The confirmation's `EDP_CHECKSUM` is MD5 over seven fields joined by `:` with
+  the **secret third, in the middle** — computed from the raw strings Idram
+  sent, never from our own re-formatted values (`idram-checksum.ts`).
+- The preliminary request carries **no checksum**, so it cannot be
+  authenticated at all. Answering it is therefore strictly read-only.
+- `EDP_TRANS_ID` is stored and unique. A gateway retries anything it did not
+  hear `OK` from, so the same transaction arrives more than once by design — a
+  replay answers `OK` and confirms nothing twice.
+- `EDP_REC_ACCOUNT` is checked against ours, which is what keeps a test-account
+  callback out of the production database.
+- The body is read as a raw record, not a DTO: the global `forbidNonWhitelisted`
+  pipe would answer 400 the day Idram adds a field, and payments would stop.
+- With `IDRAM_REC_ACCOUNT`/`IDRAM_SECRET_KEY` unset, every callback is refused
+  and no `gateway` is offered — a working deploy that cannot take card payments
+  yet, the same convention `ROUTE_MATRIX_API_KEY` uses.
 
 ## Admin-authenticated (`Authorization: Bearer <admin JWT>`, `AdminJwtGuard`)
 

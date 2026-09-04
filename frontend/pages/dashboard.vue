@@ -515,7 +515,12 @@ type PaymentMoment = 'due-soon' | 'overdue' | 'deactivated'
 const paymentMoment = computed<PaymentMoment | null>(() => {
   const status = subscription.value
   if (!status) return null
+  // Deactivation is not a billing moment: an admin took this page off the site
+  // and the driver is told so whether or not a gateway exists to pay through.
   if (!status.isActive) return 'deactivated'
+  // The two money moments say "pay", so neither is said while there is nothing
+  // to pay with — `locked` is already false in that state, `due-soon` is not.
+  if (!status.paymentsEnabled) return null
   if (status.locked) return 'overdue'
   return status.status === 'due-soon' ? 'due-soon' : null
 })
@@ -1032,7 +1037,11 @@ async function logout(): Promise<void> {
         Հարցերի դեպքում՝
         <a :href="getPhoneHref(CONTACT_PHONE)">{{ CONTACT_PHONE }}</a>
       </p>
-      <SubscriptionPayments />
+      <!-- Only reachable here by a deactivated driver while payments are off
+           (an expiry cannot lock anyone in that state). The phone number above
+           is the whole answer for them — a plan card whose Վճարել leads
+           nowhere would only send them somewhere that refuses. -->
+      <SubscriptionPayments v-if="subscription.paymentsEnabled" />
     </section>
 
     <template v-else-if="truck">
@@ -1082,8 +1091,13 @@ async function logout(): Promise<void> {
       <!-- First on the page, and the only section with its own colour: it is
            the one thing here a driver has to act on rather than read, and it
            has no other entry point in the app. Still collapsed like every
-           other section — the plans render when it is opened. -->
-      <details class="dashboard-section dashboard-section--payments">
+           other section — the plans render when it is opened.
+
+           Hidden entirely until the backend has a payment gateway
+           (`paymentsEnabled`): before then every plan card leads to a Վճարել
+           that cannot go anywhere, which is worse than showing nothing. The
+           same flag is what keeps the paywall and the reminder dialog off. -->
+      <details v-if="subscription?.paymentsEnabled" class="dashboard-section dashboard-section--payments">
         <summary class="dashboard-summary">Վճարումներ</summary>
         <div class="dashboard-details-content">
           <p class="dashboard-hint">

@@ -150,15 +150,36 @@ export class SubscriptionsRepository {
    * Guarded on the current status like `setStatus` above, so two admins
    * confirming the same request cannot both extend the driver's coverage.
    */
-  async confirm(id: number, period: SubscriptionPeriod): Promise<SubscriptionPayment | null> {
+  async confirm(
+    id: number,
+    period: SubscriptionPeriod,
+    source?: { provider: string; transactionId: string },
+  ): Promise<SubscriptionPayment | null> {
     const { count } = await this.prisma.subscriptionPayment.updateMany({
       where: { id, status: SubscriptionPaymentStatus.PENDING },
       data: {
         status: SubscriptionPaymentStatus.PAID,
         periodStart: period.start,
         periodEnd: period.end,
+        provider: source?.provider,
+        providerTransactionId: source?.transactionId,
       },
     })
     return count === 0 ? null : this.findById(id)
+  }
+
+  /**
+   * The payment a provider's transaction already produced, if any.
+   *
+   * Exists to answer "have I seen this callback before" — a gateway retries
+   * anything it did not hear "OK" from, so the same transaction arriving twice
+   * is normal traffic, not an attack. The unique index on the column is what
+   * makes a race lose rather than double-confirm; this is the cheap check that
+   * usually gets there first.
+   */
+  findByProviderTransactionId(transactionId: string): Promise<SubscriptionPayment | null> {
+    return this.prisma.subscriptionPayment.findUnique({
+      where: { providerTransactionId: transactionId },
+    })
   }
 }

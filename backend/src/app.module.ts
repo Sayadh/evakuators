@@ -12,6 +12,7 @@ import { AnalyticsModule } from './analytics/analytics.module'
 import { DriverAuthModule } from './driver-auth/driver-auth.module'
 import { FreeRoutesModule } from './free-routes/free-routes.module'
 import { HealthModule } from './health/health.module'
+import { IdramModule } from './idram/idram.module'
 import { ImagesModule } from './images/images.module'
 import { MyTowTruckModule } from './my-tow-truck/my-tow-truck.module'
 import { NearestModule } from './nearest/nearest.module'
@@ -59,6 +60,7 @@ import { TowTrucksModule } from './tow-trucks/tow-trucks.module'
     ProfileChangesModule,
     PrivacyConsentModule,
     SubscriptionsModule,
+    IdramModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: SsrAwareThrottlerGuard }],
 })

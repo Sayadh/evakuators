@@ -4,6 +4,7 @@ import type { SubscriptionPayment, SubscriptionPlan, SubscriptionPlanCode } from
 import { extractErrorMessage } from '~/utils/errors'
 import { formatDateLong } from '~/utils/formatters'
 import { formatPrice } from '~/utils/formatPrice'
+import { submitPaymentForm } from '~/utils/submitPaymentForm'
 
 /**
  * The driver's own billing section.
@@ -73,15 +74,34 @@ async function pay(plan: SubscriptionPlan): Promise<void> {
   submittingPlan.value = plan.id
   submitError.value = ''
   lastCreated.value = null
+
+  // `finally` runs on the way out of a `return` too, so without this the
+  // button would flick back to enabled for the moment between submitting the
+  // form and the browser actually leaving — long enough to press twice.
+  let redirecting = false
+
   try {
     // Only the plan id travels — see mySubscriptions.repository.ts.
     const created = await mySubscriptionsRepository.createPayment(plan.id)
+
+    // Hand over to the payment provider if this environment has one. The row
+    // is already saved, so a driver who abandons the provider's page leaves a
+    // PENDING request behind rather than nothing — which is what lets an admin
+    // confirm it later if the money arrived another way.
+    if (created.gateway) {
+      redirecting = true
+      submitPaymentForm(created.gateway)
+      return
+    }
+
+    // No provider configured — the request is recorded and an admin confirms
+    // it by hand, exactly as it worked before there was a gateway.
     lastCreated.value = created
     payments.value = [created, ...payments.value]
   } catch (error) {
     submitError.value = extractErrorMessage(error, 'Հայտը գրանցել չհաջողվեց, փորձեք կրկին։')
   } finally {
-    submittingPlan.value = null
+    if (!redirecting) submittingPlan.value = null
   }
 }
 </script>

@@ -70,7 +70,13 @@ if (!require('node:fs').existsSync(distMain)) {
 const { NestFactory } = require('@nestjs/core')
 const { AppModule } = require(distMain)
 
-NestFactory.create(AppModule, { logger: false })
+// `abortOnError: false` is what makes this script able to REPORT a failure.
+// By default Nest prints the resolution error through its own logger and then
+// calls process.exit(1) itself, from inside create() — so with `logger: false`
+// the catch below never runs and the script exits 1 having printed nothing,
+// which is the one outcome it exists to prevent. With this, create() rejects
+// and the handler gets the real error.
+NestFactory.create(AppModule, { logger: false, abortOnError: false })
   .then(async (app) => {
     await app.close()
     console.log('check:di — OK, every provider in the graph resolves')

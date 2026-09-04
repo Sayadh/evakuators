@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import { CONTACT_PHONE, SITE_NAME } from '~/constants/site'
 import { getPhoneHref } from '~/utils/formatPhone'
 
@@ -11,10 +13,25 @@ import { getPhoneHref } from '~/utils/formatPhone'
  * It costs nothing, it grants nothing, and it is what lets an admin still
  * confirm the payment if the driver ends up paying another way.
  *
- * Deliberately does NOT say what went wrong — we were not told. Idram knows;
- * we only know the driver came back through this door.
+ * ## `isReturn`
+ *
+ * Idram redirects here with a GET and two query parameters — `EDP_BILL_NO` and
+ * `isReturn` — and `isReturn=true` is how it says the driver **walked back**
+ * rather than that a payment failed. Two different people arrive through this
+ * one door, and telling someone who changed their mind that their payment
+ * "did not go through" invents a problem they did not have.
+ *
+ * Only the wording depends on it. Nothing here is trusted or acted on: these
+ * are query parameters on a public page, anyone can type them, and the state
+ * that matters is decided by the RESULT_URL callback on the server.
+ *
+ * Deliberately does NOT say what went wrong in the failure case — we were not
+ * told. Idram knows; we only know the driver came back through this door.
  */
 definePageMeta({ middleware: 'driver-auth' })
+
+const route = useRoute()
+const cancelled = computed(() => route.query.isReturn === 'true')
 
 useSeoMetaData({
   title: `Վճարումը չկատարվեց | ${SITE_NAME}`,
@@ -26,8 +43,15 @@ useSeoMetaData({
 
 <template>
   <div class="container payment-result">
-    <h1>Վճարումը չկատարվեց</h1>
-    <p>Գումարը չի հանվել։ Կարող եք փորձել կրկին ձեր էջից։</p>
+    <template v-if="cancelled">
+      <h1>Վճարումն ընդհատվեց</h1>
+      <p>Գումարը չի հանվել։ Կարող եք վերադառնալ և վճարել ցանկացած պահի։</p>
+    </template>
+
+    <template v-else>
+      <h1>Վճարումը չկատարվեց</h1>
+      <p>Գումարը չի հանվել։ Կարող եք փորձել կրկին ձեր էջից։</p>
+    </template>
 
     <p class="payment-result__contact">
       Հարցերի դեպքում՝

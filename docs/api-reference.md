@@ -255,6 +255,15 @@ whole design:
 | FAIL_URL `/payment/idram/failed` | the driver's **browser** | `evakuators.am` |
 | RESULT_URL `POST /api/v1/idram/result` | **Idram's server** | `api.evakuators.am` |
 
+**The two browser URLs are opened with a GET**, carrying `EDP_BILL_NO` and
+`isReturn` as query parameters — confirmed against Idram's own test account
+(`/payment/idram/failed?EDP_BILL_NO=12&isReturn=true` after pressing back on
+their page), not inferred from the documentation, which only says the user is
+"redirected" there. So no POST handling is needed on either page. `isReturn=true`
+distinguishes a driver who walked back from a payment that failed, and is used
+for wording only: they are query parameters on a public page, and the state that
+matters is decided by the RESULT_URL callback.
+
 The confirmation has to land where the database is, which is why RESULT_URL is
 on the API and not the site. The two browser pages prove nothing — anyone can
 open them — so the success page reads the real status back from

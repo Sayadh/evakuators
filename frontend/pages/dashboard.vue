@@ -1597,7 +1597,14 @@ async function logout(): Promise<void> {
         <template v-else>
           <p v-if="subscription?.paidUntil">
             Ձեր վճարման օրը՝ <strong>{{ formatDateLong(subscription.paidUntil) }}</strong>։
-            Մնացել է {{ subscription.daysLeft }} օր։
+            <!-- `daysLeft` is floored, so the last day of a subscription reads
+                 as 0 while there are still hours on it. «Մնացել է 0 օր»
+                 contradicts itself — either the time is up or it is not — so
+                 the final day says so in words instead of counting to zero. -->
+            <template v-if="subscription.daysLeft > 0">
+              Մնացել է {{ subscription.daysLeft }} օր։
+            </template>
+            <template v-else>Այսօր վերջին օրն է։</template>
           </p>
           <p>
             Խնդրում ենք վճարել մինչև այդ օրը։ Հակառակ դեպքում Ձեր էջի կառավարումը կկասեցվի,

@@ -123,3 +123,19 @@ describe('paying while already covered', () => {
     expect(component()).toContain('Ձեր բաժանորդագրությունն ակտիվ է')
   })
 })
+
+/**
+ * `daysLeft` is floored on the backend, so a subscription with twenty hours
+ * left reports 0 while its status is still `due-soon`. «Մնացել է 0 օր»
+ * contradicts itself, and the copy has to hold on the one day a driver is most
+ * likely to read it.
+ */
+describe('the last day of a subscription', () => {
+  const DASHBOARD_SOURCE = fileURLToPath(new URL('../pages/dashboard.vue', import.meta.url))
+
+  it('says so in words instead of counting down to zero', () => {
+    const source = readFileSync(DASHBOARD_SOURCE, 'utf8')
+    expect(source).toContain('v-if="subscription.daysLeft > 0"')
+    expect(source).toContain('Այսօր վերջին օրն է')
+  })
+})

@@ -139,3 +139,28 @@ describe('the last day of a subscription', () => {
     expect(source).toContain('Այսօր վերջին օրն է')
   })
 })
+
+/**
+ * A deactivated driver's `GET /my/tow-truck` is refused with 403 by design
+ * (`MyTowTruckService.getMine` — that refusal is the security boundary), so
+ * `load()` always ends in `loadError` for exactly the driver the lock gate
+ * exists for. If the error branch renders first they are shown «Պրոֆիլը բեռնել
+ * չհաջողվեց» and nothing else: no explanation, and no way to pay their way
+ * back on.
+ *
+ * The order of two `v-else-if` branches is not the kind of thing a reviewer
+ * notices, and reversing it breaks the deactivated-for-non-payment case only —
+ * an `overdue` driver is still active, loads fine, and looks correct
+ * throughout. Hence a test rather than a comment alone.
+ */
+describe('the lock gate outranks the load error', () => {
+  it('renders the payment gate before the error branch', () => {
+    const text = readFileSync(fileURLToPath(new URL('../pages/dashboard.vue', import.meta.url)), 'utf8')
+    const gate = text.indexOf('v-else-if="subscription?.locked"')
+    const error = text.indexOf('v-else-if="loadError"')
+
+    expect(gate).toBeGreaterThan(-1)
+    expect(error).toBeGreaterThan(-1)
+    expect(gate).toBeLessThan(error)
+  })
+})

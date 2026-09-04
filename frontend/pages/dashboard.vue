@@ -1013,14 +1013,22 @@ async function logout(): Promise<void> {
 
     <LoadingSkeleton v-else-if="loading" variant="text" :count="5" />
 
-    <p v-else-if="loadError" class="dashboard-error">{{ loadError }}</p>
-
     <!-- The whole dashboard, replaced by the one thing a driver whose
          subscription lapsed can still do. Rendered INSTEAD of the page rather
          than over it — same reasoning as the password gate above: there is
          nothing behind to tab into and no dialog to dismiss. The API refuses
          the same driver's writes (SubscriptionActiveGuard), so this is the
-         visible half of a real lock, not a suggestion. -->
+         visible half of a real lock, not a suggestion.
+
+         BEFORE `loadError`, and that order is load-bearing rather than
+         stylistic. A DEACTIVATED driver's `GET /my/tow-truck` is refused with
+         403 by design (`MyTowTruckService.getMine` — that refusal is the
+         security boundary and stays), so `load()` always ends in `loadError`
+         for exactly the driver this gate exists for. With the error branch
+         first, they were shown «Պրոֆիլը բեռնել չհաջողվեց» and nothing else —
+         no explanation, and no way to pay their way back on. A failed profile
+         read is not news to someone we have already been told is locked out;
+         `getMyStatus` answered, and its answer is the whole page for them. -->
     <section v-else-if="subscription?.locked" class="dashboard-payment-gate">
       <template v-if="paymentMoment === 'deactivated'">
         <h2>Ձեր էջն ապաակտիվացված է</h2>
@@ -1047,6 +1055,10 @@ async function logout(): Promise<void> {
         :paid-until="subscription.paidUntil"
       />
     </section>
+
+    <!-- Reached only by a driver who is NOT locked, so the profile failing to
+         load really is the unexpected thing it says it is. -->
+    <p v-else-if="loadError" class="dashboard-error">{{ loadError }}</p>
 
     <template v-else-if="truck">
       <p class="dashboard-hint">

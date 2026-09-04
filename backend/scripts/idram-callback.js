@@ -143,19 +143,22 @@ async function main() {
   assertLocalOnly(apiUrl)
 
   const paymentId = Number(process.argv[2])
-  const listOnly = process.argv[2] === undefined
+  // No id, or one that is not a positive integer, both mean "I do not know
+  // which payment" — so both list. A trailing shell comment counts: zsh does
+  // not strip `#` in an interactive shell, so a pasted `... # note` arrives
+  // here as argv[2] === '#'. Printing usage at someone who cannot name the id
+  // helps less than showing them the ids.
+  const listOnly = !Number.isInteger(paymentId) || paymentId <= 0
 
   const prisma = new PrismaClient()
   try {
     if (listOnly) {
+      if (process.argv[2] !== undefined) {
+        console.log(`'${process.argv[2]}' is not a payment id.\n`)
+      }
       await listPayments(prisma)
+      console.log('  flags: --precheck | --confirm | --amount N | --bad-checksum | --trans-id ID')
       return
-    }
-
-    if (!Number.isInteger(paymentId) || paymentId <= 0) {
-      console.error('Usage: node scripts/idram-callback.js [paymentId] [--precheck|--confirm] [--amount N] [--bad-checksum] [--trans-id ID]')
-      console.error('Run with no arguments to list the payments you can pick from.')
-      process.exit(1)
     }
 
     const payment = await prisma.subscriptionPayment.findUnique({ where: { id: paymentId } })

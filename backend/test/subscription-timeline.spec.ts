@@ -100,6 +100,9 @@ function timelineRepository(): { repository: SubscriptionsRepository; rows: Row[
 function buildService(repository: SubscriptionsRepository): SubscriptionsService {
   const trucks = {
     findStatusById: async () => ({ isActive: true, deactivationReason: null }),
+    // Read after every confirmation by `restoreListingAfterPayment`; an active
+    // truck is left alone, which is what these date scenarios are about.
+    findById: async () => ({ id: TOW_TRUCK, phone: '+37491000001', slug: 'test', isActive: true, deactivationReason: null }),
   } as unknown as TowTrucksRepository
   const idram = { isConfigured: true, paymentForm: () => undefined } as unknown as IdramService
   const config = {

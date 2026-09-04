@@ -244,6 +244,30 @@ feature could not survive. Setting both variables switches it on with a
 restart, not a redeploy — see `docs/deployment.md` § "Turning Idram payments
 on".
 
+### A payment can put a driver back on the site
+
+`confirmPayment` reactivates a truck whose `deactivationReason` is **`UNPAID`**
+— and only that one. The dashboard promises it in so many words («Վճարումը
+կատարելուց հետո էջը կվերականգնվի»), and a promise the code does not keep is
+worse than one never made: the driver pays, sees the same deactivated screen,
+and cannot tell whether their money arrived.
+
+`OTHER`, and `null` (deactivated before reasons were recorded), stay off until a
+person decides otherwise. Letting them buy their way back would turn every
+removal into a price, and after the fact we cannot tell a ban from an unpaid
+bill — which is why login already treats `null` like `OTHER`.
+
+Two things it will not do. It will not create a second **active** truck on one
+login phone (the same check `AdminService.setTowTruckActive` makes — `phone` is
+the sole login key and resolves with `findFirst`, so a duplicate silently
+breaks one of the two drivers' sign-in); and it will not let its own failure
+undo the payment. Both are logged at `error` for an admin to finish by hand,
+and the confirmation stands either way — the money moved, and Idram reads the
+response body, so throwing here would make it retry a payment already recorded.
+
+Because it lives in `confirmPayment`, this covers the admin's manual "mark
+paid" as well as Idram's callback.
+
 ### Paying twice
 
 `POST /my/subscription-payments` answers **409** when the driver's status is

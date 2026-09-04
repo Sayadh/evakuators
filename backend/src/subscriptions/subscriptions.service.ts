@@ -1,6 +1,10 @@
 import { BadRequestException, ConflictException, Inject, Injectable, Logger, forwardRef } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { armeniaDateLabel } from '../common/armenia-day'
+import {
+  paymentRestoresListing,
+  reactivationPhoneConflictMessage,
+} from '../tow-trucks/tow-truck-reactivation'
 import type { AppConfig } from '../config/configuration'
 import { UNKNOWN_PLAN_MESSAGE } from './dto/create-subscription-payment.dto'
 import { renewalPeriod, subscriptionPeriod } from './subscription-period'
@@ -68,8 +72,9 @@ export class SubscriptionsService {
 
   constructor(
     private readonly subscriptionsRepository: SubscriptionsRepository,
-    // Only for the deactivation half of getMyStatus — this service never
-    // writes a truck.
+    // Read for the deactivation half of getMyStatus, and written by
+    // `restoreListingAfterPayment` below — the only truck write this service
+    // makes, and only ever to put a driver back on the site.
     private readonly towTrucksRepository: TowTrucksRepository,
     // forwardRef: a real cycle, declared rather than broken. Creating a
     // payment needs the provider's handoff form, and the provider's callback
@@ -187,7 +192,61 @@ export class SubscriptionsService {
         `${payment.planCode}, ${payment.amount} ${payment.currency}, covered until ` +
         `${period.end.toISOString()}${source ? ` (${source.provider} ${source.transactionId})` : ''}`,
     )
+
+    await this.restoreListingAfterPayment(payment.towTruckId)
+
     return toSubscriptionPaymentApi(confirmed)
+  }
+
+  /**
+   * Puts a driver who was taken off the site FOR NON-PAYMENT back on it.
+   *
+   * The dashboard promises this in so many words — «Վճարումը կատարելուց հետո
+   * էջը կվերականգնվի» — and a promise the code does not keep is worse than one
+   * never made: the driver pays, sees the same "your page is deactivated"
+   * screen, and has no way to tell whether their money arrived.
+   *
+   * Deliberately narrow. `paymentRestoresListing` allows only
+   * `DeactivationReason.UNPAID`; anyone removed for another reason (or before
+   * a reason was recorded) stays off until a person decides otherwise, because
+   * letting them buy their way back would turn every removal into a price.
+   *
+   * ## Never throws
+   *
+   * Called after the money is already recorded. Anything that goes wrong here
+   * — including the phone conflict below, which is a real integrity rule and
+   * not a formality — must not turn a confirmed payment into a failed request,
+   * least of all one Idram would then retry. Failures are logged at `error`
+   * so an admin can finish by hand, and the payment stands either way.
+   */
+  private async restoreListingAfterPayment(towTruckId: number): Promise<void> {
+    try {
+      const towTruck = await this.towTrucksRepository.findById(towTruckId)
+      if (!towTruck || !paymentRestoresListing(towTruck)) return
+
+      // The same check AdminService makes before reactivating by hand: two
+      // active trucks on one login phone means one of the two drivers silently
+      // cannot sign in. A payment is not a reason to create that.
+      const conflict = await this.towTrucksRepository.findByMainPhoneAnyStatus(
+        towTruck.phone,
+        towTruckId,
+      )
+      if (conflict?.isActive) {
+        this.logger.error(
+          `TowTruck #${towTruckId} paid but was NOT reactivated: ` +
+            reactivationPhoneConflictMessage(towTruck.phone, conflict.slug),
+        )
+        return
+      }
+
+      await this.towTrucksRepository.setActive(towTruckId, true, null)
+      this.logger.warn(`TowTruck #${towTruckId} reactivated automatically after payment`)
+    } catch (error) {
+      this.logger.error(
+        `TowTruck #${towTruckId} paid but reactivation failed — restore it by hand`,
+        error instanceof Error ? error.stack : String(error),
+      )
+    }
   }
 
   /**

@@ -16,6 +16,7 @@ import { assertPlacementIsServed } from '../tow-trucks/placement'
 import { AVAILABLE_24_7_SLUG } from '../tow-trucks/service-slugs'
 import type { ServiceAreaJson } from '../tow-trucks/tow-truck.types'
 import { derivesHeavyEquipment, derivesManipulator } from '../tow-trucks/vehicle-types'
+import { reactivationPhoneConflictMessage } from '../tow-trucks/tow-truck-reactivation'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
 import {
   AdminRegistrationSummary,
@@ -884,7 +885,7 @@ export class AdminService {
       const conflict = await this.towTrucksRepository.findByMainPhoneAnyStatus(towTruck.phone, id)
       if (conflict && conflict.isActive) {
         throw new BadRequestException(
-          `Այս էվակուատորի հեռախոսահամարով (${towTruck.phone}) արդեն կա ակտիվ էվակուատոր՝ «${conflict.slug}»։ Նախ փոխիր հեռախոսահամարներից մեկը, հետո ակտիվացրու։`,
+          reactivationPhoneConflictMessage(towTruck.phone, conflict.slug),
         )
       }
     }

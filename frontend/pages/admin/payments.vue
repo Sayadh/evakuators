@@ -77,7 +77,7 @@ async function load(options: { showFullLoading?: boolean } = {}): Promise<void> 
 
 onMounted(() => {
   void load()
-  void loadPending()
+  void loadForReview()
   void loadPlans()
 })
 // Same reasoning as the registration-review page: the admin token is read
@@ -89,7 +89,7 @@ watch(
   (loggedIn) => {
     if (loggedIn && payments.value.length === 0) {
       void load()
-      void loadPending()
+      void loadForReview()
     }
   },
 )
@@ -114,43 +114,48 @@ watch(search, () => {
 onBeforeUnmount(() => clearTimeout(searchDebounceTimer))
 
 /**
- * The queue of requests drivers have made. Loaded alongside the list rather
- * than behind a tab: an unconfirmed request is the one thing on this page
- * that someone is actively waiting on.
+ * Payments that went through and nobody has ticked off yet.
+ *
+ * Not a queue of requests waiting on a decision — the provider's callback is
+ * what confirms a payment, and the driver is active from that second. This is
+ * a list of money that arrived, shown once so a person sees it.
  */
-const pending = ref<AdminPendingPayment[]>([])
-const pendingError = ref('')
-const decidingId = ref<number | null>(null)
+const forReview = ref<AdminPendingPayment[]>([])
+const reviewError = ref('')
+const reviewingId = ref<number | null>(null)
+const reviewTarget = ref<AdminPendingPayment | null>(null)
 
-async function loadPending(): Promise<void> {
+async function loadForReview(): Promise<void> {
   if (!apiEnabled || !adminAuth.isLoggedIn) return
-  pendingError.value = ''
+  reviewError.value = ''
   try {
-    pending.value = await adminRepository.listPendingSubscriptionPayments()
+    forReview.value = await adminRepository.listSubscriptionPaymentsForReview()
   } catch (error) {
-    pendingError.value = extractErrorMessage(error, 'Հայտերը բեռնել չհաջողվեց։')
+    reviewError.value = extractErrorMessage(error, 'Վճարումները բեռնել չհաջողվեց։')
   }
 }
 
 /**
- * Confirming grants coverage, so the driver's row on the list below is now
- * stale — reload it rather than patching it here, since the backend decides
- * the new period (it extends live coverage instead of restarting it) and
- * guessing that in the browser would be a second copy of that rule.
+ * Confirms nothing about the money — it is already in. This only records that
+ * an admin looked, so the row leaves the list.
+ *
+ * The row is dropped locally rather than by reloading: unlike the old confirm,
+ * this changes no coverage, so the table below cannot have gone stale.
  */
-async function decide(request: AdminPendingPayment, status: 'PAID' | 'CANCELLED'): Promise<void> {
-  if (status === 'CANCELLED' && !confirm(`Չեղարկե՞լ ${request.driver.name}-ի հայտը։`)) return
+async function confirmReview(): Promise<void> {
+  const payment = reviewTarget.value
+  if (!payment) return
 
-  decidingId.value = request.id
-  pendingError.value = ''
+  reviewingId.value = payment.id
+  reviewError.value = ''
   try {
-    await adminRepository.decideSubscriptionPayment(request.id, status)
-    pending.value = pending.value.filter((row) => row.id !== request.id)
-    await load({ showFullLoading: false })
+    await adminRepository.reviewSubscriptionPayment(payment.id)
+    forReview.value = forReview.value.filter((row) => row.id !== payment.id)
+    reviewTarget.value = null
   } catch (error) {
-    pendingError.value = extractErrorMessage(error, 'Հայտը մշակել չհաջողվեց։')
+    reviewError.value = extractErrorMessage(error, 'Հաստատել չհաջողվեց։')
   } finally {
-    decidingId.value = null
+    reviewingId.value = null
   }
 }
 
@@ -385,33 +390,31 @@ async function confirmDeactivate(reason: DeactivationReason): Promise<void> {
            page someone is actively waiting on. Hidden entirely when the queue
            is empty rather than shown as an empty box — this is a to-do list,
            and a permanent "nothing to do" panel is noise. -->
-      <section v-if="pending.length > 0" class="payments__queue">
-        <h2 class="payments__queue-title">Հաստատման սպասող հայտեր ({{ pending.length }})</h2>
-        <p v-if="pendingError" class="payments__error" role="alert">{{ pendingError }}</p>
+      <section v-if="forReview.length > 0" class="payments__queue">
+        <h2 class="payments__queue-title">Նոր վճարումներ ({{ forReview.length }})</h2>
+        <p class="payments__muted">
+          Այս վճարումներն արդեն կատարվել են, և վարորդների էջերն ակտիվ են։
+          «Հաստատել»-ը միայն հեռացնում է գրառումը ցուցակից։
+        </p>
+        <p v-if="reviewError" class="payments__error" role="alert">{{ reviewError }}</p>
         <ul class="payments__queue-list">
-          <li v-for="request in pending" :key="request.id" class="payments__queue-item">
+          <li v-for="payment in forReview" :key="payment.id" class="payments__queue-item">
             <div class="payments__queue-info">
-              <span class="payments__queue-driver">{{ request.driver.name }}</span>
-              <span class="payments__muted">{{ request.driver.phone }}</span>
-              <span>{{ request.planTitle }} — {{ formatPrice(request.amount) }}</span>
-              <span class="payments__muted">Հայտի օրը՝ {{ formatDateNumeric(request.createdAt) }}</span>
+              <span class="payments__queue-driver">{{ payment.driver.name }}</span>
+              <span class="payments__muted">{{ payment.driver.phone }}</span>
+              <span>{{ payment.planTitle }} — {{ formatPrice(payment.amount) }}</span>
+              <span class="payments__muted">
+                Վճարման օրը՝ {{ formatDateNumeric(payment.createdAt) }}
+              </span>
             </div>
             <div class="payments__queue-actions">
               <AppButton
                 variant="success"
                 size="sm"
-                :disabled="decidingId === request.id"
-                @click="decide(request, 'PAID')"
+                :disabled="reviewingId === payment.id"
+                @click="reviewTarget = payment"
               >
                 Հաստատել
-              </AppButton>
-              <AppButton
-                variant="outline"
-                size="sm"
-                :disabled="decidingId === request.id"
-                @click="decide(request, 'CANCELLED')"
-              >
-                Չեղարկել
               </AppButton>
             </div>
           </li>
@@ -470,6 +473,33 @@ async function confirmDeactivate(reason: DeactivationReason): Promise<void> {
       </div>
     </template>
 
+    <!-- Asked before ticking a payment off, because the row disappears and
+         there is no undo. It changes no money either way — see confirmReview. -->
+    <AppModal
+      :model-value="reviewTarget !== null"
+      title="Հաստատել վճարումը"
+      @update:model-value="reviewTarget = null"
+    >
+      <div v-if="reviewTarget" class="payments__confirm">
+        <p>
+          <strong>{{ reviewTarget.driver.name }}</strong> — {{ reviewTarget.planTitle }},
+          {{ formatPrice(reviewTarget.amount) }}
+        </p>
+        <p class="payments__muted">
+          Վճարումն արդեն կատարված է և վարորդի էջն ակտիվ է։ Հաստատելով՝ գրառումը
+          կհեռացվի ցուցակից։
+        </p>
+        <AppButton
+          variant="success"
+          block
+          :disabled="reviewingId === reviewTarget.id"
+          @click="confirmReview"
+        >
+          {{ reviewingId === reviewTarget.id ? 'Պահպանվում է…' : 'Հաստատել' }}
+        </AppButton>
+      </div>
+    </AppModal>
+
     <AppModal v-model="payModalOpen" title="Գրանցել վճարում">
       <form class="pay-form" @submit.prevent="confirmPay">
         <p class="payments__muted">
@@ -514,7 +544,17 @@ async function confirmDeactivate(reason: DeactivationReason): Promise<void> {
 </template>
 
 <style scoped lang="scss">
-/* The pending queue. Accent-tinted like the driver dashboard's own payments
+.payments__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+
+  p {
+    margin: 0;
+  }
+}
+
+/* The review list. Accent-tinted like the driver dashboard's own payments
    block and .dashboard-review--pending — the shared meaning across the app is
    "something is waiting on a person", not a success or a failure. */
 .payments__queue {

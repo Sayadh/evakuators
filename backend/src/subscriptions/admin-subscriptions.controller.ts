@@ -1,7 +1,6 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, UseGuards } from '@nestjs/common'
+import { Body, Controller, Get, Param, ParseIntPipe, Post, UseGuards } from '@nestjs/common'
 import { AdminJwtGuard } from '../admin-auth/admin-jwt.guard'
 import { AdminSubscriptionsService } from './admin-subscriptions.service'
-import { DecideSubscriptionPaymentDto } from './dto/decide-subscription-payment.dto'
 import { GrantSubscriptionPaymentDto } from './dto/grant-subscription-payment.dto'
 import type {
   AdminPendingPaymentApi,
@@ -29,10 +28,10 @@ export class AdminSubscriptionsController {
     return this.subscriptions.listPlans()
   }
 
-  /** The queue: every request still waiting for a decision, oldest first */
-  @Get('pending')
-  listPending(): Promise<AdminPendingPaymentApi[]> {
-    return this.adminSubscriptions.listPending()
+  /** Completed payments an admin has not ticked off yet, oldest first */
+  @Get('review')
+  listForReview(): Promise<AdminPendingPaymentApi[]> {
+    return this.adminSubscriptions.listForReview()
   }
 
   /**
@@ -45,12 +44,14 @@ export class AdminSubscriptionsController {
     return this.adminSubscriptions.grant(dto.towTruckId, dto.planId, dto.paidAt)
   }
 
-  /** Confirm («the money arrived») or cancel one pending request */
-  @Patch(':id')
-  decide(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: DecideSubscriptionPaymentDto,
-  ): Promise<SubscriptionPaymentApi> {
-    return this.adminSubscriptions.decide(id, dto.status)
+  /**
+   * «Հաստատել» — an admin saying they have seen this payment, which takes it
+   * off the review list and does nothing else. No body: there is exactly one
+   * thing this can mean, and a payment that completed is not something an
+   * admin can undo from here.
+   */
+  @Post(':id/review')
+  review(@Param('id', ParseIntPipe) id: number): Promise<SubscriptionPaymentApi> {
+    return this.adminSubscriptions.review(id)
   }
 }

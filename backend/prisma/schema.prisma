@@ -1028,6 +1028,15 @@ model SubscriptionPayment {
   providerTransactionId String? @unique
 
   status    SubscriptionPaymentStatus @default(PENDING)
+
+  /// When an admin acknowledged this payment in `/admin/payments`.
+  ///
+  /// A tick, not a decision. The provider's callback is what confirms a
+  /// payment and activates the driver — this only decides whether the row is
+  /// still on the admin's screen, so it grants nothing, revokes nothing, and
+  /// is deliberately a nullable timestamp rather than another status.
+  reviewedAt DateTime?
+
   createdAt DateTime                  @default(now())
   updatedAt DateTime                  @updatedAt
 

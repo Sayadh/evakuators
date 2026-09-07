@@ -649,26 +649,30 @@ export const adminRepository = {
   },
 
   /**
-   * The queue of payment requests drivers have made that nobody has decided
-   * on yet — see `/admin/payments`.
+   * Payments that completed and no admin has ticked off yet — see
+   * `/admin/payments`.
+   *
+   * Not a decision queue: the provider's callback is what confirms a payment,
+   * and the driver is active from that moment. Nothing here is waiting on an
+   * admin.
    */
-  listPendingSubscriptionPayments(): Promise<AdminPendingPayment[]> {
-    return apiFetch<AdminPendingPayment[]>('/admin/subscription-payments/pending', {
+  listSubscriptionPaymentsForReview(): Promise<AdminPendingPayment[]> {
+    return apiFetch<AdminPendingPayment[]>('/admin/subscription-payments/review', {
       headers: authHeader(),
     })
   },
 
   /**
-   * Confirms («the money arrived») or cancels one request.
+   * «Հաստատել» — records that an admin has seen this payment, which takes it
+   * off the review list and does nothing else.
    *
-   * Confirming is what actually grants coverage, and the backend recomputes
-   * the period at that moment rather than honouring the one quoted when the
-   * driver pressed the button — see backend `renewalPeriod`.
+   * No body, because there is exactly one thing it can mean. It grants no
+   * coverage and revokes none: by the time a payment is on that list the money
+   * has arrived and the driver already has what they paid for.
    */
-  decideSubscriptionPayment(id: number, status: 'PAID' | 'CANCELLED'): Promise<SubscriptionPayment> {
-    return apiFetch<SubscriptionPayment>(`/admin/subscription-payments/${id}`, {
-      method: 'PATCH',
-      body: { status },
+  reviewSubscriptionPayment(id: number): Promise<SubscriptionPayment> {
+    return apiFetch<SubscriptionPayment>(`/admin/subscription-payments/${id}/review`, {
+      method: 'POST',
       headers: authHeader(),
     })
   },

@@ -1,18 +1,17 @@
 import { armeniaDateKey } from '../common/armenia-day'
+import { Cron, CronExpression } from '@nestjs/schedule'
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { SubscriptionPaymentStatus } from '@prisma/client'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
-import type { DecidableStatus } from './dto/decide-subscription-payment.dto'
 import { UNKNOWN_PLAN_MESSAGE } from './dto/create-subscription-payment.dto'
 import { renewalPeriod } from './subscription-period'
 import { findSubscriptionPlan } from './subscription-plans'
 import { toAdminPendingPaymentApi, toSubscriptionPaymentApi } from './subscription.mapper'
 import type { AdminPendingPaymentApi, SubscriptionPaymentApi } from './subscription.types'
 import { SubscriptionsRepository } from './subscriptions.repository'
-import { SubscriptionsService } from './subscriptions.service'
 
 /**
- * The admin half of subscriptions: deciding requests drivers made, and
+ * The admin half of subscriptions: reviewing payments that completed, and
  * recording payments that arrived outside the platform.
  *
  * Separate from `SubscriptionsService` (the driver's own) on purpose — the two
@@ -27,48 +26,68 @@ export class AdminSubscriptionsService {
   constructor(
     private readonly subscriptionsRepository: SubscriptionsRepository,
     private readonly towTrucksRepository: TowTrucksRepository,
-    private readonly subscriptions: SubscriptionsService,
   ) {}
 
-  async listPending(): Promise<AdminPendingPaymentApi[]> {
-    const pending = await this.subscriptionsRepository.findPending()
-    return pending.map(toAdminPendingPaymentApi)
+  /**
+   * Payments that went through and have not been ticked off yet.
+   *
+   * ## Why this is not a decision queue any more
+   *
+   * It used to list PENDING requests, from a time when an admin's confirmation
+   * was what started a driver's coverage. That is no longer how a payment
+   * completes: Idram's callback confirms it and the driver is active the same
+   * second. Making them wait for an admin afterwards would be charging someone
+   * and then holding what they bought.
+   *
+   * So this is a REVIEW list — money that arrived, shown once so a person sees
+   * it — and «Հաստատել» only means "I have seen this". Requests nobody
+   * finished paying never appear: they are written off by `cancelAbandoned`
+   * below.
+   */
+  async listForReview(): Promise<AdminPendingPaymentApi[]> {
+    const payments = await this.subscriptionsRepository.findForReview()
+    return payments.map(toAdminPendingPaymentApi)
   }
 
   /**
-   * Confirms or cancels one request a driver made.
+   * Ticks one payment off the review list.
    *
-   * On confirmation the period is RECOMPUTED rather than taken from the row —
-   * see `renewalPeriod` for why the stored one was only ever a quote, and why
-   * confirming extends existing coverage instead of restarting it.
+   * Acknowledgement, nothing else: it grants no coverage, revokes none, and
+   * cannot fail in a way that costs anyone money. Reviewing twice is not an
+   * error — two admins working the same list at once is ordinary, and the
+   * second one should see the row gone, not a conflict.
    */
-  async decide(id: number, status: DecidableStatus): Promise<SubscriptionPaymentApi> {
+  async review(id: number): Promise<SubscriptionPaymentApi> {
     const payment = await this.subscriptionsRepository.findById(id)
-    if (!payment) throw new NotFoundException(`Վճարման հայտ #${id}-ը չի գտնվել`)
-    if (payment.status !== SubscriptionPaymentStatus.PENDING) {
-      throw new ConflictException('Այս հայտի վերաբերյալ որոշում արդեն կայացվել է')
+    if (!payment) throw new NotFoundException(`Վճարումը #${id} չի գտնվել`)
+    if (payment.status !== SubscriptionPaymentStatus.PAID) {
+      throw new ConflictException('Միայն կատարված վճարումը կարելի է հաստատել')
     }
 
-    if (status === SubscriptionPaymentStatus.CANCELLED) {
-      const cancelled = await this.subscriptionsRepository.setStatus(
-        id,
-        SubscriptionPaymentStatus.PENDING,
-        SubscriptionPaymentStatus.CANCELLED,
-      )
-      if (!cancelled) throw new ConflictException('Այս հայտի վերաբերյալ որոշում արդեն կայացվել է')
-      this.logger.warn(`Subscription payment #${id} cancelled by an admin`)
-      return toSubscriptionPaymentApi(cancelled)
+    const reviewed = await this.subscriptionsRepository.markReviewed(id)
+    if (!reviewed) return toSubscriptionPaymentApi(payment)
+
+    this.logger.log(`Subscription payment #${id} reviewed by an admin`)
+    return toSubscriptionPaymentApi(reviewed)
+  }
+
+  /**
+   * Writes off payments nobody finished, once a day.
+   *
+   * A PENDING row is created the moment a driver presses «Վճարել», before they
+   * ever reach the provider — so most of them are people who changed their
+   * mind, and until now nothing cleaned them up. They are invisible to the
+   * admin either way; this stops them accumulating in the table forever.
+   *
+   * 4AM for the same reason the other daily jobs here run then: nobody is
+   * using the site, and a slow sweep costs nothing.
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_4AM)
+  async cancelAbandoned(): Promise<void> {
+    const cancelled = await this.subscriptionsRepository.cancelAbandonedPending()
+    if (cancelled > 0) {
+      this.logger.log(`Abandoned payment sweep: cancelled ${cancelled} unfinished request(s)`)
     }
-
-    // Delegated, not reimplemented: the period recomputation, the extension of
-    // live coverage and the race-safe status guard all live in one place, so
-    // an admin confirming and Idram confirming cannot drift apart. See
-    // SubscriptionsService.confirmPayment.
-    const confirmed = await this.subscriptions.confirmPayment(id)
-    if (!confirmed) throw new ConflictException('Այս հայտի վերաբերյալ որոշում արդեն կայացվել է')
-
-    this.logger.warn(`Subscription payment #${id} confirmed by an admin`)
-    return confirmed
   }
 
   /**

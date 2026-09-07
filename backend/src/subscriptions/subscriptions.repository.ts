@@ -13,18 +13,34 @@ import type { SubscriptionPeriod } from './subscription-period'
 const OWN_PAYMENTS_LIMIT = 50
 
 /**
- * Upper bound on the admin's pending queue, for the same reason
+ * Upper bound on the admin's review list, for the same reason
  * `OWN_PAYMENTS_LIMIT` exists — except here the person deciding how large the
  * response gets is not the person receiving it.
  *
- * Nothing dedups or expires a PENDING row: every abandoned «Վճարել» leaves one
- * behind, and one driver may create 10 a minute (`@Throttle` on
- * `MySubscriptionPaymentsController`). Unbounded, that is 14k rows a day from
- * a single account, each joined to its driver — enough to make the queue page
- * unusable for the admin who needs it most. Oldest first, so the cap drops the
- * newest rather than hiding the requests that have waited longest.
+ * Only completed payments reach this list now, so it grows at the rate money
+ * actually arrives rather than at the rate anyone can press a button. The cap
+ * stays anyway: an admin who leaves it untouched for months should get a slow
+ * page, not an unusable one. Oldest first, so the cap drops the newest rather
+ * than hiding what has waited longest.
  */
-const PENDING_QUEUE_LIMIT = 200
+const REVIEW_LIST_LIMIT = 200
+
+/**
+ * How long an unfinished payment sits before it is written off.
+ *
+ * A PENDING row is created the moment a driver presses «Վճարել», BEFORE they
+ * are handed to the provider — the provider's first callback asks whether the
+ * bill is real, so there has to be something to answer with. Most of those
+ * rows are people who changed their mind on the provider's page, and nothing
+ * ever cleaned them up.
+ *
+ * A day is far longer than any real payment takes, and far longer than Idram
+ * retries a callback for, so cancelling at this age cannot race a payment
+ * still in flight. And if a confirmation somehow arrives afterwards it is
+ * still credited — `IdramService` accepts a callback for a CANCELLED bill on
+ * purpose, because by then the money has moved.
+ */
+const ABANDONED_PENDING_TTL_MS = 24 * 60 * 60 * 1000
 
 /** What one driver's confirmed payments add up to — see DriverPaymentCoverage in admin-payment.mapper.ts */
 export interface PaymentCoverageRow {
@@ -121,17 +137,57 @@ export class SubscriptionsRepository {
   }
 
   /** The admin's queue — every request nobody has confirmed or cancelled yet, oldest first */
-  findPending(): Promise<PendingPaymentWithDriver[]> {
+  /**
+   * The admin's review list: payments that actually completed and have not
+   * been ticked off yet.
+   *
+   * PAID only, and that is the change of meaning. This used to return PENDING
+   * rows — requests waiting for a decision — from a time when an admin's
+   * confirmation was what started a driver's coverage. The provider's callback
+   * does that now, the driver is active the moment they pay, and a request
+   * nobody finished paying is not something an admin should be looking at.
+   */
+  findForReview(): Promise<PendingPaymentWithDriver[]> {
     return this.prisma.subscriptionPayment.findMany({
-      where: { status: SubscriptionPaymentStatus.PENDING },
+      where: { status: SubscriptionPaymentStatus.PAID, reviewedAt: null },
       include: {
         towTruck: { select: { id: true, driverName: true, companyName: true, phone: true } },
       },
-      // Oldest first: a request that has been waiting longest is the one an
-      // admin should decide on next.
+      // Oldest first: the payment that has been sitting unseen longest is the
+      // one to look at next.
       orderBy: { createdAt: 'asc' },
-      take: PENDING_QUEUE_LIMIT,
+      take: REVIEW_LIST_LIMIT,
     })
+  }
+
+  /**
+   * Ticks a payment off the review list. Idempotent by the `reviewedAt: null`
+   * guard, so two admins pressing at once produce one review, not an error.
+   */
+  async markReviewed(id: number): Promise<SubscriptionPayment | null> {
+    const { count } = await this.prisma.subscriptionPayment.updateMany({
+      where: { id, status: SubscriptionPaymentStatus.PAID, reviewedAt: null },
+      data: { reviewedAt: new Date() },
+    })
+    return count === 0 ? null : this.findById(id)
+  }
+
+  /**
+   * Writes off payments nobody finished. Returns how many, for the log.
+   *
+   * CANCELLED rather than deleted: the row is the only trace that a driver
+   * tried to pay and something stopped them, which is worth keeping when they
+   * call to ask why.
+   */
+  async cancelAbandonedPending(now: Date = new Date()): Promise<number> {
+    const { count } = await this.prisma.subscriptionPayment.updateMany({
+      where: {
+        status: SubscriptionPaymentStatus.PENDING,
+        createdAt: { lt: new Date(now.getTime() - ABANDONED_PENDING_TTL_MS) },
+      },
+      data: { status: SubscriptionPaymentStatus.CANCELLED },
+    })
+    return count
   }
 
   findById(id: number): Promise<SubscriptionPayment | null> {

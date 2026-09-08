@@ -198,6 +198,45 @@ and the migration it wants to write (`ALTER TABLE "TowTruck" ALTER COLUMN
 nearest-driver search depends on. Full explanation in `docs/data-model.md`
 § Migrations. If you have already been prompted: cancel, do not name it.
 
+## Test drivers on staging
+
+The same script works there, run **on the staging server**:
+
+```bash
+cd /var/www/evakuators-staging/backend
+node scripts/create-test-driver.js all 'test-password'
+```
+
+Then sign in at `https://staging.evakuators.am/login`. The Idram callback
+simulator works too, against staging's own port:
+
+```bash
+LOCAL_API_URL=http://localhost:4003 node scripts/idram-callback.js
+```
+
+### Why these scripts refuse to run without being told where they are
+
+They used to check two things: that `DATABASE_URL`'s host was `localhost`, and
+that `NODE_ENV` was not `production`. **Neither distinguishes the production
+server**, and both passed there:
+
+- production's Postgres runs on the VPS, so its host IS `localhost` — the same
+  as a laptop's, and the database is even called the same thing
+  (`evakuators`);
+- `NODE_ENV` is set by PM2 for the app process, not by `backend/.env`, so in an
+  ssh session it is simply unset.
+
+Run on the production server, `create-test-driver.js` would have reset a real
+driver's password and inserted a fake truck; `idram-callback.js` would have
+forged a payment confirmation against live data. Nothing in `DATABASE_URL` can
+tell those two machines apart, so the environment now has to declare itself
+(`scripts/assert-safe-environment.js`): either the database name ends in
+`_staging`, or `NODE_ENV` is explicitly `development`/`test`.
+
+Unset refuses. That is the point — the failure mode has to be a script that
+will not run, not one that runs somewhere it must not. There is no override
+flag.
+
 ## Idram payments locally
 
 The browser half works locally; the server half needs a helper, because the
@@ -226,6 +265,9 @@ Then drivers to test with — one per state, in one command:
 ```bash
 node scripts/create-test-driver.js all 'test-password'
 ```
+
+`backend/.env` must contain `NODE_ENV="development"` or this refuses to run —
+see § "Test drivers on staging" below for why that is not a formality.
 
 | Phone | State |
 | --- | --- |

@@ -44,33 +44,36 @@
  * not a retry — that is someone paying twice, or someone else's message, and it
  * is refused.
  *
- * Local only, for the same reasons as create-test-driver.js: it refuses
- * NODE_ENV=production, a non-local database and a non-local API host. Its
- * whole purpose is forging a payment provider's signature, which is exactly
- * what it must never be able to do anywhere real.
+ * Development and staging only, and never production: `assertSafeDatabase`
+ * requires the environment to declare itself, and the API host must be this
+ * machine's own. Its whole purpose is forging a payment provider's signature,
+ * which is exactly what it must never be able to do anywhere real.
+ *
+ * On staging, run it ON the staging server against its own port:
+ *   LOCAL_API_URL=http://localhost:4003 node scripts/idram-callback.js
  */
 require('dotenv/config')
 const { createHash } = require('node:crypto')
 const { PrismaClient } = require('@prisma/client')
+const { assertSafeDatabase } = require('./assert-safe-environment')
 
 /** Keep in sync with src/idram/idram.constants.ts */
 const IDRAM_PRECHECK_YES = 'YES'
 /** Keep in sync with app.setGlobalPrefix('api/v1') in src/main.ts and IdramController */
 const RESULT_PATH = '/api/v1/idram/result'
 
-function assertLocalOnly(apiUrl) {
-  if (process.env.NODE_ENV === 'production') {
-    console.error('Refusing to run with NODE_ENV=production. This script forges provider signatures.')
-    process.exit(1)
-  }
-  const dbHost = new URL(process.env.DATABASE_URL ?? 'postgres://x@localhost/x').hostname
-  if (dbHost !== 'localhost' && dbHost !== '127.0.0.1') {
-    console.error(`Refusing to run against a non-local database (${dbHost}).`)
-    process.exit(1)
-  }
+function assertSafeTarget(apiUrl) {
+  // The database decides whether this environment may be written to at all —
+  // see assert-safe-environment.js for why "localhost" alone never proved that.
+  assertSafeDatabase('forge payment callbacks')
+
+  // And the API has to be the one on this machine: this script signs messages
+  // as the payment provider, so pointing it at a host somewhere else is the
+  // one thing it must never do.
   const apiHost = new URL(apiUrl).hostname
   if (apiHost !== 'localhost' && apiHost !== '127.0.0.1') {
-    console.error(`Refusing to post to a non-local API (${apiHost}).`)
+    console.error(`Refusing to post a forged callback to a remote API (${apiHost}).`)
+    console.error('Run this ON the machine whose backend you are testing, against its localhost port.')
     process.exit(1)
   }
 }
@@ -149,7 +152,7 @@ async function listPayments(prisma) {
 
 async function main() {
   const apiUrl = (process.env.LOCAL_API_URL ?? 'http://localhost:4002').replace(/\/$/, '')
-  assertLocalOnly(apiUrl)
+  assertSafeTarget(apiUrl)
 
   const paymentId = Number(process.argv[2])
   // No id, or one that is not a positive integer, both mean "I do not know

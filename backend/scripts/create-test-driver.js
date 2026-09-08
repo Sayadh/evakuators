@@ -14,9 +14,9 @@
  * which cannot log in. There was no way to reach `/dashboard` locally.
  *
  * This does NOT weaken that design: it is a script, it needs `DATABASE_URL`,
- * and it refuses to run against anything but a local database (below). The
- * security boundary that matters is the API, where there is still exactly one
- * password-minting path.
+ * and `assertSafeDatabase` refuses to run anywhere the environment has not
+ * declared itself as development or staging. The security boundary that
+ * matters is the API, where there is still exactly one password-minting path.
  *
  * Usage, from backend/:
  *   node scripts/create-test-driver.js all 'test-password'          # one per state
@@ -46,6 +46,7 @@
 require('dotenv/config')
 const { PrismaClient } = require('@prisma/client')
 const bcrypt = require('bcrypt')
+const { assertSafeDatabase } = require('./assert-safe-environment')
 
 /** Keep in sync with BCRYPT_ROUNDS in src/driver-auth/driver-password.ts (and with create-admin-user.js) */
 const BCRYPT_ROUNDS = 12
@@ -78,29 +79,6 @@ const STATE_DEACTIVATION = {
   'off-other': 'OTHER',
 }
 
-function databaseLabel() {
-  try {
-    const url = new URL(process.env.DATABASE_URL ?? '')
-    return `${url.hostname}:${url.port || 5432}${url.pathname}`
-  } catch {
-    return '(unparseable DATABASE_URL)'
-  }
-}
-
-function assertNotProduction() {
-  if (process.env.NODE_ENV === 'production') {
-    console.error('Refusing to run with NODE_ENV=production. This script is for local development only.')
-    process.exit(1)
-  }
-  const host = new URL(process.env.DATABASE_URL ?? 'postgres://x@localhost/x').hostname
-  if (host !== 'localhost' && host !== '127.0.0.1') {
-    console.error(
-      `Refusing to run against a non-local database (${host}). Real drivers get their password from Telegram — ` +
-        'see docs/auth-and-security.md.',
-    )
-    process.exit(1)
-  }
-}
 
 /**
  * Replaces this driver's payment history with one row that produces the asked
@@ -227,11 +205,11 @@ async function main() {
     process.exit(1)
   }
 
-  assertNotProduction()
+  const { label, isStaging } = assertSafeDatabase('create test drivers')
 
   const prisma = new PrismaClient()
   try {
-    console.log(`Database: ${databaseLabel()}\n`)
+    console.log(`Database: ${label}${isStaging ? ' (staging)' : ''}\n`)
 
     if (everyState) {
       for (const [statePhone, stateName] of Object.entries(ALL_STATES_PHONES)) {
@@ -241,7 +219,10 @@ async function main() {
       await applyDriver(prisma, phone, password, state)
     }
 
-    console.log(`\nLog in at http://localhost:3002/login — password "${password}"`)
+    console.log(
+      `\nLog in with password "${password}" — ` +
+        (isStaging ? 'https://staging.evakuators.am/login' : 'http://localhost:3002/login'),
+    )
   } finally {
     await prisma.$disconnect()
   }

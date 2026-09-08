@@ -3,10 +3,8 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { SubscriptionPaymentStatus } from '@prisma/client'
 import { describe, expect, it, vi } from 'vitest'
 import { AdminSubscriptionsService } from '../src/subscriptions/admin-subscriptions.service'
-import { renewalPeriod } from '../src/subscriptions/subscription-period'
 import type { SubscriptionsRepository } from '../src/subscriptions/subscriptions.repository'
 import type { TowTrucksRepository } from '../src/tow-trucks/tow-trucks.repository'
-import type { SubscriptionsService } from '../src/subscriptions/subscriptions.service'
 
 /**
  * The admin half of subscriptions: confirming what a driver asked for, and
@@ -29,12 +27,34 @@ function build(options: {
   paidUntil?: Date | null
   payment?: { id: number; towTruckId: number; durationMonths: number; status: SubscriptionPaymentStatus } | null
   truckExists?: boolean
-} = {}): FakeRepos {
+  alreadyReviewed?: boolean
+} = {}) {
   const created: FakeRepos['created'] = []
   const confirmed: FakeRepos['confirmed'] = []
+  const reviewed: number[] = []
+  const sweep = { cancelled: 0 }
+
+  /** A complete row, because `toSubscriptionPaymentApi` reads every field */
+  const fullPayment = () => ({
+    id: options.payment?.id ?? 5,
+    towTruckId: options.payment?.towTruckId ?? 7,
+    planCode: 'ONE_MONTH',
+    planTitle: '1 ամսվա բաժանորդագրություն',
+    amount: 1,
+    currency: 'AMD',
+    durationMonths: options.payment?.durationMonths ?? 1,
+    periodStart: new Date(),
+    periodEnd: new Date(),
+    status: options.payment?.status ?? SubscriptionPaymentStatus.PAID,
+    reviewedAt: null,
+    provider: null,
+    providerTransactionId: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  })
 
   const subscriptions = {
-    findById: vi.fn(async () => options.payment ?? null),
+    findById: vi.fn(async () => (options.payment === null ? null : { ...fullPayment() })),
     findCoverage: vi.fn(async (ids: number[]) => {
       const map = new Map()
       for (const id of ids) {
@@ -62,43 +82,29 @@ function build(options: {
         updatedAt: new Date(),
       }
     }),
-    setStatus: vi.fn(async (id: number) => ({
-      id,
-      towTruckId: 1,
-      planCode: 'ONE_MONTH',
-      amount: 3000,
-      currency: 'AMD',
-      durationMonths: 1,
-      periodStart: new Date(),
-      periodEnd: new Date(),
-      status: SubscriptionPaymentStatus.CANCELLED,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    })),
+    markReviewed: vi.fn(async (id: number) => {
+      // Mirrors the real guard: a row already reviewed matches nothing, and
+      // the service must treat that as "already done", not as a failure.
+      if (options.alreadyReviewed) return null
+      reviewed.push(id)
+      return { ...fullPayment(), id, reviewedAt: new Date() }
+    }),
+    cancelAbandonedPending: vi.fn(async () => {
+      sweep.cancelled += 1
+      return 1
+    }),
   } as unknown as SubscriptionsRepository
 
   const trucks = {
     findById: vi.fn(async () => (options.truckExists === false ? null : { id: 7 })),
   } as unknown as TowTrucksRepository
 
-  // confirmPayment is the shared path AdminSubscriptionsService now delegates
-  // its PAID half to — faked here so these tests stay about the ADMIN's rules
-  // (who may decide, and when), with the confirmation's own rules covered
-  // where they live, in subscription-period.spec.ts.
-  const subscriptionsService = {
-    confirmPayment: vi.fn(async (id: number) => {
-      const coverage = await subscriptions.findCoverage([options.payment?.towTruckId ?? 1])
-      const paidUntil = coverage.get(options.payment?.towTruckId ?? 1)?.paidUntil ?? null
-      const period = renewalPeriod(paidUntil, new Date(), options.payment?.durationMonths ?? 1)
-      confirmed.push({ id, start: period.start, end: period.end })
-      return { id, status: SubscriptionPaymentStatus.PAID }
-    }),
-  } as unknown as SubscriptionsService
-
   return {
-    service: new AdminSubscriptionsService(subscriptions, trucks, subscriptionsService),
+    service: new AdminSubscriptionsService(subscriptions, trucks),
     created,
     confirmed,
+    reviewed,
+    sweep,
   }
 }
 
@@ -109,7 +115,7 @@ describe('AdminSubscriptionsService.grant', () => {
 
     expect(created[0]!.data).toMatchObject({
       planCode: 'FOUR_MONTHS',
-      amount: 10000,
+      amount: 2,
       currency: 'AMD',
       durationMonths: 4,
       status: SubscriptionPaymentStatus.PAID,
@@ -185,55 +191,61 @@ describe('AdminSubscriptionsService.grant', () => {
   })
 })
 
-describe('AdminSubscriptionsService.decide', () => {
-  const pending = {
+describe('AdminSubscriptionsService.review', () => {
+  const paid = {
     id: 5,
     towTruckId: 7,
     durationMonths: 4,
-    status: SubscriptionPaymentStatus.PENDING,
+    status: SubscriptionPaymentStatus.PAID,
   }
 
-  it('recomputes the period on confirmation rather than honouring the quote', async () => {
-    // The window written when the driver pressed «Վճարել» was a quote. Days
-    // may have passed; honouring it would sell less than the plan says.
-    const { service, confirmed } = build({ payment: pending })
-    await service.decide(5, SubscriptionPaymentStatus.PAID)
-
-    expect(confirmed).toHaveLength(1)
-    const months =
-      (confirmed[0]!.end.getUTCFullYear() - confirmed[0]!.start.getUTCFullYear()) * 12 +
-      (confirmed[0]!.end.getUTCMonth() - confirmed[0]!.start.getUTCMonth())
-    expect(months).toBe(4)
+  it('ticks a completed payment off the list', async () => {
+    const { service, reviewed } = build({ payment: paid })
+    await service.review(5)
+    expect(reviewed).toEqual([5])
   })
 
-  it('extends from existing coverage when confirming', async () => {
-    const paidUntil = new Date('2027-03-01T09:00:00.000Z')
-    const { service, confirmed } = build({ payment: pending, paidUntil })
-    await service.decide(5, SubscriptionPaymentStatus.PAID)
-    expect(confirmed[0]!.start.toISOString()).toBe(paidUntil.toISOString())
-  })
-
-  it('cancels without granting any coverage', async () => {
-    const { service, confirmed } = build({ payment: pending })
-    const result = await service.decide(5, SubscriptionPaymentStatus.CANCELLED)
-
-    expect(result.status).toBe(SubscriptionPaymentStatus.CANCELLED)
+  it('grants and revokes nothing — the money was already in', async () => {
+    // The whole point of the change: a driver is active the moment the
+    // provider confirms, and «Հաստատել» is an admin saying they have seen it.
+    // If this ever starts touching coverage, it has become a decision again.
+    const { service, confirmed, created } = build({ payment: paid })
+    await service.review(5)
     expect(confirmed).toHaveLength(0)
+    expect(created).toHaveLength(0)
   })
 
-  it('refuses a request that was already decided', async () => {
+  it('is not an error to review twice', async () => {
+    // Two admins working the same list is ordinary. The second should find the
+    // row gone, not a conflict.
+    const { service } = build({ payment: paid, alreadyReviewed: true })
+    await expect(service.review(5)).resolves.toMatchObject({ id: 5 })
+  })
+
+  it('refuses a payment that never completed', async () => {
+    // Only PAID rows reach the list at all; anything else here means the
+    // caller invented an id.
     const { service } = build({
-      payment: { ...pending, status: SubscriptionPaymentStatus.PAID },
+      payment: { ...paid, status: SubscriptionPaymentStatus.PENDING },
     })
-    await expect(service.decide(5, SubscriptionPaymentStatus.PAID)).rejects.toBeInstanceOf(
-      ConflictException,
-    )
+    await expect(service.review(5)).rejects.toBeInstanceOf(ConflictException)
   })
 
-  it('refuses a request that does not exist', async () => {
+  it('refuses a payment that does not exist', async () => {
     const { service } = build({ payment: null })
-    await expect(service.decide(404, SubscriptionPaymentStatus.PAID)).rejects.toBeInstanceOf(
-      NotFoundException,
-    )
+    await expect(service.review(404)).rejects.toBeInstanceOf(NotFoundException)
+  })
+})
+
+describe('AdminSubscriptionsService.cancelAbandoned', () => {
+  it('writes off unfinished requests without touching anything else', async () => {
+    // A PENDING row is created before the driver ever reaches the provider, so
+    // most of them are people who changed their mind. Nothing about clearing
+    // them may grant or revoke coverage.
+    const { service, confirmed, sweep } = build()
+    await service.cancelAbandoned()
+
+    expect(sweep.cancelled).toBe(1)
+    expect(confirmed).toHaveLength(0)
   })
 })

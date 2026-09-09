@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { FetchError } from 'ofetch'
 import { TELEGRAM_MESSAGE_MAX_LENGTH } from '~/constants/admin'
+import {
+  FEATURED_DEFAULT_DAYS,
+  FEATURED_MAX_DAYS,
+  FEATURED_MIN_DAYS,
+} from '~/constants/featured'
 import { SERVICE_LABELS } from '~/constants/services'
 import { SITE_NAME } from '~/constants/site'
 import { VEHICLE_TYPE_LABELS } from '~/constants/vehicles'
@@ -662,19 +667,80 @@ async function confirmDeactivate(reason: DeactivationReason): Promise<void> {
   }
 }
 
-/** Purely editorial — shows/hides this truck in the homepage "best tow trucks" section */
-async function toggleTowTruckFeatured(truck: AdminTowTruck): Promise<void> {
-  const nextFeatured = !truck.isFeatured
+/**
+ * The paid top placement — granting it, and taking it back.
+ *
+ * ## Why granting opens a dialog and revoking does not
+ *
+ * A grant needs a number, so there is something to ask for; and it is the one
+ * action in this panel that hands a driver the top of a public page above
+ * everyone else in their town, which is worth one deliberate step. Revoking
+ * takes something away and needs no input — asking twice for that would be
+ * ceremony, and the operator can simply grant it again.
+ */
+const featureTarget = ref<AdminTowTruck | null>(null)
+/** A string, because `AppInput` is a string-valued control — parsed on submit */
+const featureDays = ref(String(FEATURED_DEFAULT_DAYS))
+const featureError = ref('')
+
+function askFeature(truck: AdminTowTruck): void {
+  featureError.value = ''
+  featureDays.value = String(FEATURED_DEFAULT_DAYS)
+  featureTarget.value = truck
+}
+
+async function confirmFeature(): Promise<void> {
+  const truck = featureTarget.value
+  if (!truck) return
+
+  const days = Number(featureDays.value)
+  // Checked here as well as by the input's `min`/`max` and the backend's DTO:
+  // `type="number"` lets a person type anything at all, and the friendly
+  // message belongs next to the field rather than arriving as a 400.
+  if (!Number.isInteger(days) || days < FEATURED_MIN_DAYS || days > FEATURED_MAX_DAYS) {
+    featureError.value = `Օրերի քանակը պետք է լինի ${FEATURED_MIN_DAYS}-ից ${FEATURED_MAX_DAYS}`
+    return
+  }
 
   actioningId.value = truck.id
+  featureError.value = ''
   try {
-    const updated = await adminRepository.setTowTruckFeatured(truck.id, nextFeatured)
+    const updated = await adminRepository.setTowTruckFeatured(truck.id, true, days)
     truck.isFeatured = updated.isFeatured
+    truck.featuredUntil = updated.featuredUntil
+    featureTarget.value = null
+  } catch (error) {
+    featureError.value = extractErrorMessage(error, 'Կարգավիճակը փոխել չհաջողվեց։')
+  } finally {
+    actioningId.value = null
+  }
+}
+
+async function removeFeatured(truck: AdminTowTruck): Promise<void> {
+  actioningId.value = truck.id
+  try {
+    const updated = await adminRepository.setTowTruckFeatured(truck.id, false)
+    truck.isFeatured = updated.isFeatured
+    truck.featuredUntil = undefined
   } catch (error) {
     towTrucksError.value = extractErrorMessage(error, 'Կարգավիճակը փոխել չհաջողվեց։')
   } finally {
     actioningId.value = null
   }
+}
+
+/**
+ * How much longer a placement runs, in whole days.
+ *
+ * Rounded UP, because a placement with four hours left is still today's, and
+ * showing «0 օր» next to a driver who is visibly still on top would read as the
+ * panel being wrong. Returns null for the open-ended grants that predate
+ * durations — they have no end to count to.
+ */
+function featuredDaysLeft(truck: AdminTowTruck): number | null {
+  if (!truck.featuredUntil) return null
+  const ms = new Date(truck.featuredUntil).getTime() - Date.now()
+  return ms <= 0 ? 0 : Math.ceil(ms / 86_400_000)
 }
 
 /**
@@ -1673,7 +1739,14 @@ async function rejectReview(review: AdminReview): Promise<void> {
                 <AppBadge :variant="truck.isActive ? 'success' : 'neutral'">
                   {{ truck.isActive ? 'Ակտիվ' : 'Ապաակտիվացված' }}
                 </AppBadge>
-                <AppBadge v-if="truck.isFeatured" variant="accent">Լավագույններից</AppBadge>
+                <!-- The remaining days, not just the fact: an operator whose
+                     driver rings to ask "how long do I have left" should not
+                     have to open anything to answer. -->
+                <AppBadge v-if="truck.isFeatured" variant="accent">
+                  Առաջխաղացում{{
+                    featuredDaysLeft(truck) === null ? '' : ` · ${featuredDaysLeft(truck)} օր`
+                  }}
+                </AppBadge>
               </div>
             </header>
 
@@ -1916,9 +1989,9 @@ async function rejectReview(review: AdminReview): Promise<void> {
                   variant="outline"
                   size="sm"
                   :disabled="actioningId === truck.id"
-                  @click="toggleTowTruckFeatured(truck)"
+                  @click="truck.isFeatured ? removeFeatured(truck) : askFeature(truck)"
                 >
-                  {{ truck.isFeatured ? 'Հանել լավագույններից' : 'Ավելացնել լավագույններին' }}
+                  {{ truck.isFeatured ? 'Հանել առաջխաղացումից' : 'Առաջխաղացնել' }}
                 </AppButton>
                 <AppButton
                   variant="outline"
@@ -2191,6 +2264,38 @@ async function rejectReview(review: AdminReview): Promise<void> {
       :error="deactivateError"
       @confirm="confirmDeactivate"
     />
+
+    <AppModal
+      :model-value="featureTarget !== null"
+      title="Առաջխաղացում"
+      @update:model-value="featureTarget = null"
+    >
+      <form v-if="featureTarget" class="feature-form" @submit.prevent="confirmFeature">
+        <p>
+          <strong>{{ featureTarget.driverName }}</strong> — {{ featureTarget.locationName }}
+        </p>
+        <!-- Says where it applies, because that is the part an operator quoting
+             a price has to have right. It is the driver's own town and nowhere
+             else — see `isPromotedAt`. -->
+        <p class="admin-page__muted">
+          Այս վարորդը կլինի առաջինը իր տարածքի էջում՝ նշված օրերի ընթացքում։ Ժամկետը
+          լրանալուց հետո ավտոմատ հանվում է։
+        </p>
+        <AppInput
+          v-model="featureDays"
+          type="number"
+          label="Քանի օրով"
+          :min="String(FEATURED_MIN_DAYS)"
+          :max="String(FEATURED_MAX_DAYS)"
+          required
+          :hint="`${FEATURED_MIN_DAYS}-ից ${FEATURED_MAX_DAYS} օր`"
+        />
+        <p v-if="featureError" class="admin-page__error" role="alert">{{ featureError }}</p>
+        <AppButton type="submit" variant="accent" block :disabled="actioningId === featureTarget.id">
+          {{ actioningId === featureTarget.id ? 'Պահպանվում է…' : 'Առաջխաղացնել' }}
+        </AppButton>
+      </form>
+    </AppModal>
   </div>
 </template>
 

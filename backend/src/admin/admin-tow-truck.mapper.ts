@@ -19,6 +19,14 @@ export interface AdminTowTruckSummary {
   isActive: boolean
   /** Admin-curated "best tow trucks" homepage pick — see AdminService.setTowTruckFeatured */
   isFeatured: boolean
+  /**
+   * When the paid placement runs out — ISO, absent when there is none or when
+   * it is one of the open-ended grants that predate durations.
+   *
+   * Admin-only. The public card carries only `promotedAt` (the start), because
+   * how long a driver bought is a term between them and the operator.
+   */
+  featuredUntil?: string
   vehicleBrand: string
   vehicleModel?: string
   vehicleYear: number
@@ -117,7 +125,12 @@ export function toAdminTowTruckSummary(
     companyName: truck.companyName ?? undefined,
     phone: truck.phone,
     isActive: truck.isActive,
+    // The stored flag AND the window, because they can disagree for up to an
+    // hour after a placement runs out. The panel shows what the row says and
+    // what a visitor is actually seeing, which is the difference an operator
+    // needs when a driver rings to ask why they are no longer on top.
     isFeatured: truck.isFeatured,
+    ...(truck.featuredUntil ? { featuredUntil: truck.featuredUntil.toISOString() } : {}),
     vehicleBrand: truck.vehicleBrand,
     vehicleModel: truck.vehicleModel ?? undefined,
     vehicleYear: truck.vehicleYear,
@@ -142,4 +155,19 @@ export function toAdminTowTruckSummary(
     images: truck.images.map((image) => ({ id: image.id, url: image.url })),
     privacyConsent: toAdminConsentSummary(truck.privacyConsents?.[0]),
   }
+}
+
+/**
+ * What the featured endpoint answers with.
+ *
+ * `featuredUntil` is here and NOT on the public card on purpose: the admin
+ * panel is where the operator needs to see how long a placement still runs, and
+ * the public JSON is where that is a commercial term between them and one
+ * driver. Absent when the placement was revoked, or when it is one of the
+ * open-ended grants that predate durations.
+ */
+export interface AdminFeaturedResult {
+  id: number
+  isFeatured: boolean
+  featuredUntil?: string
 }

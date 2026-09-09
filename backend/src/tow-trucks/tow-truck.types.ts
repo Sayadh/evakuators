@@ -90,6 +90,21 @@ export interface TowTruckCardApi {
     name: string
   }
   /**
+   * When this driver's paid top placement was granted — **present only while it
+   * is live**, absent otherwise.
+   *
+   * It is the ordering key for the pin on the driver's own city or district
+   * page: several drivers in one town can hold a placement, and the one granted
+   * most recently goes on top.
+   *
+   * The START date, never the end. The frontend needs to sort them; it has no
+   * business knowing how long each one runs, and neither does anyone reading
+   * the JSON — that is a commercial term between the operator and one driver.
+   * Its absence is what "not currently promoted" looks like, so no consumer
+   * ever has to compare a date against the clock to find out.
+   */
+  promotedAt?: string
+  /**
    * Approved reviews only, and **omitted entirely when there are none** —
    * never `null`, never a zero, and never an invented default.
    *

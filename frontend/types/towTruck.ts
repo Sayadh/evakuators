@@ -183,6 +183,19 @@ export interface TowTruckCard {
   images: string[]
   /** ISO datetime — used for an honest sitemap <lastmod> */
   updatedAt: string
+  /**
+   * When this driver's paid top placement was granted — **present only while
+   * it is live**, absent otherwise. Mirrors `TowTruckCardApi.promotedAt`.
+   *
+   * Its absence is what "not promoted" looks like, so nothing here ever
+   * compares a date against the clock: the backend already decided, once, for
+   * the whole response. That matters more than it sounds — the listing is
+   * server-rendered and then hydrated, and a client-side `Date.now()` in the
+   * ordering would let the two disagree about who is first.
+   *
+   * Used only by `sortTowTrucks`, and only on the driver's own town's page.
+   */
+  promotedAt?: string
 }
 
 /**

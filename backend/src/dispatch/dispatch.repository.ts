@@ -29,6 +29,7 @@ export type DispatchCandidateRow = Prisma.TowTruckGetPayload<{
     servesAllArmenia: true
     serviceAreas: true
     isFeatured: true
+    featuredUntil: true
   }
 }>
 
@@ -79,6 +80,7 @@ export class DispatchRepository {
         servesAllArmenia: true,
         serviceAreas: true,
         isFeatured: true,
+        featuredUntil: true,
       },
     })
   }

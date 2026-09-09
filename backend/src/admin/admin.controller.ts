@@ -30,6 +30,7 @@ import { RejectProfileChangeDto } from './dto/reject-profile-change.dto'
 import { RemoveServiceAreaDto } from './dto/remove-service-area.dto'
 import { SetPrimaryAreaDto } from './dto/set-primary-area.dto'
 import { SetTowTruckActiveDto } from './dto/set-tow-truck-active.dto'
+import type { AdminFeaturedResult } from './admin-tow-truck.mapper'
 import { SetTowTruckFeaturedDto } from './dto/set-tow-truck-featured.dto'
 import { SetTowTruckHeavyEquipmentDto } from './dto/set-tow-truck-heavy-equipment.dto'
 import { SetTowTruckPhoneDto } from './dto/set-tow-truck-phone.dto'
@@ -280,13 +281,19 @@ export class AdminController {
     return this.adminService.setTowTruckActive(id, dto.isActive, dto.reason)
   }
 
-  /** Toggle the homepage "best tow trucks" pick — purely editorial */
+  /**
+   * Grant or revoke a paid top placement, for a number of days.
+   *
+   * No longer editorial: this pins the driver above everyone else on their own
+   * city or district page, which is the thing being sold. See
+   * `AdminService.setTowTruckFeatured`.
+   */
   @Patch('tow-trucks/:id/featured')
   setFeatured(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: SetTowTruckFeaturedDto,
-  ): Promise<{ id: number; isFeatured: boolean }> {
-    return this.adminService.setTowTruckFeatured(id, dto.isFeatured)
+  ): Promise<AdminFeaturedResult> {
+    return this.adminService.setTowTruckFeatured(id, dto.isFeatured, dto.days)
   }
 
   /**

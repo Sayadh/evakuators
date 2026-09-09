@@ -143,6 +143,40 @@ export function isBasedAt(truck: TowTruckCard, place: BasePlace | undefined): bo
 }
 
 /**
+ * Is this driver holding a paid top placement **on this page**?
+ *
+ * The `&& isBasedAt` is the entire product decision, not a guard. What is sold
+ * is the top of the driver's OWN town — the page where somebody standing next
+ * to a broken car in that town is choosing. It deliberately does not travel:
+ *
+ * - a driver who merely covers this town cannot buy their way above the drivers
+ *   who are based in it, because "a local first" is the promise the listing
+ *   makes to the customer, and it is not for sale;
+ * - and the placement cannot be bought once and cashed in on forty pages,
+ *   which is what would happen if it applied wherever the driver appears. That
+ *   would make it the most valuable thing on the site and the listing order
+ *   almost meaningless everywhere at once.
+ *
+ * So it is scarce by construction: one town, one first position, and a driver
+ * who wants the top of two towns has to be based in two towns, which nobody is.
+ */
+export function isPromotedAt(truck: TowTruckCard, place: BasePlace | undefined): boolean {
+  return truck.promotedAt !== undefined && isBasedAt(truck, place)
+}
+
+/**
+ * Which of the three groups this driver falls in, on a page about `place`.
+ *
+ * Lower sorts first. Returned as a number rather than compared pairwise so the
+ * comparator stays total — see the note on `seed` in `sortTowTrucks`.
+ */
+function localRank(truck: TowTruckCard, place: BasePlace): number {
+  if (isPromotedAt(truck, place)) return 0
+  if (isBasedAt(truck, place)) return 1
+  return 2
+}
+
+/**
  * Orders a list for the **Recommended** sort — the only sort this touches;
  * `SortOption.Price` is the customer's own explicit instruction and is never
  * reordered by anything below.
@@ -159,14 +193,24 @@ export function isBasedAt(truck: TowTruckCard, place: BasePlace | undefined): bo
  *
  * `tiered: false` — used only by the city/district search pages
  * (`useTowTruckFilters` → `applyTowTruckFilters`) — skips the rating band and
- * shuffles everyone's Recommended position on every page load, EXCEPT for one
- * tier ahead of that shuffle: drivers actually based in the town or district
- * being searched (`isBasedAt`) come first, in their own shuffled order, then
- * everyone who merely also covers it, in theirs. Someone searching «Ավան» is
- * looking for an Ավան driver first and a driver who merely also drives there
- * second — the shuffle answers "which of the several equally-relevant drivers
- * do I see on top", not "should a local driver ever be less visible than one
- * who is not local at all".
+ * shuffles everyone's Recommended position on every page load, EXCEPT for
+ * three ranks ahead of that shuffle:
+ *
+ * 0. drivers holding a paid placement AND based here (`isPromotedAt`), newest
+ *    purchase first and NOT shuffled — see the comparator;
+ * 1. everyone else actually based in the town or district being searched
+ *    (`isBasedAt`), in their own shuffled order;
+ * 2. everyone who merely also covers it, in theirs.
+ *
+ * Ranks 1 and 2 are the original rule and the reason has not changed: someone
+ * searching «Ավան» is looking for an Ավան driver first and a driver who merely
+ * also drives there second — the shuffle answers "which of the several
+ * equally-relevant drivers do I see on top", not "should a local driver ever be
+ * less visible than one who is not local at all".
+ *
+ * Rank 0 is the paid one, and it sits INSIDE the local tier rather than above
+ * it: a promoted driver is a local driver who also paid, never a visitor who
+ * bought their way past the locals. That is why `isPromotedAt` requires both.
  *
  * ## `seed`, and why the shuffle is not in the comparator
  *
@@ -205,12 +249,27 @@ export function sortTowTrucks(
       if (!tiered) {
         if (!basePlace) return base
 
-        // Two booleans, so this is -1/0/1 and never a partial comparator. A
-        // stable sort then leaves each side's shuffled order in place — the
-        // same mechanism the rating band uses below.
-        return base.sort(
-          (a, b) => Number(isBasedAt(b, basePlace)) - Number(isBasedAt(a, basePlace)),
-        )
+        // Three ranks, then one exception inside the top one. Everything below
+        // rank 0 compares equal within its rank, and a stable sort leaves the
+        // shuffled order in place — the same mechanism the rating band uses.
+        return base.sort((a, b) => {
+          const byRank = localRank(a, basePlace) - localRank(b, basePlace)
+          if (byRank !== 0) return byRank
+
+          // Paid placements are the one group that is NOT shuffled. They are in
+          // a queue, newest purchase first: a driver who pays today is visibly
+          // first tomorrow, and the one who paid last week moves down by one
+          // rather than being displaced. A shuffle here would sell each of them
+          // "sometimes the top", which is not what "the top spot" means to
+          // somebody who just paid for it.
+          //
+          // `promotedAt` is only set on rank 0, so this line is unreachable for
+          // anyone else — and the `?? ''` keeps it total for the legacy
+          // open-ended grants, which have no date and sort last among the
+          // promoted.
+          if (localRank(a, basePlace) !== 0) return 0
+          return (b.promotedAt ?? '').localeCompare(a.promotedAt ?? '')
+        })
       }
 
       // Bands, not scores. Equal bands compare 0, and a stable sort then

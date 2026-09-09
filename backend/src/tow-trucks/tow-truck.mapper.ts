@@ -1,4 +1,5 @@
 import { decimalToNumber } from '../common/coordinates'
+import { isFeaturedNow } from './featured'
 import type { TowTruckCardRow, TowTruckCoverageRow } from './tow-trucks.repository'
 import type {
   ServiceAreaJson,
@@ -165,6 +166,7 @@ export function toTowTruckApi(
 export function toTowTruckCardApi(
   truck: TowTruckCardRow,
   rating?: TowTruckCardApi['rating'],
+  now: Date = new Date(),
 ): TowTruckCardApi {
   return {
     id: truck.id,
@@ -196,6 +198,13 @@ export function toTowTruckCardApi(
     // Spread, not `rating: rating` — an unrated truck must have no `rating`
     // key at all, not a key holding undefined. See TowTruckCardApi.
     ...(rating ? { rating } : {}),
+    // Computed here rather than passed through, so there is exactly one place
+    // that decides whether a placement is live. `featuredAt` can be null on a
+    // legacy open-ended grant — that driver is still promoted, just with no
+    // position in the queue, so they sort after everyone who has a date.
+    ...(isFeaturedNow(truck, now) && truck.featuredAt
+      ? { promotedAt: truck.featuredAt.toISOString() }
+      : {}),
     // The repository already capped this at one row (`take: 1`, ordered by
     // position). Kept as an array so the frontend's card type stays a strict
     // subset of the full TowTruck type.

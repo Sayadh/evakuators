@@ -48,6 +48,12 @@ const CARD_SELECT = {
   districtSlug: true,
   locationName: true,
   updatedAt: true,
+  // The paid placement, for the card ordering. Both, because "is it live" and
+  // "who bought it more recently" are different questions and the mapper needs
+  // to answer them together — see `toTowTruckCardApi`.
+  isFeatured: true,
+  featuredAt: true,
+  featuredUntil: true,
   // IMAGE_ORDER, not just `position` — every legacy row shares position 0, so
   // without the id tiebreak "the thumbnail" is whatever Postgres returns first
   // and can differ between two requests for the same truck.
@@ -168,15 +174,23 @@ export class TowTrucksRepository {
    * simply reappear here, the same way `derivesHeavyEquipment` is applied on
    * read rather than baked in.
    */
-  findFeaturedCards(): Promise<TowTruckCardRow[]> {
+  findFeaturedCards(now: Date): Promise<TowTruckCardRow[]> {
     return this.prisma.towTruck.findMany({
       where: {
         isActive: true,
         isFeatured: true,
+        // The window, applied in SQL rather than trusting the flag: the sweep
+        // runs hourly, so between two runs `isFeatured` alone would keep an
+        // expired placement on the homepage. Legacy grants (`featuredUntil`
+        // null) have no end and stay. Mirrors `isFeaturedNow`.
+        OR: [{ featuredUntil: null }, { featuredUntil: { gt: now } }],
         vehicleType: GENERAL_DISCOVERY_VEHICLE_TYPE,
       },
       select: CARD_SELECT,
-      orderBy: { createdAt: 'desc' },
+      // Newest placement first, the same order the city pages use. `createdAt`
+      // as the tiebreak keeps the legacy picks (no `featuredAt`) in the order
+      // they had before this feature existed.
+      orderBy: [{ featuredAt: 'desc' }, { createdAt: 'desc' }],
     })
   }
 
@@ -536,8 +550,44 @@ export class TowTrucksRepository {
     })
   }
 
-  setFeatured(id: number, isFeatured: boolean): Promise<TowTruck> {
-    return this.prisma.towTruck.update({ where: { id }, data: { isFeatured } })
+  /**
+   * Grant or revoke a paid top placement.
+   *
+   * `featuredAt` is rewritten on every grant, including a re-grant of a driver
+   * who is already featured — that is the ordering, and a driver who renews has
+   * bought their way back to the front of the queue, not kept a stale position
+   * behind someone who bought later.
+   *
+   * Revoking clears both dates rather than leaving them: a row reading
+   * `isFeatured: false` with a live `featuredUntil` is a state nothing means,
+   * and it would come back to life the moment someone re-granted the flag
+   * alone.
+   */
+  setFeatured(id: number, window: { until: Date; at: Date } | null): Promise<TowTruck> {
+    return this.prisma.towTruck.update({
+      where: { id },
+      data: window
+        ? { isFeatured: true, featuredAt: window.at, featuredUntil: window.until }
+        : { isFeatured: false, featuredAt: null, featuredUntil: null },
+    })
+  }
+
+  /**
+   * Take down every placement whose window has closed.
+   *
+   * Cleanup, not correctness: reads already apply the window themselves
+   * (`isFeaturedNow`), so this only makes the stored rows agree with what is
+   * already being shown. `featuredUntil: { not: null }` keeps the open-ended
+   * legacy grants out of it — those have no end and must not be swept.
+   *
+   * Returns the count so the job can say whether it did anything.
+   */
+  async expireFeatured(now: Date): Promise<number> {
+    const { count } = await this.prisma.towTruck.updateMany({
+      where: { isFeatured: true, featuredUntil: { not: null, lte: now } },
+      data: { isFeatured: false, featuredAt: null, featuredUntil: null },
+    })
+    return count
   }
 
   /** Admin-set "can move heavy machinery" — see AdminService.setTowTruckHeavyEquipment */

@@ -337,10 +337,23 @@ model TowTruck {
   /// and a reactivated driver carries no stale explanation. See
   /// AdminService.setTowTruckActive and DeactivationReason.
   deactivationReason DeactivationReason?
-  /// Admin-curated "best tow trucks" homepage pick — see FeaturedTowTrucksSection
-  /// on the frontend. Purely editorial, has no effect on public search/filter
-  /// results elsewhere.
+  /// A paid top placement. Was purely editorial (the homepage's "best tow
+  /// trucks" pick); it now also pins the driver to the top of their OWN city or
+  /// district page, which is the thing being sold.
+  ///
+  /// Never read on its own — always through `isFeaturedNow`, which applies the
+  /// window below. A row can be `true` with a `featuredUntil` in the past for
+  /// up to an hour, until the sweep catches it.
   isFeatured         Boolean             @default(false)
+  /// When the placement was granted — the ORDER among drivers holding one in
+  /// the same town, newest first. Not decoration: a driver who pays today is
+  /// first tomorrow, and the one who paid last week moves down by one instead
+  /// of being displaced.
+  featuredAt         DateTime?
+  /// When it stops. NULL means no end — the state of every placement granted
+  /// before durations existed; expiring those on deploy would have removed
+  /// editorial picks nobody asked to remove. New grants always carry a date.
+  featuredUntil      DateTime?
   /// LEGACY — no longer read or written by anything. Kept only because it is
   /// the record of what the manual bookkeeping said before subscriptions
   /// existed.
@@ -436,6 +449,10 @@ model TowTruck {
   @@index([regionSlug])
   @@index([isActive])
   @@index([isFeatured])
+  /// The expiry sweep's own query. Partial in the migration (`WHERE isFeatured`)
+  /// — Prisma cannot express that, so the schema states the column and the
+  /// migration states the predicate. See docs/data-model.md.
+  @@index([featuredUntil])
   /// GIN index on the serviceAreas JSONB, for the `array_contains` half of every
   /// city/district/region listing filter (see TowTrucksRepository.buildWhere).
   /// Without it those queries are a Seq Scan over every tow truck with a JSONB

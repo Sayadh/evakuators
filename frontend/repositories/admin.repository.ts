@@ -176,6 +176,8 @@ export interface AdminTowTruck {
   isActive: boolean
   /** Admin-curated "best tow trucks" homepage pick */
   isFeatured: boolean
+  /** ISO — when the paid placement runs out. Absent when there is none */
+  featuredUntil?: string
   vehicleBrand: string
   vehicleModel?: string
   vehicleYear: number
@@ -610,13 +612,27 @@ export const adminRepository = {
     })
   },
 
-  /** Toggle whether this truck shows in the homepage "best tow trucks" section */
-  setTowTruckFeatured(id: number, isFeatured: boolean): Promise<{ id: number; isFeatured: boolean }> {
-    return apiFetch<{ id: number; isFeatured: boolean }>(`/admin/tow-trucks/${id}/featured`, {
-      method: 'PATCH',
-      body: { isFeatured },
-      headers: authHeader(),
-    })
+  /**
+   * Grant or revoke a paid top placement.
+   *
+   * `days` travels only on a grant. The backend's DTO refuses it on a revoke
+   * (`forbidNonWhitelisted` makes a stray property a 400), which is the right
+   * refusal: a duration attached to "take it away" is a caller that has
+   * misunderstood what it is asking for.
+   */
+  setTowTruckFeatured(
+    id: number,
+    isFeatured: boolean,
+    days?: number,
+  ): Promise<{ id: number; isFeatured: boolean; featuredUntil?: string }> {
+    return apiFetch<{ id: number; isFeatured: boolean; featuredUntil?: string }>(
+      `/admin/tow-trucks/${id}/featured`,
+      {
+        method: 'PATCH',
+        body: isFeatured ? { isFeatured: true, days } : { isFeatured: false },
+        headers: authHeader(),
+      },
+    )
   },
 
   /**

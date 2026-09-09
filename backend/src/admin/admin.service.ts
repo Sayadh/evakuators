@@ -2,7 +2,14 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { Prisma, RegistrationStatus, type DeactivationReason } from '@prisma/client'
 import { randomBytes } from 'node:crypto'
 import { assertWithinArmenia } from '../common/coordinates'
+import { Cron, CronExpression } from '@nestjs/schedule'
 import { assertServiceAreasWithinLimit } from '../tow-trucks/service-area-limits'
+import {
+  featuredUntilFrom,
+  isValidFeaturedDays,
+  FEATURED_MAX_DAYS,
+  FEATURED_MIN_DAYS,
+} from '../tow-trucks/featured'
 import { DriverAuthService } from '../driver-auth/driver-auth.service'
 import { IMAGE_ORDER } from '../images/image-order'
 import { PrismaService } from '../prisma/prisma.service'
@@ -15,6 +22,7 @@ import { TelegramService } from '../telegram/telegram.service'
 import { assertPlacementIsServed } from '../tow-trucks/placement'
 import { AVAILABLE_24_7_SLUG } from '../tow-trucks/service-slugs'
 import type { ServiceAreaJson } from '../tow-trucks/tow-truck.types'
+import type { AdminFeaturedResult } from './admin-tow-truck.mapper'
 import { derivesHeavyEquipment, derivesManipulator } from '../tow-trucks/vehicle-types'
 import { reactivationPhoneConflictMessage } from '../tow-trucks/tow-truck-reactivation'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
@@ -1176,20 +1184,79 @@ export class AdminService {
   }
 
   /**
-   * Marks/unmarks a tow truck as one of the homepage "best tow trucks" picks.
-   * Purely editorial — has no effect on public search/filter results, and an
-   * inactive truck stays hidden from the homepage regardless of this flag
-   * (see TowTrucksRepository.findFeatured).
+   * Grants or revokes a paid top placement.
+   *
+   * ## What it now buys, and why that raises the stakes
+   *
+   * It used to be editorial: a tick that put a driver in the homepage's "best
+   * tow trucks" strip and changed nothing else. It now also pins them above
+   * every other driver on their OWN city or district page — the page where a
+   * customer with a broken car actually chooses. That is a scarce thing: one
+   * town has one first position, and every day one driver holds it is a day
+   * the rest do not.
+   *
+   * So it is time-boxed. A grant carries a number of days (1-30) and the row
+   * records when it started and when it ends; `expireFeatured` takes it down,
+   * and every read applies the window itself so nothing depends on that job
+   * having run.
+   *
+   * ## Re-granting is not idempotent, on purpose
+   *
+   * Granting to a driver who already holds a placement restarts it: a new
+   * `featuredAt`, a new end date counted from now. Both matter. `featuredAt` is
+   * the queue position, and a driver who has just paid again belongs at the
+   * front of it, not behind someone who bought later during their first term;
+   * and the remaining days of the old term are not added to the new one,
+   * because what was sold is "N days from now", not a balance.
    */
   async setTowTruckFeatured(
     id: number,
     isFeatured: boolean,
-  ): Promise<{ id: number; isFeatured: boolean }> {
+    days?: number,
+  ): Promise<AdminFeaturedResult> {
     const towTruck = await this.towTrucksRepository.findById(id)
     if (!towTruck) throw new NotFoundException(`Էվակուատոր #${id}-ը չի գտնվել`)
 
-    const updated = await this.towTrucksRepository.setFeatured(id, isFeatured)
-    return { id: updated.id, isFeatured: updated.isFeatured }
+    // Belt and braces over the DTO's own `@ValidateIf`: this is the one method
+    // that can hand a driver the top of a page, and "the pipe would have caught
+    // it" is not a thing to rely on if it is ever called from anywhere else.
+    if (isFeatured && !isValidFeaturedDays(days ?? NaN)) {
+      throw new BadRequestException(
+        `Օրերի քանակը պետք է լինի ${FEATURED_MIN_DAYS}-ից ${FEATURED_MAX_DAYS}`,
+      )
+    }
+
+    const now = new Date()
+    const updated = await this.towTrucksRepository.setFeatured(
+      id,
+      isFeatured ? { at: now, until: featuredUntilFrom(now, days as number) } : null,
+    )
+
+    return {
+      id: updated.id,
+      isFeatured: updated.isFeatured,
+      featuredUntil: updated.featuredUntil?.toISOString(),
+    }
+  }
+
+  /**
+   * Takes down placements whose window has closed, every hour.
+   *
+   * Hourly rather than nightly because this is money: a driver paid for a
+   * number of days, and a nightly sweep would hand them most of another one for
+   * free — or, read the other way, keep the town's one first position off the
+   * market for up to 24 hours past the term the operator sold.
+   *
+   * It is only cleanup. Reads already apply the window (`isFeaturedNow`), so
+   * nothing a visitor sees depends on this having run — which is what makes it
+   * safe for it to be late, or to have failed last time.
+   */
+  @Cron(CronExpression.EVERY_HOUR)
+  async expireFeatured(): Promise<void> {
+    const count = await this.towTrucksRepository.expireFeatured(new Date())
+    if (count > 0) {
+      this.logger.log(`Ավարտվել է ${count} վճարովի առաջխաղացում`)
+    }
   }
 
   /**

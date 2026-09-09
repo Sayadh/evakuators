@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { ReviewsRepository } from '../reviews/reviews.repository'
+import { isFeaturedNow } from '../tow-trucks/featured'
 import { derivePaymentStatus } from '../subscriptions/subscription-status'
 import { SubscriptionsRepository } from '../subscriptions/subscriptions.repository'
 import {
@@ -78,7 +79,7 @@ export class DispatchService {
     const ratingById = new Map(ratings.map((row) => [row.towTruckId, row.averageRating]))
 
     const items = trucks
-      .map((truck) => this.toCandidate(truck, place, { stats, monthCounts, ratingById, coverage }))
+      .map((truck) => this.toCandidate(truck, place, { stats, monthCounts, ratingById, coverage, now }))
       .filter((candidate): candidate is DispatchCandidateApi => candidate !== null)
       .filter((candidate) =>
         matchesDispatchFilter(
@@ -109,6 +110,8 @@ export class DispatchService {
       monthCounts: Map<number, number>
       ratingById: Map<number, number>
       coverage: Map<number, { paidUntil: Date | null }>
+      /** One instant for the whole list, so two rows cannot disagree about it */
+      now: Date
     },
   ): DispatchCandidateApi | null {
     const tier = dispatchTier(
@@ -137,7 +140,11 @@ export class DispatchService {
       vehicle: [truck.vehicleBrand, truck.vehicleModel].filter(Boolean).join(' '),
       baseName: truck.locationName,
       tier,
-      isFeatured: truck.isFeatured,
+      // Through the window, not the raw flag: an expired placement must not
+      // keep a driver at the top of the dispatcher's list, and it must not keep
+      // them in the «Լավագույնները» filter either. Same rule as every public
+      // read — see `isFeaturedNow`.
+      isFeatured: isFeaturedNow(truck, lookups.now),
       rating: rating === undefined ? undefined : Number(rating.toFixed(1)),
       subscriptionStatus: derivePaymentStatus(lookups.coverage.get(truck.id)?.paidUntil ?? null),
       dispatchesThisMonth: lookups.monthCounts.get(truck.id) ?? 0,

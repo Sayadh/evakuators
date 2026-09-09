@@ -4,7 +4,6 @@ import { adminRepository, isApiEnabled } from '~/repositories'
 import { useAdminAuthStore } from '~/stores/adminAuth'
 import type { DispatchCandidate, DispatchFilter, DispatchTier } from '~/types/dispatch'
 import {
-  buildDispatchPlaces,
   rememberDispatchPlace,
   searchDispatchPlaces,
   DISPATCH_RECENT_KEY,
@@ -36,9 +35,6 @@ import { getPhoneHref } from '~/utils/formatPhone'
 const adminAuth = useAdminAuthStore()
 const apiEnabled = isApiEnabled()
 
-/** The whole taxonomy, flattened once — static constants, so no request to race */
-const places = buildDispatchPlaces()
-
 const query = ref('')
 const selected = ref<DispatchPlace | null>(null)
 const recent = ref<DispatchPlace[]>([])
@@ -51,8 +47,14 @@ const referringId = ref<number | null>(null)
 /** Drivers already marked as taking the job in THIS search, so the row can say so */
 const referredIds = ref<Set<number>>(new Set())
 
+/**
+ * Suggestions come from the site's own location index (`searchLocations`), so
+ * the dispatcher can type Armenian, Latin or Russian, and villages, corridors
+ * and «Երևան» itself all resolve — see `utils/dispatchPlaces.ts`. Synchronous:
+ * static constants, no request to race a person who is typing while talking.
+ */
 const suggestions = computed(() =>
-  selected.value === null ? searchDispatchPlaces(places, query.value) : [],
+  selected.value === null ? searchDispatchPlaces(query.value) : [],
 )
 
 const FILTER_LABELS: Record<DispatchFilter, string> = {

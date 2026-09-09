@@ -1,7 +1,12 @@
 import { IsIn, IsInt, IsPositive, IsString, Length } from 'class-validator'
 import type { DispatchLocationType } from '../dispatch-ranking'
 
-export const DISPATCH_LOCATION_TYPES: readonly DispatchLocationType[] = ['city', 'district', 'region']
+export const DISPATCH_LOCATION_TYPES: readonly DispatchLocationType[] = [
+  'city',
+  'district',
+  'region',
+  'route',
+]
 
 /**
  * Recording that a job was handed to a driver.

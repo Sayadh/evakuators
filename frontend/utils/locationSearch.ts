@@ -41,6 +41,31 @@ import { YEREVAN_REGION_SLUG } from './geography'
 /** Where a result sends the visitor, and what it is */
 export type LocationSearchResultType = 'region' | 'city' | 'district' | 'zone' | 'settlement'
 
+/**
+ * What a driver's coverage is compared against, for a destination.
+ *
+ * Narrower than `LocationSearchResultType` on purpose: these four are the only
+ * values that ever appear in `TowTruck.serviceAreas` or on the truck's own
+ * base columns. A settlement is not one of them — «Պտղնի» is a real place a
+ * caller names, but no driver declares it, so it has to be reduced to the city
+ * (or corridor) whose drivers actually serve it before anything can be matched.
+ * That reduction already happens on the city page for landing settlements
+ * ("a landing settlement deliberately reuses its target CITY's drivers"); this
+ * makes it a value on the result instead of a rule each caller re-derives.
+ *
+ * MANUAL SYNC POINT: same four values as `LocationType` in `types/enums.ts`
+ * and `@IsIn` in `backend/src/tow-trucks/dto/service-area.dto.ts`. Note
+ * `route`, not `zone`: a corridor is `zone` as a page and `route` as a stored
+ * service area, and it is the stored spelling that has to travel here.
+ */
+export type LocationMatchType = 'region' | 'city' | 'district' | 'route'
+
+/** The place a driver's coverage is matched against */
+export interface LocationMatch {
+  type: LocationMatchType
+  slug: string
+}
+
 export interface LocationSearchResult {
   /**
    * Deduplication key, NOT a display value. Several entries can resolve to one
@@ -56,6 +81,12 @@ export interface LocationSearchResult {
   /** Marz name, shown when two results would otherwise read identically */
   regionName: string
   route: string
+  /**
+   * What to compare a driver's coverage against — see `LocationMatchType`.
+   * Equal to the result's own type and slug for everything except settlements,
+   * which reduce to the city or corridor that serves them.
+   */
+  match: LocationMatch
 }
 
 /** One searchable term pointing at a result */
@@ -163,6 +194,7 @@ const INDEX: IndexEntry[] = (() => {
       name: city.name,
       regionName: region.name,
       route: getCityRoute(region.slug, city.slug),
+      match: { type: 'city', slug: city.slug },
     })
   }
 
@@ -173,6 +205,7 @@ const INDEX: IndexEntry[] = (() => {
       name: district.name,
       regionName: 'Երևան',
       route: getDistrictRoute(district.slug),
+      match: { type: 'district', slug: district.slug },
     })
   }
 
@@ -188,6 +221,7 @@ const INDEX: IndexEntry[] = (() => {
       name: region.name,
       regionName: region.name,
       route: getRegionRoute(region.slug),
+      match: { type: 'region', slug: region.slug },
     })
   }
   push(entries, ['Երևան', YEREVAN_REGION_SLUG, 'erevan'], 'Երևան', {
@@ -196,6 +230,7 @@ const INDEX: IndexEntry[] = (() => {
     name: 'Երևան',
     regionName: 'Երևան',
     route: getYerevanRoute(),
+    match: { type: 'region', slug: YEREVAN_REGION_SLUG },
   })
 
   for (const zone of staticServiceZones) {
@@ -207,6 +242,9 @@ const INDEX: IndexEntry[] = (() => {
       name: zone.name,
       regionName: region.name,
       route: getCityRoute(region.slug, zone.slug),
+      // `route`, not `zone`: a corridor is a zone as a page and a route as a
+      // stored service area. See LocationMatchType.
+      match: { type: 'route', slug: zone.slug },
     })
   }
 
@@ -217,6 +255,14 @@ const INDEX: IndexEntry[] = (() => {
     // A redirecting settlement contributes its NAME and ALIASES to the target's
     // result — searching «Գառնի» offers the corridor, once, and never a second
     // row for the village. A landing settlement keeps its own result and route.
+    // Both branches match on the TARGET, never on the settlement itself: no
+    // driver declares a village, and a landing settlement is explicitly served
+    // by its target city's drivers (see pages/regions/[region]/[city].vue).
+    const match: LocationMatch =
+      target.type === 'zone'
+        ? { type: 'route', slug: target.slug }
+        : { type: 'city', slug: target.slug }
+
     const result: LocationSearchResult = isLandingSettlement(settlement)
       ? {
           key: `settlement:${target.regionSlug}:${settlement.slug}`,
@@ -224,6 +270,7 @@ const INDEX: IndexEntry[] = (() => {
           name: settlement.name,
           regionName: target.regionName,
           route: getCityRoute(target.regionSlug, settlement.slug),
+          match,
         }
       : {
           key: `${target.type}:${target.slug}`,
@@ -231,6 +278,7 @@ const INDEX: IndexEntry[] = (() => {
           name: target.name,
           regionName: target.regionName,
           route: getCityRoute(target.regionSlug, target.slug),
+          match,
         }
 
     push(entries, [settlement.name, settlement.slug, ...settlement.aliases], settlement.name, result)

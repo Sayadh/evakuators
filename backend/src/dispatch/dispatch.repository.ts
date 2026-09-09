@@ -53,18 +53,23 @@ export class DispatchRepository {
    * the subscription is shown rather than filtered on.
    */
   findCandidates(place: DispatchPlace): Promise<DispatchCandidateRow[]> {
-    const base: Prisma.TowTruckWhereInput =
+    // Null for a road corridor: there is no column a driver is "based on a
+    // route" in, and inventing one (regionSlug, say) would put every driver in
+    // the marz into the LOCAL tier for a road they never mentioned.
+    const base: Prisma.TowTruckWhereInput | null =
       place.type === 'district'
         ? { districtSlug: place.slug }
         : place.type === 'city'
           ? { citySlug: place.slug }
-          : { regionSlug: place.slug }
+          : place.type === 'region'
+            ? { regionSlug: place.slug }
+            : null
 
     return this.prisma.towTruck.findMany({
       where: {
         isActive: true,
         OR: [
-          base,
+          ...(base ? [base] : []),
           { serviceAreas: { array_contains: [{ slug: place.slug, type: place.type }] } },
           { servesAllArmenia: true },
         ],

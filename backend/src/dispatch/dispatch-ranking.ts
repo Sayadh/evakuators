@@ -7,8 +7,20 @@
  * has to be readable on its own and testable without a database.
  */
 
-/** `LocationType` as it appears in `serviceAreas` and on the truck's own columns */
-export type DispatchLocationType = 'city' | 'district' | 'region'
+/**
+ * `LocationType` as it appears in `serviceAreas` and on the truck's own columns.
+ *
+ * `route` is a named road corridor («Գառնի–Գեղարդ»). It is here because the
+ * caller names one — they say «Գառնի», and the frontend's location index
+ * resolves that to the corridor whose drivers actually work it. A driver can
+ * declare a route but can never be BASED on one, which `isBasedIn` relies on.
+ *
+ * MANUAL SYNC POINT: the same four values as `@IsIn` in
+ * `tow-trucks/dto/service-area.dto.ts` and `LocationType` in the frontend's
+ * `types/enums.ts`. They are matched literally against `serviceAreas` JSON, so
+ * a value that disagrees by one character silently returns nobody.
+ */
+export type DispatchLocationType = 'city' | 'district' | 'region' | 'route'
 
 /** The place the CALLER named, resolved from the static taxonomy */
 export interface DispatchPlace {
@@ -55,6 +67,10 @@ function isBasedIn(truck: DispatchCandidateInput, place: DispatchPlace): boolean
       return truck.citySlug === place.slug
     case 'region':
       return truck.regionSlug === place.slug
+    // `route` falls through to false on purpose: nobody is based on a road
+    // corridor. A driver who works «Գառնի–Գեղարդ» declared it, which is
+    // `visiting` — and that is the honest tier for someone driving out to a
+    // road rather than sitting on it.
     default:
       return false
   }

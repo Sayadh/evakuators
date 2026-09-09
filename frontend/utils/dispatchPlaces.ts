@@ -1,7 +1,15 @@
-import { getRegionCities, getStaticDistricts, getStaticRegions } from '~/utils/geography'
+import {
+  needsRegionLabel,
+  searchLocations,
+  type LocationMatchType,
+  type LocationSearchResult,
+} from '~/utils/locationSearch'
 
-/** Mirrors the backend's `DispatchLocationType` */
-export type DispatchPlaceType = 'city' | 'district' | 'region'
+/**
+ * Mirrors the backend's `DispatchLocationType`, which is `LocationType` — the
+ * four values that appear in `TowTruck.serviceAreas`.
+ */
+export type DispatchPlaceType = LocationMatchType
 
 export interface DispatchPlace {
   slug: string
@@ -11,69 +19,80 @@ export interface DispatchPlace {
   context?: string
 }
 
-/**
- * Every place a caller might name, flattened into one searchable list.
- *
- * Built from the static geography rather than fetched, for the reason
- * `useLocationSearch` gives: this taxonomy is TypeScript constants, so the
- * whole thing is synchronous and there is no request to race. On the dispatch
- * screen that matters more than anywhere else — the operator is typing while
- * somebody is on the phone, and a suggestion list that arrives late is a
- * suggestion list that gets typed past.
- *
- * Districts are Yerevan's; cities are every region's; regions are the marzes
- * themselves, for the caller who can only say "somewhere in Lori".
- */
-export function buildDispatchPlaces(): DispatchPlace[] {
-  const places: DispatchPlace[] = []
-
-  for (const district of getStaticDistricts()) {
-    places.push({ slug: district.slug, name: district.name, type: 'district', context: 'Երևան' })
-  }
-
-  for (const region of getStaticRegions()) {
-    for (const city of getRegionCities(region.slug)) {
-      places.push({ slug: city.slug, name: city.name, type: 'city', context: region.name })
-    }
-    places.push({ slug: region.slug, name: region.name, type: 'region', context: 'մարզ' })
-  }
-
-  return places
-}
-
 /** How many suggestions the screen shows — more than this is a list nobody reads while talking */
 export const DISPATCH_PLACE_SUGGESTIONS = 6
 
 /**
- * Places matching what has been typed, best first.
+ * Places matching what the dispatcher typed, best first.
  *
- * Prefix matches rank above contained ones, because someone typing «աբով»
- * means Աբովյան and should not have to look past a city that merely contains
- * those letters. Case-folded, and Armenian has no locale surprises here — the
- * names and the input are both Armenian script.
+ * ## Why this delegates instead of matching anything itself
  *
- * Deliberately not fuzzy. A wrong suggestion accepted in a hurry sends a truck
- * to the wrong town, and a dispatcher who has to check every row is slower
- * than one who types two more letters.
+ * It used to have its own list and its own matcher: names only, lowercased,
+ * prefix-then-contains. That was wrong in three ways at once, and all three
+ * showed up the first time somebody used it.
+ *
+ * - Typing Latin found nothing. `ere` matched no Armenian name, and a
+ *   dispatcher typing one-handed while somebody is talking is exactly the
+ *   person who will not stop to switch keyboard layout. Russian likewise.
+ * - «Երևան» itself found nothing, only its districts — Yerevan is not a city
+ *   row, it is a pseudo-region (see CLAUDE.md), so a list built from
+ *   regions + cities + districts silently omitted the single most-typed word
+ *   on the screen.
+ * - Villages, corridors and the hand-written aliases were all missing. A
+ *   caller says «Պտղնի» or «Գառնի», not the name of the town whose drivers
+ *   cover it.
+ *
+ * `searchLocations` already solves every one of those, for the public search
+ * box, with its own tests: one index over cities, districts, marzes, road
+ * corridors and 300 settlements, keyed through `toSearchKey` so «Երևան»,
+ * `yerevan` and «Ереван» are the same entry. A second matcher over the same
+ * taxonomy was never going to be as good, and — worse — could disagree with
+ * the public site about what a word means, which on this screen sends a truck
+ * to the wrong town.
+ *
+ * ## What the mapping adds
+ *
+ * `result.match` rather than `result.type`: a settlement is a real answer to
+ * "where are you" and not a thing any driver declares, so it has to be matched
+ * as the city or corridor that serves it. The NAME still shown is the one the
+ * dispatcher typed toward — «Պտղնի», not «Աբովյան» — because that is what the
+ * caller said and what the referral should record.
  */
 export function searchDispatchPlaces(
-  places: DispatchPlace[],
   query: string,
   limit = DISPATCH_PLACE_SUGGESTIONS,
 ): DispatchPlace[] {
-  const needle = query.trim().toLowerCase()
-  if (needle.length === 0) return []
+  const results = searchLocations(query, limit)
+  return results.map((result) => toDispatchPlace(result, results))
+}
 
-  const prefix: DispatchPlace[] = []
-  const contains: DispatchPlace[] = []
-
-  for (const place of places) {
-    const name = place.name.toLowerCase()
-    if (name.startsWith(needle)) prefix.push(place)
-    else if (name.includes(needle)) contains.push(place)
+function toDispatchPlace(
+  result: LocationSearchResult,
+  siblings: LocationSearchResult[],
+): DispatchPlace {
+  return {
+    slug: result.match.slug,
+    name: result.name,
+    type: result.match.type,
+    context: contextFor(result, siblings),
   }
+}
 
-  return [...prefix, ...contains].slice(0, limit)
+/**
+ * The grey line under a suggestion.
+ *
+ * Says the marz only when it is doing work: when two visible rows read
+ * identically (`needsRegionLabel` — there are two Ակունք), or when the row is
+ * not a plain city and the reader would otherwise not know what they picked.
+ * On a screen read in a hurry, a line under every row is a line nobody reads.
+ */
+function contextFor(result: LocationSearchResult, siblings: LocationSearchResult[]): string | undefined {
+  if (needsRegionLabel(siblings, result)) return result.regionName
+  if (result.type === 'region') return 'մարզ'
+  if (result.type === 'district') return 'Երևան'
+  if (result.type === 'zone') return 'ուղղություն'
+  if (result.type === 'settlement') return result.regionName
+  return undefined
 }
 
 /** localStorage key for the handful of places this operator keeps using */

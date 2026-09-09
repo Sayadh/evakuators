@@ -16,6 +16,8 @@ import {
 
 const ABOVYAN: DispatchPlace = { slug: 'abovyan', name: 'Աբովյան', type: 'city' }
 const ARABKIR: DispatchPlace = { slug: 'arabkir', name: 'Արաբկիր', type: 'district' }
+/** A road corridor. The caller says «Գառնի»; the taxonomy resolves it to this. */
+const GARNI_ROAD: DispatchPlace = { slug: 'garni-geghard', name: 'Գառնի', type: 'route' }
 
 function truck(overrides: Partial<DispatchCandidateInput> = {}): DispatchCandidateInput {
   return {
@@ -50,6 +52,28 @@ describe('dispatchTier', () => {
     // alone would put a marz-wide driver in a city's local list.
     const wrongType = truck({ serviceAreas: [{ slug: 'abovyan', type: 'region' }] })
     expect(dispatchTier(wrongType, ABOVYAN)).toBeNull()
+  })
+
+  it('puts a driver who works a road corridor in `visiting`, never `local`', () => {
+    // Nobody is BASED on a road. A driver who declared «Գառնի–Գեղարդ» drives
+    // out to it, and `visiting` is the honest word for that.
+    const onTheRoad = truck({
+      regionSlug: 'kotayk',
+      serviceAreas: [{ slug: 'garni-geghard', type: 'route' }],
+    })
+    expect(dispatchTier(onTheRoad, GARNI_ROAD)).toBe('visiting')
+  })
+
+  it('does not make a whole marz local to a corridor inside it', () => {
+    // The trap the repository's null `base` avoids: matching a route against
+    // regionSlug would put every driver in Kotayk in the LOCAL tier for a road
+    // they never mentioned.
+    const inTheMarz = truck({ regionSlug: 'kotayk', citySlug: 'abovyan' })
+    expect(dispatchTier(inTheMarz, GARNI_ROAD)).toBeNull()
+  })
+
+  it('still reaches a corridor through servesAllArmenia', () => {
+    expect(dispatchTier(truck({ servesAllArmenia: true }), GARNI_ROAD)).toBe('nationwide')
   })
 
   it('prefers `local` over `visiting` when the driver is both', () => {

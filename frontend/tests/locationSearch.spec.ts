@@ -161,3 +161,40 @@ describe('routing rules', () => {
     expect(staticSettlements.some((s) => s.slug === 'ptxni')).toBe(false)
   })
 })
+
+/**
+ * `match` is what a driver's coverage is compared against, and it is the one
+ * field on a result that is NOT simply the result's own type and slug. The
+ * dispatch screen sends it to the backend, where it is matched literally
+ * against `serviceAreas` JSON — a wrong value there returns nobody, silently,
+ * which is the worst way for this to fail.
+ */
+describe('LocationSearchResult.match', () => {
+  it('is the result itself for a city, district and marz', () => {
+    expect(findLocationExact('Աբովյան')?.match).toEqual({ type: 'city', slug: 'abovyan' })
+    expect(findLocationExact('Արաբկիր')?.match).toEqual({ type: 'district', slug: 'arabkir' })
+    expect(findLocationExact('Կոտայք')?.match).toEqual({ type: 'region', slug: 'kotayk' })
+  })
+
+  it('is the region for Yerevan, which is a pseudo-region and not a city', () => {
+    expect(findLocationExact('Երևան')?.match).toEqual({ type: 'region', slug: 'yerevan' })
+  })
+
+  it('spells a corridor `route`, the way it is stored, not `zone`', () => {
+    // A corridor is a zone as a page and a route as a service area. Sending
+    // `zone` to the backend would match no driver at all.
+    const garni = findLocationExact('Գառնի')
+    expect(garni?.match.type).toBe('route')
+  })
+
+  it('never points at a settlement, which no driver declares', () => {
+    // A village reduces to the city (or corridor) whose drivers serve it —
+    // the same reduction the city page already makes for landing settlements.
+    const allowed = new Set(['region', 'city', 'district', 'route'])
+    for (const query of ['Պտղնի', 'Գեղարդ', 'Ակունք', 'Թեղուտ']) {
+      for (const result of searchLocations(query, 8)) {
+        expect(allowed.has(result.match.type)).toBe(true)
+      }
+    }
+  })
+})

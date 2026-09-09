@@ -7,6 +7,7 @@ import { AdminSubscriptionsController } from './admin-subscriptions.controller'
 import { AdminSubscriptionsService } from './admin-subscriptions.service'
 import { MySubscriptionPaymentsController } from './my-subscription-payments.controller'
 import { MySubscriptionPlansController } from './my-subscription-plans.controller'
+import { ListingRestorationService } from './listing-restoration.service'
 import { SubscriptionActiveGuard } from './subscription-active.guard'
 import { SubscriptionsRepository } from './subscriptions.repository'
 import { SubscriptionsService } from './subscriptions.service'
@@ -27,6 +28,7 @@ import { SubscriptionsService } from './subscriptions.service'
     AdminSubscriptionsService,
     SubscriptionsRepository,
     SubscriptionActiveGuard,
+    ListingRestorationService,
   ],
   // AdminService reads coverage for the /admin/payments list; the guard is
   // attached to write routes on the driver's own controllers, which live in

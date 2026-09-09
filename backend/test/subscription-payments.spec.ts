@@ -38,7 +38,7 @@ const rolloutAll = {
 
 /** SubscriptionsService with only the collaborator each test actually uses */
 function buildService(repository: SubscriptionsRepository): SubscriptionsService {
-  return new SubscriptionsService(repository, noTrucks, noGateway, rolloutAll)
+  return new SubscriptionsService(repository, noTrucks, { afterPayment: async () => {} } as never, noGateway, rolloutAll)
 }
 
 /**

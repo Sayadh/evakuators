@@ -140,7 +140,7 @@ function statusServiceWith(
     findStatusById: async () => ({ isActive, deactivationReason: isActive ? null : 'UNPAID' }),
   } as unknown as TowTrucksRepository
   const idram = { isConfigured: gateway } as unknown as IdramService
-  return new SubscriptionsService(repository, trucks, idram, configWith(gateway, rollout))
+  return new SubscriptionsService(repository, trucks, { afterPayment: async () => {} } as never, idram, configWith(gateway, rollout))
 }
 
 describe('getMyStatus', () => {

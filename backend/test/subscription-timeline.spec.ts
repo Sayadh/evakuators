@@ -126,7 +126,7 @@ function buildService(repository: SubscriptionsRepository): SubscriptionsService
         ? { pilotTowTruckIds: 'all' }
         : { recAccount: '11112222', secretKey: 'secret' },
   } as unknown as ConfigService
-  return new SubscriptionsService(repository, trucks, idram, config)
+  return new SubscriptionsService(repository, trucks, { afterPayment: async () => {} } as never, idram, config)
 }
 
 /** Move the whole system clock, the way the service reads it (`new Date()`) */

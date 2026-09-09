@@ -8,6 +8,7 @@ import { renewalPeriod } from './subscription-period'
 import { findSubscriptionPlan } from './subscription-plans'
 import { toAdminPendingPaymentApi, toSubscriptionPaymentApi } from './subscription.mapper'
 import type { AdminPendingPaymentApi, SubscriptionPaymentApi } from './subscription.types'
+import { ListingRestorationService } from './listing-restoration.service'
 import { SubscriptionsRepository } from './subscriptions.repository'
 
 /**
@@ -26,6 +27,7 @@ export class AdminSubscriptionsService {
   constructor(
     private readonly subscriptionsRepository: SubscriptionsRepository,
     private readonly towTrucksRepository: TowTrucksRepository,
+    private readonly listingRestoration: ListingRestorationService,
   ) {}
 
   /**
@@ -123,6 +125,16 @@ export class AdminSubscriptionsService {
       `Subscription payment #${payment.id} recorded by an admin for TowTruck #${towTruckId}: ` +
         `${plan.code}, covered until ${period.end.toISOString()}`,
     )
+
+    // The same thing the Idram path does after crediting. Money arriving in
+    // cash and money arriving through the gateway leave the identical row
+    // behind, so they have to leave the driver in the identical state: without
+    // this, a driver deactivated for non-payment paid, was recorded as `paid`,
+    // and stayed off the site — looking at a lockout screen with no way to tell
+    // whether their money had arrived, until somebody remembered a second,
+    // unrelated admin action.
+    await this.listingRestoration.afterPayment(towTruckId)
+
     return toSubscriptionPaymentApi(payment)
   }
 

@@ -4,6 +4,7 @@ import { DeactivationReason } from '@prisma/client'
 import { describe, expect, it, vi } from 'vitest'
 import type { IdramService } from '../src/idram/idram.service'
 import type { SubscriptionsRepository } from '../src/subscriptions/subscriptions.repository'
+import { ListingRestorationService } from '../src/subscriptions/listing-restoration.service'
 import { SubscriptionsService } from '../src/subscriptions/subscriptions.service'
 import { paymentRestoresListing } from '../src/tow-trucks/tow-truck-reactivation'
 import type { TowTrucksRepository } from '../src/tow-trucks/tow-trucks.repository'
@@ -100,6 +101,9 @@ function buildService(truck: TruckRow, conflict: TruckRow | null = null) {
   const service = new SubscriptionsService(
     subscriptions,
     trucks,
+    // The real one, not a stub: reactivation is what this file is about, and it
+    // moved behind this seam so the admin's cash-payment path could reuse it.
+    new ListingRestorationService(trucks as never),
     { isConfigured: true, paymentForm: () => undefined } as unknown as IdramService,
     config,
   )
@@ -160,5 +164,65 @@ describe('confirmPayment restoring a listing', () => {
     }
 
     await expect(service.confirmPayment(1)).resolves.not.toBeNull()
+  })
+})
+
+/**
+ * The admin's cash-payment path does the same thing.
+ *
+ * This is the defect the shared service exists for: money arriving in cash and
+ * money arriving through Idram leave the identical PAID row behind, and used to
+ * leave the driver in two different states. The driver paid, the admin recorded
+ * it, `derivePaymentStatus` said `paid` — and the truck was still off the site,
+ * so the dashboard showed a locked screen to somebody who was fully paid up.
+ */
+describe('an admin recording a cash payment', () => {
+  it('puts a driver deactivated for non-payment back on the site', async () => {
+    const trucks = {
+      findById: vi.fn(async () => ({
+        id: 7,
+        phone: '+37491000001',
+        isActive: false,
+        deactivationReason: DeactivationReason.UNPAID,
+      })),
+      findByMainPhoneAnyStatus: vi.fn(async () => null),
+      setActive: vi.fn(async () => ({})),
+    }
+
+    await new ListingRestorationService(trucks as never).afterPayment(7)
+
+    expect(trucks.setActive).toHaveBeenCalledWith(7, true, null)
+  })
+
+  it('leaves a driver removed for any other reason alone', async () => {
+    // Letting them buy their way back would turn every removal into a price.
+    const trucks = {
+      findById: vi.fn(async () => ({
+        id: 7,
+        phone: '+37491000001',
+        isActive: false,
+        deactivationReason: DeactivationReason.OTHER,
+      })),
+      findByMainPhoneAnyStatus: vi.fn(async () => null),
+      setActive: vi.fn(async () => ({})),
+    }
+
+    await new ListingRestorationService(trucks as never).afterPayment(7)
+
+    expect(trucks.setActive).not.toHaveBeenCalled()
+  })
+
+  it('never throws, because the money is already recorded', async () => {
+    // A failure here must not turn a confirmed payment into a failed request —
+    // least of all one Idram would then retry.
+    const trucks = {
+      findById: vi.fn(async () => {
+        throw new Error('db down')
+      }),
+    }
+
+    await expect(
+      new ListingRestorationService(trucks as never).afterPayment(7),
+    ).resolves.toBeUndefined()
   })
 })

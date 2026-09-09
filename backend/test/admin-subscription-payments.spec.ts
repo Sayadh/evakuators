@@ -100,7 +100,7 @@ function build(options: {
   } as unknown as TowTrucksRepository
 
   return {
-    service: new AdminSubscriptionsService(subscriptions, trucks),
+    service: new AdminSubscriptionsService(subscriptions, trucks, { afterPayment: async () => {} } as never),
     created,
     confirmed,
     reviewed,

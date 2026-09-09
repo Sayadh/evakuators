@@ -27,6 +27,27 @@ export default defineNuxtConfig({
     // `/admin/registrations/:id` is the reason there are children at all.
     '/admin': { ssr: false },
     '/admin/**': { ssr: false },
+
+    // The driver's own pages, for exactly the reason above and with exactly
+    // the same symptom.
+    //
+    // `/dashboard` branches on `driverAuth` — a token in localStorage the
+    // server cannot see — so the server renders one branch and
+    // `initStores.client.ts` gives the client a different one BEFORE
+    // hydration. Vue force-patches the difference, and the result is not the
+    // clean flash it is on `/admin`: this page's branches are structurally
+    // different (a loading skeleton, a card-shaped gate, or the full form), so
+    // the patch can leave the header and a gate laid out over each other.
+    // Intermittent, because it depends on which read resolves first.
+    //
+    // `/payment/**` is the same class — both result pages carry
+    // `middleware: 'driver-auth'`. `/login` is deliberately NOT here: it has no
+    // logged-in branch to disagree about, and it is the one driver-facing page
+    // that benefits from being server-rendered.
+    //
+    // No SEO cost: every page listed here is noindex and behind a login.
+    '/dashboard': { ssr: false },
+    '/payment/**': { ssr: false },
   },
 
   app: {

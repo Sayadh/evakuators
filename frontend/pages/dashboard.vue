@@ -1873,6 +1873,44 @@ details[open] .dashboard-summary::after {
   }
 }
 
+/* The lock a lapsed or deactivated driver meets instead of the dashboard.
+ *
+ * Same card as the two gates above it, deliberately: all three replace the page
+ * with one short explanation, and a driver who hits two of them in a row should
+ * not feel like they changed apps. Wider than 480px because this one can carry
+ * the payment block, which needs room for two plan cards side by side. */
+.dashboard-payment-gate {
+  max-width: 640px;
+  margin-top: var(--space-5);
+  padding: var(--space-6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+
+  h2 {
+    margin: 0;
+    font-size: 1.2rem;
+  }
+
+  p {
+    margin: 0;
+    color: var(--color-text-secondary);
+    line-height: 1.6;
+  }
+
+  &__contact {
+    font-weight: 600;
+
+    a {
+      color: var(--color-primary);
+    }
+  }
+}
+
 /* What sits behind the mandatory consent dialog.
  *
  * Same card as the password gate, but deliberately containing nothing to do:

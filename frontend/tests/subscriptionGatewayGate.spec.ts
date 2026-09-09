@@ -184,3 +184,40 @@ describe('the dashboard load waits for the subscription status', () => {
     expect(text).not.toMatch(/await Promise\.all\(\[\s*myTowTruckRepository\.getMine/)
   })
 })
+
+/**
+ * The driver's pages branch on a token in localStorage that the server cannot
+ * see, so SSR renders one branch and the client — with `initStores.client.ts`
+ * having restored the session BEFORE hydration — wants another. Vue
+ * force-patches the difference.
+ *
+ * On `/admin` that shows as the documented "flashes to login, then opens".
+ * On `/dashboard` it is worse, because the branches are structurally different
+ * (a skeleton, a card-shaped gate, or the full form): the patch can leave the
+ * header and a gate drawn over one another. Intermittent, because which read
+ * resolves first decides it.
+ */
+describe('driver pages are client-rendered', () => {
+  const CONFIG = fileURLToPath(new URL('../nuxt.config.ts', import.meta.url))
+
+  it('disables SSR for the dashboard and the payment result pages', () => {
+    const config = readFileSync(CONFIG, 'utf8')
+    expect(config).toContain("'/dashboard': { ssr: false }")
+    expect(config).toContain("'/payment/**': { ssr: false }")
+  })
+})
+
+/**
+ * The gate is one of three that replace the page with a card. Losing its rule
+ * does not fail a build or a test anywhere else — it just renders full-bleed
+ * text with no card, which is how it shipped.
+ */
+describe('the lock gate has a card of its own', () => {
+  it('styles .dashboard-payment-gate like the other two gates', () => {
+    const source = readFileSync(fileURLToPath(new URL('../pages/dashboard.vue', import.meta.url)), 'utf8')
+    expect(source).toContain('.dashboard-payment-gate {')
+    for (const gate of ['.dashboard-password-gate {', '.dashboard-consent-gate {']) {
+      expect(source).toContain(gate)
+    }
+  })
+})

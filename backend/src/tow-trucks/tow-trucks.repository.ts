@@ -190,7 +190,12 @@ export class TowTrucksRepository {
       // Newest placement first, the same order the city pages use. `createdAt`
       // as the tiebreak keeps the legacy picks (no `featuredAt`) in the order
       // they had before this feature existed.
-      orderBy: [{ featuredAt: 'desc' }, { createdAt: 'desc' }],
+      //
+      // `nulls: 'last'` is not decoration: Postgres sorts NULLs FIRST on a
+      // DESC, so a plain `featuredAt: 'desc'` would have put every legacy
+      // open-ended pick — the ones with no date at all — above every driver who
+      // actually paid. Exactly backwards, and silent.
+      orderBy: [{ featuredAt: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }],
     })
   }
 

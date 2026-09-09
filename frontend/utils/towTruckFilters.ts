@@ -268,7 +268,16 @@ export function sortTowTrucks(
           // open-ended grants, which have no date and sort last among the
           // promoted.
           if (localRank(a, basePlace) !== 0) return 0
-          return (b.promotedAt ?? '').localeCompare(a.promotedAt ?? '')
+
+          // Plain string comparison, not `localeCompare`: these are ISO
+          // timestamps, where lexical order IS chronological order, and a
+          // locale-aware collator is both slower and — for a value that
+          // decides who is first on a page somebody paid for — one more thing
+          // that can behave differently in one browser than another.
+          const left = a.promotedAt ?? ''
+          const right = b.promotedAt ?? ''
+          if (left === right) return 0
+          return left > right ? -1 : 1
         })
       }
 

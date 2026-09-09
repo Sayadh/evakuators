@@ -110,6 +110,12 @@ export class TowTrucksService {
   private async attachRatings(trucks: TowTruckCardRow[]): Promise<TowTruckCardApi[]> {
     if (trucks.length === 0) return []
 
+    // One instant for the whole response. The mapper reads it to decide whether
+    // each driver's placement is live, and a `new Date()` per row would let a
+    // list straddle an expiry — two drivers in one page answering differently
+    // about the same moment.
+    const now = new Date()
+
     const rows = await this.reviewsRepository.groupApprovedByTowTruckIds(
       trucks.map((truck) => truck.id),
     )
@@ -120,6 +126,7 @@ export class TowTrucksService {
       return toTowTruckCardApi(
         truck,
         row ? { average: row.averageRating, count: row.count } : undefined,
+        now,
       )
     })
   }

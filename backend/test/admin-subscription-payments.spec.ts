@@ -40,7 +40,7 @@ function build(options: {
     towTruckId: options.payment?.towTruckId ?? 7,
     planCode: 'ONE_MONTH',
     planTitle: '1 ամսվա բաժանորդագրություն',
-    amount: 1,
+    amount: 3000,
     currency: 'AMD',
     durationMonths: options.payment?.durationMonths ?? 1,
     periodStart: new Date(),
@@ -115,7 +115,7 @@ describe('AdminSubscriptionsService.grant', () => {
 
     expect(created[0]!.data).toMatchObject({
       planCode: 'FOUR_MONTHS',
-      amount: 2,
+      amount: 10000,
       currency: 'AMD',
       durationMonths: 4,
       status: SubscriptionPaymentStatus.PAID,

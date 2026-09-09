@@ -48,7 +48,7 @@ export const SUBSCRIPTION_PLANS: readonly SubscriptionPlan[] = Object.freeze([
     title: '1 ամսվա բաժանորդագրություն',
     description: 'Հարթակի ամբողջական հասանելիություն 1 ամսով',
     durationMonths: 1,
-    price: 1, // TEST — real value 3000. Revert before deploying.
+    price: 3000,
     currency: 'AMD',
     features: [],
   }),
@@ -57,7 +57,7 @@ export const SUBSCRIPTION_PLANS: readonly SubscriptionPlan[] = Object.freeze([
     title: '4 ամսվա բաժանորդագրություն',
     description: 'Հարթակի ամբողջական հասանելիություն 4 ամսով',
     durationMonths: 4,
-    price: 2, // TEST — real value 10000. Revert before deploying.
+    price: 10000,
     currency: 'AMD',
     features: [],
   }),

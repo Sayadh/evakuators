@@ -83,13 +83,12 @@ function onClick(): void {
 
   <div v-else class="dispatch-cta" :class="`dispatch-cta--${variant}`">
     <div class="dispatch-cta__text">
-      <!-- The bar's line offers help; the banner's names the problem. The bar
-           sits beside its button on one row with no space for a subtitle, so
-           its line has to carry the offer by itself — «Չգիտե՞ք ում զանգել»
-           stated the difficulty and left the reader to work out that pressing
-           the button solves it. -->
+      <!-- The bar's line is written in the CUSTOMER's voice — it is what they
+           want, not what we offer. It sits beside its button on one row with
+           no subtitle to explain itself, so the line and the button read as
+           one sentence: "find me a vehicle" → the number to call. -->
       <strong class="dispatch-cta__title">
-        {{ variant === 'bar' ? 'Օգնե՞նք մեքենա գտնել' : 'Չգիտե՞ք որ մեքենան ընտրել' }}
+        {{ variant === 'bar' ? 'Գտնել ինձ համար մեքենա' : 'Չգիտե՞ք որ մեքենան ընտրել' }}
       </strong>
       <!-- Dropped on the sticky bar on purpose: a second line there would
            double the height of a strip that is already covering the listing. -->

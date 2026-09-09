@@ -87,14 +87,25 @@ function build(overrides: { pending?: unknown; findById?: unknown } = {}) {
 
   const telegram = { sendMessage: vi.fn(() => Promise.resolve(true)) }
 
+  /**
+   * Ownership of the photos a submission claims, checked at submission now
+   * rather than only at approval. Answers "all of them are free" by default;
+   * the tests that care override it.
+   */
+  const findUnattachedByIds = vi.fn((ids: number[]) =>
+    Promise.resolve(ids.map((id) => ({ id }))),
+  )
+  const images = { findUnattachedByIds }
+
   const service = new ProfileChangesService(
     repository as never,
     towTrucksRepository as never,
+    images as never,
     myTowTruck as never,
     telegram as never,
   )
 
-  return { service, replacePending, markReviewed, deletePending, applyUpdate, applyCoordinates, telegram, repository }
+  return { service, replacePending, markReviewed, deletePending, applyUpdate, applyCoordinates, telegram, repository, findUnattachedByIds }
 }
 
 describe('queuing an edit', () => {
@@ -150,6 +161,7 @@ describe('queuing an edit', () => {
     // repeated: a deactivated driver holding a still-valid 30-day token must
     // not be able to queue an edit either.
     const blocked = new ProfileChangesService(
+      {} as never,
       {} as never,
       {} as never,
       { getMine: vi.fn(() => Promise.reject(new NotFoundException())) } as never,
@@ -226,6 +238,7 @@ describe('approving an edit', () => {
     const failing = new ProfileChangesService(
       { findById: () => Promise.resolve({ id: 99, towTruckId: 7, status: 'PENDING', changes: { driverName: 'x' }, before: {}, towTruck: {} }), markReviewed } as never,
       { findById: () => Promise.resolve(TRUCK) } as never,
+      {} as never,
       { applyUpdate: () => Promise.reject(new BadRequestException('նկարը վավեր չէ')) } as never,
       { sendMessage: vi.fn() } as never,
     )
@@ -264,6 +277,7 @@ describe('approving an edit', () => {
         markReviewed,
       } as never,
       { findById: () => Promise.reject(new Error('db down')) } as never,
+      {} as never,
       { applyUpdate: vi.fn() } as never,
       { sendMessage: vi.fn() } as never,
     )
@@ -304,5 +318,50 @@ describe('what the driver sees', () => {
     expect(status.pending).toEqual({ id: 100 })
     expect(status.lastReviewed).toBeNull()
     expect(repository.findLastReviewedForTruck).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * A photo belongs to whoever claimed it first — a truck, a registration request
+ * or another driver's queued edit. The write itself now refuses to re-point one
+ * that is already owned; this is the half that tells the driver, at the moment
+ * they press save, instead of leaving a queued edit that looks accepted and
+ * then fails on the moderator's Approve button.
+ */
+describe('claiming photos that are not free', () => {
+  it('refuses the submission when a named photo already belongs to somebody', async () => {
+    // Image ids are small sequential integers, so naming one is not an attack
+    // that needs skill — this used to re-point it and break the real owner's
+    // queued edit permanently.
+    const { service, replacePending, findUnattachedByIds } = build()
+    findUnattachedByIds.mockResolvedValueOnce([{ id: 11 } as never])
+
+    await expect(
+      service.submitProfileChange(7, { imageIds: [11, 99] } as never),
+    ).rejects.toThrow()
+    expect(replacePending).not.toHaveBeenCalled()
+  })
+
+  it('says the same thing whether the id is owned or does not exist', async () => {
+    // Otherwise the error is an oracle for which ids exist.
+    const { service, findUnattachedByIds } = build()
+    findUnattachedByIds.mockResolvedValueOnce([])
+
+    await expect(service.submitProfileChange(7, { imageIds: [99] } as never)).rejects.toThrow(
+      'Նկարներից մեկը հասանելի չէ։ Վերբեռնեք լուսանկարները նորից։',
+    )
+  })
+
+  it('lets a submission through when every new photo is free', async () => {
+    const { service, replacePending } = build()
+    await service.submitProfileChange(7, { imageIds: [11, 12] } as never)
+    expect(replacePending).toHaveBeenCalled()
+  })
+
+  it('does not ask about photos already in the driver’s own gallery', async () => {
+    // Those have an owner — the driver — and are not being claimed.
+    const { service, findUnattachedByIds } = build()
+    await service.submitProfileChange(7, { imageIds: [1, 2] } as never)
+    expect(findUnattachedByIds).not.toHaveBeenCalled()
   })
 })

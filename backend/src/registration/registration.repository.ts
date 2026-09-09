@@ -46,11 +46,15 @@ export class RegistrationRepository {
       await recordConsent(request.id, tx)
 
       for (const [position, id] of imageIds.entries()) {
-        // updateMany, not update: the `towTruckId: null` guard makes an id
-        // that was attached elsewhere between validation and here a silent
-        // no-op instead of a thrown transaction.
+        // updateMany, not update: an id that was claimed by somebody else
+        // between validation and here becomes a silent no-op instead of a
+        // thrown transaction.
+        //
+        // All three owners, like the count above — guarding only `towTruckId`
+        // left the window the count was supposed to close wide open anyway, so
+        // the check and the write now ask the same question.
         await tx.towTruckImage.updateMany({
-          where: { id, towTruckId: null },
+          where: { id, towTruckId: null, registrationRequestId: null, profileChangeRequestId: null },
           data: { registrationRequestId: request.id, position },
         })
       }
@@ -62,9 +66,29 @@ export class RegistrationRepository {
     })
   }
 
+  /**
+   * How many of these images are owned by nobody.
+   *
+   * All THREE owners, matching `ImagesRepository.findUnattachedByIds`. This
+   * checked only two, and the missing one was `profileChangeRequestId` — a
+   * photo sitting in a driver's queued profile edit still has a null truck and
+   * a null registration request, so it counted as free here and this endpoint
+   * takes no authentication at all.
+   *
+   * That made it the cheapest version of the attack the images repository's own
+   * comment describes: an anonymous registration naming a guessed id would take
+   * a photo out of a driver's pending edit — breaking that edit's approval
+   * permanently — and show it to the moderator as its own, who on approval
+   * would move it onto the new listing.
+   */
   countUnattachedImages(imageIds: number[]): Promise<number> {
     return this.prisma.towTruckImage.count({
-      where: { id: { in: imageIds }, towTruckId: null, registrationRequestId: null },
+      where: {
+        id: { in: imageIds },
+        towTruckId: null,
+        registrationRequestId: null,
+        profileChangeRequestId: null,
+      },
     })
   }
 }

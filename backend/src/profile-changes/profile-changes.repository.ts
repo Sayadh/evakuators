@@ -98,8 +98,30 @@ export class ProfileChangesRepository {
       })
 
       if (newImageIds.length > 0) {
+        // The three-owner check, not an id list. An image with a truck, a
+        // registration request or ANOTHER pending edit already belongs to
+        // somebody, and image ids are small sequential integers — naming one is
+        // not an attack that needs skill. `ImagesRepository.findUnattachedByIds`
+        // documents this exact gap and closes it at approval time; without the
+        // same predicate here, the row was re-pointed at submission, hours
+        // before anyone looked at it.
+        //
+        // `profileChangeRequestId: null` is safe against the driver's OWN
+        // resubmission: the `deleteMany` above runs first in this transaction
+        // and the column is `onDelete: SetNull`, so their previous request's
+        // photos are already unowned by the time this runs.
+        //
+        // `updateMany` rather than `update`, so an id that stopped being
+        // claimable between the service's check and here is a silent no-op
+        // rather than a thrown transaction — the approval refuses it later with
+        // a message, which is the better place to notice.
         await tx.towTruckImage.updateMany({
-          where: { id: { in: newImageIds } },
+          where: {
+            id: { in: newImageIds },
+            towTruckId: null,
+            registrationRequestId: null,
+            profileChangeRequestId: null,
+          },
           data: { profileChangeRequestId: created.id },
         })
       }

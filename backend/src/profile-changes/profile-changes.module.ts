@@ -1,6 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common'
 import { MyTowTruckModule } from '../my-tow-truck/my-tow-truck.module'
 import { TelegramModule } from '../telegram/telegram.module'
+import { ImagesModule } from '../images/images.module'
 import { TowTrucksModule } from '../tow-trucks/tow-trucks.module'
 import { ProfileChangesRepository } from './profile-changes.repository'
 import { ProfileChangesService } from './profile-changes.service'
@@ -19,7 +20,7 @@ import { ProfileChangesService } from './profile-changes.service'
  * module's controller queues one through this service.
  */
 @Module({
-  imports: [forwardRef(() => MyTowTruckModule), TowTrucksModule, TelegramModule],
+  imports: [forwardRef(() => MyTowTruckModule), TowTrucksModule, TelegramModule, ImagesModule],
   providers: [ProfileChangesRepository, ProfileChangesService],
   exports: [ProfileChangesService],
 })

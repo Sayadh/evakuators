@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { Prisma, ProfileChangeStatus, type ProfileChangeRequest } from '@prisma/client'
 import type { SetCoordinatesDto } from '../common/set-coordinates.dto'
+import { ImagesRepository } from '../images/images.repository'
 import { MyTowTruckService } from '../my-tow-truck/my-tow-truck.service'
 import type { UpdateMyTowTruckDto } from '../my-tow-truck/dto/update-my-tow-truck.dto'
 import { TelegramService } from '../telegram/telegram.service'
@@ -44,6 +45,7 @@ export class ProfileChangesService {
   constructor(
     private readonly repository: ProfileChangesRepository,
     private readonly towTrucksRepository: TowTrucksRepository,
+    private readonly images: ImagesRepository,
     private readonly myTowTruck: MyTowTruckService,
     private readonly telegram: TelegramService,
   ) {}
@@ -103,6 +105,29 @@ export class ProfileChangesService {
     const proposedImageIds = Array.isArray(diff.changes.imageIds)
       ? (diff.changes.imageIds as number[]).filter((id) => !currentImageIds.has(id))
       : []
+
+    // Ownership is checked HERE, at submission, and not only by the write
+    // below and again at approval.
+    //
+    // The comment on `MyTowTruckService.applyUpdate` has claimed for a while
+    // that "image ownership was checked when the driver pressed save". The
+    // coverage cap was; this was not — the only ownership check ran at
+    // approval, which is hours later and belongs to the moderator, not to the
+    // person who made the mistake. A driver who named an id they do not own got
+    // a queued edit that looked accepted and then failed on the Approve button
+    // with a message nobody could act on.
+    //
+    // Refusing here also means the answer is the same whether the id belongs to
+    // another driver, to a registration nobody has approved, or to nothing at
+    // all — so this cannot be used to probe which ids exist.
+    if (proposedImageIds.length > 0) {
+      const claimable = await this.images.findUnattachedByIds(proposedImageIds)
+      if (claimable.length !== proposedImageIds.length) {
+        throw new BadRequestException(
+          'Նկարներից մեկը հասանելի չէ։ Վերբեռնեք լուսանկարները նորից։',
+        )
+      }
+    }
 
     // Cast at the boundary rather than typing the diff as Prisma's own
     // `InputJsonValue`: that type is a recursive union written for values a

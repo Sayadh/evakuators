@@ -8,6 +8,9 @@ interface Props {
 defineProps<Props>()
 
 const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
+
+/** «Մուտք» / «Իմ էջը» — the same one the header shows, see useDriverEntry */
+const driverEntry = useDriverEntry()
 </script>
 
 <template>
@@ -37,6 +40,17 @@ const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
       <div class="mobile-menu__call">
         <DispatchCallCta variant="header" />
       </div>
+      <!-- Below 768px the header hides «Մուտք» entirely, so for most phones
+           this is the only way a driver reaches their own profile. -->
+      <AppButton
+        :to="driverEntry.to"
+        variant="outline"
+        block
+        class="mobile-menu__login"
+        @click="emit('update:modelValue', false)"
+      >
+        {{ driverEntry.label }}
+      </AppButton>
       <AppButton
         :to="REGISTER_LINK.to"
         variant="accent"
@@ -52,6 +66,10 @@ const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
 <style scoped lang="scss">
 /* The header variant hides the number under 768px, which is the whole width of
    this drawer — shown here, because reading it is the point. */
+.mobile-menu__login {
+  margin-bottom: var(--space-3);
+}
+
 .mobile-menu__call {
   margin-bottom: var(--space-3);
 

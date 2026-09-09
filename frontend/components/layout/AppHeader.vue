@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { NAV_LINKS, REGISTER_LINK } from '~/constants/navigation'
 
+/** «Մուտք» / «Իմ էջը» — see the composable for why it is not read inline */
+const driverEntry = useDriverEntry()
+
 const isMobileMenuOpen = ref(false)
 
 const route = useRoute()
@@ -31,6 +34,11 @@ watch(
              but the header already has an accent button and a second one would
              leave neither reading as primary. See DispatchCallCta.vue. -->
         <DispatchCallCta variant="header" />
+        <!-- The way back IN, next to the way to sign UP. A driver whose profile
+             is the thing they pay for had no link to it from anywhere on the
+             site; the register button had been there all along. Quiet on
+             purpose — signing up is the one the site is asking for. -->
+        <NuxtLink :to="driverEntry.to" class="header__login">{{ driverEntry.label }}</NuxtLink>
         <AppButton :to="REGISTER_LINK.to" variant="accent" size="sm" class="header__register">
           {{ REGISTER_LINK.label }}
         </AppButton>
@@ -106,6 +114,28 @@ watch(
     display: flex;
     align-items: center;
     gap: var(--space-3);
+  }
+
+  &__login {
+    display: none;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    color: var(--color-primary);
+    font-weight: 600;
+    white-space: nowrap;
+    transition: background var(--transition);
+
+    &:hover {
+      background: rgba(20, 48, 79, 0.06);
+      color: var(--color-primary);
+    }
+
+    /* One step later than «Գրանցվել». At 640px the bar already holds a logo,
+       the call number, a long accent button and the burger; the drawer carries
+       this link at every width, so the narrow case loses nothing. */
+    @media (min-width: 768px) {
+      display: inline-flex;
+    }
   }
 
   &__register {

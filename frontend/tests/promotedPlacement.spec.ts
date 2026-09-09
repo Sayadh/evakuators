@@ -173,3 +173,28 @@ describe('the day bounds are the backend’s', () => {
     expect(backend).toContain(`export const FEATURED_MAX_DAYS = ${FEATURED_MAX_DAYS}`)
   })
 })
+
+describe('the price sort stays a valid comparator', () => {
+  it('never returns NaN when two drivers both left the price blank', () => {
+    // `Infinity - Infinity` is NaN, and a comparator that returns NaN makes the
+    // whole sort implementation-defined. This list is server-rendered and then
+    // hydrated, so that means the server and the browser can legitimately
+    // disagree about the order of the same page.
+    const trucks = [
+      card({ id: 1 }),
+      card({ id: 2, startingPrice: 5000 }),
+      card({ id: 3 }),
+      card({ id: 4, startingPrice: 1000 }),
+    ]
+    const ids = sortTowTrucks(trucks, SortOption.Price, SEED, false, ABOVYAN).map((t) => t.id)
+    expect(ids.slice(0, 2)).toEqual([4, 2])
+    expect(ids.slice(2).sort()).toEqual([1, 3])
+  })
+
+  it('is deterministic across repeated sorts of the same input', () => {
+    const trucks = [card({ id: 1 }), card({ id: 2 }), card({ id: 3 }), card({ id: 4 })]
+    const first = sortTowTrucks(trucks, SortOption.Price, SEED, false, ABOVYAN).map((t) => t.id)
+    const second = sortTowTrucks(trucks, SortOption.Price, SEED, false, ABOVYAN).map((t) => t.id)
+    expect(second).toEqual(first)
+  })
+})

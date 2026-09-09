@@ -266,7 +266,13 @@ export const towTrucksService = {
    * sample for local/design preview only.
    */
   async getFeatured(limit = 6): Promise<TowTruckCard[]> {
-    if (isApiEnabled()) return towTruckRepository.getFeatured()
+    // `limit` used to apply only in mock mode, which was harmless while a
+    // handful of drivers were marked by hand and became a problem the moment
+    // placements were sold: the homepage would render every driver holding one,
+    // however many that grows to. Sliced rather than sent as a query parameter
+    // so the endpoint stays "who currently holds a placement" — the admin panel
+    // and any later report want all of them, and only this section wants six.
+    if (isApiEnabled()) return (await towTruckRepository.getFeatured()).slice(0, limit)
     return mockRequest(() => [...generalMockTowTrucks].sort(by24Hours).slice(0, limit))
   },
 

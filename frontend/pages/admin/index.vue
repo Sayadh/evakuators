@@ -744,6 +744,25 @@ function featuredDaysLeft(truck: AdminTowTruck): number | null {
 }
 
 /**
+ * Is the placement live RIGHT NOW, as opposed to merely still flagged?
+ *
+ * The backend sends both halves on purpose, because they disagree for up to an
+ * hour after a term ends — the sweep is hourly, every public read applies the
+ * window itself. The panel showed only the flag, so during that gap an operator
+ * looking at «Առաջխաղացում · 0 օր» and a button offering to REMOVE it was being
+ * told the opposite of what the driver on the phone was seeing. Indefinitely,
+ * not just for an hour, if the sweep is not running.
+ *
+ * Mirrors `isFeaturedNow` on the server; a null end date is an open-ended
+ * legacy grant and is live.
+ */
+function isPromotionLive(truck: AdminTowTruck): boolean {
+  if (!truck.isFeatured) return false
+  if (!truck.featuredUntil) return true
+  return new Date(truck.featuredUntil).getTime() > Date.now()
+}
+
+/**
  * Whether the «Ծանր տեխնիկա» box is settled by the vehicle type rather than by
  * the admin. Ticked and locked for those trucks — «Ծանր տեխնիկայի էվակուատոր»
  * is the same claim in the words of the taxonomy, so there is no "off" state
@@ -1742,10 +1761,16 @@ async function rejectReview(review: AdminReview): Promise<void> {
                 <!-- The remaining days, not just the fact: an operator whose
                      driver rings to ask "how long do I have left" should not
                      have to open anything to answer. -->
-                <AppBadge v-if="truck.isFeatured" variant="accent">
+                <AppBadge v-if="isPromotionLive(truck)" variant="accent">
                   Առաջխաղացում{{
                     featuredDaysLeft(truck) === null ? '' : ` · ${featuredDaysLeft(truck)} օր`
                   }}
+                </AppBadge>
+                <!-- The gap between a term ending and the sweep clearing the
+                     row. Named rather than hidden: this is exactly when a
+                     driver rings to ask why they dropped off their page. -->
+                <AppBadge v-else-if="truck.isFeatured" variant="neutral">
+                  Առաջխաղացումն ավարտվել է
                 </AppBadge>
               </div>
             </header>
@@ -1985,13 +2010,29 @@ async function rejectReview(review: AdminReview): Promise<void> {
                 >
                   {{ truck.isActive ? 'Ապաակտիվացնել' : 'Ակտիվացնել' }}
                 </AppButton>
+                <!-- Two buttons while a placement is live, because "extend"
+                     and "take away" are different intentions and the panel used
+                     to offer only the second. Renewing meant revoking first,
+                     which destroys the dates before anything replaces them: if
+                     the second request then failed, a driver who had just paid
+                     twice held nothing, with no record of the interrupted term.
+                     A re-grant restarts it in one write. -->
                 <AppButton
                   variant="outline"
                   size="sm"
                   :disabled="actioningId === truck.id"
-                  @click="truck.isFeatured ? removeFeatured(truck) : askFeature(truck)"
+                  @click="askFeature(truck)"
                 >
-                  {{ truck.isFeatured ? 'Հանել առաջխաղացումից' : 'Առաջխաղացնել' }}
+                  {{ isPromotionLive(truck) ? 'Երկարացնել' : 'Առաջխաղացնել' }}
+                </AppButton>
+                <AppButton
+                  v-if="truck.isFeatured"
+                  variant="outline"
+                  size="sm"
+                  :disabled="actioningId === truck.id"
+                  @click="removeFeatured(truck)"
+                >
+                  Հանել առաջխաղացումից
                 </AppButton>
                 <AppButton
                   variant="outline"
@@ -2280,6 +2321,12 @@ async function rejectReview(review: AdminReview): Promise<void> {
         <p class="admin-page__muted">
           Այս վարորդը կլինի առաջինը իր տարածքի էջում՝ նշված օրերի ընթացքում։ Ժամկետը
           լրանալուց հետո ավտոմատ հանվում է։
+        </p>
+        <!-- Said plainly, because it is the one thing about a renewal that
+             could be mistaken for a bug: the days are not added to what is
+             left. What is sold is "N days from now". -->
+        <p v-if="isPromotionLive(featureTarget)" class="admin-page__muted">
+          Գործող առաջխաղացումը կսկսվի նորից՝ այսօրվանից։ Մնացած օրերը չեն գումարվում։
         </p>
         <AppInput
           v-model="featureDays"

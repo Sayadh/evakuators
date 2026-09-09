@@ -239,9 +239,19 @@ export function sortTowTrucks(
       // Trucks without a price go to the end. Not shuffled at all: the customer
       // asked for cheapest first, and two drivers on the same price swapping
       // places between refreshes would read as the sort being broken.
-      return [...trucks].sort(
-        (a, b) => (a.startingPrice ?? Infinity) - (b.startingPrice ?? Infinity),
-      )
+      //
+      // Compared, not subtracted. `Infinity - Infinity` is NaN, and two drivers
+      // who both left the price blank is the ordinary case, not a corner — a
+      // comparator that returns NaN makes the whole result
+      // implementation-defined per spec. This list is server-rendered and then
+      // hydrated, so "implementation-defined" means the server and the browser
+      // can legitimately disagree about the order of the same page.
+      return [...trucks].sort((a, b) => {
+        const left = a.startingPrice ?? Number.POSITIVE_INFINITY
+        const right = b.startingPrice ?? Number.POSITIVE_INFINITY
+        if (left === right) return 0
+        return left < right ? -1 : 1
+      })
     case SortOption.Recommended:
     default: {
       const base = seed === undefined ? [...trucks] : seededShuffle(trucks, seed)

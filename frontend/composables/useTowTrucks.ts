@@ -72,12 +72,26 @@ export function useTowTruck(slug: string) {
   return useAsyncData(`tow-truck-${slug}`, () => towTrucksService.getBySlug(slug))
 }
 
+/**
+ * The homepage strip.
+ *
+ * Deliberately NOT `recommendedWith`, unlike every other listing here. That
+ * transform shuffles and then groups by rating band, and it used to be right:
+ * being featured was an editorial pick of WHICH drivers appeared, and the order
+ * among them was nobody's business.
+ *
+ * A placement is now bought, for a number of days, and the backend returns them
+ * newest purchase first — including a `nulls: 'last'` on the sort so the legacy
+ * open-ended picks cannot displace someone who paid. Re-shuffling here threw
+ * all of that away on arrival, which meant the driver who paid this morning
+ * could sit below one who paid nothing, and could move on every refresh.
+ *
+ * So the server's order stands. Nothing else on the site orders itself by
+ * money, and this is the one place that has to.
+ */
 export function useFeaturedTowTrucks(limit = 6) {
   return useAsyncData(`featured-tow-trucks-${limit}`, () => towTrucksService.getFeatured(limit), {
     default: () => [],
-    // Being featured is the admin's pick of WHICH trucks appear; the order
-    // among them is still "best first", same as every other listing.
-    transform: recommendedWith(useListingShuffleSeed()),
   })
 }
 

@@ -31,6 +31,12 @@ const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
     </nav>
 
     <template #footer>
+      <!-- The header shows this as an icon only below 768px, which is most of
+           the phones that open this drawer — so the number itself is readable
+           in exactly one place on mobile, and this is it. -->
+      <div class="mobile-menu__call">
+        <DispatchCallCta variant="header" />
+      </div>
       <AppButton
         :to="REGISTER_LINK.to"
         variant="accent"
@@ -44,6 +50,21 @@ const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
 </template>
 
 <style scoped lang="scss">
+/* The header variant hides the number under 768px, which is the whole width of
+   this drawer — shown here, because reading it is the point. */
+.mobile-menu__call {
+  margin-bottom: var(--space-3);
+
+  :deep(.dispatch-cta__number) {
+    display: inline;
+  }
+
+  :deep(.dispatch-cta__call--header) {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 .mobile-menu {
   display: flex;
   flex-direction: column;

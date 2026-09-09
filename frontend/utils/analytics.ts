@@ -115,3 +115,21 @@ export const trackFilterApply = (activeFiltersCount: number): void =>
   dispatch('filter_apply', { activeFiltersCount })
 
 export const trackRegistrationSubmit = (): void => dispatch('registration_submit')
+
+/**
+ * Someone pressed «Զանգահարել մեզ» — the operator's own number, not a driver's.
+ *
+ * Carries `placement` because that is the only open question about this
+ * button. It sits in four places with four different costs: the header (on
+ * every page, forever), the homepage hero (competing with the search box right
+ * above it), the listing band, and the mobile sticky bar (which permanently
+ * covers a strip of every listing). If the calls all come from one of them,
+ * the other three are taking space from the driver listings for nothing — and
+ * a single `dispatch_call` count could never say which.
+ *
+ * Deliberately NOT `phone_click`: that event is keyed by `towTruckSlug` and
+ * feeds "which drivers get called". Folding the operator's number into it
+ * would inflate every driver-level report by calls that reached no driver.
+ */
+export const trackDispatchCallClick = (placement: string): void =>
+  dispatch('dispatch_call_click', { placement })

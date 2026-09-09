@@ -1,4 +1,4 @@
-export type PixelContactSource = 'truck_card' | 'free_route' | 'site_contact'
+export type PixelContactSource = 'truck_card' | 'free_route' | 'dispatch_call' | 'site_contact'
 
 /**
  * Which kind of `tel:` click this is, given the class list of the anchor
@@ -25,6 +25,14 @@ export type PixelContactSource = 'truck_card' | 'free_route' | 'site_contact'
  * collapsing the two would hide which one an ad campaign is actually
  * driving.
  *
+ * `dispatch-cta__call` (`DispatchCallCta.vue`) gets its own bucket too,
+ * `dispatch_call`. It is the operator's own number, so it is not `truck_card`
+ * — no driver was contacted. But it must not fall into `site_contact` either:
+ * that bucket exists for "rang the office", the thing ads should NOT optimize
+ * for, while this click is a customer with a broken car asking to be matched
+ * with a driver. It is the highest-intent action on the site that isn't a
+ * driver's phone number, and averaging it into support calls would hide it.
+ *
  * Everything else — the footer's own number (`footer__contact-link`), the
  * contact page, the registration page's support line — is `site_contact`:
  * "rang the office" is not the conversion ads should optimize for, and must
@@ -40,5 +48,6 @@ export function pixelContactSource(classNames: readonly string[]): PixelContactS
     return 'truck_card'
   }
   if (classNames.includes('route-card__call')) return 'free_route'
+  if (classNames.includes('dispatch-cta__call')) return 'dispatch_call'
   return 'site_contact'
 }

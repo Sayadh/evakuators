@@ -26,6 +26,11 @@ watch(
       </nav>
 
       <div class="header__actions">
+        <!-- Before «Գրանցվել», and deliberately quieter than it: this is the
+             one thing on the site a stranded customer needs from every page,
+             but the header already has an accent button and a second one would
+             leave neither reading as primary. See DispatchCallCta.vue. -->
+        <DispatchCallCta variant="header" />
         <AppButton :to="REGISTER_LINK.to" variant="accent" size="sm" class="header__register">
           {{ REGISTER_LINK.label }}
         </AppButton>

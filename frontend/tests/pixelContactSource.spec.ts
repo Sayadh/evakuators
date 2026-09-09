@@ -28,6 +28,17 @@ describe('pixelContactSource', () => {
     expect(pixelContactSource(['route-card__call'])).toBe('free_route')
   })
 
+  it('buckets the dispatcher’s own number as dispatch_call, not truck_card', () => {
+    // The operator's number, so no driver was contacted — but this is a
+    // customer with a broken car asking to be matched, which is a conversion
+    // worth optimizing for. `site_contact` is where "rang the office" goes,
+    // and averaging the two together would bury this one.
+    expect(pixelContactSource(['dispatch-cta__call'])).toBe('dispatch_call')
+    expect(pixelContactSource(['dispatch-cta__call', 'dispatch-cta__call--header'])).toBe(
+      'dispatch_call',
+    )
+  })
+
   it('buckets the footer’s office number as site_contact', () => {
     expect(pixelContactSource(['footer__contact-link'])).toBe('site_contact')
   })

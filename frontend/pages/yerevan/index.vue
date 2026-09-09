@@ -34,6 +34,12 @@ useSeoMetaData({
 
     <NearestTowTrucksCta class="yerevan-page__nearest" />
 
+    <!-- Beside the «մոտակա» shortcut, both answering the same question a
+         stranded visitor arrives with — "I don't know which one to pick".
+         Above the listing but below the page heading on purpose: it must not
+         be the first thing read on a page whose job is to show drivers. -->
+    <DispatchCallCta variant="banner" class="yerevan-page__dispatch" />
+
     <div v-if="pending" class="card-grid">
       <LoadingSkeleton variant="card" :count="12" />
     </div>
@@ -63,6 +69,11 @@ useSeoMetaData({
   }
 
   &__nearest {
+    margin-bottom: var(--space-5);
+  }
+
+  &__dispatch {
+    margin-top: var(--space-5);
     margin-bottom: var(--space-5);
   }
 

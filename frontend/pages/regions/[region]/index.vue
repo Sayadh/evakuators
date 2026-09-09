@@ -47,6 +47,12 @@ useSeoMetaData({
 
     <NearestTowTrucksCta class="region-page__nearest" />
 
+    <!-- Beside the «մոտակա» shortcut, both answering the same question a
+         stranded visitor arrives with — "I don't know which one to pick".
+         Above the listing but below the page heading on purpose: it must not
+         be the first thing read on a page whose job is to show drivers. -->
+    <DispatchCallCta variant="banner" class="region-page__dispatch" />
+
     <section aria-labelledby="cities-title" class="region-page__section">
       <h2 id="cities-title">Քաղաքներ</h2>
       <div v-if="citiesPending" class="card-grid">
@@ -116,6 +122,11 @@ useSeoMetaData({
 
   &__nearest {
     margin-bottom: var(--space-2);
+  }
+
+  &__dispatch {
+    margin-top: var(--space-5);
+    margin-bottom: var(--space-5);
   }
 
   &__nearby {

@@ -20,6 +20,12 @@
         </p>
       </div>
       <LocationSearch class="hero__search" />
+
+      <!-- Directly under the search, not above it: this is the ALTERNATIVE to
+           choosing, and standing the two side by side is what explains it
+           without a word of instruction. Outline rather than filled for the
+           same reason — the search is still the main way through this page. -->
+      <DispatchCallCta variant="hero" class="hero__dispatch" />
       <ul class="hero__points">
         <li><AppIcon name="check" :size="16" /> Ամբողջ Հայաստանում</li>
         <li><AppIcon name="clock" :size="16" /> 24/7 ծառայություններ</li>

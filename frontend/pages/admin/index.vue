@@ -1286,6 +1286,9 @@ async function rejectReview(review: AdminReview): Promise<void> {
     <header class="admin-page__header">
       <h1>Ադմին վահանակ</h1>
       <div v-if="adminAuth.isLoggedIn" class="admin-page__header-actions">
+        <!-- First, because it is the only one used while a customer is on the
+             phone — the other links are desk work that can wait. -->
+        <NuxtLink to="/admin/dispatch" class="admin-page__nav-link">Ուղղորդում</NuxtLink>
         <NuxtLink to="/admin/payments" class="admin-page__nav-link">Վճարումներ</NuxtLink>
         <AppButton variant="outline" size="sm" @click="logout">
           Դուրս գալ

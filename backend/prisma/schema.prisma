@@ -380,6 +380,7 @@ model TowTruck {
   /// Cascades on delete like everything else here, so
   /// AdminService.deleteTowTruck() needs no extra cleanup step.
   subscriptionPayments SubscriptionPayment[]
+  dispatchReferrals    DispatchReferral[]
 
   // Provider analytics — see docs/analytics.md. Both cascade on delete, so
   // AdminService.deleteTowTruck() needs no extra cleanup step.
@@ -1042,4 +1043,48 @@ model SubscriptionPayment {
 
   /// The driver's own history list, newest first.
   @@index([towTruckId, createdAt])
+}
+
+/// One job the dispatcher handed to a driver.
+///
+/// Written when «Ուղղորդված է» is pressed on `/admin/dispatch` — that is, once
+/// a driver has AGREED on the phone, not when their number was dialled. Calls
+/// nobody answered leave nothing here on purpose: the count has to mean work
+/// offered, or it means nothing.
+///
+/// Deliberately not an order. No status, no completion, no price, no customer:
+/// those are things the platform never witnesses (the call happens on the
+/// dispatcher's own phone), and fields for them would hold numbers nobody
+/// could stand behind.
+///
+/// This is also what makes the subscription defensible — "12 jobs this month,
+/// last one 6 days ago" is an answer to "what am I paying for"; a recollection
+/// is not.
+model DispatchReferral {
+  id         Int      @id @default(autoincrement())
+  towTruckId Int
+  towTruck   TowTruck @relation(fields: [towTruckId], references: [id], onDelete: Cascade)
+
+  /// The place the CALLER named, as slug + the name it had at the time.
+  ///
+  /// Both, because the location taxonomy is static TypeScript rather than a
+  /// table (see docs/taxonomies.md): a renamed district must not silently
+  /// rewrite last year's history, and a slug that is later retired must still
+  /// read back as something a person recognises.
+  locationSlug String
+  locationName String
+  /// `city` | `district` | `region` — LocationType, as a string for the same
+  /// reason `planCode` is one: a taxonomy that lives outside the database.
+  locationType String
+
+  /// Which admin dispatched it. One operator today; a question worth being
+  /// able to answer the day there are two.
+  adminUserId Int
+
+  createdAt DateTime @default(now())
+
+  /// The dispatch screen's own query: per driver, how many and how recently.
+  @@index([towTruckId, createdAt])
+  /// "Which places do the calls come from" — where more drivers are needed.
+  @@index([locationSlug, createdAt])
 }

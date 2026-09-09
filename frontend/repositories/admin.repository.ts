@@ -6,6 +6,7 @@ import type {
   SubscriptionPlan,
   SubscriptionPlanCode,
 } from '~/types/subscription'
+import type { DispatchCandidates, DispatchFilter } from '~/types/dispatch'
 import type { RegistrationPayload } from './registration.repository'
 import { useAdminAuthStore } from '~/stores/adminAuth'
 
@@ -644,6 +645,43 @@ export const adminRepository = {
    */
   listSubscriptionPlans(): Promise<{ items: SubscriptionPlan[] }> {
     return apiFetch<{ items: SubscriptionPlan[] }>('/admin/subscription-payments/plans', {
+      headers: authHeader(),
+    })
+  },
+
+  /**
+   * Who to offer a job in this place to — the dispatch screen's only read.
+   *
+   * The place travels as slug + name + type rather than as an id: the location
+   * taxonomy is static TypeScript on both sides, so there is nothing for the
+   * server to resolve an id against, and the name is what gets stored on the
+   * referral so a later rename cannot rewrite history.
+   */
+  listDispatchCandidates(
+    place: { slug: string; name: string; type: string },
+    filter: DispatchFilter = 'all',
+  ): Promise<DispatchCandidates> {
+    return apiFetch<DispatchCandidates>('/admin/dispatch/candidates', {
+      query: { slug: place.slug, name: place.name, type: place.type, filter },
+      headers: authHeader(),
+    })
+  },
+
+  /**
+   * «Ուղղորդված է» — this driver took the job.
+   *
+   * Pressed after the driver agreed on the phone, never on «Զանգել»: the count
+   * this feeds has to mean work offered, not numbers dialled.
+   */
+  recordDispatchReferral(input: {
+    towTruckId: number
+    locationSlug: string
+    locationName: string
+    locationType: string
+  }): Promise<{ id: number }> {
+    return apiFetch<{ id: number }>('/admin/dispatch/referrals', {
+      method: 'POST',
+      body: input,
       headers: authHeader(),
     })
   },

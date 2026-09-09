@@ -9,6 +9,7 @@ import { validateEnv } from './config/env.validation'
 import { AdminAuthModule } from './admin-auth/admin-auth.module'
 import { AdminModule } from './admin/admin.module'
 import { AnalyticsModule } from './analytics/analytics.module'
+import { DispatchModule } from './dispatch/dispatch.module'
 import { DriverAuthModule } from './driver-auth/driver-auth.module'
 import { FreeRoutesModule } from './free-routes/free-routes.module'
 import { HealthModule } from './health/health.module'
@@ -59,6 +60,7 @@ import { TowTrucksModule } from './tow-trucks/tow-trucks.module'
     NearestModule,
     ProfileChangesModule,
     PrivacyConsentModule,
+    DispatchModule,
     SubscriptionsModule,
     IdramModule,
   ],

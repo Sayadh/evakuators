@@ -63,3 +63,43 @@ describe('dispatch page, admin only', () => {
     expect(source()).not.toContain("middleware: 'admin-auth'")
   })
 })
+
+/**
+ * Recording a referral is the only irreversible action on this screen: it
+ * writes a permanent row, moves the driver's monthly count, and that count is
+ * the answer given when a driver asks what their subscription bought them.
+ * There is no undo — and the button sits a thumb's width from «Զանգել» on a
+ * phone held one-handed while talking.
+ */
+describe('dispatch page, confirming a referral', () => {
+  it('opens a dialog instead of recording on the first press', () => {
+    expect(source()).toContain('@click="askReferred(candidate)"')
+    expect(source()).not.toContain('@click="markReferred(candidate)"')
+  })
+
+  it('records only from inside the dialog', () => {
+    expect(source()).toContain('@click="markReferred(confirmTarget)"')
+  })
+
+  it('names the driver and the place, rather than asking "are you sure"', () => {
+    // The operator has just been reading a list of near-identical rows.
+    expect(source()).toContain('{{ confirmTarget.driverName }}')
+    expect(source()).toContain('{{ selected?.name }}')
+  })
+
+  it('says the record cannot be taken back', () => {
+    expect(source()).toContain('հետ չի վերցվում')
+  })
+
+  it('keeps the dialog open when the write fails', () => {
+    // `confirmTarget` is cleared on success only — inside the try, after the
+    // request resolves.
+    expect(source()).toMatch(/confirmTarget\.value = null\s*\n\s*\} catch/)
+  })
+
+  it('shows the failure inside the dialog, not the list’s own error', () => {
+    // `loadError` belongs to the list behind it; a stale "could not load" shown
+    // in a freshly opened dialog reads as this action having failed.
+    expect(source()).toContain('v-if="referError"')
+  })
+})

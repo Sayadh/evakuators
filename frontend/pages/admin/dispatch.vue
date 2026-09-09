@@ -162,13 +162,40 @@ watch(filter, () => {
  *
  * The row is marked rather than removed: the operator may need to ring back,
  * and a row that vanishes under a thumb is worse than one that changes colour.
+ *
+ * ## Why it asks first
+ *
+ * Because it is the one irreversible thing on this screen. A referral is a
+ * permanent row, it moves the driver's «այս ամիս» count, and that count is the
+ * answer given when a driver asks what the subscription bought them. There is
+ * no undo, and the button sits a thumb's width from «Զանգել» on a phone held
+ * one-handed while talking — the two ways to get it wrong are a mis-tap and
+ * pressing it on the driver who was rung but did not take the job.
+ *
+ * The dialog names the driver and the place, so the confirmation answers the
+ * question that was actually at stake ("this driver, this job") rather than
+ * asking "are you sure" about something the operator can no longer see.
  */
+const confirmTarget = ref<DispatchCandidate | null>(null)
+/**
+ * Its own error, not `loadError`: that one belongs to the list behind the
+ * dialog, and showing a stale "could not load" inside a confirmation the
+ * operator just opened would read as this action having failed.
+ */
+const referError = ref('')
+
+function askReferred(candidate: DispatchCandidate): void {
+  if (referringId.value !== null || referredIds.value.has(candidate.id)) return
+  referError.value = ''
+  confirmTarget.value = candidate
+}
+
 async function markReferred(candidate: DispatchCandidate): Promise<void> {
   const place = selected.value
   if (!place || referringId.value !== null) return
 
   referringId.value = candidate.id
-  loadError.value = ''
+  referError.value = ''
   try {
     await adminRepository.recordDispatchReferral({
       towTruckId: candidate.id,
@@ -177,8 +204,12 @@ async function markReferred(candidate: DispatchCandidate): Promise<void> {
       locationType: place.type,
     })
     referredIds.value = new Set([...referredIds.value, candidate.id])
+    confirmTarget.value = null
   } catch (error) {
-    loadError.value = extractErrorMessage(error, 'Գրանցել չհաջողվեց։')
+    // The dialog stays open on failure — closing it would leave the operator
+    // looking at an unchanged row with an error message somewhere above it,
+    // unsure whether to press again.
+    referError.value = extractErrorMessage(error, 'Գրանցել չհաջողվեց։')
   } finally {
     referringId.value = null
   }
@@ -269,7 +300,7 @@ useSeoMetaData({
           <button type="button" class="dispatch__back" @click="reset">Մաքրել</button>
         </div>
 
-        <p v-if="loadError" class="dispatch__error" role="alert">{{ loadError }}</p>
+        <p v-if="referError" class="dispatch__error" role="alert">{{ referError }}</p>
         <p v-if="loading" class="dispatch__muted">Բեռնվում է…</p>
 
         <p v-else-if="candidates.length === 0" class="dispatch__empty">
@@ -317,7 +348,7 @@ useSeoMetaData({
                 size="sm"
                 :variant="referredIds.has(candidate.id) ? 'success' : 'outline'"
                 :disabled="referringId === candidate.id || referredIds.has(candidate.id)"
-                @click="markReferred(candidate)"
+                @click="askReferred(candidate)"
               >
                 {{ referredIds.has(candidate.id) ? 'Ուղղորդված է ✓' : 'Ուղղորդված է' }}
               </AppButton>
@@ -326,6 +357,34 @@ useSeoMetaData({
         </section>
       </template>
     </template>
+
+    <!-- The only irreversible action here, so it is the only one that asks.
+         Named, not "are you sure": the operator has just been reading a list of
+         near-identical rows on a phone. -->
+    <AppModal
+      :model-value="confirmTarget !== null"
+      title="Հաստատել ուղղորդումը"
+      @update:model-value="confirmTarget = null"
+    >
+      <div v-if="confirmTarget" class="dispatch__confirm">
+        <p>
+          <strong>{{ confirmTarget.driverName }}</strong> — {{ confirmTarget.phone }}
+        </p>
+        <p class="dispatch__muted">
+          Հաստատում եք, որ այս վարորդը վերցրե՞լ է պատվերը՝ {{ selected?.name }}։
+          Գրառումը կավելանա իր ամսվա հաշվին և հետ չի վերցվում։
+        </p>
+        <p v-if="loadError" class="dispatch__error" role="alert">{{ loadError }}</p>
+        <AppButton
+          variant="success"
+          block
+          :disabled="referringId === confirmTarget.id"
+          @click="markReferred(confirmTarget)"
+        >
+          {{ referringId === confirmTarget.id ? 'Պահպանվում է…' : 'Այո, վերցրել է' }}
+        </AppButton>
+      </div>
+    </AppModal>
   </div>
 </template>
 
@@ -505,6 +564,16 @@ useSeoMetaData({
   &__error {
     color: var(--color-danger, #c53030);
     margin: 0 0 var(--space-3);
+  }
+
+  &__confirm {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+
+    p {
+      margin: 0;
+    }
   }
 
   &__empty {

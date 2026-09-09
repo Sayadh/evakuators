@@ -93,6 +93,9 @@ function onClick(): void {
       </span>
     </div>
 
+    <!-- The number IS the label. «Զանգահարել մեզ» was already said one line
+         above it, in the subtitle, and a button that repeats the sentence
+         above it reads as filler; the number reads as a phone call. -->
     <a
       :href="phoneHref"
       class="dispatch-cta__call"
@@ -100,11 +103,7 @@ function onClick(): void {
       @click="onClick"
     >
       <AppIcon name="phone" :size="20" />
-      <span>Զանգահարել մեզ</span>
-      <!-- The number is shown wherever there is room for it: seeing it before
-           tapping is what makes a phone CTA feel like a phone call rather than
-           a form. The bar has no room. -->
-      <span v-if="variant !== 'bar'" class="dispatch-cta__number">{{ CONTACT_PHONE }}</span>
+      <span class="dispatch-cta__number">{{ CONTACT_PHONE }}</span>
     </a>
   </div>
 </template>
@@ -223,14 +222,19 @@ function onClick(): void {
     background: var(--color-surface);
     box-shadow: 0 -4px 16px rgba(16, 30, 46, 0.12);
 
+    /* Both halves shrink together: the button now carries a 16-character
+       number, which on a 360px phone leaves the heading beside it very little
+       room. Smaller here only — the banner and hero have the width. */
     .dispatch-cta__title {
-      font-size: 0.95rem;
+      font-size: 0.85rem;
+      line-height: 1.25;
     }
 
     .dispatch-cta__call {
       background: var(--color-success);
       color: #fff;
-      padding: var(--space-3) var(--space-4);
+      padding: var(--space-3);
+      font-size: 0.95rem;
 
       &:hover {
         background: #178a49;

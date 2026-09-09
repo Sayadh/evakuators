@@ -52,7 +52,7 @@ interface Props {
    * - `header` — icon + number in the top bar, on every page.
    * - `hero`   — under the homepage search, on the dark gradient.
    * - `banner` — a card in the reading flow of a listing page.
-   * - `bar`    — the mobile sticky bar on listing pages.
+   * - `bar`    — the floating call button on listing pages, phones only.
    */
   variant: 'header' | 'hero' | 'banner' | 'bar'
 }
@@ -81,18 +81,26 @@ function onClick(): void {
     <span class="dispatch-cta__number">{{ CONTACT_PHONE }}</span>
   </a>
 
+  <!-- One thumb, one target. A full-width strip with a sentence in it was
+       covering a band of the listing on every phone, at a moment when the
+       reader is one-handed and in a hurry — and the sentence was doing no work
+       a round green phone button does not do. The words live on the banner
+       further up the same page, where there is room to read them. -->
+  <a
+    v-else-if="variant === 'bar'"
+    :href="phoneHref"
+    class="dispatch-cta__call dispatch-cta__fab"
+    :aria-label="`Զանգահարել մեզ՝ ${CONTACT_PHONE}`"
+    :title="`Զանգահարել մեզ՝ ${CONTACT_PHONE}`"
+    @click="onClick"
+  >
+    <AppIcon name="phone" :size="26" />
+  </a>
+
   <div v-else class="dispatch-cta" :class="`dispatch-cta--${variant}`">
     <div class="dispatch-cta__text">
-      <!-- The bar's line is written in the CUSTOMER's voice — it is what they
-           want, not what we offer. It sits beside its button on one row with
-           no subtitle to explain itself, so the line and the button read as
-           one sentence: "find me a vehicle" → the number to call. -->
-      <strong class="dispatch-cta__title">
-        {{ variant === 'bar' ? 'Գտնել ինձ համար մեքենա' : 'Չգիտե՞ք որ մեքենան ընտրել' }}
-      </strong>
-      <!-- Dropped on the sticky bar on purpose: a second line there would
-           double the height of a strip that is already covering the listing. -->
-      <span v-if="variant !== 'bar'" class="dispatch-cta__subtitle">
+      <strong class="dispatch-cta__title">Չգիտե՞ք որ մեքենան ընտրել</strong>
+      <span class="dispatch-cta__subtitle">
         Զանգահարեք մեզ՝ մեր մասնագետը ձեզ համար կընտրի համապատասխան էվակուատորը
       </span>
     </div>
@@ -207,51 +215,47 @@ function onClick(): void {
     }
   }
 
-  /* ---- bar: mobile sticky ---- */
-  &--bar {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    /* Below the cookie consent card and its overlay (59/60) on purpose: that
-       banner is answered once and must stay tappable, this one is permanent.
-       Above everything in the page flow, which is all this needs. */
-    z-index: 58;
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-    padding: var(--space-3) var(--space-4);
-    padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom));
-    background: var(--color-surface);
-    box-shadow: 0 -4px 16px rgba(16, 30, 46, 0.12);
+}
 
-    /* Both halves shrink together: the button now carries a 16-character
-       number, which on a 360px phone leaves the heading beside it very little
-       room. Smaller here only — the banner and hero have the width. */
-    .dispatch-cta__title {
-      font-size: 0.85rem;
-      line-height: 1.25;
-    }
+/**
+ * The floating call button. Its own element, not inside `.dispatch-cta`.
+ *
+ * Bottom right because that is where a thumb rests on a phone held in one
+ * hand, and 60px because that is comfortably past the 44px minimum a target
+ * needs when the person tapping it is walking, or standing next to a car that
+ * will not start.
+ */
+.dispatch-cta__fab {
+  position: fixed;
+  right: var(--space-4);
+  bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+  /* Below the cookie consent card and its overlay (59/60) on purpose: that
+     banner is answered once and must stay tappable, this one is permanent. */
+  z-index: 58;
+  width: 60px;
+  height: 60px;
+  padding: 0;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-success);
+  color: #fff;
+  /* Stronger than the card shadows on the page: this floats above a scrolling
+     list of white cards and has to read as detached from them, not as one more
+     element in the flow. */
+  box-shadow: 0 6px 20px rgba(16, 30, 46, 0.3);
 
-    .dispatch-cta__call {
-      background: var(--color-success);
-      color: #fff;
-      padding: var(--space-3);
-      font-size: 0.95rem;
+  &:hover {
+    background: #178a49;
+    color: #fff;
+  }
 
-      &:hover {
-        background: #178a49;
-        color: #fff;
-      }
-    }
-
-    /* Desktop has the header number and the banner; a fixed strip there would
-       cover a listing nobody is scrolling with one hand. Matches the driver
-       profile's own sticky bar breakpoint. */
-    @media (min-width: 1024px) {
-      display: none;
-    }
+  /* Desktop has the header number and the banner; a floating button there
+     would cover a listing nobody is scrolling with one hand. Matches the driver
+     profile's own sticky bar breakpoint. */
+  @media (min-width: 1024px) {
+    display: none;
   }
 }
 

@@ -32,10 +32,19 @@ const layout = readFileSync(`${ROOT}layouts/default.vue`, 'utf8')
 
 describe('DispatchCallCta wiring', () => {
   it('keeps the class the Pixel buckets on, in every variant', () => {
-    // Both anchors in the template carry it — the header one and the shared
-    // one. If either loses it, those clicks silently become `site_contact`.
-    const occurrences = component.match(/class="dispatch-cta__call/g) ?? []
-    expect(occurrences.length).toBe(2)
+    // All three anchors carry it — the header link, the floating button and the
+    // shared one. If any loses it, those clicks silently become `site_contact`.
+    const anchors = component.match(/:href="phoneHref"/g) ?? []
+    const classed = component.match(/class="dispatch-cta__call/g) ?? []
+    expect(anchors.length).toBe(3)
+    expect(classed.length).toBe(anchors.length)
+  })
+
+  it('gives the icon-only floating button a spoken label', () => {
+    // It has no text at all, so without this it is an unlabelled link — and the
+    // number is what a screen reader has to be able to announce.
+    expect(component).toContain('class="dispatch-cta__call dispatch-cta__fab"')
+    expect(component).toMatch(/dispatch-cta__fab"[\s\S]{0,200}aria-label/)
   })
 
   it('does not fire a Meta Contact event of its own', () => {
@@ -71,12 +80,12 @@ describe('DispatchCallCta placements', () => {
     expect(cta).toBeGreaterThan(search)
   })
 
-  it('renders the sticky bar once, in the layout, behind the route rule', () => {
+  it('renders the floating button once, in the layout, behind the route rule', () => {
     expect(layout).toContain('showsDispatchBar(route.path)')
     expect(layout).toContain('<DispatchCallCta v-if="showDispatchBar" variant="bar" />')
   })
 
-  it('holds the sticky bar back until the visitor has scrolled', () => {
+  it('holds the floating button back until the visitor has scrolled', () => {
     // Both offers in the first viewport is the message twice, and a strip of
     // the listing covered for nothing.
     expect(layout).toContain('y.value > DISPATCH_BAR_SCROLL_THRESHOLD')

@@ -178,7 +178,16 @@ describe('a coverage change survives the round trip', () => {
     ])
   })
 
-  it('still moves the base when the driver DID move it', async () => {
+  it('keeps the stored base even when the driver submits a different one', async () => {
+    // This used to move the truck, and it was the only way to move it: nothing
+    // offers the base as an edit, but the dashboard sends all four geography
+    // fields together, so a different value in the payload was enough.
+    //
+    // The base decides which city page a truck is filed under, whether it
+    // counts as local there, and — since placements were sold — which town's
+    // first position it can hold. A driver who bought the top of Abovyan could
+    // move to another town the next day and spend the rest of the term there,
+    // having paid for somewhere else. It is an admin decision now.
     const data = await roundTrip(
       dashboardPayload({
         serviceAreas: [{ slug: 'hrazdan', name: 'Հրազդան', type: 'city' }] as never,
@@ -187,7 +196,7 @@ describe('a coverage change survives the round trip', () => {
       }),
     )
 
-    expect(data.citySlug).toBe('hrazdan')
+    expect(data.citySlug).toBe('abovyan')
   })
 })
 

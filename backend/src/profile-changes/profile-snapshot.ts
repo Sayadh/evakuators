@@ -1,6 +1,6 @@
 import { decimalToNumber } from '../common/coordinates'
 import type { TowTruckWithImages } from '../tow-trucks/tow-truck.types'
-import { EDITABLE_PROFILE_FIELDS } from './profile-change-diff'
+import { EDITABLE_PROFILE_FIELDS, PLACEMENT_FIELDS } from './profile-change-diff'
 
 /**
  * The live profile, flattened to exactly the keys a driver's PATCH uses.
@@ -29,6 +29,15 @@ export function currentProfileSnapshot(
 ): Record<string, unknown> {
   const row = towTruck as unknown as Record<string, unknown>
   const snapshot: Record<string, unknown> = {}
+
+  // The placement, even though it is no longer editable. It is not here to be
+  // compared — it can never appear in `before` — but `diffProfile` carries it
+  // FROM this snapshot onto any coverage change, precisely because the driver's
+  // own submitted value must not be used. Leaving it out of the snapshot would
+  // null the base of every driver who edits their coverage.
+  for (const field of PLACEMENT_FIELDS) {
+    snapshot[field] = row[field] ?? null
+  }
 
   for (const field of EDITABLE_PROFILE_FIELDS) {
     switch (field) {

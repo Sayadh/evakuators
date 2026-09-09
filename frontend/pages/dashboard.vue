@@ -703,33 +703,44 @@ function findPlaceSlug(slugs: string[]): string | undefined {
 const baseCandidates = computed(() => baseCandidatesFor(form))
 
 /**
- * The base the profile is filed under.
+ * The base the profile is filed under — read from the saved profile, never
+ * chosen here.
  *
- * A capped driver's base is inferred from their own coverage list, exactly as
- * before — the first non-corridor entry. An uncapped one has no such list, so
- * they name it explicitly (`chosenBaseSlug`), and it must stay one of the
- * candidates: `assertPlacementIsServed` rejects anything else, and a base the
- * driver no longer covers is a truck ranking first on a town's page while being
- * the one driver who never agreed to go there.
+ * ## Why the driver cannot change it
+ *
+ * The base decides which city page the truck is filed under, whether it counts
+ * as a local driver there, and — since top placements are sold — which town's
+ * first position it is eligible for. A driver who bought the top of Abovyan
+ * could otherwise move to another town the next day and spend the rest of the
+ * term there, having paid for somewhere else.
+ *
+ * It is an admin field now, changed on the admin page. The backend enforces
+ * that on its own (`CARRY_FROM_CURRENT` in `profile-change-diff.ts` reads the
+ * placement from the stored profile and ignores whatever this form sends), so
+ * this is the honest half of the same rule rather than the rule itself.
+ *
+ * The driver keeps full control of where they SERVE. Only where they are
+ * BASED is fixed.
  */
 const chosenBaseSlug = ref('')
 
-const basePlaceSlug = computed(() =>
-  uncapped.value ? chosenBaseSlug.value || undefined : findPlaceSlug(form.citySlugs),
+/**
+ * Still sent, because `buildServiceAreas` needs it to keep the base inside the
+ * coverage list — `assertPlacementIsServed` refuses a truck filed under a place
+ * it does not serve. The stored value wins; the fallback covers a truck that
+ * has no base at all, which an admin cleanup can legitimately leave behind.
+ */
+const basePlaceSlug = computed(
+  () => chosenBaseSlug.value || (uncapped.value ? undefined : findPlaceSlug(form.citySlugs)),
 )
 
-const baseOptions = computed<SelectOption[]>(() =>
-  baseCandidates.value.map((candidate) => ({ value: candidate.slug, label: candidate.name })),
+/** The base's own name, for the read-only line that replaced the picker */
+const baseLabel = computed(
+  () =>
+    baseCandidates.value.find((candidate) => candidate.slug === chosenBaseSlug.value)?.name ??
+    truck.value?.location.name ??
+    '',
 )
-
-// Clears a base that has fallen out of the candidate list — otherwise the
-// select renders blank while still holding a value, and the save is rejected
-// with a message about an area the driver can no longer see on screen.
-watch(baseCandidates, (candidates) => {
-  if (chosenBaseSlug.value && !candidates.some((c) => c.slug === chosenBaseSlug.value)) {
-    chosenBaseSlug.value = ''
-  }
-})
 
 function validate(): boolean {
   errors.driverName = validateField(form.driverName, [required('Լրացրեք Անուն Ազգանունը')]) ?? ''
@@ -765,12 +776,17 @@ function validate(): boolean {
   // save: their stored coverage is left alone, but changing anything means
   // bringing it within the limit first.
   errors.citySlugs = validateServiceAreaSelection(form.regionSlugs, form.citySlugs, form)
-  // The base is required for everyone (`TowTruck.locationName` always was), but
-  // only an uncapped driver picks it explicitly — for everyone else it is
-  // derived from the coverage list, so an error here would name a control that
-  // is not on their screen.
+
+  // The base is not chosen on this page any more, so there is no "you did not
+  // pick one" to report. What IS still the driver's to get wrong is dropping
+  // their own base out of their coverage: `assertPlacementIsServed` refuses a
+  // truck filed under a place it does not serve, and refusing it here names the
+  // control the driver is actually looking at instead of failing later, on a
+  // moderator's Approve button, with a message neither of them can act on.
   errors.baseSlug =
-    uncapped.value && !chosenBaseSlug.value ? 'Ընտրեք մեքենայի հիմնական վայրը' : ''
+    chosenBaseSlug.value && !baseCandidates.value.some((c) => c.slug === chosenBaseSlug.value)
+      ? `${baseLabel.value} — ձեր հիմնական վայրն է, այն պետք է մնա սպասարկվող տարածքների մեջ`
+      : ''
 
   return Object.values(errors).every((error) => !error)
 }
@@ -1393,18 +1409,8 @@ async function logout(): Promise<void> {
                 v-model="form.regionSlugs"
                 :error="errors.regionSlugs || errors.citySlugs"
               />
-              <!-- Explicit here, unlike for a capped driver whose base is the
-                   first entry of their own city list. The base is required
-                   whatever the coverage answer is: it decides which marz and
-                   city page the truck is filed under, and the nearest-driver
-                   search reads it. -->
-              <AppSelect
-                v-model="chosenBaseSlug"
-                :options="baseOptions"
-                label="Մեքենայի հիմնական վայրը *"
-                :error="errors.baseSlug"
-              />
             </template>
+
             <!-- The very same component the registration form uses — what a
                  driver could pick at sign-up is exactly what they can change
                  here, by construction rather than by remembering to. -->
@@ -1415,6 +1421,23 @@ async function logout(): Promise<void> {
               :regions-error="errors.regionSlugs"
               :cities-error="errors.citySlugs"
             />
+
+            <!-- Shown to everyone, editable by nobody. The base decides which
+                 city page the truck is filed under, whether it counts as local
+                 there, and which town's paid first position it is eligible for
+                 — so it is an admin field. Rendered rather than hidden because
+                 a driver still needs to know what it says, and because the
+                 error below can be about it. -->
+            <div class="dashboard-base">
+              <p class="dashboard-base__label">Մեքենայի հիմնական վայրը</p>
+              <p class="dashboard-base__value">{{ baseLabel || '—' }}</p>
+              <p class="dashboard-note">
+                Հիմնական վայրը փոխում է միայն ադմինիստրատորը։ Փոխելու համար կապվեք մեզ հետ։
+              </p>
+              <p v-if="errors.baseSlug" class="dashboard-base__error" role="alert">
+                {{ errors.baseSlug }}
+              </p>
+            </div>
           </div>
         </details>
 
@@ -2005,6 +2028,35 @@ details[open] .dashboard-summary::after {
   margin: 0 0 var(--space-3);
   font-size: 0.9rem;
   color: var(--color-text-muted);
+}
+
+/* The base, shown but not editable — see the template comment. */
+.dashboard-base {
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt, rgba(16, 30, 46, 0.04));
+
+  &__label {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--color-text-muted);
+  }
+
+  &__value {
+    margin: 0 0 var(--space-2);
+    font-weight: 700;
+  }
+
+  &__error {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--color-danger, #c53030);
+  }
+
+  .dashboard-note {
+    margin-bottom: 0;
+  }
 }
 
 .dashboard-working-hours {

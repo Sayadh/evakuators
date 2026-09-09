@@ -83,9 +83,9 @@ export const EDITABLE_PROFILE_FIELDS = [
   'locationName',
   'serviceAreas',
   'regionSlugs',
-  'regionSlug',
-  'citySlug',
-  'districtSlug',
+  // `regionSlug`, `citySlug` and `districtSlug` are NOT here, and their absence
+  // is the rule rather than an oversight — see CARRY_FROM_CURRENT below. Where
+  // a truck is BASED is an admin decision; where it SERVES is the driver's.
   'priceCityCallout',
   'pricePerKm',
   'priceWaitingPerHour',
@@ -136,9 +136,31 @@ const ALWAYS_CARRIED = ALWAYS_CARRIED_FIELDS
  * Carried fields are applied but not *displayed*: they never get a `before`
  * entry, and the review UI shows only fields that have one. So a moderator
  * still sees one line («Սպասարկվող տարածքներ»), not four.
+ *
+ * ## Carried from the CURRENT profile, never from the submission
+ *
+ * This used to read the driver's own submitted placement, which made the base
+ * editable in practice even though nothing offered it as an edit: the dashboard
+ * sends all four fields together, so a different value in that payload simply
+ * moved the truck. That is not a field like any other. The base decides which
+ * city page the truck is filed under, whether it counts as local there, and —
+ * since placements were sold — which town's first position it can hold. A
+ * driver who bought the top of Abovyan could move to another town the next day
+ * and keep the remaining days there, having paid for somewhere else.
+ *
+ * So these three are read from `current`. The driver keeps full control of
+ * where they SERVE; where they are BASED is changed by an admin, on the admin
+ * page, or not at all.
+ *
+ * The one exception is a truck with no base at all — both columns null, which
+ * `resolvePlacementAfterRemoval` can legitimately leave behind when a driver is
+ * left covering only road corridors. There is nothing to protect there, and
+ * refusing would mean that driver could never edit their coverage again.
  */
-const CARRY_WITH: Record<string, readonly string[]> = {
-  serviceAreas: ['citySlug', 'districtSlug', 'regionSlug'],
+export const PLACEMENT_FIELDS = ['citySlug', 'districtSlug', 'regionSlug'] as const
+
+const CARRY_FROM_CURRENT: Record<string, readonly string[]> = {
+  serviceAreas: PLACEMENT_FIELDS,
 }
 
 /**
@@ -286,15 +308,20 @@ export function diffProfile(
   // count as a change and cannot be overwritten by one: a field that really did
   // change is already in `changes` with the submitted value, and re-reading it
   // from `submitted` here would write the same value again.
-  for (const [trigger, companions] of Object.entries(CARRY_WITH)) {
+  for (const [trigger, companions] of Object.entries(CARRY_FROM_CURRENT)) {
     if (!(trigger in changes)) continue
+
+    // A truck with no base at all: nothing to protect, so the driver's own
+    // answer is taken. See CARRY_FROM_CURRENT.
+    const unplaced = current.citySlug == null && current.districtSlug == null
+
     for (const companion of companions) {
-      if (companion in changes) continue
-      if (!EDITABLE.has(companion)) continue
       // `?? null` rather than skipping an absent key: `applyUpdate` nulls a
       // placement field it is not given, so "the driver has no districtSlug"
       // has to be said out loud rather than left to a default.
-      changes[companion] = submitted[companion] ?? current[companion] ?? null
+      changes[companion] = unplaced
+        ? (submitted[companion] ?? null)
+        : (current[companion] ?? null)
     }
   }
 

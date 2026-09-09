@@ -365,3 +365,62 @@ describe('claiming photos that are not free', () => {
     expect(findUnattachedByIds).not.toHaveBeenCalled()
   })
 })
+
+/**
+ * Where a truck is BASED is an admin decision; where it SERVES is the driver's.
+ *
+ * The dashboard sends all four geography fields together, so before this the
+ * base was editable in practice even though nothing offered it as an edit — a
+ * different value in that payload simply moved the truck. It is not a field
+ * like any other: the base decides which city page the truck is filed under,
+ * whether it counts as local there, and, since placements were sold, which
+ * town's first position it can hold. A driver could buy the top of Abovyan and
+ * spend the remaining days on top of a different town.
+ */
+describe('the base is not the driver’s to change', () => {
+  it('ignores a submitted base and keeps the stored one', async () => {
+    const { service, replacePending } = build()
+
+    await service.submitProfileChange(7, {
+      serviceAreas: [{ slug: 'kentron', type: 'district', name: 'Կենտրոն' }],
+      citySlug: null,
+      districtSlug: 'kentron',
+      regionSlug: null,
+    } as never)
+
+    const changes = replacePending.mock.calls[0]![1] as Record<string, unknown>
+    expect(changes.citySlug).toBe(TRUCK.citySlug)
+    expect(changes.districtSlug).toBe(TRUCK.districtSlug ?? null)
+  })
+
+  it('queues nothing at all when the base is the only thing that differs', async () => {
+    // Not "queues a request that changes nothing" — an edit a moderator would
+    // open and find empty is worse than no edit.
+    const { service, replacePending } = build()
+
+    await service.submitProfileChange(7, {
+      citySlug: 'gyumri',
+      districtSlug: null,
+      regionSlug: 'shirak',
+    } as never)
+
+    expect(replacePending).not.toHaveBeenCalled()
+  })
+
+  it('still carries the base along with a real coverage change', async () => {
+    // `applyUpdate` refuses a serviceAreas update that does not say where the
+    // truck is based, and actively nulls a placement field it is not given.
+    const { service, replacePending } = build()
+
+    await service.submitProfileChange(7, {
+      serviceAreas: [
+        { slug: 'abovyan', type: 'city', name: 'Աբովյան' },
+        { slug: 'hrazdan', type: 'city', name: 'Հրազդան' },
+      ],
+    } as never)
+
+    const changes = replacePending.mock.calls[0]![1] as Record<string, unknown>
+    expect('citySlug' in changes).toBe(true)
+    expect(changes.citySlug).toBe(TRUCK.citySlug)
+  })
+})

@@ -140,6 +140,15 @@ function onPhoneClick(): void {
   }
 
   &__call {
+    /* Pinned to the bottom of the card, not to the end of the text above it.
+       These cards sit in a grid, so a row stretches every card to the tallest
+       one in it — and the content genuinely varies: one route has a
+       description, another's time range wraps onto two lines because it
+       crosses midnight. Without this the button lands at a different height in
+       every card of the row, and the one thing a reader is aiming for is the
+       one thing that keeps moving. Same line, same reason, as
+       `truck-card__actions`. */
+    margin-top: auto;
     display: inline-flex;
     align-items: center;
     justify-content: center;

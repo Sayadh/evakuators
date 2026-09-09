@@ -41,10 +41,25 @@ describe('DispatchCallCta wiring', () => {
   })
 
   it('gives the icon-only floating button a spoken label', () => {
-    // It has no text at all, so without this it is an unlabelled link — and the
-    // number is what a screen reader has to be able to announce.
-    expect(component).toContain('class="dispatch-cta__call dispatch-cta__fab"')
+    // It has no text at all, so without this it is an unlabelled control — and
+    // the number is what a screen reader has to be able to announce.
     expect(component).toMatch(/dispatch-cta__fab"[\s\S]{0,200}aria-label/)
+  })
+
+  it('makes the floating button ask before it dials', () => {
+    // 60px of colour parked over a list being scrolled with the same thumb gets
+    // tapped by accident, and an accidental tap on a `tel:` link is a phone
+    // call to a stranger — already ringing on some phones.
+    expect(component).toMatch(/class="dispatch-cta__fab"[\s\S]{0,300}@click="confirming = true"/)
+    expect(component).toContain('<AppModal v-model="confirming"')
+    expect(component).toContain('Չեղարկել')
+  })
+
+  it('counts the call from the dial link, not from opening the dialog', () => {
+    // Otherwise `dispatch_call_click` would mean "times the button was
+    // brushed", which is the opposite of what it is read for.
+    expect(component).toMatch(/dispatch-cta__confirm-call"[\s\S]{0,120}@click="onClick"/)
+    expect(component).not.toMatch(/dispatch-cta__fab"[\s\S]{0,300}@click="onClick"/)
   })
 
   it('does not fire a Meta Contact event of its own', () => {

@@ -61,6 +61,21 @@ const props = defineProps<Props>()
 
 const phoneHref = getPhoneHref(CONTACT_PHONE)
 
+/**
+ * Whether the floating button's confirmation is open.
+ *
+ * Only the `bar` variant asks. Everywhere else the button is read before it is
+ * pressed — it sits in a card, under a heading, with the number written on it.
+ * The floating one is the opposite: 60px of colour parked over a list the
+ * reader is scrolling with the same thumb, so it gets tapped by accident, and
+ * an accidental tap on a `tel:` link is a phone call to a stranger — on some
+ * phones already ringing before the screen has finished changing.
+ *
+ * So the offer that used to be printed beside it now lives in the dialog: what
+ * pressing this gets you, the number it will dial, and a way out.
+ */
+const confirming = ref(false)
+
 function onClick(): void {
   trackDispatchCallClick(props.variant)
 }
@@ -84,18 +99,41 @@ function onClick(): void {
   <!-- One thumb, one target. A full-width strip with a sentence in it was
        covering a band of the listing on every phone, at a moment when the
        reader is one-handed and in a hurry — and the sentence was doing no work
-       a round green phone button does not do. The words live on the banner
-       further up the same page, where there is room to read them. -->
-  <a
-    v-else-if="variant === 'bar'"
-    :href="phoneHref"
-    class="dispatch-cta__call dispatch-cta__fab"
-    :aria-label="`Զանգահարել մեզ՝ ${CONTACT_PHONE}`"
-    :title="`Զանգահարել մեզ՝ ${CONTACT_PHONE}`"
-    @click="onClick"
-  >
-    <AppIcon name="phone" :size="26" />
-  </a>
+       a round green phone button does not do. The words moved into the dialog
+       this opens, which is also what stops a mis-tap from placing a call. -->
+  <template v-else-if="variant === 'bar'">
+    <button
+      type="button"
+      class="dispatch-cta__fab"
+      :aria-label="`Զանգահարել մեզ՝ ${CONTACT_PHONE}`"
+      :title="`Զանգահարել մեզ՝ ${CONTACT_PHONE}`"
+      @click="confirming = true"
+    >
+      <AppIcon name="phone" :size="26" />
+    </button>
+
+    <AppModal v-model="confirming" title="Զանգահարել մեզ">
+      <div class="dispatch-cta__confirm">
+        <p class="dispatch-cta__subtitle">
+          Մեր մասնագետը ձեզ համար կընտրի համապատասխան էվակուատորը և կկապի վարորդի հետ։
+        </p>
+        <!-- A real `tel:` anchor, not a button that navigates: it is what the
+             Pixel's document-level listener sees, and what lets a phone offer
+             "copy number" on a long press. Tracking fires here rather than on
+             the floating button, so the count stays "calls placed" and not
+             "times the button was brushed". -->
+        <a
+          :href="phoneHref"
+          class="dispatch-cta__call dispatch-cta__confirm-call"
+          @click="onClick"
+        >
+          <AppIcon name="phone" :size="20" />
+          <span class="dispatch-cta__number">{{ CONTACT_PHONE }}</span>
+        </a>
+        <AppButton variant="ghost" block @click="confirming = false">Չեղարկել</AppButton>
+      </div>
+    </AppModal>
+  </template>
 
   <div v-else class="dispatch-cta" :class="`dispatch-cta--${variant}`">
     <div class="dispatch-cta__text">
@@ -225,7 +263,41 @@ function onClick(): void {
  * needs when the person tapping it is walking, or standing next to a car that
  * will not start.
  */
+.dispatch-cta__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+
+  p {
+    margin: 0;
+    color: var(--color-text-secondary);
+  }
+}
+
+/* The dial link inside the dialog. Full width and first, because it is what
+   the dialog was opened for; «Չեղարկել» below it is the way back out. */
+.dispatch-cta__confirm-call {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-success);
+  color: #fff;
+  font-weight: 700;
+  font-size: 1.05rem;
+  white-space: nowrap;
+
+  &:hover {
+    background: #178a49;
+    color: #fff;
+  }
+}
+
 .dispatch-cta__fab {
+  border: 0;
+  cursor: pointer;
   position: fixed;
   right: var(--space-4);
   bottom: calc(var(--space-4) + env(safe-area-inset-bottom));

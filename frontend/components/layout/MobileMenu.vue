@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { NAV_LINKS, REGISTER_LINK } from '~/constants/navigation'
+import { LOGIN_LINK, NAV_LINKS, REGISTER_LINK } from '~/constants/navigation'
 
 interface Props {
   modelValue: boolean
@@ -8,9 +8,6 @@ interface Props {
 defineProps<Props>()
 
 const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
-
-/** «Մուտք» / «Իմ էջը» — the same one the header shows, see useDriverEntry */
-const driverEntry = useDriverEntry()
 </script>
 
 <template>
@@ -43,13 +40,13 @@ const driverEntry = useDriverEntry()
       <!-- Below 768px the header hides «Մուտք» entirely, so for most phones
            this is the only way a driver reaches their own profile. -->
       <AppButton
-        :to="driverEntry.to"
+        :to="LOGIN_LINK.to"
         variant="outline"
         block
         class="mobile-menu__login"
         @click="emit('update:modelValue', false)"
       >
-        {{ driverEntry.label }}
+        {{ LOGIN_LINK.label }}
       </AppButton>
       <AppButton
         :to="REGISTER_LINK.to"

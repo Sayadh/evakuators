@@ -53,6 +53,23 @@ export const NAV_LINKS: NavLink[] = [
 
 export const REGISTER_LINK: NavLink = { label: 'Գրանցել էվակուատոր', to: '/register' }
 
+/**
+ * The driver's way back into their own profile, in the header and the drawer.
+ *
+ * `/login` used to be linked from nowhere: a driver who registered, closed the
+ * tab and came back had to type the URL or dig out an old email — on a site
+ * whose entire paid product is that profile.
+ *
+ * One label for both states, deliberately. A signed-in driver sees «Մուտք»
+ * too, and `driver-guest` sends them straight on to `/dashboard`, so the link
+ * is never a dead end. The alternative — swapping the label once the session
+ * is known — meant reading a localStorage-backed store into the markup of the
+ * one component that renders on every page, which the server cannot know and
+ * so renders differently: a hydration mismatch site-wide, in exchange for a
+ * word. A constant has no state to disagree about.
+ */
+export const LOGIN_LINK: NavLink = { label: 'Մուտք', to: '/login' }
+
 export const FOOTER_PAGES: NavLink[] = [
   { label: 'Մեր մասին', to: '/about' },
   { label: 'Կապ', to: '/contact' },

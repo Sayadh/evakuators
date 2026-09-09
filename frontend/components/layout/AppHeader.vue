@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import { NAV_LINKS, REGISTER_LINK } from '~/constants/navigation'
-
-/** «Մուտք» / «Իմ էջը» — see the composable for why it is not read inline */
-const driverEntry = useDriverEntry()
+import { LOGIN_LINK, NAV_LINKS, REGISTER_LINK } from '~/constants/navigation'
 
 const isMobileMenuOpen = ref(false)
 
@@ -38,7 +35,7 @@ watch(
              is the thing they pay for had no link to it from anywhere on the
              site; the register button had been there all along. Quiet on
              purpose — signing up is the one the site is asking for. -->
-        <NuxtLink :to="driverEntry.to" class="header__login">{{ driverEntry.label }}</NuxtLink>
+        <NuxtLink :to="LOGIN_LINK.to" class="header__login">{{ LOGIN_LINK.label }}</NuxtLink>
         <AppButton :to="REGISTER_LINK.to" variant="accent" size="sm" class="header__register">
           {{ REGISTER_LINK.label }}
         </AppButton>

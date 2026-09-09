@@ -88,6 +88,31 @@ describe('searchDispatchPlaces — matching target', () => {
   })
 })
 
+describe('searchDispatchPlaces — the marz expansion', () => {
+  it('carries a marz\'s own towns and corridors', () => {
+    // The backend has no geography, so a marz that travels alone matches only
+    // the few drivers who ticked the marz itself — not the ones who listed its
+    // towns, which is how coverage is actually stored.
+    const kotayk = searchDispatchPlaces('կոտայք').find((p) => p.slug === 'kotayk')
+    expect(kotayk?.regionCitySlugs).toContain('abovyan')
+    expect(kotayk?.regionCitySlugs!.length).toBeGreaterThan(1)
+  })
+
+  it('sends no expansion for Yerevan, which the server answers itself', () => {
+    // A pseudo-region: its "cities" are districts with no shared slug, so there
+    // is nothing to expand into and `findStaticRegion('yerevan')` is undefined.
+    const yerevan = searchDispatchPlaces('երևան').find((p) => p.slug === 'yerevan')
+    expect(yerevan?.type).toBe('region')
+    expect(yerevan?.regionCitySlugs).toEqual([])
+  })
+
+  it('sends no expansion for anything that is not a marz', () => {
+    const abovyan = searchDispatchPlaces('աբովյան').find((p) => p.slug === 'abovyan')
+    expect(abovyan?.type).toBe('city')
+    expect(abovyan?.regionCitySlugs).toBeUndefined()
+  })
+})
+
 describe('searchDispatchPlaces — the list itself', () => {
   it('returns nothing for a single character', () => {
     // One letter matches half the country; the index requires two.

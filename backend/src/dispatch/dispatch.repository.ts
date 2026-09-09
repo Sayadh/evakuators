@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common'
 import { Prisma } from '@prisma/client'
 import type { DispatchReferral } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
+import { YEREVAN_REGION_SLUG } from '../tow-trucks/service-area-limits'
 import type { DispatchPlace } from './dispatch-ranking'
 
 /** Per-driver referral totals, in one grouped pass rather than one query per row */
@@ -53,24 +54,13 @@ export class DispatchRepository {
    * the subscription is shown rather than filtered on.
    */
   findCandidates(place: DispatchPlace): Promise<DispatchCandidateRow[]> {
-    // Null for a road corridor: there is no column a driver is "based on a
-    // route" in, and inventing one (regionSlug, say) would put every driver in
-    // the marz into the LOCAL tier for a road they never mentioned.
-    const base: Prisma.TowTruckWhereInput | null =
-      place.type === 'district'
-        ? { districtSlug: place.slug }
-        : place.type === 'city'
-          ? { citySlug: place.slug }
-          : place.type === 'region'
-            ? { regionSlug: place.slug }
-            : null
-
     return this.prisma.towTruck.findMany({
       where: {
         isActive: true,
         OR: [
-          ...(base ? [base] : []),
+          ...baseClause(place),
           { serviceAreas: { array_contains: [{ slug: place.slug, type: place.type }] } },
+          ...regionWidening(place),
           { servesAllArmenia: true },
         ],
       },
@@ -158,4 +148,61 @@ export class DispatchRepository {
       where: { towTruckId, createdAt: { gte: since } },
     })
   }
+}
+
+/**
+ * "Is this driver BASED here" as a where clause.
+ *
+ * Returns an array so a place with no base column at all contributes nothing
+ * to the `OR` instead of a clause that matches the wrong thing. Two places
+ * have no base column:
+ *
+ * - a road corridor — nobody is based on a road, and falling back to
+ *   `regionSlug` would put every driver in the marz into the LOCAL tier for a
+ *   road they never mentioned;
+ * - and Yerevan is the opposite case: it HAS a base test, just not the obvious
+ *   one, because its drivers carry a `districtSlug` and a null `regionSlug`.
+ *
+ * Mirrors `isBasedIn` in dispatch-ranking.ts, which decides the tier for the
+ * rows this returns. The two must agree — a row this finds but that one tiers
+ * as `null` is dropped from the list again, silently.
+ */
+function baseClause(place: DispatchPlace): Prisma.TowTruckWhereInput[] {
+  switch (place.type) {
+    case 'district':
+      return [{ districtSlug: place.slug }]
+    case 'city':
+      return [{ citySlug: place.slug }]
+    case 'region':
+      return place.slug === YEREVAN_REGION_SLUG
+        ? [{ districtSlug: { not: null } }]
+        : [{ regionSlug: place.slug }]
+    default:
+      return []
+  }
+}
+
+/**
+ * A marz also means the towns and corridors inside it.
+ *
+ * Almost nobody stores `{slug: 'kotayk', type: 'region'}`; they list Աբովյան
+ * and Հրազդան. See `declaresArea` for the full reasoning — this is the same
+ * widening `buildWhere` applies to the public region page.
+ */
+function regionWidening(place: DispatchPlace): Prisma.TowTruckWhereInput[] {
+  if (place.type !== 'region') return []
+
+  if (place.slug === YEREVAN_REGION_SLUG) {
+    // No shared slug to expand into: any district service area is Yerevan.
+    return [{ serviceAreas: { array_contains: [{ type: 'district' }] } }]
+  }
+
+  return [
+    ...(place.regionCitySlugs ?? []).map((slug) => ({
+      serviceAreas: { array_contains: [{ slug, type: 'city' }] },
+    })),
+    ...(place.regionZoneSlugs ?? []).map((slug) => ({
+      serviceAreas: { array_contains: [{ slug, type: 'route' }] },
+    })),
+  ]
 }

@@ -36,6 +36,8 @@ export class DispatchController {
     @Query('name') name: string,
     @Query('type') type: string,
     @Query('filter') filter?: string,
+    @Query('regionCities') regionCities?: string,
+    @Query('regionZones') regionZones?: string,
   ): Promise<DispatchCandidatesApi> {
     const locationType = DISPATCH_LOCATION_TYPES.includes(type as DispatchLocationType)
       ? (type as DispatchLocationType)
@@ -45,7 +47,13 @@ export class DispatchController {
       : 'all'
 
     return this.dispatch.listCandidates(
-      { slug: slug ?? '', name: name ?? '', type: locationType },
+      {
+        slug: slug ?? '',
+        name: name ?? '',
+        type: locationType,
+        regionCitySlugs: slugList(regionCities),
+        regionZoneSlugs: slugList(regionZones),
+      },
       chosen,
     )
   }
@@ -65,4 +73,24 @@ export class DispatchController {
   ): Promise<DispatchReferralApi> {
     return this.dispatch.recordReferral(dto, request.adminUserId as number)
   }
+}
+
+/**
+ * A comma-separated slug list from the query string.
+ *
+ * Same wire format and same reason as `regionCities` on `ListTowTrucksQuery`:
+ * the marz's own towns and corridors, sent because this backend has no
+ * geography to expand a marz with. Parsed here rather than by a DTO for the
+ * reason the controller already gives about its other query parameters — a
+ * GET's query is not covered by the global ValidationPipe's body handling.
+ *
+ * Empty and absent are the same thing, and only ever produce a narrower
+ * result: a marz with no expansion still matches drivers based in it.
+ */
+function slugList(value?: string): string[] {
+  if (!value) return []
+  return value
+    .split(',')
+    .map((slug) => slug.trim())
+    .filter(Boolean)
 }

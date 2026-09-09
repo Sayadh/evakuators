@@ -656,13 +656,36 @@ export const adminRepository = {
    * taxonomy is static TypeScript on both sides, so there is nothing for the
    * server to resolve an id against, and the name is what gets stored on the
    * referral so a later rename cannot rewrite history.
+   *
+   * A marz travels with its own towns and corridors for the same reason the
+   * public region listing sends them (`towTruckRepository.getByRegion`): the
+   * backend has no geography, and almost no driver stores a marz — they list
+   * its towns. Without the expansion, asking for Կոտայք returns only the few
+   * who ticked the marz itself. Yerevan needs none: it is handled server-side,
+   * since its "cities" are districts with no shared slug to expand into.
    */
   listDispatchCandidates(
-    place: { slug: string; name: string; type: string },
+    place: {
+      slug: string
+      name: string
+      type: string
+      /** Set only for a marz — see the note above. Structurally a `DispatchPlace`. */
+      regionCitySlugs?: readonly string[]
+      regionZoneSlugs?: readonly string[]
+    },
     filter: DispatchFilter = 'all',
   ): Promise<DispatchCandidates> {
     return apiFetch<DispatchCandidates>('/admin/dispatch/candidates', {
-      query: { slug: place.slug, name: place.name, type: place.type, filter },
+      query: {
+        slug: place.slug,
+        name: place.name,
+        type: place.type,
+        filter,
+        ...(place.regionCitySlugs?.length
+          ? { regionCities: place.regionCitySlugs.join(',') }
+          : {}),
+        ...(place.regionZoneSlugs?.length ? { regionZones: place.regionZoneSlugs.join(',') } : {}),
+      },
       headers: authHeader(),
     })
   },

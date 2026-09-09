@@ -1,3 +1,4 @@
+import { getRegionCitySlugs, getRegionServiceZoneSlugs } from '~/utils/geography'
 import {
   needsRegionLabel,
   searchLocations,
@@ -17,6 +18,23 @@ export interface DispatchPlace {
   type: DispatchPlaceType
   /** Where it sits, for telling two same-named places apart in the list */
   context?: string
+
+  /**
+   * A marz's own towns and road corridors, carried with the place and sent to
+   * the backend, which has no geography to expand a marz with.
+   *
+   * It matters more than it looks: almost nobody stores
+   * `{slug: 'kotayk', type: 'region'}` in `serviceAreas` — a driver covering
+   * Կոտայք lists Աբովյան, Չարենցավան, Հրազդան. Without the expansion, asking
+   * for a marz returns only drivers whose base row names it, and misses
+   * everyone who described their coverage the normal way.
+   *
+   * Empty for everything that is not a marz, and empty for Yerevan: it is a
+   * pseudo-region whose "cities" are districts with no shared slug to expand
+   * into, so the server answers that one itself.
+   */
+  regionCitySlugs?: string[]
+  regionZoneSlugs?: string[]
 }
 
 /** How many suggestions the screen shows — more than this is a list nobody reads while talking */
@@ -70,12 +88,22 @@ function toDispatchPlace(
   result: LocationSearchResult,
   siblings: LocationSearchResult[],
 ): DispatchPlace {
-  return {
+  const place: DispatchPlace = {
     slug: result.match.slug,
     name: result.name,
     type: result.match.type,
     context: contextFor(result, siblings),
   }
+
+  if (place.type === 'region') {
+    // Yerevan yields nothing here on purpose: `findStaticRegion('yerevan')` is
+    // undefined, since it is a pseudo-region rather than one of the 10 marzes
+    // (see utils/geography.ts). Its coverage question is answered server-side.
+    place.regionCitySlugs = getRegionCitySlugs(place.slug)
+    place.regionZoneSlugs = getRegionServiceZoneSlugs(place.slug)
+  }
+
+  return place
 }
 
 /**

@@ -16,6 +16,15 @@ import {
 
 const ABOVYAN: DispatchPlace = { slug: 'abovyan', name: 'Աբովյան', type: 'city' }
 const ARABKIR: DispatchPlace = { slug: 'arabkir', name: 'Արաբկիր', type: 'district' }
+const YEREVAN: DispatchPlace = { slug: 'yerevan', name: 'Երևան', type: 'region' }
+/** A marz, with the expansion the frontend sends — this backend has no geography */
+const KOTAYK: DispatchPlace = {
+  slug: 'kotayk',
+  name: 'Կոտայք',
+  type: 'region',
+  regionCitySlugs: ['abovyan', 'hrazdan', 'charentsavan'],
+  regionZoneSlugs: ['garni-geghard'],
+}
 /** A road corridor. The caller says «Գառնի»; the taxonomy resolves it to this. */
 const GARNI_ROAD: DispatchPlace = { slug: 'garni-geghard', name: 'Գառնի', type: 'route' }
 
@@ -74,6 +83,65 @@ describe('dispatchTier', () => {
 
   it('still reaches a corridor through servesAllArmenia', () => {
     expect(dispatchTier(truck({ servesAllArmenia: true }), GARNI_ROAD)).toBe('nationwide')
+  })
+
+  it('finds Yerevan drivers, who have a district and NO regionSlug', () => {
+    // The bug this exists for: «Երևան» returned an empty screen for the city
+    // with the most drivers in it. Yerevan is a pseudo-region, so a truck based
+    // there stores `districtSlug` and an explicitly null `regionSlug` — and
+    // `regionSlug === 'yerevan'` matched nobody at all.
+    const inYerevan = truck({ regionSlug: null, districtSlug: 'arabkir' })
+    expect(dispatchTier(inYerevan, YEREVAN)).toBe('local')
+  })
+
+  it('counts a declared Yerevan district as serving Yerevan', () => {
+    const visitsYerevan = truck({
+      citySlug: 'abovyan',
+      regionSlug: 'kotayk',
+      serviceAreas: [{ slug: 'arabkir', type: 'district' }],
+    })
+    expect(dispatchTier(visitsYerevan, YEREVAN)).toBe('visiting')
+  })
+
+  it('does not sweep the whole country into Yerevan', () => {
+    const elsewhere = truck({ regionSlug: 'shirak', citySlug: 'gyumri' })
+    expect(dispatchTier(elsewhere, YEREVAN)).toBeNull()
+  })
+
+  it('counts a marz driver who listed its TOWNS, not the marz itself', () => {
+    // How coverage is actually stored: nobody writes «Կոտայք», they write
+    // Աբովյան and Հրազդան. Matching only the literal region row would find the
+    // handful of specialists who ticked the marz and none of the working
+    // drivers.
+    const listsTowns = truck({
+      regionSlug: 'shirak',
+      serviceAreas: [{ slug: 'abovyan', type: 'city' }],
+    })
+    expect(dispatchTier(listsTowns, KOTAYK)).toBe('visiting')
+  })
+
+  it('counts a corridor inside the marz as serving the marz', () => {
+    const onlyTheRoad = truck({
+      regionSlug: 'shirak',
+      serviceAreas: [{ slug: 'garni-geghard', type: 'route' }],
+    })
+    expect(dispatchTier(onlyTheRoad, KOTAYK)).toBe('visiting')
+  })
+
+  it('ignores a town that is not in the marz that was asked for', () => {
+    // The expansion is a list from the caller, so this is the case worth
+    // pinning: a city service area only counts when it is one of THIS marz's.
+    const otherMarzTown = truck({
+      regionSlug: 'shirak',
+      serviceAreas: [{ slug: 'gyumri', type: 'city' }],
+    })
+    expect(dispatchTier(otherMarzTown, KOTAYK)).toBeNull()
+  })
+
+  it('still matches a marz stored literally, expansion or not', () => {
+    const ticked = truck({ serviceAreas: [{ slug: 'kotayk', type: 'region' }] })
+    expect(dispatchTier(ticked, KOTAYK)).toBe('visiting')
+    expect(dispatchTier(ticked, { slug: 'kotayk', name: 'Կոտայք', type: 'region' })).toBe('visiting')
   })
 
   it('prefers `local` over `visiting` when the driver is both', () => {

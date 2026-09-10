@@ -138,5 +138,22 @@
     "yerevanText": "Tow trucks in all 12 administrative districts of Yerevan",
     "metaTitle": "Regions of Armenia | Tow trucks in every region",
     "metaDescription": "Choose your region and find the nearest tow truck. Service in all 10 regions of Armenia and in Yerevan."
+  },
+  "page": {
+    "faqTitle": "Frequently asked questions",
+    "regionH1": "Tow trucks in {place} region",
+    "cityH1": "Tow trucks in {place}",
+    "cities": "Towns",
+    "allInRegion": "All tow trucks in the region ({count})",
+    "otherRegions": "Other regions",
+    "seoRegionTitle": "Tow truck services in {place} region",
+    "regionDescription": "Tow truck services across {place} region: {towns} and the settlements around them.",
+    "inRegion": "in {place} region",
+    "inCity": "in {place}"
+  },
+  "crossLinks": {
+    "titleWithArea": "Heavy equipment {area}",
+    "titleGeneric": "Need heavy equipment?",
+    "intro": "This list is ordinary tow trucks. If you need a crane lift or heavy machinery moved, those drivers have their own pages:"
   }
 }

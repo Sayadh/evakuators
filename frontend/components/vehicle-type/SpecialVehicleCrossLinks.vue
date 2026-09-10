@@ -36,7 +36,7 @@ import { getVehicleTypeGeoRoute, getVehicleTypePageRoute } from '~/utils/routeHe
 const props = defineProps<{
   /** Where the visitor is, as a `VehicleTypeGeo` slug — a marz or `'yerevan'` */
   regionSlug?: string
-  /** «Կոտայքի մարզում» / «Երևանում», for the link text */
+  /** Already localised: «Կոտայքի մարզում» / «в марзе Котайк» / «in Kotayk region» */
   areaLabel?: string
 }>()
 
@@ -53,10 +53,18 @@ const links = computed(() =>
   })),
 )
 
+const { t } = useI18n()
+
+/**
+ * `areaLabel` arrives already localised — «Կոտայքի մարզում» / «в марзе Котайк»
+ * / «in Kotayk region». Composing it here would mean this component knowing
+ * whether it was handed a marz or Yerevan, which the caller knows and it does
+ * not. See `page.inRegion` / `page.inCity`.
+ */
 const title = computed(() =>
   props.areaLabel
-    ? `Հատուկ տեխնիկա ${props.areaLabel}`
-    : 'Ձեզ հատուկ տեխնիկա՞ է պետք',
+    ? t('crossLinks.titleWithArea', { area: props.areaLabel })
+    : t('crossLinks.titleGeneric'),
 )
 </script>
 
@@ -66,8 +74,7 @@ const title = computed(() =>
     <!-- Stated plainly, because it is the thing the visitor cannot see: these
          two types are not in the list above, by design. -->
     <p class="cross-links__intro">
-      Այս ցանկում սովորական էվակուատորներն են։ Կռունկով բարձրացում կամ ծանր տեխնիկայի տեղափոխում
-      պետք լինելու դեպքում այդ վարորդներն առանձին էջերում են՝
+      {{ t('crossLinks.intro') }}
     </p>
 
     <ul class="cross-links__list">

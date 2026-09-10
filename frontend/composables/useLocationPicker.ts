@@ -13,14 +13,17 @@ import { buildCityOptions, buildRegionOptions } from '~/utils/geography'
  * pickers per free-route form.
  */
 export function useLocationPicker() {
+  // The picker lists place names, so it follows the language being read
+  const { locale } = useI18n()
+
   const regionSlug = ref('')
   const citySlug = ref('')
 
   /** Set right before a programmatic setValue() so the watcher below doesn't clobber it */
   let suppressNextReset = false
 
-  const regionOptions = computed<SelectOption[]>(() => buildRegionOptions())
-  const cityOptions = computed<SelectOption[]>(() => buildCityOptions(regionSlug.value))
+  const regionOptions = computed<SelectOption[]>(() => buildRegionOptions(locale.value))
+  const cityOptions = computed<SelectOption[]>(() => buildCityOptions(regionSlug.value, locale.value))
 
   // User picking a new region always clears the city — normal interactive flow
   watch(regionSlug, () => {

@@ -7,14 +7,18 @@ interface Props {
   title?: string
 }
 
-const props = withDefaults(defineProps<Props>(), { title: 'Հաճախ տրվող հարցեր' })
+const { t } = useI18n()
+const props = withDefaults(defineProps<Props>(), { title: undefined })
+
+/** The heading is the same on every page that has an FAQ, so it defaults here */
+const heading = computed(() => props.title ?? t('page.faqTitle'))
 
 useJsonLd([buildFaqSchema(props.items)])
 </script>
 
 <template>
   <section class="faq" aria-labelledby="faq-title">
-    <h2 id="faq-title" class="faq__title">{{ title }}</h2>
+    <h2 id="faq-title" class="faq__title">{{ heading }}</h2>
     <details v-for="item in items" :key="item.question" class="faq__item">
       <summary class="faq__question">
         {{ item.question }}

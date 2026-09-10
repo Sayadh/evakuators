@@ -15,10 +15,13 @@ import { getCityRoute, getDistrictRoute, getRegionRoute, getYerevanRoute } from 
  * `GET /tow-trucks` calls.
  */
 export function useLocationSearch() {
+  // The picker lists place names, so it follows the language being read
+  const { locale } = useI18n()
+
   const locationStore = useLocationStore()
   const router = useRouter()
 
-  const regionOptions = computed<SelectOption[]>(() => buildRegionOptions())
+  const regionOptions = computed<SelectOption[]>(() => buildRegionOptions(locale.value))
 
   const selectedRegion = computed({
     get: () => locationStore.selectedRegionSlug,
@@ -34,7 +37,9 @@ export function useLocationSearch() {
    * Purely computed now — the previous async watcher existed only because the
    * lookups used to hit the network.
    */
-  const cityOptions = computed<SelectOption[]>(() => buildCityOptions(selectedRegion.value))
+  const cityOptions = computed<SelectOption[]>(() =>
+    buildCityOptions(selectedRegion.value, locale.value),
+  )
 
   /**
    * Kept for API compatibility with `LocationSearch.vue`, which shows a

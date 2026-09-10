@@ -1,4 +1,5 @@
 import { SITE_NAME, SITE_TAGLINE } from '~/constants/site'
+import { localizedPlaceName } from '~/i18n/placeNames'
 
 /**
  * SEO keyword strategy.
@@ -36,9 +37,41 @@ export interface LocationSeo {
   keywords: string
 }
 
-/** City / Yerevan district pages — the main SEO landing pages */
-export function buildLocationSeo(nameHy: string, slug: string): LocationSeo {
+/**
+ * City / Yerevan district pages — the main SEO landing pages.
+ *
+ * ## Why the Russian title says «Эвакуатор Ереван» and not «в Ереване»
+ *
+ * Two reasons, and they point the same way. It is what people type: a search
+ * is «эвакуатор ереван», in the nominative, and a title that matches the query
+ * word for word is the one that gets the click. And it is what avoids getting
+ * the grammar wrong: «в» takes the prepositional case, which declines
+ * differently for every name — Абовян → Абовяне, Гюмри → Гюмри, Ванадзор →
+ * Ванадзоре — and 46 hand-declined forms would be 46 chances to print
+ * something that reads as machine-translated.
+ *
+ * Where the body text does need a preposition it uses «в городе X», which is
+ * grammatical with the nominative and correct for every name.
+ */
+export function buildLocationSeo(nameHy: string, slug: string, locale = 'hy'): LocationSeo {
   const translit = translitFromSlug(slug)
+  const name = localizedPlaceName('city', slug, nameHy, locale)
+
+  if (locale === 'ru') {
+    return {
+      title: `Эвакуатор ${name} · Evakuator ${translit} · 24/7 | ${SITE_NAME}`,
+      description: `Эвакуатор в городе ${name} (evakuator ${translit}) круглосуточно. Недорогой эвакуатор, ночные вызовы, перевозка аварийных и неисправных машин. Реальные фотографии, цены, прямая связь с водителем.`,
+      keywords: [...BASE_KEYWORDS, `эвакуатор ${name}`, `evakuator ${translit}`].join(', '),
+    }
+  }
+
+  if (locale === 'en') {
+    return {
+      title: `Tow truck in ${name} · Evakuator ${translit} · 24/7 | ${SITE_NAME}`,
+      description: `Tow truck in ${name} (evakuator ${translit}), around the clock. Affordable rates, night call-outs, transport of damaged and non-running vehicles. Real photos, prices, and the driver's own number.`,
+      keywords: [...BASE_KEYWORDS, `tow truck ${name}`, `evakuator ${translit}`].join(', '),
+    }
+  }
 
   return {
     title: `Էվակուատոր ${nameHy}ում · Evakuator ${translit} · 24/7 | ${SITE_NAME}`,
@@ -53,8 +86,25 @@ export function buildLocationSeo(nameHy: string, slug: string): LocationSeo {
   }
 }
 
-export function buildRegionSeo(regionNameHy: string, slug: string): LocationSeo {
+export function buildRegionSeo(regionNameHy: string, slug: string, locale = 'hy'): LocationSeo {
   const translit = translitFromSlug(slug)
+  const name = localizedPlaceName('region', slug, regionNameHy, locale)
+
+  if (locale === 'ru') {
+    return {
+      title: `Эвакуатор ${name} · Evakuator ${translit} · 24/7 | ${SITE_NAME}`,
+      description: `Эвакуатор в марзе ${name} (evakuator ${translit}) круглосуточно. Все эвакуаторы марза, цены и фотографии — позвоните водителю напрямую.`,
+      keywords: [...BASE_KEYWORDS, `эвакуатор ${name}`, `evakuator ${translit}`].join(', '),
+    }
+  }
+
+  if (locale === 'en') {
+    return {
+      title: `Tow truck in ${name} · Evakuator ${translit} · 24/7 | ${SITE_NAME}`,
+      description: `Tow trucks in ${name} region (evakuator ${translit}), around the clock. Every truck in the region, with prices and photos — call the driver directly.`,
+      keywords: [...BASE_KEYWORDS, `tow truck ${name}`, `evakuator ${translit}`].join(', '),
+    }
+  }
 
   return {
     title: `Էվակուատոր ${regionNameHy}ի մարզում · Evakuator ${translit} · 24/7 | ${SITE_NAME}`,
@@ -122,7 +172,18 @@ export function buildHomeParagraphs(): string[] {
  * Visible bilingual paragraph for SeoTextSection — lets Google match
  * transliterated queries against real on-page content, without keyword stuffing.
  */
-export function buildTranslitParagraph(nameHy: string, slug: string): string {
+export function buildTranslitParagraph(nameHy: string, slug: string, locale = 'hy'): string {
   const translit = translitFromSlug(slug)
+
+  if (locale === 'ru') {
+    const name = localizedPlaceName('city', slug, nameHy, locale)
+    return `Evakuator ${translit} — услуги эвакуатора в городе ${name} в любое время, включая ночные вызовы (evakuator 24 jam). Доступные цены (ejan evakuator), эвакуатор с манипулятором для тяжёлых машин, новые водители, быстрый приезд и прямая связь с водителем — без посредников.`
+  }
+
+  if (locale === 'en') {
+    const name = localizedPlaceName('city', slug, nameHy, locale)
+    return `Evakuator ${translit} — tow truck service in ${name} at any hour, night call-outs included (evakuator 24 jam). Affordable rates (ejan evakuator), a crane-equipped truck for heavy vehicles, newly listed drivers, fast arrival, and the driver's own number — no middleman.`
+  }
+
   return `Evakuator ${translit} — էվակուատորի ծառայություն ${nameHy}ում ցանկացած ժամի՝ ներառյալ գիշերային կանչերը (evakuator 24 jam)։ Մատչելի գներ (ejan evakuator), մանիպուլյատորով էվակուատոր տարբերակ ծանր մեքենաների համար, նոր վարորդներ, արագ ժամանում և ուղիղ կապ վարորդի հետ՝ առանց միջնորդների։`
 }

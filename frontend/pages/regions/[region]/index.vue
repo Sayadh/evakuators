@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { getRegionCities } from '~/utils/geography'
 import { buildRegionFaq } from '~/utils/faqContent'
 import { getRegionRoute } from '~/utils/routeHelpers'
 import { buildRegionSeo, buildTranslitParagraph } from '~/utils/seoContent'
@@ -19,11 +20,37 @@ const { data: nearbyRegions } = useNearbyRegions(regionSlug)
 const { forRegion } = useBreadcrumbs()
 const breadcrumbs = forRegion(region.value)
 
-const faqItems = buildRegionFaq(region.value.name)
-const seoParagraphs = [buildTranslitParagraph(region.value.name, regionSlug)]
+const { t, locale } = useI18n()
+const placeName = usePlaceName()
+const plural = usePlural()
+
+/** The marz's own name, in the language being read */
+const regionName = computed(() => placeName('region', regionSlug, region.value?.name ?? ''))
+
+const faqItems = buildRegionFaq(region.value.name, locale.value, regionSlug)
+const seoParagraphs = [buildTranslitParagraph(region.value.name, regionSlug, locale.value)]
+
+/**
+ * The marz blurb under the heading.
+ *
+ * Armenian keeps the hand-written sentence from `data/regions.ts`. The other
+ * two are composed from the marz's own towns rather than hand-written twenty
+ * more times — the Armenian original is that same list in a sentence, so
+ * composing it keeps all three saying the same thing when a town is added.
+ */
+const regionDescription = computed(() => {
+  if (locale.value === 'hy') return region.value?.description ?? ''
+
+  const towns = getRegionCities(regionSlug)
+    .slice(0, 3)
+    .map((city) => placeName('city', city.slug, city.name))
+    .join(', ')
+
+  return t('page.regionDescription', { place: regionName.value, towns })
+})
 
 useSeoMetaData({
-  ...buildRegionSeo(region.value.name, regionSlug),
+  ...buildRegionSeo(region.value.name, regionSlug, locale.value),
   path: getRegionRoute(regionSlug),
 })
 </script>
@@ -33,14 +60,14 @@ useSeoMetaData({
     <AppBreadcrumbs :items="breadcrumbs" />
 
     <header class="region-page__header">
-      <h1>Էվակուատորներ {{ region.name }}ի մարզում</h1>
-      <p class="region-page__description">{{ region.description }}</p>
+      <h1>{{ t('page.regionH1', { place: regionName }) }}</h1>
+      <p class="region-page__description">{{ regionDescription }}</p>
       <div class="region-page__stats">
         <AppBadge variant="primary">
-          <AppIcon name="map-pin" :size="14" /> {{ region.cityCount }} քաղաք
+          <AppIcon name="map-pin" :size="14" /> {{ plural('card.cities', region.cityCount) }}
         </AppBadge>
         <AppBadge variant="accent">
-          <AppIcon name="truck" :size="14" /> {{ region.towTruckCount }} էվակուատոր
+          <AppIcon name="truck" :size="14" /> {{ plural('card.towTrucks', region.towTruckCount) }}
         </AppBadge>
       </div>
     </header>
@@ -54,7 +81,7 @@ useSeoMetaData({
     <DispatchCallCta variant="banner" class="region-page__dispatch" />
 
     <section aria-labelledby="cities-title" class="region-page__section">
-      <h2 id="cities-title">Քաղաքներ</h2>
+      <h2 id="cities-title">{{ t('page.cities') }}</h2>
       <div v-if="citiesPending" class="card-grid">
         <LoadingSkeleton variant="card" :count="4" />
       </div>
@@ -65,17 +92,17 @@ useSeoMetaData({
 
     <section aria-labelledby="region-trucks-title" class="region-page__section">
       <h2 id="region-trucks-title">
-        Բոլոր էվակուատորները մարզում ({{ towTrucks.length }})
+        {{ t('page.allInRegion', { count: towTrucks.length }) }}
       </h2>
       <TowTruckList :tow-trucks="towTrucks" :pending="towTrucksPending" :skeleton-count="6" />
     </section>
 
     <section v-if="nearbyRegions.length > 0" class="region-page__section">
-      <h2>Այլ մարզեր</h2>
+      <h2>{{ t('page.otherRegions') }}</h2>
       <ul class="region-page__nearby">
         <li v-for="nearby in nearbyRegions" :key="nearby.slug">
           <NuxtLinkLocale :to="getRegionRoute(nearby.slug)" class="region-page__nearby-link">
-            <AppIcon name="map-pin" :size="14" /> {{ nearby.name }}
+            <AppIcon name="map-pin" :size="14" /> {{ placeName('region', nearby.slug, nearby.name) }}
           </NuxtLinkLocale>
         </li>
       </ul>
@@ -84,14 +111,14 @@ useSeoMetaData({
     <FaqSection :items="faqItems" class="region-page__section" />
 
     <SeoTextSection
-      :title="`Էվակուատորի ծառայություններ ${region.name}ի մարզում`"
+      :title="t('page.seoRegionTitle', { place: regionName })"
       :paragraphs="seoParagraphs"
       class="region-page__section"
     />
 
     <SpecialVehicleCrossLinks
       :region-slug="region.slug"
-      :area-label="`${region.name}ի մարզում`"
+      :area-label="t('page.inRegion', { place: regionName })"
       class="region-page__section"
     />
   </div>

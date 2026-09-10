@@ -5,6 +5,7 @@ import { staticServiceZones } from '~/data/serviceZones'
 import type { SelectOption } from '~/types/common'
 import { LocationType } from '~/types/enums'
 import type { City, District, Region, ServiceZone } from '~/types/location'
+import { localizedPlaceName } from '~/i18n/placeNames'
 
 /**
  * Pure, synchronous geography lookups over `~/data/*` — **no tow truck data, no
@@ -202,11 +203,31 @@ export function cityOrDistrictLabel(slug: string): string {
  * registration form and the free-route picker — each fetching the whole tow truck
  * list to get labels. One implementation, no requests.
  */
-export function buildRegionOptions(): SelectOption[] {
+export function buildRegionOptions(locale = 'hy'): SelectOption[] {
   return [
-    { value: YEREVAN_REGION_SLUG, label: YEREVAN_LABEL },
-    ...staticRegions.map((region) => ({ value: region.slug, label: region.name })),
+    {
+      value: YEREVAN_REGION_SLUG,
+      label: localizedPlaceName('region', YEREVAN_REGION_SLUG, YEREVAN_LABEL, locale),
+    },
+    ...staticRegions.map((region) => ({
+      value: region.slug,
+      label: localizedPlaceName('region', region.slug, region.name, locale),
+    })),
   ]
+}
+
+/**
+ * «(ուղղություն)» after a road corridor, in the language being read.
+ *
+ * The marker is what stops «Գառնի–Գեղարդ» reading as a town in a flat
+ * `<select>`, so it has to be translated with the names — a Russian list with
+ * «Гарни–Гегард (ուղղություն)» in it announces that the translation stopped
+ * halfway.
+ */
+function zoneLabel(locale: string): string {
+  if (locale === 'ru') return 'направление'
+  if (locale === 'en') return 'route'
+  return SERVICE_ZONE_LABEL
 }
 
 /**
@@ -219,17 +240,23 @@ export function buildRegionOptions(): SelectOption[] {
  * coverage picker, which renders zones as their own sub-group) builds it from
  * `getRegionServiceZones()` directly instead.
  */
-export function buildCityOptions(regionSlug: string): SelectOption[] {
+export function buildCityOptions(regionSlug: string, locale = 'hy'): SelectOption[] {
   if (!regionSlug) return []
 
   if (regionSlug === YEREVAN_REGION_SLUG) {
-    return staticDistricts.map((district) => ({ value: district.slug, label: district.name }))
+    return staticDistricts.map((district) => ({
+      value: district.slug,
+      label: localizedPlaceName('district', district.slug, district.name, locale),
+    }))
   }
   return [
-    ...getRegionCities(regionSlug).map((city) => ({ value: city.slug, label: city.name })),
+    ...getRegionCities(regionSlug).map((city) => ({
+      value: city.slug,
+      label: localizedPlaceName('city', city.slug, city.name, locale),
+    })),
     ...getRegionServiceZones(regionSlug).map((zone) => ({
       value: zone.slug,
-      label: `${zone.name} (${SERVICE_ZONE_LABEL})`,
+      label: `${localizedPlaceName('zone', zone.slug, zone.name, locale)} (${zoneLabel(locale)})`,
     })),
   ]
 }

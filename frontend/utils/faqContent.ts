@@ -1,4 +1,5 @@
 import type { FaqItem } from '~/types/common'
+import { localizedPlaceName } from '~/i18n/placeNames'
 
 /** Homepage-only FAQ — targets the exact query variants people search on Google */
 export function buildHomeFaq(): FaqItem[] {
@@ -88,7 +89,63 @@ export function buildFreeRoutesFaq(): FaqItem[] {
   ]
 }
 
-export function buildCityFaq(cityName: string): FaqItem[] {
+/**
+ * The city page's FAQ.
+ *
+ * Written per language rather than translated field by field, because the
+ * grammar differs where the name goes: Armenian takes a locative suffix
+ * («Աբովյանում»), Russian a preposition and a case («в городе Абовян», kept in
+ * the nominative on purpose — see `buildLocationSeo`), English neither.
+ *
+ * It is also real SEO copy, not chrome: this block is what a search engine
+ * reads to match «сколько стоит эвакуатор ереван», so it has to be written in
+ * the language rather than converted into it.
+ */
+export function buildCityFaq(cityName: string, locale = 'hy', slug?: string): FaqItem[] {
+  const name = slug ? localizedPlaceName('city', slug, cityName, locale) : cityName
+
+  if (locale === 'ru') {
+    return [
+      {
+        question: `Сколько стоит вызвать эвакуатор в городе ${name}`,
+        answer: `Вызов эвакуатора в городе ${name} обычно начинается от 9 000 – 15 000 драмов. Итоговая цена зависит от типа машины, её состояния и расстояния. У водителей, указавших цену, стартовая стоимость видна прямо на карточке.`,
+      },
+      {
+        question: `За сколько приезжает эвакуатор в городе ${name}`,
+        answer: 'В черте города эвакуаторы обычно приезжают за 20–40 минут. Точное время уточните у водителя во время звонка.',
+      },
+      {
+        question: `Есть ли эвакуаторы, работающие 24/7, в городе ${name}`,
+        answer: 'Да. Водители с отметкой 24/7 работают круглосуточно, включая ночные часы и праздничные дни. Включите фильтр «Работает 24/7», чтобы видеть только их.',
+      },
+      {
+        question: 'Как выбрать подходящий эвакуатор',
+        answer: 'Обратите внимание на грузоподъёмность машины и список услуг. Для внедорожника или грузовика выбирайте эвакуатор с соответствующей грузоподъёмностью.',
+      },
+    ]
+  }
+
+  if (locale === 'en') {
+    return [
+      {
+        question: `How much does a tow truck cost in ${name}`,
+        answer: `A call-out in ${name} usually starts at 9,000–15,000 AMD. The final price depends on the type and condition of the vehicle and on the distance. Drivers who have set a price show their starting rate on the card itself.`,
+      },
+      {
+        question: `How quickly does a tow truck arrive in ${name}`,
+        answer: 'Within the town, trucks usually arrive in 20–40 minutes. Confirm the exact time with the driver on the call.',
+      },
+      {
+        question: `Are there tow trucks working 24/7 in ${name}`,
+        answer: 'Yes. Drivers marked 24/7 work around the clock, including nights and public holidays. Use the "Open 24/7" filter to see only those.',
+      },
+      {
+        question: 'How do I choose the right tow truck',
+        answer: 'Look at the load capacity and the list of services. For an SUV or a van, pick a truck rated for the weight.',
+      },
+    ]
+  }
+
   return [
     {
       question: `Ինչքա՞ն արժե էվակուատոր կանչելը ${cityName}ում`,
@@ -110,7 +167,43 @@ export function buildCityFaq(cityName: string): FaqItem[] {
   ]
 }
 
-export function buildRegionFaq(regionName: string): FaqItem[] {
+export function buildRegionFaq(regionName: string, locale = 'hy', slug?: string): FaqItem[] {
+  const name = slug ? localizedPlaceName('region', slug, regionName, locale) : regionName
+
+  if (locale === 'ru') {
+    return [
+      {
+        question: `Как найти эвакуатор в марзе ${name}`,
+        answer: 'Выберите свой город из списка, посмотрите доступные эвакуаторы, сравните цены и позвоните водителю напрямую.',
+      },
+      {
+        question: `Работают ли эвакуаторы в сёлах марза ${name}`,
+        answer: 'Да, большинство водителей обслуживает и сёла марза, и междугородние трассы. Проверьте раздел «Обслуживаемые районы» на странице водителя.',
+      },
+      {
+        question: 'Возможна ли перевозка между марзами',
+        answer: 'Да. Водители с услугой «Междугородняя перевозка» перевозят машины из марза в марз, включая Ереван. Цена считается по километражу.',
+      },
+    ]
+  }
+
+  if (locale === 'en') {
+    return [
+      {
+        question: `How do I find a tow truck in ${name} region`,
+        answer: 'Pick your town from the list, look through the trucks available, compare the prices and call the driver directly.',
+      },
+      {
+        question: `Do tow trucks serve the villages of ${name}`,
+        answer: 'Yes — most drivers cover the region\'s villages and its intercity roads as well. Check the "Areas served" section on the driver\'s page.',
+      },
+      {
+        question: 'Is transport between regions possible',
+        answer: 'Yes. Drivers offering "Intercity transport" move vehicles from one region to another, Yerevan included. The price is worked out by distance.',
+      },
+    ]
+  }
+
   return [
     {
       question: `Ինչպե՞ս գտնել էվակուատոր ${regionName}ի մարզում`,

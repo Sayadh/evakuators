@@ -30,13 +30,13 @@ const faqItems = buildAllRegionsFaq()
          be the first thing read on a page whose job is to show drivers. -->
     <DispatchCallCta variant="banner" class="regions-page__dispatch" />
 
-    <NuxtLink :to="getYerevanRoute()" class="regions-page__yerevan">
+    <NuxtLinkLocale :to="getYerevanRoute()" class="regions-page__yerevan">
       <div>
         <h2>Երևան</h2>
         <p>Դիտեք Երևանի բոլոր 12 վարչական շրջանների էվակուատորները</p>
       </div>
       <AppIcon name="arrow-right" :size="24" />
-    </NuxtLink>
+    </NuxtLinkLocale>
 
     <div v-if="pending" class="card-grid regions-page__grid">
       <LoadingSkeleton variant="card" :count="10" />

@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { LOGIN_LINK, NAV_LINKS, REGISTER_LINK } from '~/constants/navigation'
 
+/** Header, drawer and footer all render the same link list — see NavLink.labelKey */
+const { t } = useI18n()
+
 const isMobileMenuOpen = ref(false)
 
 const route = useRoute()
@@ -15,14 +18,14 @@ watch(
 <template>
   <header class="header">
     <div class="container header__inner">
-      <NuxtLink to="/" class="header__logo" aria-label="Evakuators.am — գլխավոր էջ">
+      <NuxtLinkLocale to="/" class="header__logo" :aria-label="t('a11y.homeLink')">
         <img src="/evakuators-logo-light-bg.svg" alt="Evakuators.am" class="header__logo-img">
-      </NuxtLink>
+      </NuxtLinkLocale>
 
-      <nav class="header__nav" aria-label="Հիմնական նավիգացիա">
-        <NuxtLink v-for="link in NAV_LINKS" :key="link.to" :to="link.to" class="header__link">
-          {{ link.label }}
-        </NuxtLink>
+      <nav class="header__nav" :aria-label="t('a11y.mainNav')">
+        <NuxtLinkLocale v-for="link in NAV_LINKS" :key="link.to" :to="link.to" class="header__link">
+          {{ t(link.labelKey) }}
+        </NuxtLinkLocale>
       </nav>
 
       <div class="header__actions">
@@ -30,19 +33,20 @@ watch(
              one thing on the site a stranded customer needs from every page,
              but the header already has an accent button and a second one would
              leave neither reading as primary. See DispatchCallCta.vue. -->
+        <LanguageSwitcher class="header__lang" />
         <DispatchCallCta variant="header" />
         <!-- The way back IN, next to the way to sign UP. A driver whose profile
              is the thing they pay for had no link to it from anywhere on the
              site; the register button had been there all along. Quiet on
              purpose — signing up is the one the site is asking for. -->
-        <NuxtLink :to="LOGIN_LINK.to" class="header__login">{{ LOGIN_LINK.label }}</NuxtLink>
+        <NuxtLinkLocale :to="LOGIN_LINK.to" class="header__login">{{ t(LOGIN_LINK.labelKey) }}</NuxtLinkLocale>
         <AppButton :to="REGISTER_LINK.to" variant="accent" size="sm" class="header__register">
-          {{ REGISTER_LINK.label }}
+          {{ t(REGISTER_LINK.labelKey) }}
         </AppButton>
         <button
           type="button"
           class="header__burger"
-          aria-label="Բացել մենյուն"
+          :aria-label="t('a11y.openMenu')"
           :aria-expanded="isMobileMenuOpen"
           @click="isMobileMenuOpen = true"
         >

@@ -222,9 +222,9 @@ function onOverlayClick(): void {
                    driver who has filled in a 40-field registration form and
                    follows a same-tab link loses all of it. `rel="noopener"`
                    because every new-tab link on this site carries it. -->
-              <NuxtLink to="/privacy" target="_blank" rel="noopener" class="consent__link">
+              <NuxtLinkLocale to="/privacy" target="_blank" rel="noopener" class="consent__link">
                 {{ PRIVACY_CONSENT_POLICY_LINK_LABEL }}
-              </NuxtLink>{{ PRIVACY_CONSENT_POLICY_SENTENCE_AFTER }}
+              </NuxtLinkLocale>{{ PRIVACY_CONSENT_POLICY_SENTENCE_AFTER }}
             </p>
           </div>
 

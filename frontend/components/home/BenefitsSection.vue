@@ -1,42 +1,45 @@
 <script setup lang="ts">
 import type { IconName } from '~/components/common/AppIcon.vue'
 
+/** Static copy lives in i18n/locales — see nuxt.config's i18n block */
+const { t } = useI18n()
+
 interface Benefit {
   icon: IconName
-  title: string
-  description: string
+  titleKey: string
+  textKey: string
 }
 
 const BENEFITS: Benefit[] = [
   {
     icon: 'map',
-    title: 'Ամբողջ Հայաստանում',
-    description: 'Ծառայություններ բոլոր մարզերում և Երևանի բոլոր վարչական շրջաններում։',
+    titleKey: 'home.benefitCountryTitle',
+    textKey: 'home.benefitCountryText',
   },
   {
     icon: 'phone',
-    title: 'Ուղիղ կապ վարորդի հետ',
-    description: 'Զանգահարեք անմիջապես վարորդին՝ առանց միջնորդների և հավելյալ վճարների։',
+    titleKey: 'home.benefitDirectTitle',
+    textKey: 'home.benefitDirectText',
   },
   {
     icon: 'image',
-    title: 'Իրական նկարներ',
-    description: 'Տեսեք էվակուատորի իրական նկարները նախքան զանգելը։',
+    titleKey: 'home.benefitPhotosTitle',
+    textKey: 'home.benefitPhotosText',
   },
   {
     icon: 'clock',
-    title: '24/7 ծառայություններ',
-    description: 'Գիշեր թե ցերեկ՝ միշտ կգտնեք շուրջօրյա աշխատող էվակուատոր։',
+    titleKey: 'home.benefitHoursTitle',
+    textKey: 'home.benefitHoursText',
   },
   {
     icon: 'search',
-    title: 'Պարզ որոնում',
-    description: 'Որոնեք ըստ մարզի, քաղաքի, ծառայության տեսակի և բեռնատարողության։',
+    titleKey: 'home.benefitSearchTitle',
+    textKey: 'home.benefitSearchText',
   },
   {
     icon: 'check',
-    title: 'Անվճար օգտագործում',
-    description: 'Էվակուատոր փնտրելը և վարորդին զանգելը ամբողջությամբ անվճար է։',
+    titleKey: 'home.benefitFreeTitle',
+    textKey: 'home.benefitFreeText',
   },
 ]
 </script>
@@ -44,12 +47,12 @@ const BENEFITS: Benefit[] = [
 <template>
   <section class="benefits section" aria-labelledby="benefits-title">
     <div class="container">
-      <h2 id="benefits-title" class="section-title">Ինչու՞ Evakuators.am</h2>
+      <h2 id="benefits-title" class="section-title">{{ t('home.whyTitle') }}</h2>
       <div class="benefits__grid">
-        <article v-for="benefit in BENEFITS" :key="benefit.title" class="benefits__item">
+        <article v-for="benefit in BENEFITS" :key="benefit.titleKey" class="benefits__item">
           <AppIcon :name="benefit.icon" :size="24" class="benefits__icon" />
-          <h3 class="benefits__item-title">{{ benefit.title }}</h3>
-          <p class="benefits__item-text">{{ benefit.description }}</p>
+          <h3 class="benefits__item-title">{{ t(benefit.titleKey) }}</h3>
+          <p class="benefits__item-text">{{ t(benefit.textKey) }}</p>
         </article>
       </div>
     </div>

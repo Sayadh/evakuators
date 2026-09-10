@@ -110,7 +110,11 @@ describe('the policy link cannot cost a driver their form', () => {
   it('opens /privacy in a new tab', () => {
     // Load-bearing, not a style choice: a driver who has filled in a 40-field
     // registration form and follows a same-tab link loses all of it.
-    const link = dialog.slice(dialog.indexOf('<NuxtLink to="/privacy"'))
+    // `NuxtLinkLocale`, not `NuxtLink`: a Russian or English visitor must land
+    // on the policy in the language they are reading, and a plain NuxtLink
+    // would drop the /ru or /en prefix. Same reasoning site-wide — see the
+    // i18n block in nuxt.config.ts.
+    const link = dialog.slice(dialog.indexOf('<NuxtLinkLocale to="/privacy"'))
     expect(link).toContain('target="_blank"')
     expect(link).toContain('rel="noopener"')
   })

@@ -26,7 +26,7 @@ function onPhoneClick(): void {
 
 <template>
   <article class="route-card">
-    <NuxtLink :to="getTowTruckRoute(route.driver.slug)" class="route-card__link">
+    <NuxtLinkLocale :to="getTowTruckRoute(route.driver.slug)" class="route-card__link">
       <div class="route-card__path">
         <span class="route-card__place">
           <AppIcon name="map-pin" :size="15" />
@@ -51,7 +51,7 @@ function onPhoneClick(): void {
         <span>{{ route.driver.name }}</span>
         <span class="route-card__vehicle">· {{ vehicleLabel }}</span>
       </div>
-    </NuxtLink>
+    </NuxtLinkLocale>
 
     <a :href="phoneHref" class="route-card__call" @click="onPhoneClick">
       <AppIcon name="phone" :size="18" />

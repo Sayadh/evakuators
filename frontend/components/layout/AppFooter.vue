@@ -11,6 +11,9 @@ import {
 import { getPhoneHref, getTelegramPhoneUrl } from '~/utils/formatPhone'
 import { getStaticDistricts, getStaticRegions } from '~/utils/geography'
 
+/** Footer links come from the shared NavLink list, keyed rather than labelled */
+const { t } = useI18n()
+
 /**
  * The footer renders only names and links, so it reads static geography directly
  * — no network at all.
@@ -41,9 +44,9 @@ const cookieConsent = useCookieConsentStore()
     <div class="container">
       <div class="footer__grid">
         <div class="footer__about">
-          <NuxtLink to="/" class="footer__logo">
+          <NuxtLinkLocale to="/" class="footer__logo">
             <img src="/evakuators-logo.svg" alt="Evakuators.am" class="footer__logo-img">
-          </NuxtLink>
+          </NuxtLinkLocale>
           <p class="footer__description">{{ SITE_DESCRIPTION }}</p>
           <p class="footer__contacts">
             <a :href="getPhoneHref(CONTACT_PHONE)" class="footer__contact-link">
@@ -58,7 +61,7 @@ const cookieConsent = useCookieConsentStore()
               <AppIcon name="telegram" :size="16" /> {{ CONTACT_PHONE }}
             </a>
           </p>
-          <ul v-if="SOCIAL_LINKS.length" class="footer__social" aria-label="Սոցիալական ցանցեր">
+          <ul v-if="SOCIAL_LINKS.length" class="footer__social" :aria-label="t('a11y.social')">
             <li v-for="social in SOCIAL_LINKS" :key="social.url">
               <a
                 :href="social.url"
@@ -79,7 +82,7 @@ const cookieConsent = useCookieConsentStore()
              vehicle-type pages took their places, and `/regions` is the entry
              point to every marz and city page — most of the site. This is the
              site-wide link that keeps both hubs reachable and crawlable. -->
-        <nav aria-label="Մարզեր">
+        <nav :aria-label="t('a11y.regionsNav')">
           <!--
             `:open="isWideFooter"` rather than a CSS-only override: a closed
             `<details>` hides its non-`<summary>` content through a mechanism
@@ -105,35 +108,35 @@ const cookieConsent = useCookieConsentStore()
           -->
           <details class="footer__col" :open="isWideFooter">
             <summary class="footer__heading">
-              <NuxtLink :to="getRegionsRoute()">Մարզեր</NuxtLink>
+              <NuxtLinkLocale :to="getRegionsRoute()">{{ t('footer.regions') }}</NuxtLinkLocale>
             </summary>
             <ul class="footer__list">
               <li v-for="region in regions" :key="region.slug">
-                <NuxtLink :to="getRegionRoute(region.slug)">{{ region.name }}</NuxtLink>
+                <NuxtLinkLocale :to="getRegionRoute(region.slug)">{{ region.name }}</NuxtLinkLocale>
               </li>
             </ul>
           </details>
         </nav>
 
-        <nav aria-label="Երևանի շրջաններ">
+        <nav :aria-label="t('a11y.yerevanNav')">
           <details class="footer__col" :open="isWideFooter">
             <summary class="footer__heading">
-              <NuxtLink :to="getYerevanRoute()">Երևան</NuxtLink>
+              <NuxtLinkLocale :to="getYerevanRoute()">{{ t('footer.yerevan') }}</NuxtLinkLocale>
             </summary>
             <ul class="footer__list">
               <li v-for="district in districts" :key="district.slug">
-                <NuxtLink :to="getDistrictRoute(district.slug)">{{ district.name }}</NuxtLink>
+                <NuxtLinkLocale :to="getDistrictRoute(district.slug)">{{ district.name }}</NuxtLinkLocale>
               </li>
             </ul>
           </details>
         </nav>
 
-        <nav aria-label="Կայքի էջեր">
+        <nav :aria-label="t('a11y.sitePagesNav')">
           <details class="footer__col" :open="isWideFooter">
-            <summary class="footer__heading">Կայք</summary>
+            <summary class="footer__heading">{{ t('footer.site') }}</summary>
             <ul class="footer__list">
               <li v-for="page in FOOTER_PAGES" :key="page.to">
-                <NuxtLink :to="page.to">{{ page.label }}</NuxtLink>
+                <NuxtLinkLocale :to="page.to">{{ t(page.labelKey) }}</NuxtLinkLocale>
               </li>
             </ul>
           </details>
@@ -143,7 +146,7 @@ const cookieConsent = useCookieConsentStore()
       <div class="footer__bottom">
         <p>© {{ currentYear }} Evakuators.am</p>
         <button type="button" class="footer__cookie-settings" @click="cookieConsent.revisit()">
-          Cookie-ների կարգավորումներ
+          {{ t('footer.cookieSettings') }}
         </button>
       </div>
     </div>

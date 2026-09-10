@@ -1,7 +1,15 @@
 import { VEHICLE_TYPE_PAGE_LIST } from '~/constants/vehicleTypePages'
 
 export interface NavLink {
-  label: string
+  /**
+   * An i18n key, not a label.
+   *
+   * The link list has to be one list — the header, the drawer and the footer
+   * all read it — while the words it renders now exist in three languages. A
+   * `label` here would either be Armenian everywhere or a third copy of the
+   * translations sitting outside `i18n/locales/`, drifting from them.
+   */
+  labelKey: string
   to: string
 }
 
@@ -33,7 +41,7 @@ export const NAV_LINKS: NavLink[] = [
   // Stays here even while NEAREST_SEARCH_ENABLED is false. The link is how
   // visitors learn the feature is coming, and the page it leads to is written
   // as an announcement rather than an error — see constants/features.ts.
-  { label: 'Մոտակա էվակուատորներ', to: '/evakuator' },
+  { labelKey: 'nav.nearest', to: '/evakuator' },
 
   // These two replaced «Մարզեր» and «Երևան», which is a change of *question*,
   // not a reshuffle. Geography answers "where are you"; the site already knows
@@ -46,12 +54,18 @@ export const NAV_LINKS: NavLink[] = [
   // district on every page, and its two column HEADINGS now link to the hubs
   // themselves (`/regions`, `/yerevan`) — see AppFooter.vue. Both stay in the
   // sitemap.
-  ...VEHICLE_TYPE_PAGE_LIST.map((page) => ({ label: page.navLabel, to: `/${page.slug}` })),
+  // Keyed by slug rather than carrying `page.navLabel`: the label is the one
+  // part of these pages that has three versions, and it lives with the other
+  // translations instead of in the page definition.
+  ...VEHICLE_TYPE_PAGE_LIST.map((page) => ({
+    labelKey: `vehicleTypeNav.${page.slug}`,
+    to: `/${page.slug}`,
+  })),
 
-  { label: 'Ազատ երթուղիներ', to: '/free-routes' },
+  { labelKey: 'nav.freeRoutes', to: '/free-routes' },
 ]
 
-export const REGISTER_LINK: NavLink = { label: 'Գրանցել էվակուատոր', to: '/register' }
+export const REGISTER_LINK: NavLink = { labelKey: 'nav.register', to: '/register' }
 
 /**
  * The driver's way back into their own profile, in the header and the drawer.
@@ -68,15 +82,15 @@ export const REGISTER_LINK: NavLink = { label: 'Գրանցել էվակուատ�
  * so renders differently: a hydration mismatch site-wide, in exchange for a
  * word. A constant has no state to disagree about.
  */
-export const LOGIN_LINK: NavLink = { label: 'Մուտք', to: '/login' }
+export const LOGIN_LINK: NavLink = { labelKey: 'nav.login', to: '/login' }
 
 export const FOOTER_PAGES: NavLink[] = [
-  { label: 'Մեր մասին', to: '/about' },
-  { label: 'Կապ', to: '/contact' },
+  { labelKey: 'nav.about', to: '/about' },
+  { labelKey: 'nav.contact', to: '/contact' },
   // Site-wide, not only in the consent dialog. The dialog links to it too, but
   // a privacy policy reachable only from a modal a driver has to be mid-signup
   // to see is not a published policy — and a visitor who never registers has
   // just as much right to read what the site does with their data.
-  { label: 'Գաղտնիության քաղաքականություն', to: '/privacy' },
-  { label: 'Գրանցել էվակուատոր', to: '/register' },
+  { labelKey: 'nav.privacy', to: '/privacy' },
+  { labelKey: 'nav.register', to: '/register' },
 ]

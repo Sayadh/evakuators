@@ -5,7 +5,66 @@ export default defineNuxtConfig({
   // Production also honors PORT/HOST env vars directly (nitro node-server preset).
   devServer: { port: 3002 },
 
-  modules: ['@pinia/nuxt', '@vueuse/nuxt', '@nuxt/image', '@nuxt/eslint', 'nuxt-gtag', 'nuxt-security'],
+  modules: [
+    '@pinia/nuxt',
+    '@vueuse/nuxt',
+    '@nuxt/image',
+    '@nuxt/eslint',
+    'nuxt-gtag',
+    'nuxt-security',
+    '@nuxtjs/i18n',
+  ],
+
+  /**
+   * Armenian, Russian and English — one site, three indexable versions.
+   *
+   * ## The URL shape
+   *
+   * `prefix_except_default` keeps Armenian at the root and prefixes the other
+   * two: `/regions/kotayk/abovyan`, `/ru/regions/kotayk/abovyan`,
+   * `/en/regions/...`. Armenian keeps every URL it already has, so nothing that
+   * is ranked today loses its address — the alternative (`/hy/...` everywhere)
+   * would have been a site-wide redirect and a rankings reset for the language
+   * that actually brings the traffic.
+   *
+   * The slugs themselves are NOT translated. `abovyan` is an identifier, not a
+   * word: it is what `serviceAreas` matches on, what the sitemap lists and what
+   * every internal link is built from. Localised slugs would mean three
+   * identifiers for one town and three chances for them to disagree.
+   *
+   * ## Why the browser's language does not redirect anyone
+   *
+   * `detectBrowserLanguage: false`, deliberately. An automatic redirect on the
+   * root would mean Googlebot — which crawls with no meaningful
+   * `Accept-Language` and from many countries — could be bounced between
+   * versions, and the canonical/hreflang set is what tells search engines which
+   * page belongs to whom. It would also send a Yerevan driver who reads
+   * Armenian to a Russian page because their phone is set to Russian, on a site
+   * whose primary audience is Armenian.
+   *
+   * The switcher in the header is the explicit way through, and `hreflang`
+   * (`baseUrl` below is what makes those absolute) is what tells Google the
+   * three are the same page in three languages rather than duplicates.
+   */
+  i18n: {
+    defaultLocale: 'hy',
+    strategy: 'prefix_except_default',
+    // Absolute hreflang and canonical URLs — relative ones are ignored by
+    // search engines in `<link rel="alternate">`.
+    baseUrl: 'https://evakuators.am',
+    locales: [
+      { code: 'hy', language: 'hy-AM', name: 'Հայերեն', file: 'hy.json', dir: 'ltr' },
+      { code: 'ru', language: 'ru-RU', name: 'Русский', file: 'ru.json', dir: 'ltr' },
+      { code: 'en', language: 'en-US', name: 'English', file: 'en.json', dir: 'ltr' },
+    ],
+    lazy: true,
+    detectBrowserLanguage: false,
+    bundle: {
+      // The `v-t` directive is not used anywhere in this codebase; leaving the
+      // optimisation on only produces a build-time warning about it.
+      optimizeTranslationDirective: false,
+    },
+  },
 
   css: ['~/assets/styles/main.scss'],
 
@@ -52,6 +111,10 @@ export default defineNuxtConfig({
 
   app: {
     head: {
+      // Armenian is the fallback, not the answer: `app.vue` overwrites this
+      // with the locale actually being rendered. Left here so a response that
+      // somehow renders before the app does still declares a language rather
+      // than none.
       htmlAttrs: { lang: 'hy' },
       meta: [
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },

@@ -15,9 +15,9 @@ useJsonLd([buildBreadcrumbSchema(props.items)])
   <nav class="breadcrumbs" aria-label="Breadcrumb">
     <ol class="breadcrumbs__list">
       <li v-for="(item, index) in items" :key="index" class="breadcrumbs__item">
-        <NuxtLink v-if="item.to" :to="item.to" class="breadcrumbs__link">
+        <NuxtLinkLocale v-if="item.to" :to="item.to" class="breadcrumbs__link">
           {{ item.label }}
-        </NuxtLink>
+        </NuxtLinkLocale>
         <span v-else class="breadcrumbs__current" aria-current="page">{{ item.label }}</span>
         <AppIcon
           v-if="index < items.length - 1"

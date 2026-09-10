@@ -12,9 +12,9 @@ defineProps<Props>()
 <template>
   <article class="city-card">
     <h3 class="city-card__name">
-      <NuxtLink :to="getCityRoute(city.regionSlug, city.slug)" class="city-card__link">
+      <NuxtLinkLocale :to="getCityRoute(city.regionSlug, city.slug)" class="city-card__link">
         {{ city.name }}
-      </NuxtLink>
+      </NuxtLinkLocale>
     </h3>
     <ul class="city-card__stats">
       <li><AppIcon name="truck" :size="16" /> {{ city.towTruckCount }} էվակուատոր</li>

@@ -3,6 +3,9 @@ import { CONTACT_PHONE } from '~/constants/site'
 import { trackDispatchCallClick } from '~/utils/analytics'
 import { getPhoneHref } from '~/utils/formatPhone'
 
+/** Static copy lives in i18n/locales */
+const { t } = useI18n()
+
 /**
  * «Զանգահարեք մեզ, մենք կգտնենք ձեզ համար» — the operator's own number.
  *
@@ -89,7 +92,7 @@ function onClick(): void {
     v-if="variant === 'header'"
     :href="phoneHref"
     class="dispatch-cta__call dispatch-cta__call--header"
-    :aria-label="`Զանգահարել մեզ՝ ${CONTACT_PHONE}`"
+    :aria-label="t('dispatch.callUsWithNumber', { phone: CONTACT_PHONE })"
     @click="onClick"
   >
     <AppIcon name="phone" :size="18" />
@@ -105,17 +108,17 @@ function onClick(): void {
     <button
       type="button"
       class="dispatch-cta__fab"
-      :aria-label="`Զանգահարել մեզ՝ ${CONTACT_PHONE}`"
-      :title="`Զանգահարել մեզ՝ ${CONTACT_PHONE}`"
+      :aria-label="t('dispatch.callUsWithNumber', { phone: CONTACT_PHONE })"
+      :title="t('dispatch.callUsWithNumber', { phone: CONTACT_PHONE })"
       @click="confirming = true"
     >
       <AppIcon name="phone" :size="26" />
     </button>
 
-    <AppModal v-model="confirming" title="Զանգահարել մեզ">
+    <AppModal v-model="confirming" :title="t('dispatch.callUs')">
       <div class="dispatch-cta__confirm">
         <p class="dispatch-cta__subtitle">
-          Մեր մասնագետը ձեզ համար կընտրի համապատասխան էվակուատորը և կկապի վարորդի հետ։
+          {{ t('dispatch.modalText') }}
         </p>
         <!-- A real `tel:` anchor, not a button that navigates: it is what the
              Pixel's document-level listener sees, and what lets a phone offer
@@ -130,16 +133,16 @@ function onClick(): void {
           <AppIcon name="phone" :size="20" />
           <span class="dispatch-cta__number">{{ CONTACT_PHONE }}</span>
         </a>
-        <AppButton variant="ghost" block @click="confirming = false">Չեղարկել</AppButton>
+        <AppButton variant="ghost" block @click="confirming = false">{{ t('dispatch.cancel') }}</AppButton>
       </div>
     </AppModal>
   </template>
 
   <div v-else class="dispatch-cta" :class="`dispatch-cta--${variant}`">
     <div class="dispatch-cta__text">
-      <strong class="dispatch-cta__title">Չգիտե՞ք որ մեքենան ընտրել</strong>
+      <strong class="dispatch-cta__title">{{ t('dispatch.bannerTitle') }}</strong>
       <span class="dispatch-cta__subtitle">
-        Զանգահարեք մեզ՝ մեր մասնագետը ձեզ համար կընտրի համապատասխան էվակուատորը
+        {{ t('dispatch.bannerText') }}
       </span>
     </div>
 
@@ -149,7 +152,7 @@ function onClick(): void {
     <a
       :href="phoneHref"
       class="dispatch-cta__call"
-      :aria-label="`Զանգահարել մեզ՝ ${CONTACT_PHONE}`"
+      :aria-label="t('dispatch.callUsWithNumber', { phone: CONTACT_PHONE })"
       @click="onClick"
     >
       <AppIcon name="phone" :size="20" />

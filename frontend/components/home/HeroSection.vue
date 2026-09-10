@@ -1,3 +1,8 @@
+<script setup lang="ts">
+/** Static copy lives in i18n/locales — see nuxt.config's i18n block */
+const { t } = useI18n()
+</script>
+
 <template>
   <section class="hero">
     <div class="container">
@@ -13,10 +18,10 @@
              first for identity, «էվակուատոր» second for what people search. -->
         <h1 class="hero__title">
           <span class="hero__brand">Evakuators.am</span
-          >՝ էվակուատոր գտնելու հարթակ ամբողջ Հայաստանում
+          >{{ t('home.heroTitle') }}
         </h1>
         <p class="hero__subtitle">
-          Ընտրեք մարզը կամ քաղաքը, տեսեք հասանելի մեքենաները և անմիջապես զանգահարեք վարորդին։
+          {{ t('home.heroSubtitle') }}
         </p>
       </div>
       <LocationSearch class="hero__search" />
@@ -27,9 +32,9 @@
            same reason — the search is still the main way through this page. -->
       <DispatchCallCta variant="hero" class="hero__dispatch" />
       <ul class="hero__points">
-        <li><AppIcon name="check" :size="16" /> Ամբողջ Հայաստանում</li>
-        <li><AppIcon name="clock" :size="16" /> 24/7 ծառայություններ</li>
-        <li><AppIcon name="phone" :size="16" /> Ուղիղ կապ վարորդի հետ</li>
+        <li><AppIcon name="check" :size="16" /> {{ t('home.heroPointCountry') }}</li>
+        <li><AppIcon name="clock" :size="16" /> {{ t('home.heroPointHours') }}</li>
+        <li><AppIcon name="phone" :size="16" /> {{ t('home.heroPointDirect') }}</li>
       </ul>
     </div>
   </section>

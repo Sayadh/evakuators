@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { LOGIN_LINK, NAV_LINKS, REGISTER_LINK } from '~/constants/navigation'
 
+/** Header, drawer and footer all render the same link list — see NavLink.labelKey */
+const { t } = useI18n()
+
 interface Props {
   modelValue: boolean
 }
@@ -13,27 +16,28 @@ const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
 <template>
   <AppDrawer
     :model-value="modelValue"
-    title="Մենյու"
+    :title="t('a11y.menu')"
     side="right"
     @update:model-value="emit('update:modelValue', $event)"
   >
-    <nav class="mobile-menu" aria-label="Բջջային նավիգացիա">
-      <NuxtLink
+    <nav class="mobile-menu" :aria-label="t('a11y.mobileNav')">
+      <NuxtLinkLocale
         v-for="link in NAV_LINKS"
         :key="link.to"
         :to="link.to"
         class="mobile-menu__link"
         @click="emit('update:modelValue', false)"
       >
-        {{ link.label }}
+        {{ t(link.labelKey) }}
         <AppIcon name="chevron-right" :size="18" />
-      </NuxtLink>
+      </NuxtLinkLocale>
     </nav>
 
     <template #footer>
       <!-- The header shows this as an icon only below 768px, which is most of
            the phones that open this drawer — so the number itself is readable
            in exactly one place on mobile, and this is it. -->
+      <LanguageSwitcher class="mobile-menu__lang" />
       <div class="mobile-menu__call">
         <DispatchCallCta variant="header" />
       </div>
@@ -46,7 +50,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
         class="mobile-menu__login"
         @click="emit('update:modelValue', false)"
       >
-        {{ LOGIN_LINK.label }}
+        {{ t(LOGIN_LINK.labelKey) }}
       </AppButton>
       <AppButton
         :to="REGISTER_LINK.to"
@@ -54,7 +58,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
         block
         @click="emit('update:modelValue', false)"
       >
-        {{ REGISTER_LINK.label }}
+        {{ t(REGISTER_LINK.labelKey) }}
       </AppButton>
     </template>
   </AppDrawer>

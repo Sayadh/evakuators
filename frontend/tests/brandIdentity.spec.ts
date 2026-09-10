@@ -12,6 +12,9 @@ import {
 } from '~/constants/site'
 import { buildSiteIdentitySchema } from '~/utils/schemaOrg'
 import { buildHomeSeo, buildLocationSeo } from '~/utils/seoContent'
+import hy from '~/i18n/locales/hy.json'
+import ru from '~/i18n/locales/ru.json'
+import en from '~/i18n/locales/en.json'
 
 /**
  * Brand identity, asserted rather than reviewed.
@@ -131,13 +134,23 @@ describe('homepage positioning', () => {
   })
 
   it('names the brand in the H1', () => {
-    expect(read('components/home/HeroSection.vue')).toContain(
-      `<h1 class="hero__title">`,
-    )
+    // The brand is literal in the markup — it is a name, not a word to
+    // translate, and it must read the same in all three languages. The service
+    // keyword beside it is now the translated half, so it is asserted against
+    // the locale file rather than against the template.
     const hero = read('components/home/HeroSection.vue')
     const h1 = hero.slice(hero.indexOf('<h1'), hero.indexOf('</h1>'))
     expect(h1).toContain(SITE_NAME)
-    expect(h1).toContain('էվակուատոր')
+    expect(h1).toContain("t('home.heroTitle')")
+  })
+
+  it('keeps the service keyword in the H1, in every language', () => {
+    // Brand-first must not mean keyword-free, and that has to hold for the
+    // Russian and English versions too — they exist to be found by people
+    // searching «эвакуатор» and "tow truck".
+    expect(hy.home.heroTitle).toContain('էվակուատոր')
+    expect(ru.home.heroTitle.toLowerCase()).toContain('эвакуатор')
+    expect(en.home.heroTitle.toLowerCase()).toContain('tow truck')
   })
 })
 

@@ -124,11 +124,11 @@ useJsonLd([
       <h2>Մոտակա շրջաններ</h2>
       <ul class="district-page__nearby">
         <li v-for="nearby in nearbyDistricts" :key="nearby.id">
-          <NuxtLink :to="getDistrictRoute(nearby.slug)" class="district-page__nearby-link">
+          <NuxtLinkLocale :to="getDistrictRoute(nearby.slug)" class="district-page__nearby-link">
             <AppIcon name="map-pin" :size="14" />
             {{ nearby.name }}
             <span class="district-page__nearby-count">({{ nearby.towTruckCount }})</span>
-          </NuxtLink>
+          </NuxtLinkLocale>
         </li>
       </ul>
     </section>

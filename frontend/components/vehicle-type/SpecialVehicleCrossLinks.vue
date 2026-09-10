@@ -72,7 +72,7 @@ const title = computed(() =>
 
     <ul class="cross-links__list">
       <li v-for="link in links" :key="link.slug" class="cross-links__item">
-        <NuxtLink :to="link.to" class="cross-links__link">{{ link.label }}</NuxtLink>
+        <NuxtLinkLocale :to="link.to" class="cross-links__link">{{ link.label }}</NuxtLinkLocale>
         <span class="cross-links__description">{{ link.description }}</span>
       </li>
     </ul>

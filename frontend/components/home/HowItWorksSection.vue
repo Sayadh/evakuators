@@ -1,27 +1,30 @@
 <script setup lang="ts">
 import type { IconName } from '~/components/common/AppIcon.vue'
 
+/** Static copy lives in i18n/locales — see nuxt.config's i18n block */
+const { t } = useI18n()
+
 interface Step {
   icon: IconName
-  title: string
-  description: string
+  titleKey: string
+  textKey: string
 }
 
 const STEPS: Step[] = [
   {
     icon: 'map-pin',
-    title: 'Ընտրեք մարզը կամ քաղաքը',
-    description: 'Գտեք ձեր տարածքը որոնման դաշտով կամ քարտեզային ցանկից։',
+    titleKey: 'home.step1Title',
+    textKey: 'home.step1Text',
   },
   {
     icon: 'truck',
-    title: 'Համեմատեք էվակուատորներին',
-    description: 'Դիտեք մեքենաների նկարները, գները և ծառայությունները։',
+    titleKey: 'home.step2Title',
+    textKey: 'home.step2Text',
   },
   {
     icon: 'phone',
-    title: 'Զանգահարեք անմիջապես',
-    description: 'Կապվեք վարորդի հետ ուղիղ հեռախոսով կամ WhatsApp-ով՝ առանց միջնորդի։',
+    titleKey: 'home.step3Title',
+    textKey: 'home.step3Text',
   },
 ]
 </script>
@@ -29,15 +32,15 @@ const STEPS: Step[] = [
 <template>
   <section id="how-it-works" class="how section" aria-labelledby="how-title">
     <div class="container">
-      <h2 id="how-title" class="section-title">Ինչպես է աշխատում</h2>
+      <h2 id="how-title" class="section-title">{{ t('home.howItWorks') }}</h2>
       <ol class="how__steps">
-        <li v-for="(step, index) in STEPS" :key="step.title" class="how__step">
+        <li v-for="(step, index) in STEPS" :key="step.titleKey" class="how__step">
           <div class="how__icon">
             <AppIcon :name="step.icon" :size="26" />
             <span class="how__number" aria-hidden="true">{{ index + 1 }}</span>
           </div>
-          <h3 class="how__step-title">{{ step.title }}</h3>
-          <p class="how__step-text">{{ step.description }}</p>
+          <h3 class="how__step-title">{{ t(step.titleKey) }}</h3>
+          <p class="how__step-text">{{ t(step.textKey) }}</p>
         </li>
       </ol>
     </div>

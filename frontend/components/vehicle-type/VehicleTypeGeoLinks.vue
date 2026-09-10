@@ -57,14 +57,14 @@ const geos = computed(() =>
            and it is the one link here that changes the *scope* rather than the
            place. -->
       <li v-if="current">
-        <NuxtLink :to="getVehicleTypePageRoute(page.slug)" class="geo-links__link">
+        <NuxtLinkLocale :to="getVehicleTypePageRoute(page.slug)" class="geo-links__link">
           Ամբողջ Հայաստանում
-        </NuxtLink>
+        </NuxtLinkLocale>
       </li>
       <li v-for="geo in geos" :key="geo.slug">
-        <NuxtLink :to="getVehicleTypeGeoRoute(page.slug, geo.slug)" class="geo-links__link">
+        <NuxtLinkLocale :to="getVehicleTypeGeoRoute(page.slug, geo.slug)" class="geo-links__link">
           {{ page.navLabel }} {{ geo.locative }}
-        </NuxtLink>
+        </NuxtLinkLocale>
       </li>
     </ul>
   </nav>

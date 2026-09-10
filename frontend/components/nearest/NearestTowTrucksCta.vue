@@ -1,4 +1,7 @@
 <script setup lang="ts">
+
+/** Static copy lives in i18n/locales — see nuxt.config's i18n block */
+const { t } = useI18n()
 /**
  * The «Գտնել մոտակա էվակուատորները» call to action.
  *
@@ -36,7 +39,7 @@ withDefaults(defineProps<Props>(), { variant: 'banner' })
   <div class="nearest-cta" :class="`nearest-cta--${variant}`">
     <AppButton to="/evakuator" variant="accent" :size="variant === 'banner' ? 'lg' : 'md'" :block="variant === 'inline'">
       <AppIcon name="map-pin" :size="18" />
-      Գտնել մոտակա էվակուատորները
+      {{ t('nearest.cta') }}
     </AppButton>
   </div>
 </template>

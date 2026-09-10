@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { getYerevanRoute } from '~/utils/routeHelpers'
 
+/** Static copy lives in i18n/locales */
+const { t } = useI18n()
+
 const { data: regions, pending } = useRegions()
 const { data: districts } = useDistricts()
 // Distinct trucks serving Yerevan (servesYerevan) — NOT a sum of each
@@ -21,24 +24,24 @@ const yerevanTruckCountLabel = computed(() =>
 <template>
   <section class="regions section" aria-labelledby="regions-title">
     <div class="container">
-      <h2 id="regions-title" class="section-title">Ընտրեք ձեր տարածքը</h2>
+      <h2 id="regions-title" class="section-title">{{ t('home.chooseArea') }}</h2>
 
-      <NuxtLink :to="getYerevanRoute()" class="regions__yerevan">
-        <span class="regions__yerevan-tag">Ամենամեծ ընտրանքը</span>
+      <NuxtLinkLocale :to="getYerevanRoute()" class="regions__yerevan">
+        <span class="regions__yerevan-tag">{{ t('home.yerevanTag') }}</span>
         <div class="regions__yerevan-body">
           <div class="regions__yerevan-text">
-            <h3>Երևան</h3>
-            <p>{{ districts.length }} վարչական շրջան · էվակուատորներ ամբողջ քաղաքում</p>
+            <h3>{{ t('footer.yerevan') }}</h3>
+            <p>{{ t('home.yerevanSummary', { count: districts.length }) }}</p>
           </div>
           <div class="regions__yerevan-stat">
             <span class="regions__yerevan-stat-number">{{ yerevanTruckCountLabel }}</span>
             <span class="regions__yerevan-stat-label">
-              <AppIcon name="truck" :size="14" /> էվակուատոր
+              <AppIcon name="truck" :size="14" /> {{ t('home.truckBadge') }}
             </span>
           </div>
           <AppIcon name="arrow-right" :size="24" class="regions__yerevan-arrow" />
         </div>
-      </NuxtLink>
+      </NuxtLinkLocale>
 
       <div v-if="pending" class="card-grid">
         <LoadingSkeleton variant="card" :count="6" />

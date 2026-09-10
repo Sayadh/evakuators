@@ -1,4 +1,7 @@
 <script setup lang="ts">
+
+/** Static copy lives in i18n/locales — see nuxt.config's i18n block */
+const { t } = useI18n()
 const { data: featured, pending } = useFeaturedTowTrucks(6)
 </script>
 
@@ -14,7 +17,7 @@ const { data: featured, pending } = useFeaturedTowTrucks(6)
     aria-labelledby="featured-title"
   >
     <div class="container">
-      <h2 id="featured-title" class="section-title">Լավագույն էվակուատորները</h2>
+      <h2 id="featured-title" class="section-title">{{ t('home.featuredTitle') }}</h2>
       <TowTruckList :tow-trucks="featured" :pending="pending" :skeleton-count="3" />
     </div>
   </section>

@@ -22,7 +22,11 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{ click: [event: MouseEvent] }>()
 
 const tag = computed(() => {
-  if (props.to) return resolveComponent('NuxtLink')
+  // `NuxtLinkLocale`, not `NuxtLink`: this component is how most of the site's
+  // internal links are rendered, and a plain NuxtLink would drop the `/ru` or
+  // `/en` prefix — sending a Russian visitor back to the Armenian version on
+  // every button they press. See nuxt.config's i18n block.
+  if (props.to) return resolveComponent('NuxtLinkLocale')
   if (props.href) return 'a'
   return 'button'
 })

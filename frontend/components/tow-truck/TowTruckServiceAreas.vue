@@ -48,10 +48,10 @@ function getAreaRoute(area: ServiceArea): string | null {
     </p>
     <ul v-else class="truck-areas__list">
       <li v-for="area in props.areas" :key="`${area.type}-${area.slug}`">
-        <NuxtLink v-if="getAreaRoute(area)" :to="getAreaRoute(area)!" class="truck-areas__chip">
+        <NuxtLinkLocale v-if="getAreaRoute(area)" :to="getAreaRoute(area)!" class="truck-areas__chip">
           <AppIcon name="map-pin" :size="14" />
           {{ area.name }}
-        </NuxtLink>
+        </NuxtLinkLocale>
         <span v-else class="truck-areas__chip truck-areas__chip--static">
           <AppIcon name="map-pin" :size="14" />
           {{ area.name }}

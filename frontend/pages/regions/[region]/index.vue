@@ -74,9 +74,9 @@ useSeoMetaData({
       <h2>Այլ մարզեր</h2>
       <ul class="region-page__nearby">
         <li v-for="nearby in nearbyRegions" :key="nearby.slug">
-          <NuxtLink :to="getRegionRoute(nearby.slug)" class="region-page__nearby-link">
+          <NuxtLinkLocale :to="getRegionRoute(nearby.slug)" class="region-page__nearby-link">
             <AppIcon name="map-pin" :size="14" /> {{ nearby.name }}
-          </NuxtLink>
+          </NuxtLinkLocale>
         </li>
       </ul>
     </section>

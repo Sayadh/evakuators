@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import hy from '~/i18n/locales/hy.json'
 import { LOGIN_LINK } from '~/constants/navigation'
 
 /**
@@ -22,7 +23,11 @@ const drawer = readFileSync(`${ROOT}components/layout/MobileMenu.vue`, 'utf8')
 
 describe('driver login link', () => {
   it('says «Մուտք» and points at the login page', () => {
-    expect(LOGIN_LINK).toEqual({ label: 'Մուտք', to: '/login' })
+    // The word itself lives in `i18n/locales/*.json` now, because the header
+    // renders it in three languages; the constant carries the key and the
+    // destination, which are the parts that must not vary.
+    expect(LOGIN_LINK).toEqual({ labelKey: 'nav.login', to: '/login' })
+    expect(hy['nav'].login).toBe('Մուտք')
   })
 
   it('is in the header', () => {

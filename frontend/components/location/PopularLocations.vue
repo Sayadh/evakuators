@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { POPULAR_LOCATIONS } from '~/constants/popularLocations'
+
+/** Static copy lives in i18n/locales — see nuxt.config's i18n block */
+const { t } = useI18n()
 </script>
 
 <template>
   <section class="popular section" aria-labelledby="popular-title">
     <div class="container">
-      <h2 id="popular-title" class="section-title">Հաճախ որոնվող տարածքներ</h2>
+      <h2 id="popular-title" class="section-title">{{ t('home.popularTitle') }}</h2>
       <div class="popular__grid">
-        <NuxtLink
+        <NuxtLinkLocale
           v-for="location in POPULAR_LOCATIONS"
           :key="location.to"
           :to="location.to"
@@ -16,7 +19,7 @@ import { POPULAR_LOCATIONS } from '~/constants/popularLocations'
           <AppIcon name="map-pin" :size="18" class="popular__icon" />
           <span class="popular__name">{{ location.name }}</span>
           <span class="popular__hint">{{ location.hint }}</span>
-        </NuxtLink>
+        </NuxtLinkLocale>
       </div>
     </div>
   </section>

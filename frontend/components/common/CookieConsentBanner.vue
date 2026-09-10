@@ -41,9 +41,9 @@ const visible = computed(() => store.status === 'pending' && !isAdminRoute(route
       <p class="cookie-consent__text">
         Այս կայքն օգտագործում է cookie-ներ՝ այցելուների վիճակագրության և գովազդի
         արդյունավետության չափման համար։ Մանրամասները՝
-        <NuxtLink to="/privacy" class="cookie-consent__link">
+        <NuxtLinkLocale to="/privacy" class="cookie-consent__link">
           Գաղտնիության քաղաքականությունում
-        </NuxtLink>։
+        </NuxtLinkLocale>։
       </p>
       <div class="cookie-consent__actions">
         <AppButton variant="ghost" size="md" @click="store.reject()">Մերժել</AppButton>

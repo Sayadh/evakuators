@@ -1,0 +1,88 @@
+{
+  "lang": {
+    "switch": "Language",
+    "hy": "Հայերեն",
+    "ru": "Русский",
+    "en": "English"
+  },
+  "site": {
+    "tagline": "Evakuators.am — find a tow truck anywhere in Armenia",
+    "organizationDescription": "Online platform for finding tow trucks in Armenia",
+    "alternateName": "Tow Trucks Armenia",
+    "description": "Find tow trucks and crane trucks in every region of Armenia and in each district of Yerevan. See photos of the vehicles, the services and the prices — and call the driver directly."
+  },
+  "nav": {
+    "nearest": "Tow trucks near me",
+    "freeRoutes": "Shared routes",
+    "register": "List your tow truck",
+    "login": "Sign in",
+    "about": "About us",
+    "contact": "Contact",
+    "privacy": "Privacy policy"
+  },
+  "a11y": {
+    "homeLink": "Evakuators.am — home page",
+    "mainNav": "Main navigation",
+    "mobileNav": "Mobile navigation",
+    "openMenu": "Open menu",
+    "menu": "Menu",
+    "social": "Social media",
+    "regionsNav": "Regions",
+    "yerevanNav": "Yerevan districts",
+    "sitePagesNav": "Site pages"
+  },
+  "footer": {
+    "regions": "Regions",
+    "yerevan": "Yerevan",
+    "site": "Site",
+    "cookieSettings": "Cookie settings"
+  },
+  "home": {
+    "heroTitle": " — find a tow truck anywhere in Armenia",
+    "heroSubtitle": "Pick your region or town, see the trucks available and call the driver straight away.",
+    "heroPointCountry": "Across Armenia",
+    "heroPointHours": "24/7 service",
+    "heroPointDirect": "Talk to the driver directly",
+    "howItWorks": "How it works",
+    "step1Title": "Choose your region or town",
+    "step1Text": "Find your area with the search box or from the list.",
+    "step2Title": "Compare the tow trucks",
+    "step2Text": "See photos of the vehicles, the prices and the services.",
+    "step3Title": "Call straight away",
+    "step3Text": "Reach the driver by phone or WhatsApp — no middleman.",
+    "whyTitle": "Why Evakuators.am",
+    "benefitCountryTitle": "Across Armenia",
+    "benefitCountryText": "Tow trucks in every region and in all of Yerevan's districts.",
+    "benefitDirectTitle": "Talk to the driver directly",
+    "benefitDirectText": "Call the driver yourself — no middleman, no markup.",
+    "benefitPhotosTitle": "Real photos",
+    "benefitPhotosText": "See the actual truck before you call.",
+    "benefitHoursTitle": "24/7 service",
+    "benefitHoursText": "Day or night, there is always a truck working around the clock.",
+    "benefitSearchTitle": "Simple search",
+    "benefitSearchText": "Search by region, town, service and load capacity.",
+    "benefitFreeTitle": "Free to use",
+    "benefitFreeText": "Finding a truck and calling the driver is completely free.",
+    "chooseArea": "Choose your area",
+    "yerevanTag": "The widest choice",
+    "yerevanSummary": "{count} districts · tow trucks across the city",
+    "truckBadge": "tow truck",
+    "featuredTitle": "Top tow trucks",
+    "popularTitle": "Frequently searched areas"
+  },
+  "nearest": {
+    "cta": "Find the nearest tow trucks"
+  },
+  "dispatch": {
+    "bannerTitle": "Not sure which truck you need?",
+    "bannerText": "Call us — our dispatcher will pick the right tow truck for you",
+    "callUs": "Call us",
+    "callUsWithNumber": "Call us: {phone}",
+    "modalText": "Our dispatcher will pick a suitable tow truck and put you in touch with the driver.",
+    "cancel": "Cancel"
+  },
+  "vehicleTypeNav": {
+    "manipulator": "Crane trucks",
+    "tsanr-tehnika": "Heavy equipment"
+  }
+}

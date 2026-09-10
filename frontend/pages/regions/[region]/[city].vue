@@ -258,14 +258,14 @@ useJsonLd([
       <h2>Մոտակա քաղաքներ</h2>
       <ul class="city-page__nearby">
         <li v-for="nearby in nearbyCities" :key="nearby.id">
-          <NuxtLink
+          <NuxtLinkLocale
             :to="getCityRoute(nearby.regionSlug, nearby.slug)"
             class="city-page__nearby-link"
           >
             <AppIcon name="map-pin" :size="14" />
             {{ nearby.name }}
             <span class="city-page__nearby-count">({{ nearby.towTruckCount }})</span>
-          </NuxtLink>
+          </NuxtLinkLocale>
         </li>
       </ul>
     </section>

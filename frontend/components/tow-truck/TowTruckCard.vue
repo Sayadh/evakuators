@@ -29,7 +29,7 @@ const mainAreas = computed(() =>
 <template>
   <article class="truck-card">
     <div class="truck-card__media">
-      <NuxtLink :to="getTowTruckRoute(towTruck.slug)" tabindex="-1">
+      <NuxtLinkLocale :to="getTowTruckRoute(towTruck.slug)" tabindex="-1">
         <NuxtImg
           v-if="towTruck.images[0]"
           :src="towTruck.images[0]"
@@ -47,12 +47,12 @@ const mainAreas = computed(() =>
         <span v-else class="truck-card__image truck-card__image--empty" aria-hidden="true">
           <AppIcon name="truck" :size="40" />
         </span>
-      </NuxtLink>
+      </NuxtLinkLocale>
     </div>
 
     <div class="truck-card__body">
       <h3 class="truck-card__name">
-        <NuxtLink :to="getTowTruckRoute(towTruck.slug)">{{ displayName }}</NuxtLink>
+        <NuxtLinkLocale :to="getTowTruckRoute(towTruck.slug)">{{ displayName }}</NuxtLinkLocale>
       </h3>
 
       <ul class="truck-card__specs">

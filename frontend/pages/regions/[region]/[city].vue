@@ -56,9 +56,23 @@ const { data: towTrucks, pending } = isZone
     : await useTowTrucksByCity(citySlug)
 const { data: nearbyCities } = useNearbyCities(regionSlug, citySlug)
 
-/** What the heading, breadcrumb and metadata call this page */
+const { t, locale } = useI18n()
+const plural = usePlural()
+const placeName = usePlaceName()
+
+/**
+ * What the heading, breadcrumb and metadata call this page.
+ *
+ * A landing settlement keeps its Armenian name in every language — see
+ * `i18n/placeNames.ts` § "What this does NOT translate" — so only the city
+ * and zone branches go through the place map.
+ */
 const areaName = computed(() =>
-  isZone ? (zone as ServiceZone).name : isLanding ? landing!.name : (city.value?.name ?? ''),
+  isZone
+    ? placeName('zone', (zone as ServiceZone).slug, (zone as ServiceZone).name)
+    : isLanding
+      ? landing!.name
+      : placeName('city', citySlug, city.value?.name ?? ''),
 )
 
 /**
@@ -77,10 +91,10 @@ const landingHasDrivers = computed(() => towTrucks.value.length > 0)
  */
 const seoSectionTitle = computed(() =>
   isZone
-    ? `Էվակուատորի ծառայություններ ${areaName.value} ուղղությունում`
+    ? t('page.seoZoneTitle', { place: areaName.value })
     : isLanding
       ? landing!.seo!.heading
-      : `Էվակուատորի ծառայություններ ${areaName.value}ում`,
+      : t('districtPage.seoTitle', { place: areaName.value }),
 )
 
 /**
@@ -107,27 +121,45 @@ const breadcrumbs =
 
 // A corridor has no settlements of its own, so the city FAQ — which is written
 // about a town and the places around it — would be answering questions nobody
-// asked here.
-const faqItems = isZone || isLanding ? [] : buildCityFaq(areaName.value)
+// asked here. `areaName` is already localized (see above), so it is passed
+// with no slug — buildCityFaq would otherwise look a CITY slug up a second
+// time and, for a landing settlement, find nothing at all.
+const faqItems = computed(() =>
+  isZone || isLanding ? [] : buildCityFaq(areaName.value, locale.value),
+)
 
-const seoParagraphs = isLanding
-  ? [landing!.seo!.intro]
-  : isZone
-  ? [
-      `Էվակուատոր ${areaName.value} ուղղությունում. այս էջում հավաքված են այն վարորդները, ովքեր հայտարարել են, որ սպասարկում են հենց այս ճանապարհահատվածը։ Դիտեք մեքենաների նկարները, ծառայությունների ցանկը և մեկնարկային գները։`,
-      `Ցանկը կազմված է ճշգրիտ համընկմամբ՝ այստեղ երևում են միայն «${areaName.value}» ուղղությունն ընտրած վարորդները։ ${region!.name}ի մարզի քաղաքների ծառայությունները հասանելի են առանձին էջերով։`,
+/** The marz this page belongs to, in the language being read */
+const cityRegionName = computed(() =>
+  city.value
+    ? placeName('region', city.value.regionSlug, city.value.regionName)
+    : region
+      ? placeName('region', region.slug, region.name)
+      : '',
+)
+
+const seoParagraphs = computed(() => {
+  if (isLanding) return [landing!.seo!.intro]
+
+  if (isZone) {
+    return [
+      t('page.zoneIntro1', { place: areaName.value }),
+      t('page.zoneIntro2', { place: areaName.value, region: cityRegionName.value }),
     ]
-  : [
-      `Էվակուատոր ${areaName.value}ում. այս էջում հավաքված են ${areaName.value}ում և հարակից բնակավայրերում աշխատող էվակուատորները։ Յուրաքանչյուր վարորդի էջում կտեսնեք մեքենայի իրական նկարները, ծառայությունների ցանկը, սպասարկվող տարածքները և մեկնարկային գները։`,
-      `Ընտրեք հարմար էվակուատորը ֆիլտրերի օգնությամբ՝ ըստ բեռնատարողության, 24/7 հասանելիության կամ ծառայության տեսակի, և զանգահարեք վարորդին անմիջապես՝ առանց միջնորդների։ ${city.value!.regionName}ի մարզի մյուս քաղաքների ծառայությունները հասանելի են ներքևի հղումներով։`,
-      buildTranslitParagraph(areaName.value, citySlug),
-    ]
+  }
+
+  return [
+    t('page.cityIntro', { place: areaName.value }),
+    t('page.cityFilterHint', { region: cityRegionName.value }),
+    buildTranslitParagraph(areaName.value, citySlug, locale.value),
+  ]
+})
 
 useSeoMetaData(
   isLanding
     ? {
         // Straight from the dataset — one authored title/description per
         // landing settlement, not a template with a name substituted in.
+        // Armenian only, by design — see `i18n/placeNames.ts`.
         title: landing!.seo!.title,
         description: landing!.seo!.description,
         // Self-referencing: this page is its own canonical, and the hash-free
@@ -137,23 +169,26 @@ useSeoMetaData(
         noindex: !landingHasDrivers.value,
       }
     : isZone
-    ? {
-        title: `Էվակուատոր ${areaName.value} ուղղությունում | ${SITE_NAME}`,
-        description: `Էվակուատոր ${areaName.value} ճանապարհահատվածում՝ ${region!.name}ի մարզ։ Տեսեք այս ուղղությունը սպասարկող վարորդներին և զանգահարեք ուղիղ։`,
-        path: getCityRoute(regionSlug, citySlug),
-      }
-    : {
-        ...buildLocationSeo(areaName.value, citySlug),
-        path: getCityRoute(regionSlug, citySlug),
-      },
+      ? {
+          title: `${t('page.metaZoneTitle', { place: areaName.value })} | ${SITE_NAME}`,
+          description: t('page.metaZoneDescription', {
+            place: areaName.value,
+            region: cityRegionName.value,
+          }),
+          path: getCityRoute(regionSlug, citySlug),
+        }
+      : {
+          ...buildLocationSeo(areaName.value, citySlug, locale.value),
+          path: getCityRoute(regionSlug, citySlug),
+        },
 )
 
 useJsonLd([
   buildTowTruckListSchema(
     towTrucks.value,
     isZone
-      ? `Էվակուատորներ ${areaName.value} ուղղությունում`
-      : `Էվակուատորներ ${areaName.value}ում`,
+      ? t('page.zoneListingTitle', { place: areaName.value })
+      : t('districtPage.listingTitle', { place: areaName.value }),
   ),
 ])
 </script>
@@ -164,26 +199,25 @@ useJsonLd([
 
     <header class="city-page__header">
       <h1 v-if="isLanding">{{ landing!.seo!.heading }}</h1>
-      <h1 v-else>Էվակուատորներ {{ areaName }}{{ isZone ? ' ուղղությունում' : 'ում' }}</h1>
+      <h1 v-else-if="isZone">{{ t('page.zoneH1', { place: areaName }) }}</h1>
+      <h1 v-else>{{ t('districtPage.h1', { place: areaName }) }}</h1>
       <p v-if="isLanding" class="city-page__description">
         {{ landing!.seo!.intro }}
       </p>
       <p v-else-if="isZone" class="city-page__description">
-        Այս ցանկում միայն այն վարորդներն են, ովքեր նշել են «{{ areaName }}» ուղղությունը որպես
-        սպասարկվող տարածք։ Ցանկը չի ներառում ճանապարհին գտնվող առանձին բնակավայրերը՝ դրանք
-        փնտրեք համապատասխան քաղաքի էջում։
+        {{ t('page.zoneDescription', { place: areaName }) }}
       </p>
       <div v-if="city" class="city-page__stats">
         <AppBadge variant="primary">
-          <AppIcon name="truck" :size="14" /> {{ city.towTruckCount }} հասանելի էվակուատոր
+          <AppIcon name="truck" :size="14" /> {{ plural('card.towTrucks', city.towTruckCount) }}
         </AppBadge>
         <AppBadge variant="success">
-          <AppIcon name="clock" :size="14" /> {{ city.towTruck24hCount }} աշխատում է 24/7
+          <AppIcon name="clock" :size="14" /> {{ plural('card.open24', city.towTruck24hCount) }}
         </AppBadge>
       </div>
       <div v-else class="city-page__stats">
         <AppBadge variant="primary">
-          <AppIcon name="truck" :size="14" /> {{ towTrucks.length }} հասանելի էվակուատոր
+          <AppIcon name="truck" :size="14" /> {{ plural('card.towTrucks', towTrucks.length) }}
         </AppBadge>
       </div>
     </header>
@@ -199,7 +233,7 @@ useJsonLd([
     <div class="city-page__toolbar">
       <AppButton v-if="!isDesktop" variant="outline" size="sm" @click="openDrawer">
         <AppIcon name="filter" :size="16" />
-        Ֆիլտրեր
+        {{ t('common.filters') }}
         <span v-if="activeFiltersCount > 0" class="city-page__filter-count">
           {{ activeFiltersCount }}
         </span>
@@ -210,7 +244,7 @@ useJsonLd([
     <ActiveFilters class="city-page__active-filters" />
 
     <div class="city-page__layout">
-      <aside v-if="isDesktop" class="city-page__sidebar" aria-label="Ֆիլտրեր">
+      <aside v-if="isDesktop" class="city-page__sidebar" :aria-label="t('common.filters')">
         <TowTruckFilters />
       </aside>
 
@@ -219,12 +253,8 @@ useJsonLd([
           <template #empty>
             <EmptyState
               v-if="towTrucks.length === 0"
-              :title="
-                isZone
-                  ? 'Այս ուղղությունը դեռ ոչ մի վարորդ չի նշել'
-                  : 'Այս քաղաքում դեռ գրանցված էվակուատոր չկա'
-              "
-              description="Կարող եք դիտել մոտակա քաղաքներում աշխատող ծառայությունները կամ գրանցել ձեր էվակուատորը։"
+              :title="isZone ? t('page.emptyZoneTitle') : t('page.emptyCityTitle')"
+              :description="t('page.emptyCityText')"
             >
               <template #actions>
                 <AppButton
@@ -232,22 +262,24 @@ useJsonLd([
                   :to="getCityRoute(nearbyCities[0]!.regionSlug, nearbyCities[0]!.slug)"
                   variant="primary"
                 >
-                  Դիտել մոտակա քաղաքները
+                  {{ t('common.viewNearbyCities') }}
                 </AppButton>
-                <AppButton :to="getRegisterRoute()" variant="accent">Գրանցել էվակուատոր</AppButton>
+                <AppButton :to="getRegisterRoute()" variant="accent">
+                  {{ t('common.registerTruck') }}
+                </AppButton>
               </template>
             </EmptyState>
             <EmptyState
               v-else
-              title="Ֆիլտրերին համապատասխանող էվակուատոր չկա"
-              description="Փորձեք մեղմել ֆիլտրերը կամ մաքրել դրանք։"
+              :title="t('common.emptyFilteredTitle')"
+              :description="t('common.emptyFilteredText')"
               icon="filter"
             />
           </template>
         </TowTruckList>
 
         <div v-if="hasMore" class="city-page__more">
-          <AppButton variant="outline" @click="loadMore">Ցուցադրել ավելին</AppButton>
+          <AppButton variant="outline" @click="loadMore">{{ t('common.showMore') }}</AppButton>
         </div>
       </div>
     </div>
@@ -255,7 +287,7 @@ useJsonLd([
     <MobileFilterDrawer v-model="isDrawerOpen" :results-count="filteredTowTrucks.length" />
 
     <section v-if="nearbyCities.length > 0" class="city-page__section">
-      <h2>Մոտակա քաղաքներ</h2>
+      <h2>{{ t('page.nearbyCities') }}</h2>
       <ul class="city-page__nearby">
         <li v-for="nearby in nearbyCities" :key="nearby.id">
           <NuxtLinkLocale
@@ -263,7 +295,7 @@ useJsonLd([
             class="city-page__nearby-link"
           >
             <AppIcon name="map-pin" :size="14" />
-            {{ nearby.name }}
+            {{ placeName('city', nearby.slug, nearby.name) }}
             <span class="city-page__nearby-count">({{ nearby.towTruckCount }})</span>
           </NuxtLinkLocale>
         </li>
@@ -286,7 +318,7 @@ useJsonLd([
          it is the closer answer. -->
     <SpecialVehicleCrossLinks
       :region-slug="regionSlug"
-      :area-label="region?.name ? `${region.name}ի մարզում` : undefined"
+      :area-label="region?.name ? t('page.inRegion', { place: cityRegionName }) : undefined"
       class="city-page__section"
     />
   </div>

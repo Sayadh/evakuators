@@ -71,7 +71,8 @@
     },
     "truckBadge": "tow truck",
     "featuredTitle": "Top tow trucks",
-    "popularTitle": "Frequently searched areas"
+    "popularTitle": "Frequently searched areas",
+    "seoTitle": "Tow truck services across Armenia"
   },
   "nearest": {
     "cta": "Find the nearest tow trucks"
@@ -155,7 +156,25 @@
     "seoRegionTitle": "Tow truck services in {place} region",
     "regionDescription": "Tow truck services across {place} region: {towns} and the settlements around them.",
     "inRegion": "in {place} region",
-    "inCity": "in {place}"
+    "inCity": "in {place}",
+    "zoneH1": "Tow trucks on the {place} route",
+    "zoneDescription": "This list holds only the drivers who named the \"{place}\" route as an area they cover. Individual settlements along the way are not included — look for them on their own town's page.",
+    "seoZoneTitle": "Tow truck services on the {place} route",
+    "inZone": "on the {place} route",
+    "metaZoneTitle": "Tow truck on the {place} route",
+    "metaZoneDescription": "Tow truck on the {place} route, {region} region. See the drivers who cover this route and call them directly.",
+    "zoneListingTitle": "Tow trucks on the {place} route",
+    "cityIntro": "Tow trucks in {place}. This page collects the tow trucks working in {place} and the settlements around it. Every driver's page shows real photos of the vehicle, the services offered, the areas covered and a starting price.",
+    "cityFilterHint": "Use the filters to find the right tow truck — by payload, 24/7 availability or the service you need — and call the driver directly, with no agency in between. The other towns in {region} region are linked below.",
+    "zoneIntro1": "Tow trucks on the {place} route. This page collects the drivers who have said they cover this exact stretch of road. See photos of the vehicles, the services offered and starting prices.",
+    "zoneIntro2": "The list is an exact match: only drivers who selected the \"{place}\" route appear here. The towns of {region} region each have their own page.",
+    "emptyZoneTitle": "No driver has claimed this route yet",
+    "emptyCityTitle": "No tow truck is registered in this town yet",
+    "emptyCityText": "Browse the services working in the nearby towns, or register your own tow truck.",
+    "emptyDistrictTitle": "No tow truck is registered in this district yet",
+    "emptyDistrictText": "Browse the services working in the nearby districts, or register your own tow truck.",
+    "nearbyCities": "Nearby towns",
+    "nearbyDistricts": "Nearby districts"
   },
   "crossLinks": {
     "titleWithArea": "Heavy equipment {area}",
@@ -165,7 +184,13 @@
   "common": {
     "showMore": "Show more",
     "registerTruck": "Register a tow truck",
-    "viewRegions": "Browse regions"
+    "viewRegions": "Browse regions",
+    "filters": "Filters",
+    "viewNearbyCities": "See the nearby towns",
+    "viewNearbyDistricts": "See the nearby districts",
+    "emptyFilteredTitle": "No tow trucks match these filters",
+    "emptyFilteredText": "Try loosening the filters, or clear them.",
+    "selectPlaceholder": "Select"
   },
   "vehicleType": {
     "byRegions": "{page} by region",
@@ -322,5 +347,39 @@
     "ton": "t",
     "metre": "m",
     "centimetre": "cm"
+  },
+  "yerevanPage": {
+    "h1": "Tow trucks in Yerevan",
+    "intro": "Tow trucks in Yerevan. Pick a district or browse every tow truck in the city as one list. Real photos, prices, 24/7 service and a direct line to the driver.",
+    "districtsBadge": "{count} districts",
+    "allTrucks": "All tow trucks in Yerevan ({count})",
+    "seoTitle": "Tow truck services in Yerevan"
+  },
+  "districtPage": {
+    "h1": "Tow trucks in {place}",
+    "intro": "Tow trucks in the {place} district of Yerevan. Browse every tow truck covering the district, with photos, prices and services — call the driver directly, with no agency in between.",
+    "seoTitle": "Tow truck services in {place}",
+    "listingTitle": "Tow trucks in {place}",
+    "inYerevan": "in Yerevan"
+  },
+  "sort": {
+    "label": "Sort:",
+    "recommended": "Recommended",
+    "lowestPrice": "Lowest starting price"
+  },
+  "freeRoutes": {
+    "metaTitle": "Free routes | Tow trucks already on the move",
+    "metaDescription": "Find a tow truck already heading your way empty. Contact the driver directly.",
+    "h1": "Free routes",
+    "intro": "These drivers are heading empty along the route shown, and can pick up an order on the way or at the destination. Contact the driver directly.",
+    "empty": "There are no active free routes right now. Check back a little later."
+  },
+  "reviews": {
+    "title": "Reviews",
+    "count": {
+      "one": "{count} review",
+      "many": "{count} reviews"
+    },
+    "empty": "No reviews yet. Be the first to share your experience."
   }
 }

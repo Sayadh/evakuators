@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { VEHICLE_TYPE_LABELS } from '~/constants/vehicles'
-import type { VehicleType } from '~/types/enums'
 import type { FreeRoute } from '~/types/freeRoute'
 import { trackPhoneClick } from '~/utils/analytics'
 import { formatDepartureRange } from '~/utils/formatters'
@@ -14,9 +12,16 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const startLabel = computed(() => formatRouteLocation(props.route.startRegionSlug, props.route.startCitySlug))
-const endLabel = computed(() => formatRouteLocation(props.route.endRegionSlug, props.route.endCitySlug))
-const vehicleLabel = computed(() => VEHICLE_TYPE_LABELS[props.route.driver.vehicleType as VehicleType])
+const { t, locale } = useI18n()
+const { vehicleTypeLabel } = useCatalogLabels()
+
+const startLabel = computed(() =>
+  formatRouteLocation(props.route.startRegionSlug, props.route.startCitySlug, locale.value),
+)
+const endLabel = computed(() =>
+  formatRouteLocation(props.route.endRegionSlug, props.route.endCitySlug, locale.value),
+)
+const vehicleLabel = computed(() => vehicleTypeLabel(props.route.driver.vehicleType))
 const phoneHref = computed(() => getPhoneHref(props.route.driver.phone))
 
 function onPhoneClick(): void {
@@ -41,7 +46,7 @@ function onPhoneClick(): void {
 
       <p class="route-card__time">
         <AppIcon name="clock" :size="15" />
-        {{ formatDepartureRange(route.departureAt, route.estimatedArrivalAt) }}
+        {{ formatDepartureRange(route.departureAt, route.estimatedArrivalAt, locale) }}
       </p>
 
       <p v-if="route.description" class="route-card__note">{{ route.description }}</p>
@@ -55,7 +60,7 @@ function onPhoneClick(): void {
 
     <a :href="phoneHref" class="route-card__call" @click="onPhoneClick">
       <AppIcon name="phone" :size="18" />
-      Զանգահարել
+      {{ t('card.call') }}
     </a>
   </article>
 </template>

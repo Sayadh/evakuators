@@ -18,7 +18,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   label: undefined,
-  placeholder: 'Ընտրել',
+  placeholder: undefined,
   disabled: false,
   error: undefined,
   hint: undefined,
@@ -27,6 +27,18 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 
 const id = useId()
+
+const { t } = useI18n()
+
+/**
+ * Every caller that means something specific by "choose one" already passes
+ * its own `placeholder` (see `LocationSearch.vue`) — this is only the generic
+ * fallback for the few that don't, and it has to come from `t()` rather than
+ * a prop default: a prop default is evaluated once, outside any component's
+ * `setup()`, so a literal string there cannot reach `useI18n()` and cannot
+ * change when the visitor's language does.
+ */
+const effectivePlaceholder = computed(() => props.placeholder ?? t('common.selectPlaceholder'))
 
 function onChange(event: Event): void {
   emit('update:modelValue', (event.target as HTMLSelectElement).value)
@@ -50,7 +62,7 @@ function onChange(event: Event): void {
         :aria-describedby="hint ? `${id}-hint` : undefined"
         @change="onChange"
       >
-        <option value="" disabled>{{ placeholder }}</option>
+        <option value="" disabled>{{ effectivePlaceholder }}</option>
         <option v-for="option in props.options" :key="option.value" :value="option.value">
           {{ option.label }}
         </option>

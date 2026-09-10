@@ -25,20 +25,33 @@ const { isDesktop, isDrawerOpen, openDrawer } = useResponsiveFilters()
 const { forDistrict } = useBreadcrumbs()
 const breadcrumbs = forDistrict(district.value)
 
-const faqItems = buildCityFaq(district.value.name)
+const { t, locale } = useI18n()
+const plural = usePlural()
+const placeName = usePlaceName()
 
-const seoParagraphs = [
-  `Էվակուատոր Երևանի ${district.value.name} վարչական շրջանում. դիտեք տարածքը սպասարկող բոլոր էվակուատորները, մեքենաների նկարները, գներն ու ծառայությունները և զանգահարեք վարորդին ուղիղ՝ առանց միջնորդների։`,
-  buildTranslitParagraph(district.value.name, districtSlug),
-]
+/** The district's own name, in the language being read */
+const districtName = computed(() => placeName('district', districtSlug, district.value?.name ?? ''))
+
+// `buildCityFaq` looks a slug up in the CITY name map, so a district slug
+// passed straight through would silently miss and fall back to Armenian.
+// The name is translated here instead, and handed over with no slug.
+const faqItems = computed(() => buildCityFaq(districtName.value, locale.value))
+
+const seoParagraphs = computed(() => [
+  t('districtPage.intro', { place: districtName.value }),
+  buildTranslitParagraph(district.value!.name, districtSlug, locale.value, 'district'),
+])
 
 useSeoMetaData({
-  ...buildLocationSeo(district.value.name, districtSlug),
+  ...buildLocationSeo(district.value.name, districtSlug, locale.value, 'district'),
   path: getDistrictRoute(districtSlug),
 })
 
 useJsonLd([
-  buildTowTruckListSchema(towTrucks.value, `Էվակուատորներ ${district.value.name}ում`),
+  buildTowTruckListSchema(
+    towTrucks.value,
+    t('districtPage.listingTitle', { place: districtName.value }),
+  ),
 ])
 </script>
 
@@ -47,13 +60,13 @@ useJsonLd([
     <AppBreadcrumbs :items="breadcrumbs" />
 
     <header class="district-page__header">
-      <h1>Էվակուատորներ {{ district.name }}ում</h1>
+      <h1>{{ t('districtPage.h1', { place: districtName }) }}</h1>
       <div class="district-page__stats">
         <AppBadge variant="primary">
-          <AppIcon name="truck" :size="14" /> {{ district.towTruckCount }} հասանելի էվակուատոր
+          <AppIcon name="truck" :size="14" /> {{ plural('card.towTrucks', district.towTruckCount) }}
         </AppBadge>
         <AppBadge variant="success">
-          <AppIcon name="clock" :size="14" /> {{ district.towTruck24hCount }} աշխատում է 24/7
+          <AppIcon name="clock" :size="14" /> {{ plural('card.open24', district.towTruck24hCount) }}
         </AppBadge>
       </div>
     </header>
@@ -69,7 +82,7 @@ useJsonLd([
     <div class="district-page__toolbar">
       <AppButton v-if="!isDesktop" variant="outline" size="sm" @click="openDrawer">
         <AppIcon name="filter" :size="16" />
-        Ֆիլտրեր
+        {{ t('common.filters') }}
         <span v-if="activeFiltersCount > 0" class="district-page__filter-count">
           {{ activeFiltersCount }}
         </span>
@@ -80,7 +93,7 @@ useJsonLd([
     <ActiveFilters class="district-page__active-filters" />
 
     <div class="district-page__layout">
-      <aside v-if="isDesktop" class="district-page__sidebar" aria-label="Ֆիլտրեր">
+      <aside v-if="isDesktop" class="district-page__sidebar" :aria-label="t('common.filters')">
         <TowTruckFilters />
       </aside>
 
@@ -89,8 +102,8 @@ useJsonLd([
           <template #empty>
             <EmptyState
               v-if="towTrucks.length === 0"
-              title="Այս շրջանում դեռ գրանցված էվակուատոր չկա"
-              description="Կարող եք դիտել մոտակա շրջաններում աշխատող ծառայությունները կամ գրանցել ձեր էվակուատորը։"
+              :title="t('page.emptyDistrictTitle')"
+              :description="t('page.emptyDistrictText')"
             >
               <template #actions>
                 <AppButton
@@ -98,22 +111,24 @@ useJsonLd([
                   :to="getDistrictRoute(nearbyDistricts[0]!.slug)"
                   variant="primary"
                 >
-                  Դիտել մոտակա շրջանները
+                  {{ t('common.viewNearbyDistricts') }}
                 </AppButton>
-                <AppButton :to="getRegisterRoute()" variant="accent">Գրանցել էվակուատոր</AppButton>
+                <AppButton :to="getRegisterRoute()" variant="accent">
+                  {{ t('common.registerTruck') }}
+                </AppButton>
               </template>
             </EmptyState>
             <EmptyState
               v-else
-              title="Ֆիլտրերին համապատասխանող էվակուատոր չկա"
-              description="Փորձեք մեղմել ֆիլտրերը կամ մաքրել դրանք։"
+              :title="t('common.emptyFilteredTitle')"
+              :description="t('common.emptyFilteredText')"
               icon="filter"
             />
           </template>
         </TowTruckList>
 
         <div v-if="hasMore" class="district-page__more">
-          <AppButton variant="outline" @click="loadMore">Ցուցադրել ավելին</AppButton>
+          <AppButton variant="outline" @click="loadMore">{{ t('common.showMore') }}</AppButton>
         </div>
       </div>
     </div>
@@ -121,12 +136,12 @@ useJsonLd([
     <MobileFilterDrawer v-model="isDrawerOpen" :results-count="filteredTowTrucks.length" />
 
     <section v-if="nearbyDistricts.length > 0" class="district-page__section">
-      <h2>Մոտակա շրջաններ</h2>
+      <h2>{{ t('page.nearbyDistricts') }}</h2>
       <ul class="district-page__nearby">
         <li v-for="nearby in nearbyDistricts" :key="nearby.id">
           <NuxtLinkLocale :to="getDistrictRoute(nearby.slug)" class="district-page__nearby-link">
             <AppIcon name="map-pin" :size="14" />
-            {{ nearby.name }}
+            {{ placeName('district', nearby.slug, nearby.name) }}
             <span class="district-page__nearby-count">({{ nearby.towTruckCount }})</span>
           </NuxtLinkLocale>
         </li>
@@ -136,7 +151,7 @@ useJsonLd([
     <FaqSection :items="faqItems" class="district-page__section" />
 
     <SeoTextSection
-      :title="`Էվակուատորի ծառայություններ ${district.name}ում`"
+      :title="t('districtPage.seoTitle', { place: districtName })"
       :paragraphs="seoParagraphs"
       class="district-page__section"
     />
@@ -147,7 +162,7 @@ useJsonLd([
          that coarse. -->
     <SpecialVehicleCrossLinks
       region-slug="yerevan"
-      area-label="Երևանում"
+      :area-label="t('districtPage.inYerevan')"
       class="district-page__section"
     />
   </div>

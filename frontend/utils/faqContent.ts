@@ -1,8 +1,107 @@
 import type { FaqItem } from '~/types/common'
 import { localizedPlaceName } from '~/i18n/placeNames'
 
-/** Homepage-only FAQ — targets the exact query variants people search on Google */
-export function buildHomeFaq(): FaqItem[] {
+/**
+ * Homepage-only FAQ — targets the exact query variants people search on Google.
+ *
+ * Written per language rather than translated sentence by sentence, for the
+ * same reason the city FAQ is: this is the block that has to match «сколько
+ * стоит эвакуатор ереван» as it is actually typed. Where the Armenian text
+ * tells the reader to tick a filter, the translations name the label the
+ * filter now carries in that language — a FAQ that quotes a control by a name
+ * the page does not use is worse than no FAQ.
+ */
+export function buildHomeFaq(locale = 'hy'): FaqItem[] {
+  if (locale === 'ru') {
+    return [
+      {
+        question: 'Сколько стоит вызвать эвакуатор',
+        answer:
+          'Цены обычно начинаются с 9 000 – 15 000 драмов и зависят от типа машины, расстояния и времени суток. На карточке каждого водителя видна начальная цена, поэтому сравнить варианты и выбрать самый дешёвый эвакуатор в своём районе несложно.',
+      },
+      {
+        question: 'Есть ли эвакуатор, который работает 24 часа',
+        answer:
+          'Да, многие водители работают круглосуточно (24/7), включая ночные часы и праздничные дни. В списке включите фильтр «Работает 24/7», чтобы увидеть только их.',
+      },
+      {
+        question: 'Есть ли эвакуатор с манипулятором',
+        answer:
+          'Да, у части водителей есть эвакуатор с краном-манипулятором — для тяжёлых машин и для мест, куда обычная платформа не подъедет. Все такие водители собраны на странице «Эвакуатор с манипулятором».',
+      },
+      {
+        question: 'Как зарегистрироваться водителем эвакуатора',
+        answer:
+          'Нажмите «Зарегистрировать эвакуатор», заполните данные машины и услуг — заявка проходит проверку администрации. После подтверждения ваш профиль сразу появляется на сайте.',
+      },
+      {
+        question: 'Есть ли эвакуаторы в Ереване и во всех марзах',
+        answer:
+          'Да, на сайте есть эвакуаторы во всех административных районах Еревана, а также во всех марзах и городах Армении. Выберите свой район в поиске на главной, чтобы увидеть ближайших водителей.',
+      },
+      {
+        question: 'Чем эвакуатор с манипулятором отличается от обычного',
+        answer:
+          'Обычный эвакуатор затягивает машину на наклонную платформу. У эвакуатора с манипулятором есть гидравлическая стрела: ею можно поднять машину сбоку, повреждённую или стоящую в глубокой яме, без риска дополнительных повреждений.',
+      },
+      {
+        question: 'Как оплатить услугу эвакуатора',
+        answer:
+          'Большинство водителей принимает и наличные, и безналичную оплату. Точный способ подтвердите во время звонка, до приезда эвакуатора.',
+      },
+      {
+        question: 'Что нужно сказать при вызове эвакуатора',
+        answer:
+          'Назовите точное местоположение, марку и состояние машины (заводится ли двигатель, есть ли подъезд сбоку) и куда её нужно доставить. Этого хватает, чтобы водитель сразу понял, нужен обычный эвакуатор или манипулятор.',
+      },
+    ]
+  }
+
+  if (locale === 'en') {
+    return [
+      {
+        question: 'How much does it cost to call a tow truck?',
+        answer:
+          'Prices usually start at 9,000–15,000 drams, depending on the vehicle, the distance and the time of day. Every driver card shows a starting price, so comparing them and picking the cheapest tow truck in your area is straightforward.',
+      },
+      {
+        question: 'Is there a tow truck that works 24 hours?',
+        answer:
+          'Yes — many drivers work around the clock (24/7), including nights and public holidays. Turn on the "Works 24/7" filter in the listing to see only those.',
+      },
+      {
+        question: 'Is there a tow truck with a crane?',
+        answer:
+          'Yes. Some drivers have a crane truck (a manipulator), for heavy vehicles and for places an ordinary flatbed cannot reach. They are all collected on the "Crane tow truck" page.',
+      },
+      {
+        question: 'How do I register as a tow truck driver?',
+        answer:
+          'Press "Register a tow truck" and fill in the details of your vehicle and services. The application is reviewed by the administration, and once it is approved your profile appears on the site immediately.',
+      },
+      {
+        question: 'Are there tow trucks in Yerevan and in every region?',
+        answer:
+          'Yes — the site lists tow trucks in every administrative district of Yerevan and in every region and town in Armenia. Pick your area in the search on the home page to see the drivers nearest to you.',
+      },
+      {
+        question: 'How is a crane truck different from an ordinary tow truck?',
+        answer:
+          'An ordinary tow truck pulls the car up onto a tilting platform. A crane truck has a hydraulic boom, so it can lift a car from the side, one that is damaged, or one sitting in a deep hole — without the risk of doing more damage.',
+      },
+      {
+        question: 'How do I pay for the service?',
+        answer:
+          'Most drivers take both cash and card. Confirm the exact method on the call, before the truck sets off.',
+      },
+      {
+        question: 'What should I tell the driver when I call?',
+        answer:
+          'Your exact location, the make and condition of the car (does the engine start, can it be reached from the side) and where it has to go. That is enough for the driver to know straight away whether an ordinary truck or a crane is needed.',
+      },
+    ]
+  }
+
   return [
     {
       question: 'Ինչքա՞ն արժե էժան էվակուատոր կանչել',
@@ -48,7 +147,47 @@ export function buildHomeFaq(): FaqItem[] {
 }
 
 /** «Հայաստանի մարզեր» ցուցակի էջ — մեկ մակարդակ վերևից, ընդհանուր հարցեր */
-export function buildAllRegionsFaq(): FaqItem[] {
+export function buildAllRegionsFaq(locale = 'hy'): FaqItem[] {
+  if (locale === 'ru') {
+    return [
+      {
+        question: 'Работают ли эвакуаторы во всех марзах Армении',
+        answer:
+          'Да, на Evakuators.am есть эвакуаторы во всех 10 марзах и в Ереване. Выберите свой марз из списка, чтобы посмотреть ближайших водителей и цены.',
+      },
+      {
+        question: 'Можно ли вызвать эвакуатор из одного марза в другой',
+        answer:
+          'Да. Водители с услугой «Междугородняя перевозка» возят машины из марза в марз, в том числе в Ереван и из Еревана. Цена считается по расстоянию, поэтому уточните её во время звонка.',
+      },
+      {
+        question: 'Отличаются ли цены в марзах от Еревана',
+        answer:
+          'Базовая цена сопоставима, но в марзах на итоговую сумму влияют расстояние и состояние дороги. Начальная цена указана на карточке каждого водителя.',
+      },
+    ]
+  }
+
+  if (locale === 'en') {
+    return [
+      {
+        question: 'Do tow trucks work in every region of Armenia?',
+        answer:
+          'Yes — Evakuators.am lists tow trucks in all ten regions and in Yerevan. Pick your region from the list to see the nearest drivers and their prices.',
+      },
+      {
+        question: 'Can I have a car moved from one region to another?',
+        answer:
+          'Yes. Drivers who offer "Intercity transport" move cars between regions, including to and from Yerevan. The price is worked out by distance, so confirm it on the call.',
+      },
+      {
+        question: 'Are prices in the regions different from Yerevan?',
+        answer:
+          'The base price is comparable, but in the regions the distance and the state of the road affect the final figure. Every driver card shows a starting price.',
+      },
+    ]
+  }
+
   return [
     {
       question: 'Աշխատու՞մ են էվակուատորները Հայաստանի բոլոր մարզերում',
@@ -69,7 +208,47 @@ export function buildAllRegionsFaq(): FaqItem[] {
 }
 
 /** «Ազատ երթուղիներ» — յուրահատուկ գործառույթ, մարդիկ առաջին անգամ լսելիս հարցեր ունեն */
-export function buildFreeRoutesFaq(): FaqItem[] {
+export function buildFreeRoutesFaq(locale = 'hy'): FaqItem[] {
+  if (locale === 'ru') {
+    return [
+      {
+        question: 'Что такое «попутный рейс»',
+        answer:
+          'Попутный рейс — это маршрут, по которому водитель эвакуатора уже едет порожняком из одной точки в другую. По дороге он может взять заказ, не отклоняясь от маршрута, — для клиента это обычно быстрее и дешевле.',
+      },
+      {
+        question: 'Почему стоит выбрать попутный рейс',
+        answer:
+          'Водитель уже движется в вашу сторону, поэтому приезжает он обычно быстрее, а цена выходит ниже, чем при отдельном вызове.',
+      },
+      {
+        question: 'Как связаться с водителем попутного рейса',
+        answer:
+          'Выберите из списка маршрут, совпадающий с вашим направлением, и позвоните водителю напрямую. Список обновляется в реальном времени, а просроченные рейсы исчезают сами.',
+      },
+    ]
+  }
+
+  if (locale === 'en') {
+    return [
+      {
+        question: 'What is a "free route"?',
+        answer:
+          'A free route is a trip a driver is already making empty, from one place to another. Along the way they can take an order without going out of their way, which is usually both faster and cheaper for the customer.',
+      },
+      {
+        question: 'Why choose a driver on a free route?',
+        answer:
+          'The driver is already heading your way, so they normally arrive sooner and the price is lower than for a dedicated call-out.',
+      },
+      {
+        question: 'How do I reach a driver on a free route?',
+        answer:
+          'Pick the route that matches your direction from the list and call the driver directly. The list updates in real time and expired routes drop off it automatically.',
+      },
+    ]
+  }
+
   return [
     {
       question: 'Ի՞նչ է «Ազատ երթուղին»',

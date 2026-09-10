@@ -5,13 +5,16 @@ const { data: districts, pending } = useDistricts()
 const { data: towTrucks, pending: towTrucksPending } = useTowTrucksInYerevan()
 const { forYerevan } = useBreadcrumbs()
 
-const seoParagraphs = [
-  'Էվակուատոր Երևանում. ընտրեք վարչական շրջանը կամ դիտեք քաղաքի բոլոր էվակուատորները մեկ ցանկով։ Իրական նկարներ, գներ, 24/7 ծառայություններ և ուղիղ կապ վարորդի հետ։',
-  buildTranslitParagraph('Երևան', 'erevan'),
-]
+const { t, locale } = useI18n()
+const plural = usePlural()
+
+const seoParagraphs = computed(() => [
+  t('yerevanPage.intro'),
+  buildTranslitParagraph('Երևան', 'erevan', locale.value),
+])
 
 useSeoMetaData({
-  ...buildLocationSeo('Երևան', 'erevan'),
+  ...buildLocationSeo('Երևան', 'erevan', locale.value),
   path: '/yerevan',
 })
 </script>
@@ -21,13 +24,13 @@ useSeoMetaData({
     <AppBreadcrumbs :items="forYerevan()" />
 
     <header class="yerevan-page__header">
-      <h1>Էվակուատորներ Երևանում</h1>
+      <h1>{{ t('yerevanPage.h1') }}</h1>
       <div class="yerevan-page__stats">
         <AppBadge variant="primary">
-          <AppIcon name="map-pin" :size="14" /> 12 վարչական շրջան
+          <AppIcon name="map-pin" :size="14" /> {{ t('yerevanPage.districtsBadge', { count: 12 }) }}
         </AppBadge>
         <AppBadge variant="accent">
-          <AppIcon name="truck" :size="14" /> {{ towTrucks.length }} էվակուատոր
+          <AppIcon name="truck" :size="14" /> {{ plural('card.towTrucks', towTrucks.length) }}
         </AppBadge>
       </div>
     </header>
@@ -48,12 +51,14 @@ useSeoMetaData({
     </div>
 
     <section aria-labelledby="yerevan-trucks-title" class="yerevan-page__section">
-      <h2 id="yerevan-trucks-title">Բոլոր էվակուատորները Երևանում ({{ towTrucks.length }})</h2>
+      <h2 id="yerevan-trucks-title">
+        {{ t('yerevanPage.allTrucks', { count: towTrucks.length }) }}
+      </h2>
       <TowTruckList :tow-trucks="towTrucks" :pending="towTrucksPending" :skeleton-count="6" />
     </section>
 
     <SeoTextSection
-      title="Էվակուատորի ծառայություններ Երևանում"
+      :title="t('yerevanPage.seoTitle')"
       :paragraphs="seoParagraphs"
       class="yerevan-page__section"
     />

@@ -64,23 +64,63 @@ export function formatCapacity(tons: number, locale = 'hy'): string {
  */
 
 /**
- * Genitive ("of August"), because that is the case Armenian uses when a day
- * precedes the month: «7 օգոստոսի», never «7 օգոստոս».
+ * Genitive ("of August"), because that is the case Armenian and Russian use
+ * when a day precedes the month: «7 օգոստոսի», «7 августа», never «7 օգոստոս»
+ * or «7 август». English needs no case at all, so its list is nominative.
+ *
+ * Hand-written for the same reason the whole file is — see the comment block
+ * above: asking `Intl` for the word risks a runtime that lacks the locale and
+ * silently answers in its own default, which is exactly the hydration
+ * mismatch this file exists to rule out. A Russian or English page gets that
+ * same guarantee, not just the Armenian one.
  */
-const ARMENIAN_MONTHS_GENITIVE = [
-  'հունվարի',
-  'փետրվարի',
-  'մարտի',
-  'ապրիլի',
-  'մայիսի',
-  'հունիսի',
-  'հուլիսի',
-  'օգոստոսի',
-  'սեպտեմբերի',
-  'հոկտեմբերի',
-  'նոյեմբերի',
-  'դեկտեմբերի',
-] as const
+const MONTHS_GENITIVE: Record<string, readonly string[]> = {
+  hy: [
+    'հունվարի',
+    'փետրվարի',
+    'մարտի',
+    'ապրիլի',
+    'մայիսի',
+    'հունիսի',
+    'հուլիսի',
+    'օգոստոսի',
+    'սեպտեմբերի',
+    'հոկտեմբերի',
+    'նոյեմբերի',
+    'դեկտեմբերի',
+  ],
+  ru: [
+    'января',
+    'февраля',
+    'марта',
+    'апреля',
+    'мая',
+    'июня',
+    'июля',
+    'августа',
+    'сентября',
+    'октября',
+    'ноября',
+    'декабря',
+  ],
+  en: [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ],
+}
+
+/** «2026 թ.» / «2026 г.» — the year-abbreviation suffix, per language */
+const YEAR_SUFFIX: Record<string, string> = { hy: ' թ.', ru: ' г.', en: '' }
 
 /**
  * Splits an instant into Armenia's wall-clock fields.
@@ -133,9 +173,9 @@ function yerevanFields(date: Date): DateFields {
   }
 }
 
-/** 1-based month number → "օգոստոսի". Out-of-range returns '' rather than throwing. */
-function monthName(month: number): string {
-  return ARMENIAN_MONTHS_GENITIVE[month - 1] ?? ''
+/** 1-based month number → "օգոստոսի" / "августа" / "August". Out-of-range returns ''. */
+function monthName(month: number, locale = 'hy'): string {
+  return (MONTHS_GENITIVE[locale] ?? MONTHS_GENITIVE.hy)[month - 1] ?? ''
 }
 
 /**
@@ -146,9 +186,9 @@ function monthName(month: number): string {
  * string and never turned into a `Date`: constructing one would introduce a
  * timezone the value does not have, and could shift the label by a day.
  */
-export function formatDateKeyLong(dateKey: string): string {
+export function formatDateKeyLong(dateKey: string, locale = 'hy'): string {
   const [, month, day] = dateKey.split('-')
-  return `${Number(day)} ${monthName(Number(month))}`
+  return `${Number(day)} ${monthName(Number(month), locale)}`
 }
 
 /** '2026-07-27' → "27.07" — compact chart axis label */
@@ -170,9 +210,9 @@ export function formatCount(value: number): string {
 }
 
 /** ISO datetime → "7 օգոստոսի, 20:15" (Armenia time) */
-export function formatDepartureAt(iso: string): string {
+export function formatDepartureAt(iso: string, locale = 'hy'): string {
   const { day, month, hour, minute } = yerevanFields(new Date(iso))
-  return `${day} ${monthName(month)}, ${hour}:${minute}`
+  return `${day} ${monthName(month, locale)}, ${hour}:${minute}`
 }
 
 /**
@@ -187,25 +227,29 @@ export function formatDepartureAt(iso: string): string {
  * the arrival side so the range still reads as two distinct instants rather
  * than implying a 19:00 arrival earlier the same day.
  */
-export function formatDepartureRange(departureIso: string, arrivalIso?: string): string {
-  if (!arrivalIso) return formatDepartureAt(departureIso)
+export function formatDepartureRange(
+  departureIso: string,
+  arrivalIso?: string,
+  locale = 'hy',
+): string {
+  if (!arrivalIso) return formatDepartureAt(departureIso, locale)
 
   const departure = yerevanFields(new Date(departureIso))
   const arrival = yerevanFields(new Date(arrivalIso))
 
-  const departureLabel = `${departure.day} ${monthName(departure.month)}`
+  const departureLabel = `${departure.day} ${monthName(departure.month, locale)}`
   if (departure.year === arrival.year && departure.month === arrival.month && departure.day === arrival.day) {
     return `${departureLabel}, ${departure.hour}:${departure.minute}–${arrival.hour}:${arrival.minute}`
   }
 
-  const arrivalLabel = `${arrival.day} ${monthName(arrival.month)}`
+  const arrivalLabel = `${arrival.day} ${monthName(arrival.month, locale)}`
   return `${departureLabel}, ${departure.hour}:${departure.minute} – ${arrivalLabel}, ${arrival.hour}:${arrival.minute}`
 }
 
 /** ISO datetime → "7 օգոստոսի 2026 թ." (Armenia time) — for dates without a clock time */
-export function formatDateLong(iso: string): string {
+export function formatDateLong(iso: string, locale = 'hy'): string {
   const { day, month, year } = yerevanFields(new Date(iso))
-  return `${day} ${monthName(month)} ${year} թ.`
+  return `${day} ${monthName(month, locale)} ${year}${YEAR_SUFFIX[locale] ?? YEAR_SUFFIX.hy}`
 }
 
 /**

@@ -28,7 +28,7 @@ const plural = usePlural()
 const regionName = computed(() => placeName('region', regionSlug, region.value?.name ?? ''))
 
 const faqItems = buildRegionFaq(region.value.name, locale.value, regionSlug)
-const seoParagraphs = [buildTranslitParagraph(region.value.name, regionSlug, locale.value)]
+const seoParagraphs = [buildTranslitParagraph(region.value.name, regionSlug, locale.value, 'region')]
 
 /**
  * The marz blurb under the heading.

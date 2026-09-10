@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Review } from '~/types/review'
-import { formatDateLong as formatDate } from '~/utils/formatters'
+import { formatDateLong } from '~/utils/formatters'
 
 interface Props {
   reviews: Review[]
@@ -8,6 +8,11 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), { pending: false })
+
+const { t, locale } = useI18n()
+const plural = usePlural()
+
+const formatDate = (iso: string): string => formatDateLong(iso, locale.value)
 
 const averageRating = computed(() => {
   if (props.reviews.length === 0) return 0
@@ -18,7 +23,7 @@ const averageRating = computed(() => {
 <template>
   <section class="truck-reviews" aria-labelledby="truck-reviews-title">
     <header class="truck-reviews__header">
-      <h2 id="truck-reviews-title">Կարծիքներ</h2>
+      <h2 id="truck-reviews-title">{{ t('reviews.title') }}</h2>
       <div v-if="reviews.length > 0" class="truck-reviews__summary">
         <span class="truck-reviews__stars" aria-hidden="true">
           <AppIcon
@@ -29,14 +34,14 @@ const averageRating = computed(() => {
           />
         </span>
         <strong>{{ averageRating.toFixed(1) }}</strong>
-        <span class="truck-reviews__count">({{ reviews.length }} կարծիք)</span>
+        <span class="truck-reviews__count">({{ plural('reviews.count', reviews.length) }})</span>
       </div>
     </header>
 
     <LoadingSkeleton v-if="pending" variant="text" :count="2" />
 
     <p v-else-if="reviews.length === 0" class="truck-reviews__empty">
-      Դեռ կարծիք չկա։ Առաջինը եղեք, ով կպատմի իր փորձառության մասին։
+      {{ t('reviews.empty') }}
     </p>
 
     <ul v-else class="truck-reviews__list">

@@ -240,7 +240,10 @@ export function localizedPlaceName(
   armenianName: string,
   locale: string,
 ): string {
-  if (slug === 'yerevan') return YEREVAN[locale] ?? armenianName
+  // `erevan` is the same city under the other Latin spelling. The SEO copy
+  // uses it as the transliterated form («evakuator erevan»), and passing that
+  // spelling in must not quietly drop back to the Armenian name.
+  if (slug === 'yerevan' || slug === 'erevan') return YEREVAN[locale] ?? armenianName
   return BY_LOCALE[locale]?.[kind]?.[slug] ?? armenianName
 }
 

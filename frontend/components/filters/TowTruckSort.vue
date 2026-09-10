@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useTowTruckFiltersStore } from '~/stores/towTruckFilters'
 import { SORT_OPTIONS } from '~/constants/sort'
-import type { SortOption } from '~/types/enums'
+import { SortOption } from '~/types/enums'
 
 const store = useTowTruckFiltersStore()
 
@@ -10,12 +10,25 @@ const sortValue = computed({
   set: (value: string) => store.setSort(value as SortOption),
 })
 
-const options = SORT_OPTIONS.map((option) => ({ value: option.value as string, label: option.label }))
+const { t } = useI18n()
+
+/** The Armenian labels on `SORT_OPTIONS` stay the fallback — see `useCatalogLabels`. */
+const SORT_LABEL_KEYS: Record<SortOption, string> = {
+  [SortOption.Recommended]: 'sort.recommended',
+  [SortOption.Price]: 'sort.lowestPrice',
+}
+
+const options = computed(() =>
+  SORT_OPTIONS.map((option) => ({
+    value: option.value as string,
+    label: t(SORT_LABEL_KEYS[option.value] ?? '') || option.label,
+  })),
+)
 </script>
 
 <template>
   <div class="sort">
-    <span class="sort__label">Դասավորել՝</span>
+    <span class="sort__label">{{ t('sort.label') }}</span>
     <AppSelect v-model="sortValue" :options="options" class="sort__select" />
   </div>
 </template>

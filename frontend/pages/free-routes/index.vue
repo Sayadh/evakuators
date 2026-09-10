@@ -3,15 +3,16 @@ import { SITE_NAME } from '~/constants/site'
 import { freeRoutesService } from '~/services'
 import { buildFreeRoutesFaq } from '~/utils/faqContent'
 
+const { t, locale } = useI18n()
+
 useSeoMetaData({
-  title: `Ազատ երթուղիներ | Դատարկ ուղղությամբ շարժվող էվակուատորներ | ${SITE_NAME}`,
-  description:
-    'Գտեք էվակուատոր, որն արդեն շարժվում է ձեր ուղղությամբ դատարկ։ Կապվեք վարորդի հետ անմիջապես։',
+  title: `${t('freeRoutes.metaTitle')} | ${SITE_NAME}`,
+  description: t('freeRoutes.metaDescription'),
   path: '/free-routes',
 })
 
 const { forFreeRoutes } = useBreadcrumbs()
-const faqItems = buildFreeRoutesFaq()
+const faqItems = computed(() => buildFreeRoutesFaq(locale.value))
 
 const { data: routes, pending } = useAsyncData('free-routes', () => freeRoutesService.getActive(), {
   default: () => [],
@@ -30,10 +31,9 @@ onMounted(trackFreeRoutesView)
   <div class="container free-routes-page">
     <AppBreadcrumbs :items="forFreeRoutes()" />
 
-    <h1>Ազատ երթուղիներ</h1>
+    <h1>{{ t('freeRoutes.h1') }}</h1>
     <p class="free-routes-page__intro">
-      Այս վարորդները մեկնում են դատարկ նշված ուղղությամբ և կարող են ճանապարհին կամ վերջնակետում
-      վերցնել նոր պատվեր։ Կապվեք ուղղակիորեն վարորդի հետ։
+      {{ t('freeRoutes.intro') }}
     </p>
 
     <div v-if="pending" class="free-routes-page__grid">
@@ -45,7 +45,7 @@ onMounted(trackFreeRoutesView)
     </div>
 
     <p v-else class="free-routes-page__empty">
-      Այս պահին ակտիվ ազատ երթուղիներ չկան։ Ստուգեք մի փոքր ուշ։
+      {{ t('freeRoutes.empty') }}
     </p>
 
     <FaqSection :items="faqItems" class="free-routes-page__section" />

@@ -3,8 +3,10 @@ import { buildHomeFaq } from '~/utils/faqContent'
 import { buildSiteIdentitySchema } from '~/utils/schemaOrg'
 import { buildHomeParagraphs, buildHomeSeo } from '~/utils/seoContent'
 
+const { t, locale } = useI18n()
+
 useSeoMetaData({
-  ...buildHomeSeo(),
+  ...buildHomeSeo(locale.value, t('site.tagline')),
   path: '/',
 })
 
@@ -13,8 +15,8 @@ useSeoMetaData({
 // buildSiteIdentitySchema. This is the only page that may emit it.
 useJsonLd([buildSiteIdentitySchema()])
 
-const faqItems = buildHomeFaq()
-const seoParagraphs = buildHomeParagraphs()
+const faqItems = computed(() => buildHomeFaq(locale.value))
+const seoParagraphs = computed(() => buildHomeParagraphs(locale.value))
 </script>
 
 <template>
@@ -38,7 +40,7 @@ const seoParagraphs = buildHomeParagraphs()
     <div class="container">
       <FaqSection :items="faqItems" class="home-page__section" />
       <SeoTextSection
-        title="Էվակուատորի ծառայություններ ամբողջ Հայաստանում"
+        :title="t('home.seoTitle')"
         :paragraphs="seoParagraphs"
         class="home-page__section"
       />

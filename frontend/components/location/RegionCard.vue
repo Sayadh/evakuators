@@ -4,6 +4,7 @@ import { getRegionRoute } from '~/utils/routeHelpers'
 
 /** Static copy in i18n/locales; place names in i18n/placeNames.ts */
 const { t } = useI18n()
+const plural = usePlural()
 const placeName = usePlaceName()
 
 interface Props {
@@ -21,8 +22,8 @@ defineProps<Props>()
       </NuxtLinkLocale>
     </h3>
     <ul class="region-card__stats">
-      <li><AppIcon name="map-pin" :size="16" /> {{ t('card.cities', region.cityCount) }}</li>
-      <li><AppIcon name="truck" :size="16" /> {{ t('card.towTrucks', region.towTruckCount) }}</li>
+      <li><AppIcon name="map-pin" :size="16" /> {{ plural('card.cities', region.cityCount) }}</li>
+      <li><AppIcon name="truck" :size="16" /> {{ plural('card.towTrucks', region.towTruckCount) }}</li>
     </ul>
     <span class="region-card__cta">
       {{ t('card.viewCities') }}

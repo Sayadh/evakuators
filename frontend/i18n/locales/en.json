@@ -65,7 +65,10 @@
     "benefitFreeText": "Finding a truck and calling the driver is completely free.",
     "chooseArea": "Choose your area",
     "yerevanTag": "The widest choice",
-    "yerevanSummary": "{count} district · tow trucks across the city | {count} districts · tow trucks across the city",
+    "yerevanSummary": {
+      "one": "{count} district · tow trucks across the city",
+      "many": "{count} districts · tow trucks across the city"
+    },
     "truckBadge": "tow truck",
     "featuredTitle": "Top tow trucks",
     "popularTitle": "Frequently searched areas"
@@ -101,9 +104,18 @@
     "kindCity": "town"
   },
   "card": {
-    "towTrucks": "{count} tow truck | {count} tow trucks",
-    "open24": "{count} open 24/7 | {count} open 24/7",
-    "cities": "{count} town | {count} towns",
+    "towTrucks": {
+      "one": "{count} tow truck",
+      "many": "{count} tow trucks"
+    },
+    "open24": {
+      "one": "{count} open 24/7",
+      "many": "{count} open 24/7"
+    },
+    "cities": {
+      "one": "{count} town",
+      "many": "{count} towns"
+    },
     "viewTrucks": "See the tow trucks",
     "viewCities": "See the towns"
   },

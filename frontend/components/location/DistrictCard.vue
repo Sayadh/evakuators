@@ -4,6 +4,7 @@ import { getDistrictRoute } from '~/utils/routeHelpers'
 
 /** Static copy in i18n/locales; place names in i18n/placeNames.ts */
 const { t } = useI18n()
+const plural = usePlural()
 const placeName = usePlaceName()
 
 interface Props {
@@ -21,8 +22,8 @@ defineProps<Props>()
       </NuxtLinkLocale>
     </h3>
     <ul class="district-card__stats">
-      <li><AppIcon name="truck" :size="16" /> {{ t('card.towTrucks', district.towTruckCount) }}</li>
-      <li><AppIcon name="clock" :size="16" /> {{ t('card.open24', district.towTruck24hCount) }}</li>
+      <li><AppIcon name="truck" :size="16" /> {{ plural('card.towTrucks', district.towTruckCount) }}</li>
+      <li><AppIcon name="clock" :size="16" /> {{ plural('card.open24', district.towTruck24hCount) }}</li>
     </ul>
     <span class="district-card__cta">
       {{ t('card.viewTrucks') }}

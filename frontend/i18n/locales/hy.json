@@ -65,7 +65,9 @@
     "benefitFreeText": "Էվակուատոր փնտրելը և վարորդին զանգելը ամբողջությամբ անվճար է։",
     "chooseArea": "Ընտրեք ձեր տարածքը",
     "yerevanTag": "Ամենամեծ ընտրանքը",
-    "yerevanSummary": "{count} վարչական շրջան · էվակուատորներ ամբողջ քաղաքում",
+    "yerevanSummary": {
+      "one": "{count} վարչական շրջան · էվակուատորներ ամբողջ քաղաքում"
+    },
     "truckBadge": "էվակուատոր",
     "featuredTitle": "Լավագույն էվակուատորները",
     "popularTitle": "Հաճախ որոնվող տարածքներ"
@@ -101,9 +103,15 @@
     "kindCity": "քաղաք"
   },
   "card": {
-    "towTrucks": "{count} էվակուատոր",
-    "open24": "{count} աշխատում է 24/7",
-    "cities": "{count} քաղաք",
+    "towTrucks": {
+      "one": "{count} էվակուատոր"
+    },
+    "open24": {
+      "one": "{count} աշխատում է 24/7"
+    },
+    "cities": {
+      "one": "{count} քաղաք"
+    },
     "viewTrucks": "Դիտել էվակուատորները",
     "viewCities": "Դիտել քաղաքները"
   },

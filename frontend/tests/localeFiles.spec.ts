@@ -53,12 +53,26 @@ describe('locale files', () => {
     expect(HY.size).toBeGreaterThan(20)
   })
 
-  it('defines exactly the same keys in Russian', () => {
-    expect([...RU.keys()].sort()).toEqual([...HY.keys()].sort())
+  it('defines every Armenian key in Russian', () => {
+    // A superset is allowed in one direction only: Russian carries `.few` and
+    // `.many` forms that Armenian legitimately does not have, and a key the
+    // Armenian site uses but Russian lacks would render as its own key path.
+    const missing = [...HY.keys()].filter((key) => !RU.has(key))
+    expect(missing).toEqual([])
   })
 
-  it('defines exactly the same keys in English', () => {
-    expect([...EN.keys()].sort()).toEqual([...HY.keys()].sort())
+  it('defines every Armenian key in English', () => {
+    const missing = [...HY.keys()].filter((key) => !EN.has(key))
+    expect(missing).toEqual([])
+  })
+
+  it('defines nothing in Russian or English that is not a plural form', () => {
+    // The other direction: an extra key is a translation nobody renders, or a
+    // key renamed on one side only.
+    const extra = (other: Map<string, string>) =>
+      [...other.keys()].filter((key) => !HY.has(key) && !/\.(few|many)$/.test(key))
+    expect(extra(RU)).toEqual([])
+    expect(extra(EN)).toEqual([])
   })
 
   it.each([
@@ -86,15 +100,33 @@ describe('locale files', () => {
     expect(armenian).toEqual([])
   })
 
-  it('gives Russian three plural forms wherever Armenian counts something', () => {
-    // Russian needs `1 город / 2 города / 5 городов`, and vue-i18n applies the
-    // English two-form rule unless the message actually carries three — see
-    // `i18n/i18n.config.ts`. A message with `{count}` and one form renders
-    // «5 город» on every listing page.
-    const counted = [...HY].filter(([, text]) => text.includes('{count}')).map(([key]) => key)
+  it('gives every counted message the forms its language needs', () => {
+    // Russian takes three — `1 город / 2 города / 5 городов` — and the
+    // exceptions are real: 21 is «один» while 11 is «много». English takes two.
+    // Armenian takes one, because a numeral there is followed by the singular.
+    //
+    // A missing form is not an error at runtime: `usePlural` asks for
+    // `card.towTrucks.few` and vue-i18n renders that key path as text.
+    const counted = [...HY.keys()].filter((key) => key.endsWith('.one'))
     expect(counted.length).toBeGreaterThan(0)
+
     for (const key of counted) {
-      expect({ key, forms: (RU.get(key) ?? '').split('|').length }).toEqual({ key, forms: 3 })
+      const stem = key.slice(0, -'.one'.length)
+      expect({ stem, ru: RU.has(`${stem}.few`) && RU.has(`${stem}.many`) }).toEqual({
+        stem,
+        ru: true,
+      })
+      expect({ stem, en: EN.has(`${stem}.many`) }).toEqual({ stem, en: true })
+    }
+  })
+
+  it('counts something in every form it defines', () => {
+    // A plural form without `{count}` is a sentence that lost its number.
+    for (const [key, text] of [...HY, ...RU, ...EN]) {
+      if (/\.(one|few|many)$/.test(key)) expect({ key, has: text.includes('{count}') }).toEqual({
+        key,
+        has: true,
+      })
     }
   })
 

@@ -3,6 +3,7 @@ import { getYerevanRoute } from '~/utils/routeHelpers'
 
 /** Static copy lives in i18n/locales */
 const { t } = useI18n()
+const plural = usePlural()
 
 const { data: regions, pending } = useRegions()
 const { data: districts } = useDistricts()
@@ -31,7 +32,7 @@ const yerevanTruckCountLabel = computed(() =>
         <div class="regions__yerevan-body">
           <div class="regions__yerevan-text">
             <h3>{{ t('footer.yerevan') }}</h3>
-            <p>{{ t('home.yerevanSummary', { count: districts.length }) }}</p>
+            <p>{{ plural('home.yerevanSummary', districts.length) }}</p>
           </div>
           <div class="regions__yerevan-stat">
             <span class="regions__yerevan-stat-number">{{ yerevanTruckCountLabel }}</span>

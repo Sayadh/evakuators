@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { TowTruckCard } from '~/types/towTruck'
-import { capacityDisplayText, VEHICLE_TYPE_LABELS } from '~/constants/vehicles'
 import { formatStartingPrice } from '~/utils/formatPrice'
 import { getTowTruckRoute } from '~/utils/routeHelpers'
 
@@ -16,12 +15,17 @@ const props = defineProps<Props>()
 // that belongs on their own page, not broadcast on every listing card.
 const { phoneHref, onPhoneClick } = usePhoneActions(() => props.towTruck)
 
+const { t, locale } = useI18n()
+const { vehicleTypeLabel, capacityText } = useCatalogLabels()
+const areaName = useAreaName()
+const locationName = useLocationName()
+
 const displayName = computed(() => props.towTruck.companyName ?? props.towTruck.driverName)
 
 const mainAreas = computed(() =>
   props.towTruck.serviceAreas
     .slice(0, 3)
-    .map((area) => area.name)
+    .map((area) => areaName(area))
     .join(', '),
 )
 </script>
@@ -33,7 +37,12 @@ const mainAreas = computed(() =>
         <NuxtImg
           v-if="towTruck.images[0]"
           :src="towTruck.images[0]"
-          :alt="`${displayName} — ${towTruck.vehicle.brand} ${towTruck.vehicle.model} էվակուատոր`"
+          :alt="
+            t('card.imageAlt', {
+              name: displayName,
+              vehicle: `${towTruck.vehicle.brand} ${towTruck.vehicle.model}`,
+            })
+          "
           class="truck-card__image"
           width="400"
           height="225"
@@ -60,12 +69,12 @@ const mainAreas = computed(() =>
           <AppIcon name="truck" :size="15" />
           {{ towTruck.vehicle.brand }} {{ towTruck.vehicle.model }} ·
           <strong class="truck-card__vehicle-type">{{
-            VEHICLE_TYPE_LABELS[towTruck.vehicle.type]
+            vehicleTypeLabel(towTruck.vehicle.type)
           }}</strong>
         </li>
         <li>
           <AppIcon name="weight" :size="15" />
-          {{ capacityDisplayText(towTruck.vehicle.capacityTons) }}
+          {{ capacityText(towTruck.vehicle.capacityTons) }}
         </li>
         <li v-if="towTruck.workingHours">
           <AppIcon name="clock" :size="15" />
@@ -76,27 +85,27 @@ const mainAreas = computed(() =>
              and that ordering is invisible unless the base is easy to read. -->
         <li class="truck-card__base">
           <AppIcon name="map" :size="17" />
-          Հիմնական գտնվելու վայրը՝ {{ towTruck.location.name }}
+          {{ t('card.base', { place: locationName(towTruck.location) }) }}
         </li>
         <li v-if="mainAreas">
           <AppIcon name="map-pin" :size="15" />
-          Սպասարկում է՝ {{ mainAreas }}
+          {{ t('card.serves', { areas: mainAreas }) }}
         </li>
       </ul>
 
       <p v-if="towTruck.startingPrice" class="truck-card__price">
-        {{ formatStartingPrice(towTruck.startingPrice) }}
+        {{ formatStartingPrice(towTruck.startingPrice, locale) }}
       </p>
 
       <div class="truck-card__actions">
         <a
           :href="phoneHref"
           class="truck-card__call"
-          :aria-label="`Զանգահարել ${displayName}-ին`"
+          :aria-label="t('card.callAria', { name: displayName })"
           @click="onPhoneClick"
         >
           <AppIcon name="phone" :size="18" />
-          Զանգահարել
+          {{ t('card.call') }}
         </a>
         <AppButton
           :to="getTowTruckRoute(towTruck.slug)"
@@ -104,7 +113,7 @@ const mainAreas = computed(() =>
           size="sm"
           class="truck-card__view"
         >
-          Դիտել մանրամասները
+          {{ t('card.viewDetails') }}
         </AppButton>
       </div>
     </div>

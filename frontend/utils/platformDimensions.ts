@@ -17,7 +17,14 @@
  * `5.5, 2.2` → `"5.5 մ × 2.2 մ"`. Returns `''` when either is missing, so an
  * incomplete pair renders as nothing rather than as a half-written size.
  */
-export function formatPlatformDimensions(lengthM?: number, widthM?: number): string {
+const METRE_UNIT: Record<string, string> = { hy: 'մ', ru: 'м', en: 'm' }
+
+export function formatPlatformDimensions(
+  lengthM?: number,
+  widthM?: number,
+  locale = 'hy',
+): string {
   if (!lengthM || !widthM) return ''
-  return `${lengthM} մ × ${widthM} մ`
+  const unit = METRE_UNIT[locale] ?? METRE_UNIT.hy
+  return `${lengthM} ${unit} × ${widthM} ${unit}`
 }

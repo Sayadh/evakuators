@@ -20,12 +20,20 @@ export function formatPrice(amount: number): string {
   return `${formatCount(amount)} ֏`
 }
 
-/** 15000 → "սկսած 15 000 ֏" */
-export function formatStartingPrice(amount: number): string {
-  return `սկսած ${formatPrice(amount)}`
+/**
+ * The dram sign is NOT translated — «֏» is the currency, not a word, and it is
+ * what a price tag in Armenia says in any language. Only the words around it
+ * change.
+ */
+const FROM_WORD: Record<string, string> = { hy: 'սկսած', ru: 'от', en: 'from' }
+const PER_KM: Record<string, string> = { hy: 'կմ', ru: 'км', en: 'km' }
+
+/** 15000 → "սկսած 15 000 ֏" / "от 15 000 ֏" / "from 15 000 ֏" */
+export function formatStartingPrice(amount: number, locale = 'hy'): string {
+  return `${FROM_WORD[locale] ?? FROM_WORD.hy} ${formatPrice(amount)}`
 }
 
-/** 300 → "300 ֏/կմ" */
-export function formatPricePerKm(amount: number): string {
-  return `${formatPrice(amount)}/կմ`
+/** 300 → "300 ֏/կմ" / "300 ֏/км" / "300 ֏/km" */
+export function formatPricePerKm(amount: number, locale = 'hy'): string {
+  return `${formatPrice(amount)}/${PER_KM[locale] ?? PER_KM.hy}`
 }

@@ -11,6 +11,7 @@ import {
   matchesFilters,
 } from '~/utils/towTruckFilters'
 import { buildFilterQueryParams, parseFilterQueryParams } from '~/utils/queryParams'
+import hy from '~/i18n/locales/hy.json'
 
 /**
  * «Առկա են անիվային ռոլիկներ» — wheel skates, for loading a vehicle whose
@@ -141,6 +142,10 @@ describe('the card shape carries what the filter needs', () => {
     )
     expect(component).toContain('store.wheelSkates')
     expect(component).toContain('store.toggleWheelSkates()')
-    expect(component).toContain('Առկա են անիվային ռոլիկներ')
+    // The label moved into the locale files when the site became trilingual,
+    // so the assertion follows it: the checkbox names this key, and the key
+    // still says «Առկա են անիվային ռոլիկներ» in Armenian.
+    expect(component).toContain("t('filters.wheelSkates')")
+    expect(hy.filters.wheelSkates).toBe('Առկա են անիվային ռոլիկներ')
   })
 })

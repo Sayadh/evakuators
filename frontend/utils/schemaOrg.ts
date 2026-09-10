@@ -3,6 +3,7 @@ import type { BreadcrumbItem, FaqItem } from '~/types/common'
 import type { Review } from '~/types/review'
 import type { TowTruck, TowTruckCard } from '~/types/towTruck'
 import { SERVICE_LABELS } from '~/constants/services'
+import { countryLocative, countryName } from '~/i18n/vehicleTypeCopy'
 import {
   SITE_ALTERNATE_NAME,
   SITE_NAME,
@@ -236,6 +237,7 @@ export function buildSiteIdentitySchema(): JsonLd {
 export function buildVehicleTypeServiceSchema(
   page: VehicleTypePage,
   geo?: VehicleTypeGeo,
+  locale = 'hy',
 ): JsonLd {
   const path = geo
     ? `${getVehicleTypePageRoute(page.slug)}/${geo.slug}`
@@ -245,7 +247,7 @@ export function buildVehicleTypeServiceSchema(
     '@context': 'https://schema.org',
     '@type': 'Service',
     '@id': `${SITE_URL}${path}#service`,
-    name: `${page.heading} ${geo ? geo.locative : 'Հայաստանում'}`,
+    name: `${page.heading} ${geo ? geo.locative : countryLocative(locale)}`,
     description: page.seo.serviceSummary,
     serviceType: page.seo.keyword,
     url: `${SITE_URL}${path}`,
@@ -255,7 +257,7 @@ export function buildVehicleTypeServiceSchema(
     // local query this page answers.
     areaServed: {
       '@type': geo ? 'AdministrativeArea' : 'Country',
-      name: geo ? geo.name : 'Հայաստան',
+      name: geo ? geo.name : countryName(locale),
     },
     provider: { '@id': ORGANIZATION_ID },
     availableChannel: {

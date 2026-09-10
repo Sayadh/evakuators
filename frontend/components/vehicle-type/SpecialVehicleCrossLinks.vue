@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { VEHICLE_TYPE_PAGE_LIST, findVehicleTypeGeo } from '~/constants/vehicleTypePages'
+import { localizedVehicleTypeGeo, localizedVehicleTypePage } from '~/i18n/vehicleTypeCopy'
 import { getVehicleTypeGeoRoute, getVehicleTypePageRoute } from '~/utils/routeHelpers'
 
 /**
@@ -40,20 +41,32 @@ const props = defineProps<{
   areaLabel?: string
 }>()
 
-const geo = computed(() => (props.regionSlug ? findVehicleTypeGeo(props.regionSlug) : undefined))
+const { t, locale } = useI18n()
+
+/**
+ * This block sits at the bottom of every city and marz page, so it is the most
+ * widely rendered use of the vehicle-type copy on the site — and it was the
+ * one place a Russian page still showed two Armenian headings under a Russian
+ * title.
+ */
+const geo = computed(() => {
+  const found = props.regionSlug ? findVehicleTypeGeo(props.regionSlug) : undefined
+  return found ? localizedVehicleTypeGeo(found, locale.value) : undefined
+})
 
 const links = computed(() =>
-  VEHICLE_TYPE_PAGE_LIST.map((page) => ({
-    slug: page.slug,
-    label: geo.value ? `${page.heading} ${geo.value.locative}` : page.heading,
-    description: page.seo.serviceSummary,
-    to: geo.value
-      ? getVehicleTypeGeoRoute(page.slug, geo.value.slug)
-      : getVehicleTypePageRoute(page.slug),
-  })),
+  VEHICLE_TYPE_PAGE_LIST.map((source) => {
+    const page = localizedVehicleTypePage(source, locale.value)
+    return {
+      slug: page.slug,
+      label: geo.value ? `${page.heading} ${geo.value.locative}` : page.heading,
+      description: page.seo.serviceSummary,
+      to: geo.value
+        ? getVehicleTypeGeoRoute(page.slug, geo.value.slug)
+        : getVehicleTypePageRoute(page.slug),
+    }
+  }),
 )
-
-const { t } = useI18n()
 
 /**
  * `areaLabel` arrives already localised — «Կոտայքի մարզում» / «в марзе Котайк»

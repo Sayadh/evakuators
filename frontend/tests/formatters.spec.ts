@@ -232,7 +232,11 @@ describe('the source itself', () => {
    */
   it('never asks a runtime for Armenian words', () => {
     expect(CODE).not.toMatch(/toLocaleDateString|toLocaleTimeString|toLocaleString/)
-    expect(CODE).not.toMatch(/['"]hy(-AM)?['"]/)
+    // Narrowed when the site became trilingual: the formatters now take a
+    // `locale` parameter that defaults to `'hy'`, so a bare `'hy'` in the file
+    // is no longer evidence of anything. What must stay banned is handing that
+    // string to a runtime formatter, which is what the original bug did.
+    expect(CODE).not.toMatch(/Intl\.[A-Za-z]+\(\s*['"]hy/)
   })
 
   it('pins every option that could otherwise vary by machine', () => {

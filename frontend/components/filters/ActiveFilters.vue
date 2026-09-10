@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { useTowTruckFiltersStore } from '~/stores/towTruckFilters'
-import { SERVICE_LABELS } from '~/constants/services'
-import { CAPACITY_RANGE_OPTIONS, GENERAL_LISTING_VEHICLE_TYPE_OPTIONS } from '~/constants/vehicles'
+import { GENERAL_LISTING_VEHICLE_TYPE_OPTIONS } from '~/constants/vehicles'
 
 const store = useTowTruckFiltersStore()
+
+const { t } = useI18n()
+const { serviceLabel, vehicleTypeLabel, capacityRangeLabel } = useCatalogLabels()
 
 interface ActiveChip {
   key: string
@@ -20,21 +22,21 @@ const chips = computed<ActiveChip[]>(() => {
   if (store.wheelSkates)
     result.push({
       key: 'wheelSkates',
-      label: 'Ռոլիկներով',
+      label: t('filters.chipWheelSkates'),
       remove: () => store.toggleWheelSkates(),
     })
 
   if (store.doubleDeck)
     result.push({
       key: 'doubleDeck',
-      label: '2-հարկանի',
+      label: t('filters.chipDoubleDeck'),
       remove: () => store.toggleDoubleDeck(),
     })
 
   if (store.towHitch)
     result.push({
       key: 'towHitch',
-      label: 'Կցորդով',
+      label: t('filters.chipTowHitch'),
       remove: () => store.toggleTowHitch(),
     })
 
@@ -45,17 +47,17 @@ const chips = computed<ActiveChip[]>(() => {
     if (option)
       result.push({
         key: 'vehicleType',
-        label: option.label,
+        label: vehicleTypeLabel(option.value),
         remove: () => store.setVehicleType(null),
       })
   }
 
   if (store.capacity !== null) {
-    const option = CAPACITY_RANGE_OPTIONS.find((item) => item.value === store.capacity)
-    if (option)
+    const label = capacityRangeLabel(store.capacity)
+    if (label)
       result.push({
         key: 'capacity',
-        label: option.label,
+        label,
         remove: () => store.setCapacity(null),
       })
   }
@@ -63,7 +65,7 @@ const chips = computed<ActiveChip[]>(() => {
   for (const service of store.services) {
     result.push({
       key: `service-${service}`,
-      label: SERVICE_LABELS[service],
+      label: serviceLabel(service),
       remove: () => store.toggleService(service),
     })
   }
@@ -73,20 +75,22 @@ const chips = computed<ActiveChip[]>(() => {
 </script>
 
 <template>
-  <div v-if="chips.length > 0" class="active-filters" role="list" aria-label="Ակտիվ ֆիլտրեր">
+  <div v-if="chips.length > 0" class="active-filters" role="list" :aria-label="t('filters.activeLabel')">
     <button
       v-for="chip in chips"
       :key="chip.key"
       type="button"
       class="active-filters__chip"
       role="listitem"
-      :aria-label="`Հեռացնել ֆիլտրը՝ ${chip.label}`"
+      :aria-label="t('filters.removeChip', { label: chip.label })"
       @click="chip.remove()"
     >
       {{ chip.label }}
       <AppIcon name="close" :size="14" />
     </button>
-    <button type="button" class="active-filters__clear" @click="store.reset()">Մաքրել բոլորը</button>
+    <button type="button" class="active-filters__clear" @click="store.reset()">
+      {{ t('filters.clearAll') }}
+    </button>
   </div>
 </template>
 

@@ -1,5 +1,10 @@
 <script setup lang="ts">
 import type { VehicleTypeGeo, VehicleTypePage } from '~/constants/vehicleTypePages'
+import {
+  countryLocative,
+  localizedVehicleTypeGeo,
+  localizedVehicleTypePage,
+} from '~/i18n/vehicleTypeCopy'
 import { getRegisterRoute, getRegionsRoute, getVehicleTypePageRoute } from '~/utils/routeHelpers'
 import { buildTowTruckListSchema, buildVehicleTypeServiceSchema } from '~/utils/schemaOrg'
 import {
@@ -49,10 +54,32 @@ const props = defineProps<{
   geo?: VehicleTypeGeo
 }>()
 
-const heading = computed(() => buildVehicleTypeHeading(props.page, props.geo))
-const seo = computed(() => buildVehicleTypeSeo(props.page, props.geo))
-const seoParagraphs = computed(() => buildVehicleTypeParagraphs(props.page, props.geo))
-const seoTitle = computed(() => buildVehicleTypeSeoTitle(props.page, props.geo))
+const { t, locale } = useI18n()
+
+/**
+ * Everything below reads these two rather than the props.
+ *
+ * The route decides WHICH page this is; the language decides what it says. So
+ * the config is translated once, here, and the heading, the metadata, the
+ * schema, the breadcrumb, the body copy and the FAQ are all built from the
+ * translated object — there is no second place where a Russian page could keep
+ * an Armenian word. `hy` gets the original object back untouched.
+ */
+const localPage = computed(() => localizedVehicleTypePage(props.page, locale.value))
+const localGeo = computed(() =>
+  props.geo ? localizedVehicleTypeGeo(props.geo, locale.value) : undefined,
+)
+
+const heading = computed(() =>
+  buildVehicleTypeHeading(localPage.value, localGeo.value, locale.value),
+)
+const seo = computed(() => buildVehicleTypeSeo(localPage.value, localGeo.value, locale.value))
+const seoParagraphs = computed(() =>
+  buildVehicleTypeParagraphs(localPage.value, localGeo.value, locale.value),
+)
+const seoTitle = computed(() =>
+  buildVehicleTypeSeoTitle(localPage.value, localGeo.value, locale.value),
+)
 
 const path = computed(() =>
   props.geo
@@ -92,9 +119,23 @@ useSeoMetaData({
  */
 const { visibleItems, hasMore, loadMore } = usePagination(towTrucks, 9)
 
+/**
+ * The empty state names both halves of the question the visitor asked — what
+ * they wanted and where — because "nothing found" on a page reached from an
+ * ad is otherwise indistinguishable from a broken page.
+ */
+const emptyTitle = computed(() =>
+  t('vehicleType.emptyTitle', {
+    what: localPage.value.heading.toLowerCase(),
+    place: localGeo.value ? localGeo.value.locative : countryLocative(locale.value),
+  }),
+)
+
 const { forVehicleType, forVehicleTypeGeo } = useBreadcrumbs()
 const breadcrumbs = computed(() =>
-  props.geo ? forVehicleTypeGeo(props.page, props.geo) : forVehicleType(props.page),
+  localGeo.value
+    ? forVehicleTypeGeo(localPage.value, localGeo.value)
+    : forVehicleType(localPage.value),
 )
 
 /**
@@ -106,7 +147,7 @@ const breadcrumbs = computed(() =>
  */
 useJsonLd([
   buildTowTruckListSchema(towTrucks.value, heading.value),
-  buildVehicleTypeServiceSchema(props.page, props.geo),
+  buildVehicleTypeServiceSchema(localPage.value, localGeo.value, locale.value),
 ])
 </script>
 
@@ -119,25 +160,33 @@ useJsonLd([
     <TowTruckList :tow-trucks="visibleItems" :pending="pending">
       <template #empty>
         <EmptyState
-          :title="`Դեռ գրանցված ${page.heading.toLowerCase()} չկա ${geo ? geo.locative : 'Հայաստանում'}`"
-          description="Կարող եք դիտել այլ մարզերի ցանկը կամ գրանցել ձերը։"
+          :title="emptyTitle"
+          :description="t('vehicleType.emptyText')"
         >
           <template #actions>
-            <AppButton :to="getRegionsRoute()" variant="primary">Դիտել մարզերը</AppButton>
-            <AppButton :to="getRegisterRoute()" variant="accent">Գրանցել էվակուատոր</AppButton>
+            <AppButton :to="getRegionsRoute()" variant="primary">
+              {{ t('common.viewRegions') }}
+            </AppButton>
+            <AppButton :to="getRegisterRoute()" variant="accent">
+              {{ t('common.registerTruck') }}
+            </AppButton>
           </template>
         </EmptyState>
       </template>
     </TowTruckList>
 
     <div v-if="hasMore" class="vehicle-type-page__more">
-      <AppButton variant="outline" @click="loadMore">Ցուցադրել ավելին</AppButton>
+      <AppButton variant="outline" @click="loadMore">{{ t('common.showMore') }}</AppButton>
     </div>
 
     <!-- Everything from here down is for search and for the visitor who did
          not find what they wanted in the cards. It is all AFTER the drivers,
          on purpose — see the component comment. -->
-    <VehicleTypeGeoLinks :page="page" :current="geo" class="vehicle-type-page__geo-links" />
+    <VehicleTypeGeoLinks
+      :page="localPage"
+      :current="localGeo"
+      class="vehicle-type-page__geo-links"
+    />
 
     <SeoTextSection
       :title="seoTitle"
@@ -145,7 +194,7 @@ useJsonLd([
       class="vehicle-type-page__seo"
     />
 
-    <FaqSection :items="page.faq" class="vehicle-type-page__faq" />
+    <FaqSection :items="localPage.faq" class="vehicle-type-page__faq" />
   </div>
 </template>
 

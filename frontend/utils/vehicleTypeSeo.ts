@@ -1,5 +1,6 @@
 import type { VehicleTypeGeo, VehicleTypePage } from '~/constants/vehicleTypePages'
 import { SITE_NAME } from '~/constants/site'
+import { countryLocative, countryName } from '~/i18n/vehicleTypeCopy'
 
 /**
  * The `<title>`, description, keywords, `<h1>` and body copy of every
@@ -35,8 +36,44 @@ export interface VehicleTypeSeo {
   keywords: string
 }
 
-/** Cross-cutting terms every one of these pages competes for */
-const BASE_KEYWORDS = ['էվակուատոր', 'evakuator', 'evakuator hayastan', 'էվակուատոր Հայաստան']
+/**
+ * Cross-cutting terms every one of these pages competes for.
+ *
+ * The Latin pair stays in all three lists on purpose: `evakuator` is what a
+ * Russian- or English-speaking visitor in Armenia types just as often as the
+ * word in their own language, and it is the term the local competition is
+ * optimised for.
+ */
+const BASE_KEYWORDS: Record<string, string[]> = {
+  hy: ['էվակուատոր', 'evakuator', 'evakuator hayastan', 'էվակուատոր Հայաստան'],
+  ru: ['эвакуатор', 'evakuator', 'evakuator hayastan', 'эвакуатор Армения'],
+  en: ['tow truck', 'evakuator', 'evakuator hayastan', 'tow truck Armenia'],
+}
+
+/**
+ * The full stop.
+ *
+ * Armenian ends a sentence with «։», not with a dot, and the description below
+ * is assembled from a template rather than written out — so without this the
+ * Russian and English pages inherited an Armenian terminator in the middle of
+ * an otherwise translated meta description. Invisible in review, visible in a
+ * search result.
+ */
+const FULL_STOP: Record<string, string> = { hy: '։', ru: '.', en: '.' }
+
+/** What the meta description promises after the keywords have been spent */
+const META_TAIL: Record<string, string> = {
+  hy: 'Գներ, բեռնատարողություն, ուղիղ զանգ վարորդին։',
+  ru: 'Цены, грузоподъёмность, прямой звонок водителю.',
+  en: 'Prices, payload, and a direct call to the driver.',
+}
+
+/** The `<h2>` above the body copy — a real question, not a keyword label */
+const SEO_TITLE_TAIL: Record<string, string> = {
+  hy: '— ինչ պետք է իմանալ',
+  ru: '— что нужно знать',
+  en: '— what you should know',
+}
 
 /**
  * The `<h1>` and the breadcrumb leaf.
@@ -47,8 +84,12 @@ const BASE_KEYWORDS = ['էվակուատոր', 'evakuator', 'evakuator hayastan'
  * query it is trying to rank for, and it is what keeps the eleven geo headings
  * from looking like a different kind of page.
  */
-export function buildVehicleTypeHeading(page: VehicleTypePage, geo?: VehicleTypeGeo): string {
-  return `${page.heading} ${geo ? geo.locative : 'Հայաստանում'}`
+export function buildVehicleTypeHeading(
+  page: VehicleTypePage,
+  geo?: VehicleTypeGeo,
+  locale = 'hy',
+): string {
+  return `${page.heading} ${geo ? geo.locative : countryLocative(locale)}`
 }
 
 /**
@@ -60,10 +101,14 @@ export function buildVehicleTypeHeading(page: VehicleTypePage, geo?: VehicleType
  * not first: unlike the homepage these are landing pages for a query, and the
  * query belongs at the front where it is not truncated.
  */
-export function buildVehicleTypeSeo(page: VehicleTypePage, geo?: VehicleTypeGeo): VehicleTypeSeo {
+export function buildVehicleTypeSeo(
+  page: VehicleTypePage,
+  geo?: VehicleTypeGeo,
+  locale = 'hy',
+): VehicleTypeSeo {
   const { seo } = page
-  const place = geo ? geo.name : 'Հայաստան'
-  const placeLocative = geo ? geo.locative : 'Հայաստանում'
+  const place = geo ? geo.name : countryName(locale)
+  const placeLocative = geo ? geo.locative : countryLocative(locale)
   const translitPlaces = geo ? [geo.translit, ...geo.translitAliases] : ['hayastan']
 
   const title = geo
@@ -74,9 +119,10 @@ export function buildVehicleTypeSeo(page: VehicleTypePage, geo?: VehicleTypeGeo)
   // description somewhere around 160 characters, so the query terms — the
   // service, the place, the transliteration — are spent first and the sales
   // pitch is what gets dropped if a long marz name pushes it over.
+  const stop = FULL_STOP[locale] ?? FULL_STOP.hy
   const description = geo
-    ? `${page.heading} ${geo.locative} (${seo.keywordTranslit} ${geo.translit})։ ` +
-      `${seo.metaTeaser} Գներ, բեռնատարողություն, ուղիղ զանգ վարորդին։`
+    ? `${page.heading} ${geo.locative} (${seo.keywordTranslit} ${geo.translit})${stop} ` +
+      `${seo.metaTeaser} ${META_TAIL[locale] ?? META_TAIL.hy}`
     : page.description
 
   // Place first in each pair, because that is the order the query is typed in:
@@ -95,7 +141,7 @@ export function buildVehicleTypeSeo(page: VehicleTypePage, geo?: VehicleTypeGeo)
     `${seo.keyword} ${placeLocative}`,
     ...geoKeywords,
     ...seo.extraKeywords,
-    ...BASE_KEYWORDS,
+    ...(BASE_KEYWORDS[locale] ?? BASE_KEYWORDS.hy),
   ]
 
   // Deduped: the country page's `${shortKeyword} Հայաստան` and its
@@ -126,8 +172,56 @@ export function buildVehicleTypeSeo(page: VehicleTypePage, geo?: VehicleTypeGeo)
 export function buildVehicleTypeParagraphs(
   page: VehicleTypePage,
   geo?: VehicleTypeGeo,
+  locale = 'hy',
 ): string[] {
   const { seo } = page
+
+  if (locale === 'ru') {
+    // `seo.keyword` rather than `shortKeyword` in the sentences that need an
+    // accusative: both keywords start with «эвакуатор» — masculine inanimate,
+    // so the accusative is identical to the nominative — while «тяжёлая
+    // техника» would have to become «тяжёлую технику» and no template can do
+    // that for an arbitrary noun.
+    const openerRu = geo
+      ? `${page.heading} ${geo.locative} (${seo.shortKeywordTranslit} ${geo.translit}) — на этой ` +
+        `странице собраны водители, которые работают ${geo.locative}. На карточке каждого из них ` +
+        'указаны грузоподъёмность, рабочие часы, обслуживаемые районы и начальная цена, а звонок ' +
+        'идёт напрямую водителю — без посредника и без наценки.'
+      : `${page.title} (${seo.keywordTranslit}) — на этой странице собраны водители из всех ` +
+        'марзов, от Еревана до Сюника. Выберите свой марз ниже или посмотрите весь список — с ' +
+        'реальными фотографиями, грузоподъёмностью и начальными ценами.'
+
+    const availabilityRu = geo
+      ? `Часть водителей работает круглосуточно, 24/7, поэтому ${seo.keyword} можно вызвать и ` +
+        `ночью. Если ${geo.locative} сейчас нет свободного водителя, посмотрите страницы соседних ` +
+        'марзов или раздел «Свободные маршруты»: на уже запланированных направлениях цена обычно ниже.'
+      : 'Часть водителей работает круглосуточно, 24/7. При перевозке из марза в марз загляните ' +
+        'также в раздел «Свободные маршруты»: там водители сами объявляют уже запланированные ' +
+        'направления, и это обычно дешевле.'
+
+    return [openerRu, seo.explainer, seo.whenNeeded, availabilityRu]
+  }
+
+  if (locale === 'en') {
+    const openerEn = geo
+      ? `${page.heading} ${geo.locative} (${seo.shortKeywordTranslit} ${geo.translit}) — this page ` +
+        `collects the drivers working ${geo.locative}. Every card shows the payload, the working ` +
+        'hours, the areas covered and a starting price, and the call goes straight to the driver ' +
+        '— no agency in between and no markup.'
+      : `${page.title} (${seo.keywordTranslit}) — this page collects the drivers from every ` +
+        'region, from Yerevan down to Syunik. Pick your area below or browse the whole list, with ' +
+        'real photos, payloads and starting prices.'
+
+    const availabilityEn = geo
+      ? `Some drivers work around the clock, 24/7, so you can call a ${seo.keyword} at night as ` +
+        `well. If nobody is free ${geo.locative} right now, try the neighbouring regions or the ` +
+        '"Free routes" section — a trip that is already planned usually costs less.'
+      : 'Some drivers work around the clock, 24/7. For a move between regions, look at the "Free ' +
+        'routes" section as well: drivers post the trips they have already planned there, which ' +
+        'is usually cheaper.'
+
+    return [openerEn, seo.explainer, seo.whenNeeded, availabilityEn]
+  }
 
   const opener = geo
     ? `${page.heading} ${geo.locative} (${seo.shortKeywordTranslit} ${geo.translit}) — այս էջում ` +
@@ -149,7 +243,11 @@ export function buildVehicleTypeParagraphs(
   return [opener, seo.explainer, seo.whenNeeded, availability]
 }
 
-/** The `<h2>` above the body copy — a real question, not a keyword label */
-export function buildVehicleTypeSeoTitle(page: VehicleTypePage, geo?: VehicleTypeGeo): string {
-  return `${page.heading} ${geo ? geo.locative : 'Հայաստանում'} — ինչ պետք է իմանալ`
+export function buildVehicleTypeSeoTitle(
+  page: VehicleTypePage,
+  geo?: VehicleTypeGeo,
+  locale = 'hy',
+): string {
+  const place = geo ? geo.locative : countryLocative(locale)
+  return `${page.heading} ${place} ${SEO_TITLE_TAIL[locale] ?? SEO_TITLE_TAIL.hy}`
 }

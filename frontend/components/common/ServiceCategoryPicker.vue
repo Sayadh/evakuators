@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { SERVICE_LABELS, type ServiceCategory } from '~/constants/services'
+import type { ServiceCategory } from '~/constants/services'
 import type { ServiceType } from '~/types/enums'
 
 interface Props {
@@ -16,6 +16,22 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), { mode: 'form' })
 const emit = defineEmits<{ 'update:modelValue': [value: ServiceType[]] }>()
+
+const { t, te } = useI18n()
+const { serviceLabel } = useCatalogLabels()
+
+/**
+ * A category is identified by its `key`, and the Armenian title on the object
+ * stays the fallback — so a category added to `SERVICE_CATEGORIES` without a
+ * translation renders its own words rather than a raw key path.
+ */
+const categoryTitle = (category: ServiceCategory): string =>
+  te(`serviceCategories.${category.key}`) ? t(`serviceCategories.${category.key}`) : category.title
+
+const categoryDescription = (category: ServiceCategory): string =>
+  te(`serviceCategories.${category.key}Hint`)
+    ? t(`serviceCategories.${category.key}Hint`)
+    : category.description
 
 const openCategories = ref<Set<string>>(new Set())
 
@@ -69,7 +85,7 @@ function toggleService(service: ServiceType): void {
         @click="toggleOpen(category.key)"
       >
         <span class="service-picker__heading">
-          <span class="service-picker__title">{{ category.title }}</span>
+          <span class="service-picker__title">{{ categoryTitle(category) }}</span>
           <span v-if="mode === 'filter' && selectedCount(category) > 0" class="service-picker__count">
             {{ selectedCount(category) }}
           </span>
@@ -83,12 +99,14 @@ function toggleService(service: ServiceType): void {
         />
       </button>
 
-      <p v-if="mode === 'form'" class="service-picker__description">{{ category.description }}</p>
+      <p v-if="mode === 'form'" class="service-picker__description">
+        {{ categoryDescription(category) }}
+      </p>
 
       <div v-show="isOpen(category.key)" class="service-picker__body">
         <AppCheckbox
           :model-value="isCategoryFullySelected(category)"
-          label="Ընտրել բոլորը"
+          :label="t('serviceCategories.selectAll')"
           class="service-picker__select-all"
           @update:model-value="toggleCategory(category)"
         />
@@ -97,7 +115,7 @@ function toggleService(service: ServiceType): void {
             v-for="service in category.services"
             :key="service"
             :model-value="modelValue.includes(service)"
-            :label="SERVICE_LABELS[service]"
+            :label="serviceLabel(service)"
             @update:model-value="toggleService(service)"
           />
         </div>

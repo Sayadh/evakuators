@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import type { TowTruckPricing } from '~/types/towTruck'
-import { formatPrice, formatPricePerKm } from '~/utils/formatPrice'
+import { formatPrice, formatPricePerKm, formatStartingPrice } from '~/utils/formatPrice'
 
 interface Props {
   pricing?: TowTruckPricing
 }
 
 const props = withDefaults(defineProps<Props>(), { pricing: undefined })
+
+const { t, locale } = useI18n()
 
 interface PricingRow {
   label: string
@@ -20,32 +22,41 @@ const rows = computed<PricingRow[]>(() => {
 
   const result: PricingRow[] = []
   if (pricing.cityCallout !== undefined)
-    result.push({ label: 'Քաղաքում կանչ', value: `սկսած ${formatPrice(pricing.cityCallout)}` })
+    result.push({
+      label: t('pricing.cityCallout'),
+      value: formatStartingPrice(pricing.cityCallout, locale.value),
+    })
   if (pricing.perKm !== undefined)
-    result.push({ label: 'Միջքաղաքային տեղափոխում', value: formatPricePerKm(pricing.perKm) })
+    result.push({
+      label: t('pricing.intercity'),
+      value: formatPricePerKm(pricing.perKm, locale.value),
+    })
   if (pricing.waitingPerHour !== undefined)
-    result.push({ label: 'Սպասում', value: `${formatPrice(pricing.waitingPerHour)}/ժամ` })
+    result.push({
+      label: t('pricing.waiting'),
+      value: t('pricing.perHour', { price: formatPrice(pricing.waitingPerHour) }),
+    })
   if (pricing.nightSurchargePercent !== undefined)
-    result.push({ label: 'Գիշերային ծառայություն', value: `+${pricing.nightSurchargePercent}%` })
+    result.push({
+      label: t('pricing.nightSurcharge'),
+      value: `+${pricing.nightSurchargePercent}%`,
+    })
   if (pricing.extraLoading !== undefined)
-    result.push({ label: 'Բարդ բեռնում', value: `+${formatPrice(pricing.extraLoading)}` })
+    result.push({ label: t('pricing.extraLoading'), value: `+${formatPrice(pricing.extraLoading)}` })
   return result
 })
 </script>
 
 <template>
   <section v-if="rows.length > 0" class="truck-pricing" aria-labelledby="truck-pricing-title">
-    <h2 id="truck-pricing-title" class="truck-pricing__title">Գներ</h2>
+    <h2 id="truck-pricing-title" class="truck-pricing__title">{{ t('pricing.title') }}</h2>
     <dl class="truck-pricing__list">
       <div v-for="row in rows" :key="row.label" class="truck-pricing__row">
         <dt>{{ row.label }}</dt>
         <dd>{{ row.value }}</dd>
       </div>
     </dl>
-    <p class="truck-pricing__note">
-      Վերջնական գինը կարող է կախված լինել մեքենայի տեսակից, վիճակից, հեռավորությունից և բեռնման
-      բարդությունից։
-    </p>
+    <p class="truck-pricing__note">{{ t('pricing.note') }}</p>
   </section>
 </template>
 

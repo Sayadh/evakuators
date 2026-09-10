@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { FOOTER_PAGES } from '~/constants/navigation'
-import { CONTACT_PHONE, SITE_DESCRIPTION, SOCIAL_LINKS } from '~/constants/site'
+import { CONTACT_PHONE, SOCIAL_LINKS } from '~/constants/site'
 import { useCookieConsentStore } from '~/stores/cookieConsent'
 import {
   getDistrictRoute,
@@ -13,6 +13,16 @@ import { getStaticDistricts, getStaticRegions } from '~/utils/geography'
 
 /** Footer links come from the shared NavLink list, keyed rather than labelled */
 const { t } = useI18n()
+
+/**
+ * The marz and district lists are the site's widest internal link surface, and
+ * they used to render `region.name` — the Armenian name straight out of
+ * `data/*.ts` — on every page in every language. A Russian page with a column
+ * of Armenian links is the single most visible way a translated site announces
+ * that it is not really translated, so the names go through the same map every
+ * other place name on the site does.
+ */
+const placeName = usePlaceName()
 
 /**
  * The footer renders only names and links, so it reads static geography directly
@@ -47,7 +57,7 @@ const cookieConsent = useCookieConsentStore()
           <NuxtLinkLocale to="/" class="footer__logo">
             <img src="/evakuators-logo.svg" alt="Evakuators.am" class="footer__logo-img">
           </NuxtLinkLocale>
-          <p class="footer__description">{{ SITE_DESCRIPTION }}</p>
+          <p class="footer__description">{{ t('site.description') }}</p>
           <p class="footer__contacts">
             <a :href="getPhoneHref(CONTACT_PHONE)" class="footer__contact-link">
               <AppIcon name="phone" :size="16" /> {{ CONTACT_PHONE }}
@@ -112,7 +122,9 @@ const cookieConsent = useCookieConsentStore()
             </summary>
             <ul class="footer__list">
               <li v-for="region in regions" :key="region.slug">
-                <NuxtLinkLocale :to="getRegionRoute(region.slug)">{{ region.name }}</NuxtLinkLocale>
+                <NuxtLinkLocale :to="getRegionRoute(region.slug)">
+                  {{ placeName('region', region.slug, region.name) }}
+                </NuxtLinkLocale>
               </li>
             </ul>
           </details>
@@ -125,7 +137,9 @@ const cookieConsent = useCookieConsentStore()
             </summary>
             <ul class="footer__list">
               <li v-for="district in districts" :key="district.slug">
-                <NuxtLinkLocale :to="getDistrictRoute(district.slug)">{{ district.name }}</NuxtLinkLocale>
+                <NuxtLinkLocale :to="getDistrictRoute(district.slug)">
+                  {{ placeName('district', district.slug, district.name) }}
+                </NuxtLinkLocale>
               </li>
             </ul>
           </details>

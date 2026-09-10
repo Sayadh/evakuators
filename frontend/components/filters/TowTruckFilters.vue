@@ -6,6 +6,9 @@ import type { ServiceType } from '~/types/enums'
 
 const store = useTowTruckFiltersStore()
 
+const { t } = useI18n()
+const { vehicleTypeLabel, capacityRangeLabel } = useCatalogLabels()
+
 function onServicesUpdate(services: ServiceType[]): void {
   store.services = services
 }
@@ -14,32 +17,32 @@ function onServicesUpdate(services: ServiceType[]): void {
 <template>
   <div class="filters">
     <fieldset class="filters__group">
-      <legend class="filters__legend">Հասանելիություն</legend>
+      <legend class="filters__legend">{{ t('filters.availability') }}</legend>
       <AppCheckbox
         :model-value="store.works24Hours"
-        label="Աշխատում է 24/7"
+        :label="t('filters.works247')"
         @update:model-value="store.toggleWorks24Hours()"
       />
     </fieldset>
 
     <fieldset class="filters__group">
-      <legend class="filters__legend">Տեխնիկա</legend>
+      <legend class="filters__legend">{{ t('filters.equipmentType') }}</legend>
       <AppCheckbox
         v-for="option in GENERAL_LISTING_VEHICLE_TYPE_OPTIONS"
         :key="option.value"
         :model-value="store.vehicleType === option.value"
-        :label="option.label"
+        :label="vehicleTypeLabel(option.value)"
         @update:model-value="store.setVehicleType(option.value)"
       />
     </fieldset>
 
     <fieldset class="filters__group">
-      <legend class="filters__legend">Բեռնատարողություն</legend>
+      <legend class="filters__legend">{{ t('filters.capacity') }}</legend>
       <AppCheckbox
         v-for="option in CAPACITY_RANGE_OPTIONS"
         :key="option.value"
         :model-value="store.capacity === option.value"
-        :label="option.label"
+        :label="capacityRangeLabel(option.value)"
         @update:model-value="store.setCapacity(option.value)"
       />
     </fieldset>
@@ -49,26 +52,26 @@ function onServicesUpdate(services: ServiceType[]): void {
          reads as a sixth type. This is equipment the truck either has or does
          not, which is the same shape as «Աշխատում է 24/7». -->
     <fieldset class="filters__group">
-      <legend class="filters__legend">Հագեցվածություն</legend>
+      <legend class="filters__legend">{{ t('filters.extras') }}</legend>
       <AppCheckbox
         :model-value="store.wheelSkates"
-        label="Առկա են անիվային ռոլիկներ"
+        :label="t('filters.wheelSkates')"
         @update:model-value="store.toggleWheelSkates()"
       />
       <AppCheckbox
         :model-value="store.doubleDeck"
-        label="2-հարկանի էվակուատոր"
+        :label="t('filters.doubleDeck')"
         @update:model-value="store.toggleDoubleDeck()"
       />
       <AppCheckbox
         :model-value="store.towHitch"
-        label="Ունի կցորդ (կարող է տանել նաև 2 մեքենա)"
+        :label="t('filters.towHitch')"
         @update:model-value="store.toggleTowHitch()"
       />
     </fieldset>
 
     <fieldset class="filters__group">
-      <legend class="filters__legend">Ծառայություններ</legend>
+      <legend class="filters__legend">{{ t('filters.services') }}</legend>
       <ServiceCategoryPicker
         :model-value="store.services"
         :categories="SERVICE_CATEGORIES"
@@ -84,7 +87,7 @@ function onServicesUpdate(services: ServiceType[]): void {
       block
       @click="store.reset()"
     >
-      Մաքրել ֆիլտրերը ({{ store.activeFiltersCount }})
+      {{ t('filters.clear', { count: store.activeFiltersCount }) }}
     </AppButton>
   </div>
 </template>

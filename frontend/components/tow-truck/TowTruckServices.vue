@@ -1,21 +1,23 @@
 <script setup lang="ts">
 import type { ServiceType } from '~/types/enums'
-import { SERVICE_LABELS } from '~/constants/services'
 
 interface Props {
   services: ServiceType[]
 }
 
 defineProps<Props>()
+
+const { t } = useI18n()
+const { serviceLabel } = useCatalogLabels()
 </script>
 
 <template>
   <section class="truck-services" aria-labelledby="truck-services-title">
-    <h2 id="truck-services-title" class="truck-services__title">Ծառայություններ</h2>
+    <h2 id="truck-services-title" class="truck-services__title">{{ t('truck.services') }}</h2>
     <ul class="truck-services__list">
       <li v-for="service in services" :key="service" class="truck-services__item">
         <AppIcon name="check" :size="16" class="truck-services__check" />
-        {{ SERVICE_LABELS[service] }}
+        {{ serviceLabel(service) }}
       </li>
     </ul>
   </section>

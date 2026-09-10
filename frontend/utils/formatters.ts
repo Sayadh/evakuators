@@ -1,6 +1,16 @@
-/** 3.5 → "3.5 տ" */
-export function formatCapacity(tons: number): string {
-  return `${tons} տ`
+/**
+ * The tonne symbol, per language.
+ *
+ * A unit is not a translation in the usual sense — nobody misreads «3.5 տ» —
+ * but a Russian page that measures in «տ» is a page that was clearly not
+ * written for its reader, and this is the unit that appears on every card in
+ * the listing.
+ */
+const TON_UNIT: Record<string, string> = { hy: 'տ', ru: 'т', en: 't' }
+
+/** 3.5 → "3.5 տ" / "3.5 т" / "3.5 t" */
+export function formatCapacity(tons: number, locale = 'hy'): string {
+  return `${tons} ${TON_UNIT[locale] ?? TON_UNIT.hy}`
 }
 
 /*

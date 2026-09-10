@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { VehicleTypeGeo, VehicleTypePage } from '~/constants/vehicleTypePages'
 import { VEHICLE_TYPE_GEOS } from '~/constants/vehicleTypePages'
+import { localizedVehicleTypeGeo } from '~/i18n/vehicleTypeCopy'
 import { getVehicleTypeGeoRoute, getVehicleTypePageRoute } from '~/utils/routeHelpers'
 
 /**
@@ -36,14 +37,18 @@ const props = defineProps<{
   current?: VehicleTypeGeo
 }>()
 
-const title = computed(() => `${props.page.heading} ըստ մարզերի`)
+const { t, locale } = useI18n()
+
+const title = computed(() => t('vehicleType.byRegions', { page: props.page.heading }))
 
 /**
  * Every area except the one already open — a link to the page you are on is a
  * self-reference that dilutes the block and confuses nobody usefully.
  */
 const geos = computed(() =>
-  VEHICLE_TYPE_GEOS.filter((geo) => geo.slug !== props.current?.slug),
+  VEHICLE_TYPE_GEOS.filter((geo) => geo.slug !== props.current?.slug).map((geo) =>
+    localizedVehicleTypeGeo(geo, locale.value),
+  ),
 )
 </script>
 
@@ -58,7 +63,7 @@ const geos = computed(() =>
            place. -->
       <li v-if="current">
         <NuxtLinkLocale :to="getVehicleTypePageRoute(page.slug)" class="geo-links__link">
-          Ամբողջ Հայաստանում
+          {{ t('vehicleType.wholeCountry') }}
         </NuxtLinkLocale>
       </li>
       <li v-for="geo in geos" :key="geo.slug">

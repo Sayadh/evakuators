@@ -58,6 +58,9 @@ export default defineNuxtConfig({
       { code: 'en', language: 'en-US', name: 'English', file: 'en.json', dir: 'ltr' },
     ],
     lazy: true,
+    // Russian's three plural forms — see the file for why the English rule
+    // produces «2 город» without it.
+    vueI18n: './i18n.config.ts',
     detectBrowserLanguage: false,
     bundle: {
       // The `v-t` directive is not used anywhere in this codebase; leaving the

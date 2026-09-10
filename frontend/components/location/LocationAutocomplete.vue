@@ -5,6 +5,9 @@ import {
   type LocationSearchResult,
 } from '~/utils/locationSearch'
 
+/** Static copy lives in i18n/locales */
+const { t } = useI18n()
+
 /**
  * Free-text location search over cities, Yerevan districts, road corridors and
  * settlements.
@@ -101,12 +104,12 @@ function onFocusOut(event: FocusEvent): void {
 function subtitle(result: LocationSearchResult): string {
   const kind =
     result.type === 'zone'
-      ? 'ուղղություն'
+      ? t('search.kindZone')
       : result.type === 'settlement'
-        ? 'բնակավայր'
+        ? t('search.kindSettlement')
         : result.type === 'district'
-          ? 'վարչական շրջան'
-          : 'քաղաք'
+          ? t('search.kindDistrict')
+          : t('search.kindCity')
 
   return needsRegionLabel(results.value, result) ? `${kind} · ${result.regionName}` : kind
 }
@@ -115,7 +118,7 @@ function subtitle(result: LocationSearchResult): string {
 <template>
   <div class="location-autocomplete" @focusout="onFocusOut">
     <label class="location-autocomplete__label" :for="`${listboxId}-input`">
-      Որոնել տարածք — հայերեն, latin կամ русский
+      {{ t('search.label') }}
     </label>
     <div class="location-autocomplete__field">
       <AppIcon name="search" :size="18" class="location-autocomplete__icon" />
@@ -124,7 +127,7 @@ function subtitle(result: LocationSearchResult): string {
         v-model="query"
         type="text"
         class="location-autocomplete__input"
-        placeholder="Օր.՝ Պտղնի, Abovyan, Ереван"
+        :placeholder="t('search.placeholder')"
         autocomplete="off"
         role="combobox"
         aria-autocomplete="list"
@@ -143,7 +146,7 @@ function subtitle(result: LocationSearchResult): string {
       :id="listboxId"
       class="location-autocomplete__list"
       role="listbox"
-      aria-label="Որոնման արդյունքներ"
+      :aria-label="t('search.results')"
     >
       <li
         v-for="(result, index) in results"

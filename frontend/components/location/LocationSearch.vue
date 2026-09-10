@@ -1,4 +1,7 @@
 <script setup lang="ts">
+
+/** Static copy lives in i18n/locales */
+const { t } = useI18n()
 const {
   regionOptions,
   cityOptions,
@@ -18,21 +21,21 @@ const {
          the name a stranded driver actually knows. -->
     <LocationAutocomplete class="location-search__autocomplete" />
 
-    <p class="location-search__divider"><span>կամ ընտրեք ցանկից</span></p>
+    <p class="location-search__divider"><span>{{ t('search.divider') }}</span></p>
 
     <form class="location-search" @submit.prevent="submit">
       <AppSelect
         v-model="selectedRegion"
         :options="regionOptions"
-        label="Մարզ"
-        placeholder="Ընտրեք մարզը"
+        :label="t('search.region')"
+        :placeholder="t('search.regionPlaceholder')"
         class="location-search__field"
       />
       <AppSelect
         v-model="selectedCity"
         :options="cityOptions"
-        label="Քաղաք / շրջան"
-        placeholder="Ընտրեք քաղաքը"
+        :label="t('search.city')"
+        :placeholder="t('search.cityPlaceholder')"
         :disabled="!selectedRegion || isLoadingCities"
         class="location-search__field"
       />
@@ -44,7 +47,7 @@ const {
         class="location-search__submit"
       >
         <AppIcon name="search" :size="20" />
-        Գտնել էվակուատոր
+        {{ t('search.submit') }}
       </AppButton>
     </form>
   </div>

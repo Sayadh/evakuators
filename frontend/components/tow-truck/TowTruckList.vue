@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import type { TowTruckCard } from '~/types/towTruck'
 
+/** Static copy lives in i18n/locales */
+const { t } = useI18n()
+
 interface Props {
   towTrucks: TowTruckCard[]
   pending?: boolean
@@ -30,8 +33,8 @@ const listClass = computed(() => (props.layout === 'stack' ? 'card-stack' : 'car
 
     <slot v-else name="empty">
       <EmptyState
-        title="Էվակուատորներ չեն գտնվել"
-        description="Փորձեք փոխել ֆիլտրերը կամ դիտել մոտակա տարածքների ծառայությունները։"
+        :title="t('list.emptyTitle')"
+        :description="t('list.emptyText')"
       />
     </slot>
   </div>

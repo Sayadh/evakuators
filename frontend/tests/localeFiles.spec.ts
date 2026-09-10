@@ -86,10 +86,28 @@ describe('locale files', () => {
     expect(armenian).toEqual([])
   })
 
+  it('gives Russian three plural forms wherever Armenian counts something', () => {
+    // Russian needs `1 город / 2 города / 5 городов`, and vue-i18n applies the
+    // English two-form rule unless the message actually carries three — see
+    // `i18n/i18n.config.ts`. A message with `{count}` and one form renders
+    // «5 город» on every listing page.
+    const counted = [...HY].filter(([, text]) => text.includes('{count}')).map(([key]) => key)
+    expect(counted.length).toBeGreaterThan(0)
+    for (const key of counted) {
+      expect({ key, forms: (RU.get(key) ?? '').split('|').length }).toEqual({ key, forms: 3 })
+    }
+  })
+
   it('keeps every interpolation placeholder in all three', () => {
     // `{count}` dropped in translation is a sentence with a hole in it, and
     // `{cuont}` is the key rendered raw. Neither throws.
-    const placeholders = (text: string) => (text.match(/\{[a-zA-Z0-9_]+\}/g) ?? []).sort()
+    //
+    // The SET of names, not the list: a Russian plural message repeats
+    // `{count}` once per form («{count} город | {count} города | …»), so
+    // counting occurrences would fail on every correctly-pluralised string.
+    const placeholders = (text: string) => [
+      ...new Set(text.match(/\{[a-zA-Z0-9_]+\}/g) ?? []),
+    ].sort()
     for (const [key, armenian] of HY) {
       expect({ key, placeholders: placeholders(RU.get(key) ?? '') }).toEqual({
         key,

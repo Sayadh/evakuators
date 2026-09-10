@@ -2,6 +2,10 @@
 import type { RegionWithStats } from '~/types/location'
 import { getRegionRoute } from '~/utils/routeHelpers'
 
+/** Static copy in i18n/locales; place names in i18n/placeNames.ts */
+const { t } = useI18n()
+const placeName = usePlaceName()
+
 interface Props {
   region: RegionWithStats
 }
@@ -13,15 +17,15 @@ defineProps<Props>()
   <article class="region-card">
     <h3 class="region-card__name">
       <NuxtLinkLocale :to="getRegionRoute(region.slug)" class="region-card__link">
-        {{ region.name }}
+        {{ placeName('region', region.slug, region.name) }}
       </NuxtLinkLocale>
     </h3>
     <ul class="region-card__stats">
-      <li><AppIcon name="map-pin" :size="16" /> {{ region.cityCount }} քաղաք</li>
-      <li><AppIcon name="truck" :size="16" /> {{ region.towTruckCount }} էվակուատոր</li>
+      <li><AppIcon name="map-pin" :size="16" /> {{ t('card.cities', region.cityCount) }}</li>
+      <li><AppIcon name="truck" :size="16" /> {{ t('card.towTrucks', region.towTruckCount) }}</li>
     </ul>
     <span class="region-card__cta">
-      Դիտել քաղաքները
+      {{ t('card.viewCities') }}
       <AppIcon name="arrow-right" :size="16" />
     </span>
   </article>

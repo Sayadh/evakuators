@@ -2,6 +2,10 @@
 import type { DistrictWithStats } from '~/types/location'
 import { getDistrictRoute } from '~/utils/routeHelpers'
 
+/** Static copy in i18n/locales; place names in i18n/placeNames.ts */
+const { t } = useI18n()
+const placeName = usePlaceName()
+
 interface Props {
   district: DistrictWithStats
 }
@@ -13,15 +17,15 @@ defineProps<Props>()
   <article class="district-card">
     <h3 class="district-card__name">
       <NuxtLinkLocale :to="getDistrictRoute(district.slug)" class="district-card__link">
-        {{ district.name }}
+        {{ placeName('district', district.slug, district.name) }}
       </NuxtLinkLocale>
     </h3>
     <ul class="district-card__stats">
-      <li><AppIcon name="truck" :size="16" /> {{ district.towTruckCount }} էվակուատոր</li>
-      <li><AppIcon name="clock" :size="16" /> {{ district.towTruck24hCount }} աշխատում է 24/7</li>
+      <li><AppIcon name="truck" :size="16" /> {{ t('card.towTrucks', district.towTruckCount) }}</li>
+      <li><AppIcon name="clock" :size="16" /> {{ t('card.open24', district.towTruck24hCount) }}</li>
     </ul>
     <span class="district-card__cta">
-      Դիտել էվակուատորները
+      {{ t('card.viewTrucks') }}
       <AppIcon name="arrow-right" :size="16" />
     </span>
   </article>

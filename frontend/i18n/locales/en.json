@@ -65,7 +65,7 @@
     "benefitFreeText": "Finding a truck and calling the driver is completely free.",
     "chooseArea": "Choose your area",
     "yerevanTag": "The widest choice",
-    "yerevanSummary": "{count} districts · tow trucks across the city",
+    "yerevanSummary": "{count} district · tow trucks across the city | {count} districts · tow trucks across the city",
     "truckBadge": "tow truck",
     "featuredTitle": "Top tow trucks",
     "popularTitle": "Frequently searched areas"
@@ -84,5 +84,47 @@
   "vehicleTypeNav": {
     "manipulator": "Crane trucks",
     "tsanr-tehnika": "Heavy equipment"
+  },
+  "search": {
+    "label": "Search for an area — in Armenian, Latin or Russian",
+    "placeholder": "e.g. Ptghni, Abovyan, Ереван",
+    "results": "Search results",
+    "divider": "or choose from the list",
+    "region": "Region",
+    "regionPlaceholder": "Choose a region",
+    "city": "Town / district",
+    "cityPlaceholder": "Choose a town",
+    "submit": "Find a tow truck",
+    "kindZone": "route",
+    "kindSettlement": "settlement",
+    "kindDistrict": "district",
+    "kindCity": "town"
+  },
+  "card": {
+    "towTrucks": "{count} tow truck | {count} tow trucks",
+    "open24": "{count} open 24/7 | {count} open 24/7",
+    "cities": "{count} town | {count} towns",
+    "viewTrucks": "See the tow trucks",
+    "viewCities": "See the towns"
+  },
+  "breadcrumb": {
+    "home": "Home",
+    "regions": "Regions",
+    "freeRoutes": "Shared routes"
+  },
+  "list": {
+    "emptyTitle": "No tow trucks found",
+    "emptyText": "Try changing the filters, or look at the services in nearby areas."
+  },
+  "popular": {
+    "capital": "Capital",
+    "regionHint": "{region} region"
+  },
+  "regionsPage": {
+    "title": "Regions of Armenia",
+    "yerevanTitle": "Yerevan",
+    "yerevanText": "Tow trucks in all 12 administrative districts of Yerevan",
+    "metaTitle": "Regions of Armenia | Tow trucks in every region",
+    "metaDescription": "Choose your region and find the nearest tow truck. Service in all 10 regions of Armenia and in Yerevan."
   }
 }

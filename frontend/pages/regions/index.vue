@@ -5,11 +5,13 @@ import { getYerevanRoute } from '~/utils/routeHelpers'
 
 const { data: regions, pending } = useRegions()
 const { forRegions } = useBreadcrumbs()
+const { t } = useI18n()
 
 useSeoMetaData({
-  title: `Հայաստանի մարզեր | Էվակուատորներ բոլոր մարզերում | ${SITE_NAME}`,
-  description:
-    'Ընտրեք ձեր մարզը և գտեք մոտակա էվակուատորը։ Ծառայություններ Հայաստանի բոլոր 10 մարզերում և Երևանում։',
+  // The brand stays literal at the end of every title — it is a name, not a
+  // word to translate. See `utils/seoContent.ts`.
+  title: `${t('regionsPage.metaTitle')} | ${SITE_NAME}`,
+  description: t('regionsPage.metaDescription'),
   path: '/regions',
 })
 
@@ -20,7 +22,7 @@ const faqItems = buildAllRegionsFaq()
   <div class="container">
     <AppBreadcrumbs :items="forRegions()" />
 
-    <h1>Հայաստանի մարզեր</h1>
+    <h1>{{ t('regionsPage.title') }}</h1>
 
     <NearestTowTrucksCta class="regions-page__nearest" />
 
@@ -32,8 +34,8 @@ const faqItems = buildAllRegionsFaq()
 
     <NuxtLinkLocale :to="getYerevanRoute()" class="regions-page__yerevan">
       <div>
-        <h2>Երևան</h2>
-        <p>Դիտեք Երևանի բոլոր 12 վարչական շրջանների էվակուատորները</p>
+        <h2>{{ t('regionsPage.yerevanTitle') }}</h2>
+        <p>{{ t('regionsPage.yerevanText') }}</p>
       </div>
       <AppIcon name="arrow-right" :size="24" />
     </NuxtLinkLocale>

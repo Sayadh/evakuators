@@ -84,5 +84,47 @@
   "vehicleTypeNav": {
     "manipulator": "Մանիպուլյատորներ",
     "tsanr-tehnika": "Ծանր տեխնիկա"
+  },
+  "search": {
+    "label": "Որոնել տարածք — հայերեն, latin կամ русский",
+    "placeholder": "Օր.՝ Պտղնի, Abovyan, Ереван",
+    "results": "Որոնման արդյունքներ",
+    "divider": "կամ ընտրեք ցանկից",
+    "region": "Մարզ",
+    "regionPlaceholder": "Ընտրեք մարզը",
+    "city": "Քաղաք / շրջան",
+    "cityPlaceholder": "Ընտրեք քաղաքը",
+    "submit": "Գտնել էվակուատոր",
+    "kindZone": "ուղղություն",
+    "kindSettlement": "բնակավայր",
+    "kindDistrict": "վարչական շրջան",
+    "kindCity": "քաղաք"
+  },
+  "card": {
+    "towTrucks": "{count} էվակուատոր",
+    "open24": "{count} աշխատում է 24/7",
+    "cities": "{count} քաղաք",
+    "viewTrucks": "Դիտել էվակուատորները",
+    "viewCities": "Դիտել քաղաքները"
+  },
+  "breadcrumb": {
+    "home": "Գլխավոր",
+    "regions": "Մարզեր",
+    "freeRoutes": "Ազատ երթուղիներ"
+  },
+  "list": {
+    "emptyTitle": "Էվակուատորներ չեն գտնվել",
+    "emptyText": "Փորձեք փոխել ֆիլտրերը կամ դիտել մոտակա տարածքների ծառայությունները։"
+  },
+  "popular": {
+    "capital": "Մայրաքաղաք",
+    "regionHint": "{region} մարզ"
+  },
+  "regionsPage": {
+    "title": "Հայաստանի մարզեր",
+    "yerevanTitle": "Երևան",
+    "yerevanText": "Դիտեք Երևանի բոլոր 12 վարչական շրջանների էվակուատորները",
+    "metaTitle": "Հայաստանի մարզեր | Էվակուատորներ բոլոր մարզերում",
+    "metaDescription": "Ընտրեք ձեր մարզը և գտեք մոտակա էվակուատորը։ Ծառայություններ Հայաստանի բոլոր 10 մարզերում և Երևանում։"
   }
 }

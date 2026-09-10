@@ -1,8 +1,27 @@
 <script setup lang="ts">
-import { POPULAR_LOCATIONS } from '~/constants/popularLocations'
+import { POPULAR_LOCATIONS, type PopularLocation } from '~/constants/popularLocations'
+import { regionLabel } from '~/utils/geography'
 
 /** Static copy lives in i18n/locales — see nuxt.config's i18n block */
 const { t } = useI18n()
+const placeName = usePlaceName()
+
+/** The town's own name, in the language being read */
+function nameOf(location: PopularLocation): string {
+  return placeName(location.kind, location.slug, location.slug)
+}
+
+/**
+ * The grey line under the name: which marz this is in, or «Մայրաքաղաք» for
+ * Yerevan, which is in none. Derived rather than stored — see
+ * `constants/popularLocations.ts`.
+ */
+function hintOf(location: PopularLocation): string {
+  if (!location.regionSlug) return t('popular.capital')
+  return t('popular.regionHint', {
+    region: placeName('region', location.regionSlug, regionLabel(location.regionSlug)),
+  })
+}
 </script>
 
 <template>
@@ -17,8 +36,8 @@ const { t } = useI18n()
           class="popular__card"
         >
           <AppIcon name="map-pin" :size="18" class="popular__icon" />
-          <span class="popular__name">{{ location.name }}</span>
-          <span class="popular__hint">{{ location.hint }}</span>
+          <span class="popular__name">{{ nameOf(location) }}</span>
+          <span class="popular__hint">{{ hintOf(location) }}</span>
         </NuxtLinkLocale>
       </div>
     </div>

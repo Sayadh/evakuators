@@ -11,14 +11,30 @@ import {
   getYerevanRoute,
 } from '~/utils/routeHelpers'
 
-const HOME: BreadcrumbItem = { label: 'Գլխավոր', to: '/' }
-const YEREVAN: BreadcrumbItem = { label: 'Երևան', to: getYerevanRoute() }
-
-/** Breadcrumb trail builders for every page type */
+/**
+ * Breadcrumb trail builders for every page type.
+ *
+ * The fixed crumbs («Գլխավոր», «Մարզեր», «Երևան») and the place names are both
+ * translated here rather than by the pages: a trail is the one piece of UI that
+ * appears on every geography page and is built in one place, so translating it
+ * here is the difference between three files changed and thirty.
+ *
+ * Place names take a slug as well as a name — the slug is what
+ * `i18n/placeNames.ts` is keyed by, and the Armenian name is the fallback for
+ * anything it does not know (a settlement, mostly). See that file.
+ */
 export function useBreadcrumbs() {
-  const forRegions = (): BreadcrumbItem[] => [HOME, { label: 'Մարզեր' }]
+  const { t } = useI18n()
+  const placeName = usePlaceName()
 
-  const forFreeRoutes = (): BreadcrumbItem[] => [HOME, { label: 'Ազատ երթուղիներ' }]
+  const HOME: BreadcrumbItem = { label: t('breadcrumb.home'), to: '/' }
+  const YEREVAN: BreadcrumbItem = {
+    label: placeName('region', 'yerevan', 'Երևան'),
+    to: getYerevanRoute(),
+  }
+  const forRegions = (): BreadcrumbItem[] => [HOME, { label: t('breadcrumb.regions') }]
+
+  const forFreeRoutes = (): BreadcrumbItem[] => [HOME, { label: t('breadcrumb.freeRoutes') }]
 
   /**
    * Two levels, not three: a vehicle-type page hangs directly off the home
@@ -48,16 +64,16 @@ export function useBreadcrumbs() {
     { label: geo.name },
   ]
 
-  const forRegion = (region: Pick<Region, 'name'>): BreadcrumbItem[] => [
+  const forRegion = (region: Pick<Region, 'name' | 'slug'>): BreadcrumbItem[] => [
     HOME,
-    { label: 'Մարզեր', to: getRegionsRoute() },
-    { label: region.name },
+    { label: t('breadcrumb.regions'), to: getRegionsRoute() },
+    { label: placeName('region', region.slug, region.name) },
   ]
 
   const forCity = (city: CityWithStats): BreadcrumbItem[] => [
     HOME,
-    { label: city.regionName, to: getRegionRoute(city.regionSlug) },
-    { label: city.name },
+    { label: placeName('region', city.regionSlug, city.regionName), to: getRegionRoute(city.regionSlug) },
+    { label: placeName('city', city.slug, city.name) },
   ]
 
   /**
@@ -69,18 +85,19 @@ export function useBreadcrumbs() {
     regionName: string,
     regionSlug: string,
     zoneName: string,
+    zoneSlug?: string,
   ): BreadcrumbItem[] => [
     HOME,
-    { label: regionName, to: getRegionRoute(regionSlug) },
-    { label: zoneName },
+    { label: placeName('region', regionSlug, regionName), to: getRegionRoute(regionSlug) },
+    { label: zoneSlug ? placeName('zone', zoneSlug, zoneName) : zoneName },
   ]
 
-  const forYerevan = (): BreadcrumbItem[] => [HOME, { label: 'Երևան' }]
+  const forYerevan = (): BreadcrumbItem[] => [HOME, { label: YEREVAN.label }]
 
-  const forDistrict = (district: Pick<District, 'name'>): BreadcrumbItem[] => [
+  const forDistrict = (district: Pick<District, 'name' | 'slug'>): BreadcrumbItem[] => [
     HOME,
     YEREVAN,
-    { label: district.name },
+    { label: placeName('district', district.slug, district.name) },
   ]
 
   const forTowTruck = (truck: TowTruck, regionName?: string): BreadcrumbItem[] => {

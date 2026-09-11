@@ -1,5 +1,6 @@
 import { hasManipulator, VEHICLE_TYPE_LABELS } from '~/constants/vehicles'
 import { LocationType, VehicleType } from '~/types/enums'
+import type { SelectOption } from '~/types/common'
 import { resolveAreaType, YEREVAN_REGION_SLUG } from '~/utils/geography'
 
 /**
@@ -44,23 +45,88 @@ export const COVERAGE_MODE_OPTIONS = [
 export type CoverageMode = (typeof COVERAGE_MODE_OPTIONS)[number]['value']
 
 /**
+ * `COVERAGE_MODE_OPTIONS`'s labels, in ru/en. Kept apart from the constant
+ * above (which stays Armenian and unchanged — the dashboard's copy of this
+ * picker still reads it directly) for the same reason `buildLocationSeo` and
+ * the other plain, non-composable helpers in this codebase branch on a
+ * `locale` parameter instead of a vue-i18n key: this file has no access to
+ * `useI18n()`.
+ */
+const COVERAGE_MODE_LABELS: Record<string, Record<CoverageMode, string>> = {
+  ru: { 'all-armenia': 'Вся Армения', regions: 'В выбранных марзах' },
+  en: { 'all-armenia': 'All of Armenia', regions: 'In selected regions' },
+}
+
+/** `COVERAGE_MODE_OPTIONS`, localized — `locale` defaults to Armenian */
+export function coverageModeOptions(locale: string = 'hy'): SelectOption<CoverageMode>[] {
+  const labels = COVERAGE_MODE_LABELS[locale]
+  return COVERAGE_MODE_OPTIONS.map((option) => ({
+    value: option.value,
+    label: labels?.[option.value] ?? option.label,
+  }))
+}
+
+/**
  * Why an uncapped driver is being offered the nationwide choice, in their own
  * words — «Դուք ընտրել եք "Մանիպուլյատորով էվակուատոր"», so the appearance of a
  * different question is explained rather than just happening.
  */
-export function uncappedCoverageReason(vehicle: {
-  vehicleType: string
-  manipulator?: boolean
-  heavyEquipment?: boolean
-}): string {
-  const typeLabel = VEHICLE_TYPE_LABELS[vehicle.vehicleType as VehicleType]
+const VEHICLE_TYPE_LABELS_BY_LOCALE: Record<string, Record<VehicleType, string>> = {
+  ru: {
+    [VehicleType.Flatbed]: 'Эвакуатор с платформой',
+    [VehicleType.SlidingPlatform]: 'Эвакуатор со сдвижной платформой',
+    [VehicleType.Manipulator]: 'Эвакуатор с манипулятором',
+    [VehicleType.HeavyDuty]: 'Эвакуатор для тяжёлой техники',
+  },
+  en: {
+    [VehicleType.Flatbed]: 'Flatbed tow truck',
+    [VehicleType.SlidingPlatform]: 'Sliding-platform tow truck',
+    [VehicleType.Manipulator]: 'Crane tow truck',
+    [VehicleType.HeavyDuty]: 'Heavy-duty tow truck',
+  },
+}
+
+const UNCAPPED_REASON_COPY: Record<
+  string,
+  { byType: (typeLabel: string) => string; manipulator: string; heavyEquipment: string }
+> = {
+  hy: {
+    byType: (typeLabel) =>
+      `Քանի որ ընտրել եք «${typeLabel}», կարող եք սահմանել ավելի լայն սպասարկման տարածք։`,
+    manipulator: 'Քանի որ նշել եք, որ ունեք մանիպուլյատոր, կարող եք սահմանել ավելի լայն սպասարկման տարածք։',
+    heavyEquipment: 'Քանի որ նշել եք «Ծանր տեխնիկայի տեղափոխում», կարող եք սահմանել ավելի լայն սպասարկման տարածք։',
+  },
+  ru: {
+    byType: (typeLabel) =>
+      `Поскольку вы выбрали «${typeLabel}», вы можете задать более широкую зону обслуживания.`,
+    manipulator: 'Поскольку вы указали, что у вас есть манипулятор, вы можете задать более широкую зону обслуживания.',
+    heavyEquipment: 'Поскольку вы указали «Перевозка тяжёлой техники», вы можете задать более широкую зону обслуживания.',
+  },
+  en: {
+    byType: (typeLabel) => `Since you selected "${typeLabel}", you can set a wider service area.`,
+    manipulator: 'Since you indicated that you have a crane, you can set a wider service area.',
+    heavyEquipment: 'Since you selected "Heavy equipment transport", you can set a wider service area.',
+  },
+}
+
+export function uncappedCoverageReason(
+  vehicle: {
+    vehicleType: string
+    manipulator?: boolean
+    heavyEquipment?: boolean
+  },
+  locale: string = 'hy',
+): string {
+  const typeLabels = VEHICLE_TYPE_LABELS_BY_LOCALE[locale] ?? VEHICLE_TYPE_LABELS
+  const typeLabel = typeLabels[vehicle.vehicleType as VehicleType]
+  const copy = UNCAPPED_REASON_COPY[locale] ?? UNCAPPED_REASON_COPY.hy!
   if (vehicle.vehicleType === VehicleType.Manipulator || vehicle.vehicleType === VehicleType.HeavyDuty) {
-    return `Քանի որ ընտրել եք «${typeLabel}», կարող եք սահմանել ավելի լայն սպասարկման տարածք։`
+    return copy.byType(typeLabel)
   }
   if (vehicle.manipulator) {
-    return 'Քանի որ նշել եք, որ ունեք մանիպուլյատոր, կարող եք սահմանել ավելի լայն սպասարկման տարածք։'
+    return copy.manipulator
   }
-  return 'Քանի որ նշել եք «Ծանր տեխնիկայի տեղափոխում», կարող եք սահմանել ավելի լայն սպասարկման տարածք։'
+  return copy.heavyEquipment
 }
 
 /**
@@ -171,8 +237,20 @@ export function countLimitedAreas(types: readonly (LocationType | string)[]): nu
  * Names the number rather than saying "too many", because the driver's next
  * action is to remove a specific tick and they need to know how many.
  */
-export function tooManyAreasMessage(max: number): string {
-  return `Կարող եք ընտրել առավելագույնը ${max} քաղաք կամ ուղղություն։ Հեռացրեք ավելորդները։`
+const TOO_MANY_AREAS_MESSAGE: Record<string, (max: number) => string> = {
+  hy: (max) => `Կարող եք ընտրել առավելագույնը ${max} քաղաք կամ ուղղություն։ Հեռացրեք ավելորդները։`,
+  ru: (max) => `Можно выбрать не более ${max} городов или направлений. Уберите лишние.`,
+  en: (max) => `You can select at most ${max} cities or directions. Remove the extra ones.`,
+}
+
+export function tooManyAreasMessage(max: number, locale: string = 'hy'): string {
+  return (TOO_MANY_AREAS_MESSAGE[locale] ?? TOO_MANY_AREAS_MESSAGE.hy!)(max)
+}
+
+const SERVICE_AREA_VALIDATION_MESSAGES: Record<string, { noRegion: string; noArea: string }> = {
+  hy: { noRegion: 'Ընտրեք առնվազն մեկ մարզ', noArea: 'Ընտրեք առնվազն մեկ քաղաք կամ շրջան' },
+  ru: { noRegion: 'Выберите хотя бы один марз', noArea: 'Выберите хотя бы один город или район' },
+  en: { noRegion: 'Select at least one region', noArea: 'Select at least one city or district' },
 }
 
 /**
@@ -203,16 +281,20 @@ export function validateServiceAreaSelection(
     heavyEquipment?: boolean
     servesAllArmenia?: boolean
   },
+  locale: string = 'hy',
 ): string {
+  const messages =
+    SERVICE_AREA_VALIDATION_MESSAGES[locale] ?? SERVICE_AREA_VALIDATION_MESSAGES.hy!
+
   if (vehicle && hasUncappedCoverage(vehicle)) {
     // «Ամբողջ Հայաստան» is the complete answer — there is no list to check.
     if (vehicle.servesAllArmenia) return ''
-    return regionSlugs.length === 0 ? 'Ընտրեք առնվազն մեկ մարզ' : ''
+    return regionSlugs.length === 0 ? messages.noRegion : ''
   }
 
-  if (areaSlugs.length === 0) return 'Ընտրեք առնվազն մեկ քաղաք կամ շրջան'
+  if (areaSlugs.length === 0) return messages.noArea
 
   const max = maxAreasFor(regionSlugs)
   const used = countLimitedAreas(areaSlugs.map(resolveAreaType))
-  return used > max ? tooManyAreasMessage(max) : ''
+  return used > max ? tooManyAreasMessage(max, locale) : ''
 }

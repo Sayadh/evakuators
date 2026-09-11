@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { serviceCategoriesFor, withService } from '~/constants/services'
 import {
-  COVERAGE_MODE_OPTIONS,
+  coverageModeOptions as buildCoverageModeOptions,
   hasUncappedCoverage,
   uncappedCoverageReason,
   type CoverageMode,
@@ -13,7 +13,6 @@ import {
   CAPACITY_RANGE_OPTIONS,
   specialistSpecFieldsFor,
   usesExactCapacity,
-  VEHICLE_TYPE_DESCRIPTIONS,
   VEHICLE_TYPE_OPTIONS,
 } from '~/constants/vehicles'
 import type { SelectOption } from '~/types/common'
@@ -88,6 +87,10 @@ const props = withDefaults(
 /** Read-only view, so the template can stay `errors.x` like it was in the page */
 const errors = computed(() => props.errors)
 
+const { t, locale } = useI18n()
+const { vehicleTypeLabel, vehicleTypeHint, capacityRangeLabel, specFieldLabel, specFieldUnit } =
+  useCatalogLabels()
+
 const is247 = computed(() => isAvailable247(model.value.services))
 const isManipulatorType = computed(() => isManipulatorVehicleType(model.value.vehicleType))
 const isHeavyDutyType = computed(() => model.value.vehicleType === VehicleType.HeavyDuty)
@@ -116,7 +119,7 @@ const providesInvoice = computed<boolean>({
 
 /** Whether this driver gets the nationwide coverage choice — see hasUncappedCoverage */
 const uncapped = computed(() => hasUncappedCoverage(model.value))
-const uncappedReason = computed(() => uncappedCoverageReason(model.value))
+const uncappedReason = computed(() => uncappedCoverageReason(model.value, locale.value))
 
 /**
  * Which of the two specialist landing pages «Ամբողջ Հայաստան» actually puts
@@ -135,12 +138,12 @@ const appearsOnHeavyDutyPages = computed(() => isHeavyDutyType.value || model.va
 
 const nationwideVisibilityNote = computed(() => {
   if (appearsOnManipulatorPages.value && appearsOnHeavyDutyPages.value) {
-    return 'Դուք կհայտնվեք ՀՀ բոլոր մարզերի ծանր տեխնիկայի և մանիպուլյատորի էջերում։'
+    return t('registrationFields.nationwideNoteBoth')
   }
   if (appearsOnManipulatorPages.value) {
-    return 'Դուք կհայտնվեք ՀՀ բոլոր մարզերի մանիպուլյատորի էջերում։'
+    return t('registrationFields.nationwideNoteManipulator')
   }
-  return 'Դուք կհայտնվեք ՀՀ բոլոր մարզերի ծանր տեխնիկայի էջերում։'
+  return t('registrationFields.nationwideNoteHeavyDuty')
 })
 
 /**
@@ -189,21 +192,30 @@ watch(
   () => syncVehicleDependentFields(model.value),
 )
 
-const vehicleTypeOptions: SelectOption[] = VEHICLE_TYPE_OPTIONS.map((option) => ({
-  value: option.value as string,
-  label: option.label,
-}))
+const vehicleTypeOptions = computed<SelectOption[]>(() =>
+  VEHICLE_TYPE_OPTIONS.map((option) => ({
+    value: option.value as string,
+    label: vehicleTypeLabel(option.value),
+  })),
+)
 
 /** `readonly` tuple → the mutable `SelectOption[]` AppSelect expects */
-const coverageModeOptions: SelectOption[] = COVERAGE_MODE_OPTIONS.map((option) => ({
-  value: option.value,
-  label: option.label,
-}))
+const coverageModeOptions = computed<SelectOption[]>(() => buildCoverageModeOptions(locale.value))
 
-const vehicleTypeHints = VEHICLE_TYPE_OPTIONS.map((option) => ({
-  label: option.label,
-  description: VEHICLE_TYPE_DESCRIPTIONS[option.value],
-}))
+const vehicleTypeHints = computed(() =>
+  VEHICLE_TYPE_OPTIONS.map((option) => ({
+    label: vehicleTypeLabel(option.value),
+    description: vehicleTypeHint(option.value),
+  })),
+)
+
+/** `CAPACITY_RANGE_OPTIONS`, localized — the capacity-band select below */
+const capacityBandOptions = computed<SelectOption[]>(() =>
+  CAPACITY_RANGE_OPTIONS.map((option) => ({
+    value: option.value,
+    label: capacityRangeLabel(option.value),
+  })),
+)
 
 /** v-model wrapper that keeps a phone field locked to +374 + up to 8 digits */
 function armenianPhoneModel(key: 'phone' | 'secondaryPhone' | 'whatsapp') {
@@ -222,15 +234,25 @@ const whatsappModel = armenianPhoneModel('whatsapp')
 
 <template>
   <fieldset class="reg-fields__section">
-    <legend class="reg-fields__legend">Անձնական տվյալներ</legend>
+    <legend class="reg-fields__legend">{{ t('registrationFields.personalDataLegend') }}</legend>
     <div class="reg-fields__grid">
-      <AppInput v-model="model.firstName" label="Անուն" required :error="errors.firstName" />
-      <AppInput v-model="model.lastName" label="Ազգանուն" required :error="errors.lastName" />
-      <AppInput v-model="model.companyName" label="Կազմակերպության անուն (եթե կա)" />
+      <AppInput
+        v-model="model.firstName"
+        :label="t('registrationFields.firstNameLabel')"
+        required
+        :error="errors.firstName"
+      />
+      <AppInput
+        v-model="model.lastName"
+        :label="t('registrationFields.lastNameLabel')"
+        required
+        :error="errors.lastName"
+      />
+      <AppInput v-model="model.companyName" :label="t('registrationFields.companyNameLabel')" />
       <div class="reg-fields__phone-field">
         <AppInput
           v-model="phoneModel"
-          label="Հիմնական հեռախոսահամար"
+          :label="t('registrationFields.phoneLabel')"
           type="tel"
           placeholder="+37491000001"
           required
@@ -241,13 +263,12 @@ const whatsappModel = armenianPhoneModel('whatsapp')
              a bare <p> there would become its own grid cell and push every
              field after it into the wrong column. -->
         <p class="reg-fields__phone-hint">
-          Այս հեռախոսահամարով գրանցվել հնարավոր է միայն մեկ անգամ։ Կրկնակի հայտը
-          ադմինիստրատորի կողմից կմերժվի։
+          {{ t('registrationFields.phoneHint') }}
         </p>
       </div>
       <AppInput
         v-model="secondaryPhoneModel"
-        label="Երկրորդ հեռախոսահամար (ոչ պարտադիր)"
+        :label="t('registrationFields.secondaryPhoneLabel')"
         type="tel"
         placeholder="+37499000001"
         :maxlength="12"
@@ -266,19 +287,23 @@ const whatsappModel = armenianPhoneModel('whatsapp')
   </fieldset>
 
   <fieldset class="reg-fields__section">
-    <legend class="reg-fields__legend">Մեքենայի տվյալներ</legend>
+    <legend class="reg-fields__legend">{{ t('registrationFields.vehicleDataLegend') }}</legend>
     <div class="reg-fields__grid">
       <AppInput
         v-model="model.brand"
-        label="Մակնիշ"
+        :label="t('registrationFields.brandLabel')"
         placeholder="Isuzu"
         required
         :error="errors.brand"
       />
-      <AppInput v-model="model.model" label="Մոդել (ոչ պարտադիր)" placeholder="NPR 75" />
+      <AppInput
+        v-model="model.model"
+        :label="t('registrationFields.modelLabel')"
+        placeholder="NPR 75"
+      />
       <AppInput
         v-model="model.year"
-        label="Տարեթիվ"
+        :label="t('registrationFields.yearLabel')"
         type="number"
         placeholder="2018"
         required
@@ -287,11 +312,11 @@ const whatsappModel = armenianPhoneModel('whatsapp')
       <AppSelect
         v-model="model.vehicleType"
         :options="vehicleTypeOptions"
-        label="Տեսակ"
+        :label="t('registrationFields.typeLabel')"
         :error="errors.vehicleType"
       >
         <template #label-suffix>
-          <AppTooltip label="Էվակուատորի տեսակների բացատրություն">
+          <AppTooltip :label="t('registrationFields.typeTooltipLabel')">
             <span v-for="hint in vehicleTypeHints" :key="hint.label" class="reg-fields__type-hint">
               <strong>{{ hint.label }}</strong>
               {{ hint.description }}
@@ -305,8 +330,8 @@ const whatsappModel = armenianPhoneModel('whatsapp')
       <AppSelect
         v-if="showCapacityBand"
         v-model="model.capacity"
-        :options="CAPACITY_RANGE_OPTIONS"
-        label="Առավելագույն բեռնատարողություն *"
+        :options="capacityBandOptions"
+        :label="t('registrationFields.capacityBandLabel')"
         :error="errors.capacity"
       />
       <!-- Driven by SPECIALIST_SPEC_FIELDS, not written out per type: adding a
@@ -317,7 +342,7 @@ const whatsappModel = armenianPhoneModel('whatsapp')
         v-for="field in specFields"
         :key="field.key"
         v-model="model[field.key]"
-        :label="`${field.label} (${field.unit})${field.required ? ' *' : ''}`"
+        :label="`${specFieldLabel(field.key, model.vehicleType, field.label)} (${specFieldUnit(field.unit)})${field.required ? ' *' : ''}`"
         type="number"
         :placeholder="field.placeholder"
         :error="errors[field.key]"
@@ -329,13 +354,13 @@ const whatsappModel = armenianPhoneModel('whatsapp')
       />
     </div>
     <div class="reg-fields__checks">
-      <AppCheckbox v-model="model.winch" label="Ունի ճախարակ (winch, лебедка)" />
+      <AppCheckbox v-model="model.winch" :label="t('registrationFields.winchLabel')" />
       <!-- Locked, not hidden: someone who picked the manipulator type should
            still SEE that the answer is yes, rather than wonder where the
            question went. -->
       <AppCheckbox
         v-model="model.manipulator"
-        label="Ունի մանիպուլյատոր"
+        :label="t('registrationFields.manipulatorLabel')"
         :disabled="isManipulatorType"
       />
       <!-- «Ծանր տեխնիկայի տեղափոխում» is a SERVICE, not a vehicle type: any
@@ -350,14 +375,12 @@ const whatsappModel = armenianPhoneModel('whatsapp')
            disagree the first time round. -->
       <AppCheckbox
         v-model="model.heavyEquipment"
-        label="Ծանր տեխնիկայի տեղափոխում"
+        :label="t('registrationFields.heavyEquipmentLabel')"
         :disabled="isHeavyDutyType"
       >
         <template #label-suffix>
-          <AppTooltip label="Ծանր տեխնիկայի տեղափոխման բացատրություն">
-            Նշեք սա, եթե ձեր մեքենան կարող է տեղափոխել էքսկավատոր, բուլդոզեր,
-            բեռնիչ կամ այլ ծանր տեխնիկա։ Հայտը հաստատվելուց հետո կհայտնվեք նաև
-            ծանր տեխնիկայի որոնման արդյունքներում։
+          <AppTooltip :label="t('registrationFields.heavyEquipmentTooltipLabel')">
+            {{ t('registrationFields.heavyEquipmentTooltipText') }}
           </AppTooltip>
         </template>
       </AppCheckbox>
@@ -368,12 +391,11 @@ const whatsappModel = armenianPhoneModel('whatsapp')
       <AppCheckbox
         v-if="showWheelSkates"
         v-model="model.wheelSkates"
-        label="Առկա են անիվային ռոլիկներ"
+        :label="t('registrationFields.wheelSkatesLabel')"
       >
         <template #label-suffix>
-          <AppTooltip label="Անիվային ռոլիկների բացատրություն">
-            Անիվային ռոլիկներն օգտագործվում են արգելափակված կամ չպտտվող անիվներով մեքենան
-            անվտանգ հարթակ բարձրացնելու և տեղափոխելու համար։
+          <AppTooltip :label="t('registrationFields.wheelSkatesTooltipLabel')">
+            {{ t('registrationFields.wheelSkatesTooltipText') }}
           </AppTooltip>
         </template>
       </AppCheckbox>
@@ -385,12 +407,11 @@ const whatsappModel = armenianPhoneModel('whatsapp')
       <AppCheckbox
         v-if="showDoubleDeck"
         v-model="model.doubleDeck"
-        label="2-հարկանի էվակուատոր"
+        :label="t('registrationFields.doubleDeckLabel')"
       >
         <template #label-suffix>
-          <AppTooltip label="2-հարկանի էվակուատորի բացատրություն">
-            Երկհարկանի հարթակով էվակուատորը կարող է միաժամանակ տեղափոխել երկու մեքենա՝
-            մեկը վերին հարկում, մյուսը՝ ներքևում։
+          <AppTooltip :label="t('registrationFields.doubleDeckTooltipLabel')">
+            {{ t('registrationFields.doubleDeckTooltipText') }}
           </AppTooltip>
         </template>
       </AppCheckbox>
@@ -398,12 +419,11 @@ const whatsappModel = armenianPhoneModel('whatsapp')
       <AppCheckbox
         v-if="showTowHitch"
         v-model="model.towHitch"
-        label="Ունի կցորդ"
+        :label="t('registrationFields.towHitchLabel')"
       >
         <template #label-suffix>
-          <AppTooltip label="Կցորդի բացատրություն">
-            Կցորդով էվակուատորը կարող է հարթակի վրայի մեքենայից բացի քարշակել նաև
-            երկրորդ մեքենան։
+          <AppTooltip :label="t('registrationFields.towHitchTooltipLabel')">
+            {{ t('registrationFields.towHitchTooltipText') }}
           </AppTooltip>
         </template>
       </AppCheckbox>
@@ -411,7 +431,7 @@ const whatsappModel = armenianPhoneModel('whatsapp')
   </fieldset>
 
   <fieldset class="reg-fields__section">
-    <legend class="reg-fields__legend">Տարածքներ</legend>
+    <legend class="reg-fields__legend">{{ t('registrationFields.areasLegend') }}</legend>
 
     <!-- Two different questions, because two different jobs.
 
@@ -432,7 +452,7 @@ const whatsappModel = armenianPhoneModel('whatsapp')
       <AppChoiceChips
         v-model="coverageMode"
         :options="coverageModeOptions"
-        label="Սպասարկման տարածք"
+        :label="t('registrationFields.coverageAreaLabel')"
         name="reg-coverage-mode"
         class="reg-fields__coverage-mode"
       />
@@ -450,13 +470,10 @@ const whatsappModel = armenianPhoneModel('whatsapp')
 
     <template v-else>
       <p class="reg-fields__note">
-        Խնդրում ենք ընտրել միայն այն քաղաքներն, որտեղ պատրաստ եք մոտենալ և բարձել
-        մեքենան։ Խորհուրդ ենք տալիս չընտրել հիմնական վայրից ավելի քան 30 կմ հեռու տարածքներ, քանի
-        որ նման պատվերները կարող են շահավետ չլինել։
+        {{ t('registrationFields.citiesNoteText1') }}
       </p>
       <p class="reg-fields__note">
-        Ընտրված տարածքը վերաբերում է միայն բարձման վայրին․ տեղափոխման վերջնակետը կարող է լինել ՀՀ
-        ցանկացած բնակավայր։
+        {{ t('registrationFields.citiesNoteText2') }}
       </p>
       <!-- Same component the dashboard uses, so what can be picked here and what
            can be changed later can never drift apart. -->
@@ -474,7 +491,7 @@ const whatsappModel = armenianPhoneModel('whatsapp')
        the two answers get confused when they share a heading. Same component
        the dashboard and admin dialogs use. -->
   <fieldset class="reg-fields__section">
-    <legend class="reg-fields__legend">Տեղադիրք</legend>
+    <legend class="reg-fields__legend">{{ t('registrationFields.locationLegend') }}</legend>
     <!-- The one section that may be skipped. It asks for a value copied out of
          Google Maps on a phone, which is the step most likely to end a
          registration — and the value is editable from the dashboard the moment
@@ -484,7 +501,7 @@ const whatsappModel = armenianPhoneModel('whatsapp')
          only honest advice once it is optional. -->
     <CoordinatesInput
       v-model="model.coordinates"
-      heading="Նշեք Ձեր էվակուատորի հիմնական տեղադիրքի կոորդինատները (ոչ պարտադիր)"
+      :heading="t('registrationFields.locationHeading')"
       :required="false"
       :show-guidance="showCoordinateGuidance"
       :error="errors.coordinates"
@@ -492,7 +509,7 @@ const whatsappModel = armenianPhoneModel('whatsapp')
   </fieldset>
 
   <fieldset class="reg-fields__section">
-    <legend class="reg-fields__legend">Ծառայություններ</legend>
+    <legend class="reg-fields__legend">{{ t('registrationFields.servicesLegend') }}</legend>
     <p v-if="errors.services" class="reg-fields__error" role="alert">{{ errors.services }}</p>
     <ServiceCategoryPicker v-model="model.services" :categories="serviceCategories" mode="form" />
 
@@ -500,21 +517,28 @@ const whatsappModel = armenianPhoneModel('whatsapp')
          hand over afterwards, not a fifth way to be paid. See
          `STANDALONE_SERVICES`. -->
     <div class="reg-fields__standalone">
-      <AppCheckbox v-model="providesInvoice" label="Տրամադրում եմ հաշիվ-ապրանքագիր">
+      <AppCheckbox v-model="providesInvoice" :label="t('registrationFields.invoiceLabel')">
         <template #label-suffix>
-          <AppTooltip label="Հաշիվ-ապրանքագրի բացատրություն">
-            Կազմակերպությունների պատվերների համար հաճախ պարտադիր է։ Նշեք սա, եթե
-            կարող եք տրամադրել հաշիվ-ապրանքագիր։
+          <AppTooltip :label="t('registrationFields.invoiceTooltipLabel')">
+            {{ t('registrationFields.invoiceTooltipText') }}
           </AppTooltip>
         </template>
       </AppCheckbox>
     </div>
 
     <div v-if="!is247" class="reg-fields__working-hours">
-      <p class="reg-fields__working-hours-label">Աշխատանքային ժամեր (ոչ պարտադիր)</p>
+      <p class="reg-fields__working-hours-label">{{ t('registrationFields.workingHoursLabel') }}</p>
       <div class="reg-fields__working-hours-grid">
-        <AppInput v-model="model.workingHoursStart" type="time" label="Սկիզբ" />
-        <AppInput v-model="model.workingHoursEnd" type="time" label="Ավարտ" />
+        <AppInput
+          v-model="model.workingHoursStart"
+          type="time"
+          :label="t('registrationFields.workingHoursStartLabel')"
+        />
+        <AppInput
+          v-model="model.workingHoursEnd"
+          type="time"
+          :label="t('registrationFields.workingHoursEndLabel')"
+        />
       </div>
       <p v-if="errors.workingHours" class="reg-fields__error" role="alert">
         {{ errors.workingHours }}
@@ -523,43 +547,42 @@ const whatsappModel = armenianPhoneModel('whatsapp')
   </fieldset>
 
   <fieldset class="reg-fields__section">
-    <legend class="reg-fields__legend">Գներ (ոչ պարտադիր)</legend>
+    <legend class="reg-fields__legend">{{ t('registrationFields.pricesLegend') }}</legend>
     <p class="reg-fields__note">
-      Այս հատվածը լրացնելով և մրցունակ գին նշելով՝ կարող եք ավելացնել ձեր պատվերների քանակը։ Ձեր
-      էջում կցուցադրվեն միայն լրացված դաշտերը։
+      {{ t('registrationFields.pricesNote') }}
     </p>
     <div class="reg-fields__grid">
       <AppInput
         v-model="model.priceCityCallout"
-        label="Քաղաքում կանչ (Դ)"
+        :label="t('registrationFields.priceCityCalloutLabel')"
         type="number"
         placeholder="10000"
         :error="errors.priceCityCallout"
       />
       <AppInput
         v-model="model.pricePerKm"
-        label="Միջքաղաքային տեղափոխում (Դ/կմ)"
+        :label="t('registrationFields.pricePerKmLabel')"
         type="number"
         placeholder="300"
         :error="errors.pricePerKm"
       />
       <AppInput
         v-model="model.priceWaitingPerHour"
-        label="Սպասում (Դ/ժամ)"
+        :label="t('registrationFields.priceWaitingLabel')"
         type="number"
         placeholder="3000"
         :error="errors.priceWaitingPerHour"
       />
       <AppInput
         v-model="model.priceNightSurchargePercent"
-        label="Գիշերային ծառայություն (+%)"
+        :label="t('registrationFields.priceNightSurchargeLabel')"
         type="number"
         placeholder="20"
         :error="errors.priceNightSurchargePercent"
       />
       <AppInput
         v-model="model.priceExtraLoading"
-        label="Բարդ բեռնում (+Դ)"
+        :label="t('registrationFields.priceExtraLoadingLabel')"
         type="number"
         placeholder="5000"
         :error="errors.priceExtraLoading"

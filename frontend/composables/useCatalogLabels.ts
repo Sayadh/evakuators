@@ -5,7 +5,8 @@ import {
   VEHICLE_TYPE_DESCRIPTIONS,
   VEHICLE_TYPE_LABELS,
 } from '~/constants/vehicles'
-import type { ServiceType, VehicleType } from '~/types/enums'
+import { VehicleType } from '~/types/enums'
+import type { ServiceType } from '~/types/enums'
 import { formatCapacity } from '~/utils/formatters'
 
 /**
@@ -58,6 +59,19 @@ export interface CatalogLabels {
   capacityRangeLabel: (value: string) => string
   /** What a card shows for an exact tonnage: «մինչև 3.5 տ», or the open band */
   capacityText: (capacityTons: number) => string
+  /**
+   * A `SpecialistSpecField`'s label — «Կռունկի առավելագույն
+   * բեռնատարողություն» for `craneCapacityTons`, etc.
+   *
+   * `maxLoadTons` is the one field two vehicle types share with two different
+   * meanings (see `SPECIALIST_SPEC_FIELDS`'s own comment), so this is the only
+   * one of the four spec keys that also needs the vehicle type to pick the
+   * right key.
+   */
+  specFieldLabel: (fieldKey: string, vehicleType: string, fallback: string) => string
+  /** «տ» → «t»/«т», reusing the same `units.*` keys `TowTruckInfo.vue` shows a
+   * driver's own profile with */
+  specFieldUnit: (unit: string) => string
 }
 
 export function useCatalogLabels(): CatalogLabels {
@@ -72,6 +86,18 @@ export function useCatalogLabels(): CatalogLabels {
     if (!option) return ''
     const key = CAPACITY_KEYS[value]
     return key ? translate(`capacity.${key}`, option.label) : option.label
+  }
+
+  const SPEC_FIELD_LABEL_KEYS: Record<string, string> = {
+    craneCapacityTons: 'truck.craneCapacity',
+    craneReachM: 'truck.craneReach',
+    platformLoadHeightCm: 'truck.platformLoadHeight',
+  }
+
+  const SPEC_FIELD_UNIT_KEYS: Record<string, string> = {
+    'տ': 'ton',
+    'մ': 'metre',
+    'սմ': 'centimetre',
   }
 
   return {
@@ -90,6 +116,19 @@ export function useCatalogLabels(): CatalogLabels {
       )
       if (bucket && bucket.maxTons === undefined) return capacityRangeLabel(bucket.value)
       return t('capacity.upTo', { value: formatCapacity(capacityTons, locale.value) })
+    },
+    specFieldLabel: (fieldKey, vehicleType, fallback) => {
+      if (fieldKey === 'maxLoadTons') {
+        const key =
+          vehicleType === VehicleType.Manipulator ? 'truck.platformMaxLoad' : 'truck.maxLoad'
+        return translate(key, fallback)
+      }
+      const key = SPEC_FIELD_LABEL_KEYS[fieldKey]
+      return key ? translate(key, fallback) : fallback
+    },
+    specFieldUnit: (unit) => {
+      const key = SPEC_FIELD_UNIT_KEYS[unit]
+      return key ? translate(`units.${key}`, unit) : unit
     },
   }
 }

@@ -61,7 +61,12 @@ describe('both forms render the same component', () => {
   })
 
   it('both pages run the same validator', () => {
-    expect(registerPage).toContain('validateRegistrationForm(form, errors)')
+    // Not an exact-call match: `/register` also passes the visitor's locale
+    // and a spec-field localizer (see `pages/register.vue`), which the
+    // moderator's review page has no reason to pass and does not. What must
+    // stay true on both sides is the first two arguments — the same `form`
+    // and the same `errors` object going into the same shared function.
+    expect(registerPage).toContain('validateRegistrationForm(form, errors')
     expect(reviewPage).toContain('validateRegistrationForm(form, errors)')
   })
 

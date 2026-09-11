@@ -34,7 +34,9 @@ const model = defineModel<string[]>({ required: true })
 
 withDefaults(defineProps<{ error?: string }>(), { error: '' })
 
-const regionOptions = computed(() => buildRegionOptions())
+const { t, locale } = useI18n()
+
+const regionOptions = computed(() => buildRegionOptions(locale.value))
 
 function toggle(slug: string): void {
   model.value = model.value.includes(slug)
@@ -46,12 +48,12 @@ function toggle(slug: string): void {
 <template>
   <div class="region-picker">
     <p class="region-picker__label">
-      Ընտրեք մարզերը, որտեղ սպասարկում եք<span class="region-picker__required" aria-hidden="true">
+      {{ t('serviceRegionPicker.label') }}<span class="region-picker__required" aria-hidden="true">
         *</span
       >
     </p>
     <p class="region-picker__hint">
-      Քաղաքների քանակի սահմանափակում չկա — նշեք բոլոր մարզերը, որտեղ պատրաստ եք աշխատել։
+      {{ t('serviceRegionPicker.hint') }}
     </p>
     <p v-if="error" class="region-picker__error" role="alert">{{ error }}</p>
     <div class="region-picker__grid">

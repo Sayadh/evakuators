@@ -51,7 +51,10 @@ const emit = defineEmits<{
   'update:cities': [value: string[]]
 }>()
 
-const regionOptions = computed<SelectOption[]>(() => buildRegionOptions())
+const { t, locale } = useI18n()
+const placeName = usePlaceName()
+
+const regionOptions = computed<SelectOption[]>(() => buildRegionOptions(locale.value))
 
 /**
  * The budget and how much of it is spent.
@@ -130,13 +133,19 @@ const cityGroups = computed<CityGroup[]>(() =>
       // returns one flat list with the corridors suffixed — right for a plain
       // `<select>`, wrong here where the two are rendered as separate groups.
       options: isYerevan
-        ? getStaticDistricts().map((district) => ({ value: district.slug, label: district.name }))
-        : getRegionCities(regionSlug).map((city) => ({ value: city.slug, label: city.name })),
+        ? getStaticDistricts().map((district) => ({
+            value: district.slug,
+            label: placeName('district', district.slug, district.name),
+          }))
+        : getRegionCities(regionSlug).map((city) => ({
+            value: city.slug,
+            label: placeName('city', city.slug, city.name),
+          })),
       zones: isYerevan
         ? []
         : getRegionServiceZones(regionSlug).map((zone) => ({
             value: zone.slug,
-            label: zone.name,
+            label: placeName('zone', zone.slug, zone.name),
           })),
     }
   }),
@@ -215,7 +224,7 @@ function toggleAll(group: CityGroup): void {
 <template>
   <div class="area-picker">
     <p class="area-picker__label">
-      Ընտրեք 1-2 մարզ<span class="area-picker__required" aria-hidden="true"> *</span>
+      {{ t('serviceAreaPicker.selectRegionsLabel') }}<span class="area-picker__required" aria-hidden="true"> *</span>
     </p>
     <p v-if="regionsError" class="area-picker__error" role="alert">{{ regionsError }}</p>
     <div class="area-picker__grid">
@@ -240,9 +249,9 @@ function toggleAll(group: CityGroup): void {
       :class="{ 'area-picker__counter--over': isOverLimit }"
       aria-live="polite"
     >
-      Ընտրված է {{ usedAreas }}-ը՝ հասանելի {{ maxAreas }}-ից
+      {{ t('serviceAreaPicker.counterText', { used: usedAreas, max: maxAreas }) }}
       <span v-if="isYerevanChosen" class="area-picker__hint">
-        — Երևանի շրջանները չեն հաշվվում
+        {{ t('serviceAreaPicker.yerevanExemptNote') }}
       </span>
       <!-- Reachable without cheating: pick two marzes and five cities, drop one
            marz, then add Yerevan — the budget falls to 2 while the ticks
@@ -250,13 +259,13 @@ function toggleAll(group: CityGroup): void {
            not ours to delete silently. The counter turns red, saving is blocked
            with the same message, and they decide which ticks to keep. -->
       <span v-if="isOverLimit" class="area-picker__over">
-        — հեռացրեք {{ usedAreas - maxAreas }}-ը շարունակելու համար
+        {{ t('serviceAreaPicker.overLimitNote', { count: usedAreas - maxAreas }) }}
       </span>
     </p>
 
     <div v-for="group in cityGroups" :key="group.regionSlug" class="area-picker__group">
       <p class="area-picker__label">
-        {{ group.regionLabel }} — Սպասարկվող տարածքներ<span
+        {{ t('serviceAreaPicker.groupLabel', { region: group.regionLabel }) }}<span
           class="area-picker__required"
           aria-hidden="true"
         >
@@ -266,7 +275,7 @@ function toggleAll(group: CityGroup): void {
       <AppCheckbox
         v-if="group.isYerevan"
         :model-value="isAllSelected(group)"
-        label="Ամբողջ Երևանը"
+        :label="t('serviceAreaPicker.wholeYerevanLabel')"
         class="area-picker__all"
         @update:model-value="toggleAll(group)"
       />
@@ -287,11 +296,9 @@ function toggleAll(group: CityGroup): void {
            settlements on it. -->
       <template v-if="group.zones.length > 0">
         <p class="area-picker__sublabel">
-          Հավելյալ սպասարկման ուղղություններ
+          {{ t('serviceAreaPicker.zonesSublabel') }}
           <span class="area-picker__hint">
-            — այս ուղղություններն օգնում են հաճախորդներին ավելի հեշտ գտնել տվյալ տարածքին մոտ գտնվող
-            էվակուատորներին։ Եթե սպասարկում եք նշված ուղղություններից որևէ մեկը, խնդրում ենք ընտրել
-            այն։
+            {{ t('serviceAreaPicker.zonesHint') }}
           </span>
         </p>
         <div class="area-picker__grid">

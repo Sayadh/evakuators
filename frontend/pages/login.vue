@@ -21,9 +21,11 @@ import { isPhone, required, validateField } from '~/utils/validators'
 // navigate; see middleware/driver-auth.ts for the mechanism.
 definePageMeta({ middleware: 'driver-guest' })
 
+const { t } = useI18n()
+
 useSeoMetaData({
-  title: `Վարորդի մուտք | ${SITE_NAME}`,
-  description: 'Մուտք գործեք Ձեր էվակուատորի պրոֆիլը խմբագրելու համար։',
+  title: `${t('loginPage.title')} | ${SITE_NAME}`,
+  description: t('loginPage.metaDescription'),
   path: '/login',
   noindex: true,
 })
@@ -68,7 +70,7 @@ async function submit(): Promise<void> {
   // exists on the account, including one issued under an older rule.
   const localError =
     validateField(phone.value, [isPhone()]) ??
-    validateField(password.value, [required('Մուտքագրեք գաղտնաբառը')])
+    validateField(password.value, [required(t('loginPage.passwordRequiredError'))])
   if (localError) {
     error.value = localError
     return
@@ -82,7 +84,7 @@ async function submit(): Promise<void> {
     deactivated.value = err instanceof FetchError && err.statusCode === 403
     error.value = deactivated.value
       ? ''
-      : extractErrorMessage(err, 'Մուտք գործել չհաջողվեց, փորձեք կրկին')
+      : extractErrorMessage(err, t('loginPage.loginFailedError'))
     return
   } finally {
     submitting.value = false
@@ -107,19 +109,18 @@ async function submit(): Promise<void> {
 <template>
   <div class="container login-page">
     <div class="login-card">
-      <h1>Վարորդի մուտք</h1>
+      <h1>{{ t('loginPage.title') }}</h1>
 
       <EmptyState
         v-if="!apiEnabled"
-        title="Backend API-ն միացված չէ"
-        description="Այս էջն աշխատում է միայն իրական backend-ի հետ։"
+        :title="t('loginPage.apiDisabledTitle')"
+        :description="t('loginPage.apiDisabledDescription')"
         icon="info"
       />
 
       <template v-else>
         <p class="login-card__hint">
-          Մուտք գործեք Ձեր հեռախոսահամարով և գաղտնաբառով։ Գաղտնաբառը ուղարկվել է Ձեր Telegram-ին
-          պրոֆիլի հաստատումից հետո։
+          {{ t('loginPage.hint') }}
         </p>
 
         <form class="login-form" @submit.prevent="submit">
@@ -131,7 +132,7 @@ async function submit(): Promise<void> {
           <AppInput
             v-model="phoneModel"
             type="tel"
-            label="Հեռախոսահամար"
+            :label="t('loginPage.phoneLabel')"
             placeholder="+37491000001"
             required
             :maxlength="12"
@@ -140,7 +141,7 @@ async function submit(): Promise<void> {
           <AppInput
             v-model="password"
             type="password"
-            label="Գաղտնաբառ"
+            :label="t('loginPage.passwordLabel')"
             required
             autocomplete="current-password"
           />
@@ -154,11 +155,11 @@ async function submit(): Promise<void> {
               <a :href="getPhoneHref(CONTACT_PHONE)">{{ CONTACT_PHONE }}</a>
             </p>
             <p>
-              Ձեր էջն ապաակտիվացվել է։ Խնդրում ենք կապվել մեզ հետ՝ պատճառը պարզելու համար։
+              {{ t('loginPage.deactivatedText') }}
             </p>
           </div>
           <AppButton type="submit" variant="success" block :disabled="submitting">
-            {{ submitting ? 'Ստուգվում է…' : 'Մուտք' }}
+            {{ submitting ? t('loginPage.submitting') : t('loginPage.submit') }}
           </AppButton>
         </form>
 
@@ -168,7 +169,7 @@ async function submit(): Promise<void> {
              docs/auth-and-security.md). So the recovery path is a human one,
              and this line is what tells a locked-out driver that. -->
         <p class="login-card__footnote">
-          Գաղտնաբառը մոռացե՞լ եք, կամ դեռ չեք ստացել՝ դիմեք ադմինիստրատորին։
+          {{ t('loginPage.footnote') }}
         </p>
       </template>
     </div>

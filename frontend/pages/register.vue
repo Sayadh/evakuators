@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { imageRepository, isApiEnabled, registrationRepository } from '~/repositories'
 import { CONTACT_PHONE, SITE_NAME } from '~/constants/site'
-import { VEHICLE_TYPE_LABELS } from '~/constants/vehicles'
 import { VehicleType } from '~/types/enums'
 import { trackRegistrationSubmit } from '~/utils/analytics'
 import type { Coordinates } from '~/utils/coordinates'
@@ -9,9 +8,12 @@ import { extractErrorMessage } from '~/utils/errors'
 import { getPhoneHref } from '~/utils/formatPhone'
 import { createRegistrationFormState, validateRegistrationForm } from '~/utils/registrationForm'
 
+const { t, locale } = useI18n()
+const { vehicleTypeLabel, specFieldLabel, specFieldUnit } = useCatalogLabels()
+
 useSeoMetaData({
-  title: `Գրանցել էվակուատոր | Միացեք հարթակին | ${SITE_NAME}`,
-  description: 'Գրանցեք ձեր էվակուատորը Evakuators.am հարթակում և ստացեք պատվերներ ձեր տարածքից։',
+  title: `${t('registerPage.title')} | ${t('registerPage.metaTitleSuffix')} | ${SITE_NAME}`,
+  description: t('registerPage.metaDescription'),
   path: '/register',
 })
 
@@ -123,13 +125,16 @@ onBeforeUnmount(() => {
 const parsedCoordinates = ref<Coordinates | null>(null)
 
 function validate(): boolean {
-  const shared = validateRegistrationForm(form, errors)
+  const shared = validateRegistrationForm(form, errors, locale.value, (field) => ({
+    label: specFieldLabel(field.key, form.vehicleType, field.label),
+    unit: specFieldUnit(field.unit),
+  }))
   parsedCoordinates.value = shared.coordinates
 
   // The one question this page asks that the shared form does not: a driver
   // must attach a main photo. The moderator's copy has no upload at all, which
   // is why it is checked here rather than in the shared validator.
-  errors.mainImage = imageNames.main ? '' : 'Ավելացրեք գլխավոր նկարը'
+  errors.mainImage = imageNames.main ? '' : t('registerPage.mainImageRequiredError')
 
   return shared.ok && !errors.mainImage
 }
@@ -277,7 +282,7 @@ async function onConsentConfirmed(): Promise<void> {
   } catch (error) {
     consentError.value = extractErrorMessage(
       error,
-      'Չհաջողվեց ուղարկել հայտը։ Ստուգեք կապը և փորձեք կրկին։',
+      t('registerPage.submitFailedError'),
     )
   } finally {
     isSubmitting.value = false
@@ -300,22 +305,26 @@ function onConsentCancelled(): void {
 
 <template>
   <div class="container register">
-    <h1>Գրանցել էվակուատոր</h1>
+    <h1>{{ t('registerPage.title') }}</h1>
     <p class="register__intro">
-      Լրացրեք ձեր և մեքենայի տվյալները, և ձեր պրոֆիլը կհայտնվի հարթակում ստուգումից հետո։
+      {{ t('registerPage.intro') }}
     </p>
 
     <!-- Manipulator and heavy-duty registration is free; every other vehicle
          type (ordinary flatbed/sliding-platform evacuators) is paid. Placed
          before the form because it applies before the driver has even picked
          a vehicle type. -->
-    <p class="register__notice">
-      <strong>{{ VEHICLE_TYPE_LABELS[VehicleType.Manipulator] }}ի</strong> և
-      <strong>{{ VEHICLE_TYPE_LABELS[VehicleType.HeavyDuty] }}ի</strong>
-      գրանցումն անվճար է, մնացած տեսակների համար՝ վճարովի։ Հարցերի համար զանգահարեք
-      <a :href="getPhoneHref(CONTACT_PHONE)">{{ CONTACT_PHONE }}</a
-      >։
-    </p>
+    <i18n-t keypath="registerPage.notice" tag="p" class="register__notice">
+      <template #manipulator
+        ><strong>{{ vehicleTypeLabel(VehicleType.Manipulator) }}</strong></template
+      >
+      <template #heavyDuty
+        ><strong>{{ vehicleTypeLabel(VehicleType.HeavyDuty) }}</strong></template
+      >
+      <template #phone
+        ><a :href="getPhoneHref(CONTACT_PHONE)">{{ CONTACT_PHONE }}</a></template
+      >
+    </i18n-t>
 
     <form class="register__form" novalidate @submit.prevent="onSubmit">
       <!-- Every question below is shared, verbatim, with the moderator's copy
@@ -325,11 +334,11 @@ function onConsentCancelled(): void {
       <RegistrationFormFields v-model="form" :errors="errors" />
 
       <fieldset class="register__section">
-        <legend class="register__legend">Նկարներ</legend>
+        <legend class="register__legend">{{ t('registerPage.imagesLegend') }}</legend>
         <div class="register__grid">
           <div class="register__file">
             <label for="main-image">
-              Գլխավոր նկար<span class="register__required" aria-hidden="true"> *</span>
+              {{ t('registerPage.mainImageLabel') }}<span class="register__required" aria-hidden="true"> *</span>
             </label>
             <input
               id="main-image"
@@ -344,7 +353,7 @@ function onConsentCancelled(): void {
               <button
                 type="button"
                 class="register__image-remove"
-                aria-label="Հեռացնել նկարը"
+                :aria-label="t('registerPage.removeImageAria')"
                 @click="removeMainImage"
               >
                 <AppIcon name="close" :size="14" />
@@ -355,7 +364,7 @@ function onConsentCancelled(): void {
             </p>
           </div>
           <div class="register__file">
-            <label for="extra-images">Լրացուցիչ նկարներ (մինչև {{ MAX_EXTRA_IMAGES }})</label>
+            <label for="extra-images">{{ t('registerPage.extraImagesLabel', { count: MAX_EXTRA_IMAGES }) }}</label>
             <input
               id="extra-images"
               ref="extraImagesInput"
@@ -365,7 +374,7 @@ function onConsentCancelled(): void {
               @change="onExtraImagesChange"
             />
             <span v-if="imageNames.extra.length" class="register__file-name">
-              {{ imageNames.extra.length }}/{{ MAX_EXTRA_IMAGES }} ֆայլ ընտրված է
+              {{ t('registerPage.extraImagesCount', { count: imageNames.extra.length, max: MAX_EXTRA_IMAGES }) }}
             </span>
             <div v-if="extraImagePreviews.length" class="register__image-preview-grid">
               <div
@@ -377,7 +386,7 @@ function onConsentCancelled(): void {
                 <button
                   type="button"
                   class="register__image-remove"
-                  aria-label="Հեռացնել նկարը"
+                  :aria-label="t('registerPage.removeImageAria')"
                   @click="removeExtraImage(index)"
                 >
                   <AppIcon name="close" :size="14" />
@@ -398,7 +407,7 @@ function onConsentCancelled(): void {
         :disabled="isSubmitting"
         class="register__submit"
       >
-        {{ isSubmitting ? 'Ուղարկվում է…' : 'Ուղարկել հայտը' }}
+        {{ isSubmitting ? t('registerPage.submitting') : t('registerPage.submit') }}
       </AppButton>
     </form>
 
@@ -415,12 +424,11 @@ function onConsentCancelled(): void {
       @cancel="onConsentCancelled"
     />
 
-    <AppModal v-model="isSuccessOpen" title="Հայտն ընդունված է">
+    <AppModal v-model="isSuccessOpen" :title="t('registerPage.successTitle')">
       <p>
-        Շնորհակալություն։ Ձեր հայտը հաջողությամբ ուղարկվել է։ Մեր թիմը կստուգի տվյալները և
-        կակտիվացնի ձեր պրոֆիլը։
+        {{ t('registerPage.successBody') }}
       </p>
-      <AppButton variant="primary" block @click="isSuccessOpen = false">Լավ, հասկանալի է</AppButton>
+      <AppButton variant="primary" block @click="isSuccessOpen = false">{{ t('registerPage.successButton') }}</AppButton>
     </AppModal>
   </div>
 </template>

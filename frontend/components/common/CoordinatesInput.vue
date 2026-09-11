@@ -83,6 +83,8 @@ defineEmits<{ 'update:modelValue': [value: string] }>()
  * there is nothing here to configure or to keep working.
  */
 const GOOGLE_MAPS_URL = 'https://maps.google.com/'
+
+const { t } = useI18n()
 </script>
 
 <template>
@@ -90,16 +92,15 @@ const GOOGLE_MAPS_URL = 'https://maps.google.com/'
     <p v-if="heading" class="coordinates__heading">{{ heading }}</p>
 
     <p class="coordinates__intro">
-      Կոորդինատներն անհրաժեշտ են, որպեսզի հաճախորդին ցույց տանք իրեն ամենամոտ գտնվող
-      էվակուատորները։
+      {{ t('coordinatesInput.intro') }}
     </p>
 
     <ol v-if="showGuidance" class="coordinates__steps">
-      <li>Բացեք Google Maps-ը։</li>
-      <li>Գտեք Ձեր էվակուատորի հիմնական կայանման վայրը։</li>
-      <li>Սեղմած պահեք քարտեզի համապատասխան կետի վրա։</li>
-      <li>Պատճենեք ցուցադրված երկու թվերը։</li>
-      <li>Տեղադրեք դրանք ներքևի դաշտում։</li>
+      <li>{{ t('coordinatesInput.step1') }}</li>
+      <li>{{ t('coordinatesInput.step2') }}</li>
+      <li>{{ t('coordinatesInput.step3') }}</li>
+      <li>{{ t('coordinatesInput.step4') }}</li>
+      <li>{{ t('coordinatesInput.step5') }}</li>
     </ol>
 
     <!-- rel="noopener noreferrer" with target="_blank": noopener stops the
@@ -115,7 +116,7 @@ const GOOGLE_MAPS_URL = 'https://maps.google.com/'
       class="coordinates__maps-link"
     >
       <AppIcon name="map-pin" :size="16" />
-      Բացել Google Maps-ը
+      {{ t('coordinatesInput.mapsLinkText') }}
     </AppButton>
 
     <!-- `required` is the caller's call, because the answer differs by screen:
@@ -126,7 +127,7 @@ const GOOGLE_MAPS_URL = 'https://maps.google.com/'
          of the registration form uses for its required fields.) -->
     <AppInput
       :model-value="modelValue"
-      label="Կոորդինատներ"
+      :label="t('coordinatesInput.fieldLabel')"
       placeholder="40.1792, 44.4991"
       :required="required"
       :error="error"
@@ -136,7 +137,7 @@ const GOOGLE_MAPS_URL = 'https://maps.google.com/'
     <!-- Under the field, not above it: this is what to do when the error
          appears, and the error appears here. -->
     <p class="coordinates__hint">
-      Նախ գրեք լայնությունը, ապա՝ երկայնությունը։ Թվերը բաժանեք ստորակետով կամ բացատով։
+      {{ t('coordinatesInput.hint') }}
     </p>
 
     <!-- The escape hatch, and the last thing on the block on purpose: a driver
@@ -149,8 +150,7 @@ const GOOGLE_MAPS_URL = 'https://maps.google.com/'
          the honest advice is the empty box: a blank is visibly missing, a
          plausible wrong number is not. -->
     <p v-if="showGuidance && !required" class="coordinates__fallback">
-      Եթե չի ստացվում լրացնել, թողեք դաշտը դատարկ։ Կարող եք ավելացնել այն ավելի ուշ՝ Ձեր
-      անձնական էջից, կամ խնդրել ադմինիստրատորին օգնել։
+      {{ t('coordinatesInput.fallbackNote') }}
     </p>
   </div>
 </template>

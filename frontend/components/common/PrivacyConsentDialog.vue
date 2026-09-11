@@ -190,6 +190,53 @@ function onOverlayClick(): void {
   if (props.mandatory) return
   cancel()
 }
+
+const { t, locale } = useI18n()
+
+/**
+ * Armenian in `hy`, translated in ru/en — never the reverse.
+ *
+ * `constants/privacyConsent.ts` is a MANUAL SYNC POINT: a backend test hashes
+ * its Armenian text and that hash is what a driver's recorded consent legally
+ * attests to (see that file's own comment), so this component must render
+ * those exact Armenian strings for `hy` and must never alter the file itself.
+ * The ru/en strings below are a translation for the driver's understanding,
+ * not a second legal text — the version sent to the API is still
+ * `PRIVACY_POLICY_VERSION` alone, in every locale.
+ */
+const isArmenian = computed(() => locale.value === 'hy')
+
+const title = computed(() => (isArmenian.value ? PRIVACY_CONSENT_TITLE : t('privacyConsent.title')))
+
+const paragraphs = computed<readonly string[]>(() =>
+  isArmenian.value
+    ? PRIVACY_CONSENT_PARAGRAPHS
+    : [
+        t('privacyConsent.paragraph1'),
+        t('privacyConsent.paragraph2'),
+        t('privacyConsent.paragraph3'),
+        t('privacyConsent.paragraph4'),
+      ],
+)
+
+const policySentenceBefore = computed(() =>
+  isArmenian.value ? PRIVACY_CONSENT_POLICY_SENTENCE_BEFORE : t('privacyConsent.policySentenceBefore'),
+)
+const policyLinkLabel = computed(() =>
+  isArmenian.value ? PRIVACY_CONSENT_POLICY_LINK_LABEL : t('privacyConsent.policyLinkLabel'),
+)
+const policySentenceAfter = computed(() =>
+  isArmenian.value ? PRIVACY_CONSENT_POLICY_SENTENCE_AFTER : t('privacyConsent.policySentenceAfter'),
+)
+const checkboxLabel = computed(() =>
+  isArmenian.value ? PRIVACY_CONSENT_CHECKBOX_LABEL : t('privacyConsent.checkboxLabel'),
+)
+const confirmLabel = computed(() =>
+  isArmenian.value ? PRIVACY_CONSENT_CONFIRM_LABEL : t('privacyConsent.confirmLabel'),
+)
+const cancelLabel = computed(() =>
+  isArmenian.value ? PRIVACY_CONSENT_CANCEL_LABEL : t('privacyConsent.cancelLabel'),
+)
 </script>
 
 <template>
@@ -205,26 +252,26 @@ function onOverlayClick(): void {
           aria-describedby="privacy-consent-body"
           @keydown="onKeydown"
         >
-          <h2 id="privacy-consent-title" class="consent__title">{{ PRIVACY_CONSENT_TITLE }}</h2>
+          <h2 id="privacy-consent-title" class="consent__title">{{ title }}</h2>
 
           <!-- The scrollable region, and the ONLY scrollable region. The
                buttons live outside it so they are reachable on a short phone
                without scrolling to the bottom of the text first — which is
                what turns a consent dialog into a scroll-hunt. -->
           <div id="privacy-consent-body" class="consent__body">
-            <p v-for="paragraph in PRIVACY_CONSENT_PARAGRAPHS" :key="paragraph">
+            <p v-for="paragraph in paragraphs" :key="paragraph">
               {{ paragraph }}
             </p>
 
             <p>
-              {{ PRIVACY_CONSENT_POLICY_SENTENCE_BEFORE
+              {{ policySentenceBefore
               }}<!-- `target="_blank"` is load-bearing, not a style choice: a
                    driver who has filled in a 40-field registration form and
                    follows a same-tab link loses all of it. `rel="noopener"`
                    because every new-tab link on this site carries it. -->
               <NuxtLinkLocale to="/privacy" target="_blank" rel="noopener" class="consent__link">
-                {{ PRIVACY_CONSENT_POLICY_LINK_LABEL }}
-              </NuxtLinkLocale>{{ PRIVACY_CONSENT_POLICY_SENTENCE_AFTER }}
+                {{ policyLinkLabel }}
+              </NuxtLinkLocale>{{ policySentenceAfter }}
             </p>
           </div>
 
@@ -236,7 +283,7 @@ function onOverlayClick(): void {
               class="consent__check-input"
               :disabled="submitting"
             >
-            <span class="consent__check-label">{{ PRIVACY_CONSENT_CHECKBOX_LABEL }}</span>
+            <span class="consent__check-label">{{ checkboxLabel }}</span>
           </label>
 
           <p v-if="error" class="consent__error" role="alert">{{ error }}</p>
@@ -251,10 +298,10 @@ function onOverlayClick(): void {
               class="consent__confirm"
               @click="confirm"
             >
-              {{ submitting ? 'Ուղարկվում է…' : PRIVACY_CONSENT_CONFIRM_LABEL }}
+              {{ submitting ? t('privacyConsent.submitting') : confirmLabel }}
             </AppButton>
             <AppButton variant="outline" :disabled="submitting" @click="cancel">
-              {{ PRIVACY_CONSENT_CANCEL_LABEL }}
+              {{ cancelLabel }}
             </AppButton>
           </div>
         </div>

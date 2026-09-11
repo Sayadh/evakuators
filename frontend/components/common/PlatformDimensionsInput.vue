@@ -24,8 +24,8 @@ interface Props {
   error?: string
 }
 
-withDefaults(defineProps<Props>(), {
-  label: 'Հարթակի չափսեր (ոչ պարտադիր)',
+const props = withDefaults(defineProps<Props>(), {
+  label: undefined,
   error: '',
 })
 
@@ -33,18 +33,25 @@ defineEmits<{
   'update:length': [value: string]
   'update:width': [value: string]
 }>()
+
+const { t } = useI18n()
+
+// `withDefaults` can only default a prop to a plain literal, not to a
+// translated string built by `useI18n()`, which does not exist yet outside
+// `setup()` — see AppSelect.vue for the same fix on the same problem.
+const effectiveLabel = computed(() => props.label ?? t('platformDimensionsInput.label'))
 </script>
 
 <template>
   <div class="dimensions">
-    <p class="dimensions__label">{{ label }}</p>
+    <p class="dimensions__label">{{ effectiveLabel }}</p>
 
     <div class="dimensions__row">
       <AppInput
         :model-value="length"
         type="number"
         placeholder="5.5"
-        aria-label="Երկարություն, մետր"
+        :aria-label="t('platformDimensionsInput.lengthAria')"
         class="dimensions__field"
         @update:model-value="$emit('update:length', $event)"
       />
@@ -53,14 +60,14 @@ defineEmits<{
         :model-value="width"
         type="number"
         placeholder="2.2"
-        aria-label="Լայնություն, մետր"
+        :aria-label="t('platformDimensionsInput.widthAria')"
         class="dimensions__field"
         @update:model-value="$emit('update:width', $event)"
       />
-      <span class="dimensions__unit">մ</span>
+      <span class="dimensions__unit">{{ t('units.metre') }}</span>
     </div>
 
-    <p class="dimensions__hint">Երկարություն × Լայնություն, մետրերով</p>
+    <p class="dimensions__hint">{{ t('platformDimensionsInput.hint') }}</p>
     <p v-if="error" class="dimensions__error" role="alert">{{ error }}</p>
   </div>
 </template>

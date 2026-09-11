@@ -8,6 +8,7 @@ import {
   asksTowHitch,
   asksWheelSkates,
   specialistSpecFieldsFor,
+  type SpecialistSpecField,
   usesExactCapacity,
 } from '~/constants/vehicles'
 import { ServiceType, VehicleType } from '~/types/enums'
@@ -147,6 +148,57 @@ export interface RegistrationValidationResult {
 }
 
 /**
+ * Messages this file itself produces, in ru/en — this is a plain function
+ * module with no access to `useI18n()`, so (like `buildLocationSeo` and the
+ * other non-composable helpers in this codebase) it branches on a `locale`
+ * parameter and keeps its own inline copies rather than vue-i18n keys.
+ * `dashboard.vue` and the admin review page call these two functions with no
+ * `locale` argument at all, which is what keeps their Armenian-only behaviour
+ * unchanged.
+ */
+const VEHICLE_TYPE_REQUIRED_MESSAGE: Record<string, string> = {
+  hy: 'Ընտրեք մեքենայի տեսակը',
+  ru: 'Выберите тип автомобиля',
+  en: 'Select the vehicle type',
+}
+
+const CAPACITY_REQUIRED_MESSAGE: Record<string, string> = {
+  hy: 'Ընտրեք առավելագույն բեռնատարողությունը',
+  ru: 'Выберите максимальную грузоподъёмность',
+  en: 'Select the maximum payload',
+}
+
+const PLATFORM_DIMENSIONS_MESSAGE: Record<string, string> = {
+  hy: 'Լրացրեք և՛ երկարությունը, և՛ լայնությունը, կամ թողեք երկուսն էլ դատարկ',
+  ru: 'Заполните и длину, и ширину, либо оставьте оба поля пустыми',
+  en: 'Fill in both length and width, or leave both empty',
+}
+
+const REGION_REQUIRED_MESSAGE: Record<string, string> = {
+  hy: 'Ընտրեք 1-2 մարզ',
+  ru: 'Выберите 1–2 марза',
+  en: 'Select 1–2 regions',
+}
+
+const SERVICES_REQUIRED_MESSAGE: Record<string, string> = {
+  hy: 'Ընտրեք առնվազն մեկ ծառայություն',
+  ru: 'Выберите хотя бы одну услугу',
+  en: 'Select at least one service',
+}
+
+const WORKING_HOURS_MESSAGE: Record<string, string> = {
+  hy: 'Լրացրեք և՛ սկիզբը, և՛ ավարտը, կամ թողեք երկուսն էլ դատարկ',
+  ru: 'Заполните и начало, и конец, либо оставьте оба поля пустыми',
+  en: 'Fill in both start and end, or leave both empty',
+}
+
+const PRICE_PER_KM_MESSAGE: Record<string, string> = {
+  hy: 'Մուտքագրեք 1 կմ-ի գինը թվերով (օր.՝ 300)',
+  ru: 'Введите цену за 1 км цифрами (например, 300)',
+  en: 'Enter the price per 1 km in digits (e.g. 300)',
+}
+
+/**
  * Validates every field both forms share, writing messages into `errors`.
  *
  * Mutates the caller's reactive error object rather than returning a fresh one,
@@ -156,10 +208,19 @@ export interface RegistrationValidationResult {
  *
  * `ok` reflects **only** the shared fields, so a caller that adds its own must
  * combine the two verdicts rather than trusting this one alone.
+ *
+ * `locale` and `localizeSpecField` default to Armenian-only behaviour, which is
+ * what the admin review page and the dashboard keep by calling this with
+ * neither — see `pages/register.vue` for the one caller that passes both.
  */
 export function validateRegistrationForm(
   form: RegistrationFormState,
   errors: RegistrationFormErrors,
+  locale: string = 'hy',
+  localizeSpecField: (field: SpecialistSpecField) => { label: string; unit: string } = (field) => ({
+    label: field.label,
+    unit: field.unit,
+  }),
 ): RegistrationValidationResult {
   errors.firstName = validateField(form.firstName, [required()]) ?? ''
   errors.lastName = validateField(form.lastName, [required()]) ?? ''
@@ -168,7 +229,10 @@ export function validateRegistrationForm(
   errors.whatsapp = validateField(form.whatsapp, [isPhone()]) ?? ''
   errors.brand = validateField(form.brand, [required()]) ?? ''
   errors.year = validateField(form.year, [required(), isYear()]) ?? ''
-  errors.vehicleType = validateField(form.vehicleType, [required('Ընտրեք մեքենայի տեսակը')]) ?? ''
+  errors.vehicleType =
+    validateField(form.vehicleType, [
+      required(VEHICLE_TYPE_REQUIRED_MESSAGE[locale] ?? VEHICLE_TYPE_REQUIRED_MESSAGE.hy),
+    ]) ?? ''
 
   // The capacity band and the exact tonnage are the SAME question asked two
   // ways, so exactly one of them is required — never both, never neither.
@@ -179,9 +243,11 @@ export function validateRegistrationForm(
   const exactCapacity = usesExactCapacity(form.vehicleType)
   errors.capacity = exactCapacity
     ? ''
-    : validateField(form.capacity, [required('Ընտրեք առավելագույն բեռնատարողությունը')]) ?? ''
+    : validateField(form.capacity, [
+        required(CAPACITY_REQUIRED_MESSAGE[locale] ?? CAPACITY_REQUIRED_MESSAGE.hy),
+      ]) ?? ''
 
-  validateSpecialistSpecs(form, errors)
+  validateSpecialistSpecs(form, errors, locale, localizeSpecField)
 
   // Optional, but both-or-neither: half a size is not a size. Same rule the
   // working-hours pair uses.
@@ -189,7 +255,7 @@ export function validateRegistrationForm(
     validateField(form.platformLengthM, [isDimension()]) ??
     validateField(form.platformWidthM, [isDimension()]) ??
     (Boolean(form.platformLengthM.trim()) !== Boolean(form.platformWidthM.trim())
-      ? 'Լրացրեք և՛ երկարությունը, և՛ լայնությունը, կամ թողեք երկուսն էլ դատարկ'
+      ? (PLATFORM_DIMENSIONS_MESSAGE[locale] ?? PLATFORM_DIMENSIONS_MESSAGE.hy)
       : '')
 
   // An uncapped driver may pick as many marzes as they work in, and one who
@@ -205,9 +271,17 @@ export function validateRegistrationForm(
   const uncapped = hasUncappedCoverage(coverage)
 
   errors.regionSlugs =
-    uncapped || form.regionSlugs.length > 0 ? '' : 'Ընտրեք 1-2 մարզ'
-  errors.citySlugs = validateServiceAreaSelection(form.regionSlugs, form.citySlugs, coverage)
-  errors.services = form.services.length === 0 ? 'Ընտրեք առնվազն մեկ ծառայություն' : ''
+    uncapped || form.regionSlugs.length > 0
+      ? ''
+      : (REGION_REQUIRED_MESSAGE[locale] ?? REGION_REQUIRED_MESSAGE.hy)
+  errors.citySlugs = validateServiceAreaSelection(
+    form.regionSlugs,
+    form.citySlugs,
+    coverage,
+    locale,
+  )
+  errors.services =
+    form.services.length === 0 ? (SERVICES_REQUIRED_MESSAGE[locale] ?? SERVICES_REQUIRED_MESSAGE.hy) : ''
 
   // Optional: an empty box submits, and the driver adds it later from their
   // dashboard. Anything actually typed still has to parse — "half a
@@ -231,12 +305,14 @@ export function validateRegistrationForm(
   // combination cannot be saved as a valid range either way.
   errors.workingHours =
     Boolean(form.workingHoursStart) !== Boolean(form.workingHoursEnd)
-      ? 'Լրացրեք և՛ սկիզբը, և՛ ավարտը, կամ թողեք երկուսն էլ դատարկ'
+      ? (WORKING_HOURS_MESSAGE[locale] ?? WORKING_HOURS_MESSAGE.hy)
       : ''
 
   errors.priceCityCallout = validateField(form.priceCityCallout, [isAmount()]) ?? ''
   errors.pricePerKm =
-    validateField(form.pricePerKm, [isAmount('Մուտքագրեք 1 կմ-ի գինը թվերով (օր.՝ 300)')]) ?? ''
+    validateField(form.pricePerKm, [
+      isAmount(PRICE_PER_KM_MESSAGE[locale] ?? PRICE_PER_KM_MESSAGE.hy),
+    ]) ?? ''
   errors.priceWaitingPerHour = validateField(form.priceWaitingPerHour, [isAmount()]) ?? ''
   errors.priceNightSurchargePercent =
     validateField(form.priceNightSurchargePercent, [isPercent()]) ?? ''
@@ -266,19 +342,39 @@ export function validateRegistrationForm(
  * Errors are keyed by the field name, so `errors.craneReachM` lands under the
  * input that produced it without the component needing a mapping table.
  */
+const SPEC_FIELD_REQUIRED_MESSAGE: Record<string, (label: string) => string> = {
+  hy: (label) => `Լրացրեք՝ ${label}`,
+  ru: (label) => `Заполните: ${label}`,
+  en: (label) => `Fill in: ${label}`,
+}
+
+const SPEC_FIELD_RANGE_MESSAGE: Record<string, (min: number, max: number, unit: string) => string> = {
+  hy: (min, max, unit) => `Մուտքագրեք ${min}–${max} ${unit} միջակայքում`,
+  ru: (min, max, unit) => `Введите значение в диапазоне ${min}–${max} ${unit}`,
+  en: (min, max, unit) => `Enter a value between ${min} and ${max} ${unit}`,
+}
+
 export function validateSpecialistSpecs(
   form: SpecialistSpecFields & { vehicleType: string },
   errors: RegistrationFormErrors,
+  locale: string = 'hy',
+  localizeField: (field: SpecialistSpecField) => { label: string; unit: string } = (field) => ({
+    label: field.label,
+    unit: field.unit,
+  }),
 ): void {
   // Clear every key first: a field that stopped being shown must stop
   // reporting, and `SPECIALIST_SPEC_KEYS` is the closed list of what can.
   for (const key of SPECIALIST_SPEC_KEYS) errors[key] = ''
 
+  const requiredMessage = SPEC_FIELD_REQUIRED_MESSAGE[locale] ?? SPEC_FIELD_REQUIRED_MESSAGE.hy!
+  const rangeMessage = SPEC_FIELD_RANGE_MESSAGE[locale] ?? SPEC_FIELD_RANGE_MESSAGE.hy!
+
   for (const field of specialistSpecFieldsFor(form.vehicleType)) {
     const raw = form[field.key].trim()
 
     if (!raw) {
-      if (field.required) errors[field.key] = `Լրացրեք՝ ${field.label}`
+      if (field.required) errors[field.key] = requiredMessage(localizeField(field).label)
       continue
     }
 
@@ -286,7 +382,7 @@ export function validateSpecialistSpecs(
     // keyboard puts «,» where a number needs «.», and "5,5" means 5.5.
     const value = Number(raw.replace(',', '.'))
     if (!Number.isFinite(value) || value < field.min || value > field.max) {
-      errors[field.key] = `Մուտքագրեք ${field.min}–${field.max} ${field.unit} միջակայքում`
+      errors[field.key] = rangeMessage(field.min, field.max, localizeField(field).unit)
     }
   }
 }

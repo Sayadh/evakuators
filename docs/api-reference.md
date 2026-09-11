@@ -437,7 +437,7 @@ Other things worth knowing:
 | `GET` | `/admin/tow-trucks` | Every truck, active or not (unlike the public `/tow-trucks` list). Query: `limit` (default 50, max 200), `offset` |
 | `GET` | `/admin/tow-trucks/count` | `{ total, active, inactive }` — totals across the **whole table**, independent of the pagination above. `inactive` is `total - active`, never a third `count()`, so the three numbers can't disagree with each other. Declared before every `tow-trucks/:id` route in `admin.controller.ts` so the literal segment `count` can never be swallowed by an `:id` param — see `backend/test/admin.controller.count-route.spec.ts`, which asserts that ordering as a general rule, not just for today's route list. Powers the total shown next to "Էվակուատորներ" in the admin panel (`pages/admin/index.vue`) |
 | `PATCH` | `/admin/tow-trucks/:id/active` | Body: `{ isActive: boolean }` — reversible |
-| `PATCH` | `/admin/tow-trucks/:id/featured` | Body: `{ isFeatured: boolean }` — drives the public `GET /tow-trucks/featured` list and the homepage "featured" section |
+| `PATCH` | `/admin/tow-trucks/:id/featured` | Body: `SetTowTruckFeaturedDto` — `{ isFeatured: boolean, days?: number }`, where `days` is **required when granting** (1-30, `FEATURED_MIN_DAYS`/`FEATURED_MAX_DAYS`) and ignored when revoking. Sets the `featuredAt`/`featuredUntil` window as well as the boolean — see `docs/data-model.md`. Drives the public `GET /tow-trucks/featured` list and the homepage "featured" section, both of which apply the window on read (`isFeaturedNow`) rather than trusting the boolean alone |
 | `PATCH` | `/admin/tow-trucks/:id/heavy-equipment` | Body: `{ heavyEquipment: boolean }` — whether this truck appears on `/tsanr-tehnika` (`?vehicleType=heavy-duty` ORs the type with this flag). Unlike `/featured` it changes public listing results. **Admin-only with no driver counterpart** — see `docs/taxonomies.md` § «Ծանր տեխնիկա». The response echoes the **derived** value: a truck whose `vehicleType` is already `heavy-duty` answers `true` whatever was sent, and nothing is written — so the panel must assign what came back, not what it sent |
 | `PATCH` | `/admin/tow-trucks/:id/phone` | Body: `{ phone: string }` (`+374` + 8 digits). Corrects the main login phone — the driver's own dashboard can't touch this field. Rejected with 400 if another **active** truck already uses it (same uniqueness rule as approval) |
 | `PATCH` | `/admin/tow-trucks/:id/coordinates` | Body `{ latitude, longitude }` — same `SetCoordinatesDto`, same rule and same messages as the driver's route above, deliberately shared so the two audiences can never validate one value differently. Unlike `/phone` this is **not** an admin-only field: it exists so support can fix a pair pasted in the wrong order without asking the driver to log in. Works on deactivated trucks too |
@@ -455,6 +455,9 @@ Other things worth knowing:
 | `GET` | `/admin/tow-trucks/:id/analytics/reviews` | |
 | `GET` | `/admin/tow-trucks/:id/analytics/ratings` | |
 | `GET` | `/admin/site-analytics` | Site-wide traffic, no tow truck involved: visits + Free Routes views, each as distinct people and as daily-summed visits, for `?period=` and all time. Also `callers` — distinct people who pressed "Զանգահարել" on ANY truck's profile in the period, plus daily-summed and all-time call totals; read platform-wide from the per-truck analytics tables with no `towTruckId` filter, not from the site-visit tables above. The only report in the analytics module that isn't scoped to a driver, which is why it has its own controller. See `docs/analytics.md` § "Platform-wide active callers" |
+| `GET` | `/admin/dispatch/candidates` | Who to offer a job in this place to. Query: `slug`, `name`, `type` (`city\|district\|region\|route`), optional `filter` (`all\|never-dispatched\|featured\|long-wait`) and, **for a marz only**, `regionCities`/`regionZones` as comma-separated slugs. The place travels as slug + name + type rather than an id because the taxonomy is static TypeScript and there is nothing to resolve an id against; the marz expansion is sent for the same reason the public region listing sends it — the backend has no geography, and almost no driver stores a marz, they list its towns. Query params are validated by hand here, not by a DTO: a GET's query is not covered by the global `ValidationPipe`'s body handling. Returns `{ place, items }`, each item carrying a `tier` — see § "The dispatch screen" |
+| `POST` | `/admin/dispatch/candidates-by-coordinates` | Who is **closest to a point**, as straight-line distance. Body: `{ latitude, longitude, filter? }`. A POST with a 200, not a GET, for the same reason `POST /nearest-tow-trucks` is one: a GET would write the exact coordinates into nginx's `access.log`. Coordinates go through the same `IsLatitudeValue`/`IsLongitudeValue` decorators as every other coordinate-accepting DTO, plus `assertWithinArmenia` in the service. Returns `{ latitude, longitude, items }` **nearest first**, each item carrying `distanceMeters` and, unlike the route above, **no `tier`** — a bare coordinate has no named place to be local to. Specialist vehicle types are excluded here (but not from the place search) — see § "The dispatch screen" |
+| `POST` | `/admin/dispatch/referrals` | «Ուղղորդված է» — records that this driver took the job. Body: `CreateDispatchReferralDto` (`towTruckId`, `locationSlug`, `locationName`, `locationType`). `towTruckId` IS accepted from the caller, unlike anywhere on the driver's side, because the caller is a dispatcher choosing somebody else; the admin's own id still comes from the token. Writes one `DispatchReferral` — see `docs/data-model.md` |
 | `GET` | `/admin/subscription-payments/plans` | The same plan constants the driver's dashboard reads — so the admin's «record a payment» picker cannot drift from what is on sale |
 | `GET` | `/admin/subscription-payments/pending` | Every request waiting on a decision, oldest first, each with the driver who made it |
 | `POST` | `/admin/subscription-payments` | Records an off-platform payment as PAID. `{ towTruckId, planId, paidAt? }` — a plan, never an amount. `paidAt` is when the coverage STARTS: today or later, and a past date is rejected (see § "Paying twice" for why) |
@@ -539,6 +542,85 @@ listing goes live.
 Rejection requires a reason, which the driver receives in Telegram and sees on
 their dashboard. An unexplained refusal leaves them to guess which change was
 the problem, and the likeliest next move is to submit the same thing again.
+
+### The dispatch screen
+
+`/admin/dispatch` answers one question under time pressure: somebody is on the
+phone saying where they are, and the operator has about twenty seconds to name
+a driver. Two endpoints answer it two ways, and the difference between them is
+the whole design.
+
+**By place** (`GET /admin/dispatch/candidates`) is the common case — the
+customer says a place name. Every active driver who has anything to do with it
+comes back, grouped into three **tiers**:
+
+| Tier | Means | Decided by |
+| --- | --- | --- |
+| `local` | based there | `districtSlug`/`citySlug`/`regionSlug` |
+| `visiting` | named it among the areas they serve | `serviceAreas` |
+| `nationwide` | declared the whole country | `servesAllArmenia` |
+
+A driver the place has nothing to do with tiers as `null` and is dropped. The
+distinction costs nothing to compute because the data already draws it, and it
+is what the operator actually asks for: show me the local ones first, then the
+ones who would drive out.
+
+**By coordinates** (`POST /admin/dispatch/candidates-by-coordinates`) is for
+the customer who cannot name where they are but can drop a pin. There is no
+place, so there is no tier — a flat list ordered by straight-line distance,
+with `distanceMeters` on every row. Four decisions differ from the place
+search, each deliberate:
+
+- **Straight-line, never routed.** The customer-facing `/nearest-tow-trucks`
+  buys road distances from OpenRouteService against a metered daily budget
+  (`docs/nearest-search.md`). This screen does not touch it: the operator
+  applies their own judgement on top of the number anyway, and two features
+  racing for one shared quota is not a trade worth making for a ranking that
+  is already advisory.
+- **Specialist vehicle types are excluded** («Մանիպուլյատոր», «Ծանր
+  տեխնիկա» — `SPECIALIST_VEHICLE_TYPES`). A place search is a fair question to
+  a manipulator driver; "who is closest to this exact point" is almost always
+  someone looking for a general evacuator, the same case the public nearest
+  search reasons about. The filter sits inside the SQL, not after it, so the
+  limit cannot silently return fewer drivers than asked for.
+- **PostGIS does the work**, through the same `location` geography column and
+  partial GiST index the public search uses: `ORDER BY location <-> point`
+  bounded by `ST_DWithin`. 150 km radius, 30 results
+  (`dispatch.constants.ts`). The query returns ids and distances only — the
+  rows themselves come back through the ordinary typed path, so the two
+  searches cannot drift into showing different fields for the same driver.
+  Prisma's `id: { in: [...] }` does **not** preserve order, so the service
+  re-sorts by the distance map afterwards.
+- **No referral can be recorded from it.** `POST /admin/dispatch/referrals`
+  needs `locationSlug`/`locationName`/`locationType`, and a raw coordinate is
+  none of the four `DispatchLocationType` kinds the platform tracks. Inventing
+  a fake city for the record would put fiction in the history that answers
+  "what did my subscription buy me", so the coordinate list offers the phone
+  button only, and the referral is logged the normal way once the place name
+  is known — which, in practice, the customer gives once a call is under way.
+
+**The subscription is shown, never filtered on.** The obvious rule — only
+paying drivers get dispatched — would have made the screen empty on the day it
+shipped: payments are gated behind merchant credentials, so almost every driver
+still reads `unpaid` because nobody has ever billed them. The status travels as
+a badge and the operator decides. Turning it into a filter is one `where`
+clause once the fleet is actually subscribed.
+
+**`filter` is shared by both searches** and reads only fields that already
+exist: `never-dispatched` (no referrals ever), `featured` (through the
+`featuredUntil` window, not the raw boolean), `long-wait` (nothing for
+`DISPATCH_LONG_WAIT_DAYS` = 30, the billing cycle — the driver to surface
+*before* the renewal conversation, not after). `never-dispatched` and
+`long-wait` deliberately do not overlap: a driver who has never had anything is
+a separate and more urgent case, and merging them hides the smaller list inside
+the larger.
+
+All three routes are admin-only through the class-level `AdminJwtGuard`, and
+that is load-bearing rather than routine: the candidate list hands back every
+active driver's name and phone number together with how much work each has been
+given. A public variant of it is not a smaller feature, it is a data export.
+`backend/test/dispatch-admin-only.spec.ts` pins the guard at class level and
+fails if a future route relies on a per-method one instead.
 
 ## List vs detail — two different shapes on purpose
 

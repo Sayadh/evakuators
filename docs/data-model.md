@@ -139,6 +139,29 @@ Notable fields beyond the obvious:
   "featured trucks" section; nothing sets it automatically, an admin has to
   flip it in `/admin`. Defaults `false`, no cap on how many can be featured
   at once.
+- `featuredAt` / `featuredUntil: DateTime?` — **the window `isFeatured` is
+  true for**, added once the placement became something drivers pay for. The
+  boolean deliberately kept its meaning, so no caller that asks "is this
+  driver featured" had to learn a new field name.
+
+  `featuredAt` is not decoration, it is the **order**: several drivers in one
+  town can hold a placement at once, and the most recently granted goes on
+  top, so a driver who pays today is visibly first tomorrow and last week's
+  buyer moves down by one instead of being displaced.
+
+  `featuredUntil` is when it stops. `NULL` means "no end" — which is what
+  every row predating the migration has, because those were editorial picks
+  granted with no notion of a duration and expiring them on deploy would have
+  silently removed them. New grants always carry one: the admin dialog
+  requires 1-30 days (`FEATURED_MIN_DAYS`/`FEATURED_MAX_DAYS`).
+
+  **The expiry is enforced on READ as well as swept by a job.** The hourly
+  sweep is cleanup, not correctness: between two runs there is always a window
+  where `featuredUntil` has passed and `isFeatured` is still `true`, and during
+  it a driver would occupy a paid slot they no longer paid for. So every read
+  applies the window itself (`isFeaturedNow`, `tow-trucks/featured.ts`) and the
+  job only makes the stored row agree with what is already being shown. A
+  partial index on `featuredUntil WHERE isFeatured = true` serves the sweep.
 - `workingHoursText: String?` — free-text working hours (e.g. `"09:00 – 21:00"`),
   entirely optional. `null`/unset means "not specified" and the frontend
   hides the hours line completely rather than showing a placeholder or a
@@ -383,6 +406,38 @@ created exclusively via `backend/scripts/create-admin-user.js`
 re-running it is how you reset a forgotten password. Auth is
 `admin-auth`/`AdminJwtGuard`, plus the Telegram-based 2FA described in
 `docs/auth-and-security.md`.
+
+## `DispatchReferral` — one job handed to one driver
+
+Written when the dispatcher presses «Ուղղորդված է» on `/admin/dispatch`. See
+`docs/api-reference.md` § "The dispatch screen" for the flow; the parts that
+are specifically about the data:
+
+- **A row means "I gave this job to this driver", and nothing more.** It is
+  written AFTER a driver agreed on the phone, not when their number was
+  dialled, so calls nobody answered leave nothing behind. The count has to
+  mean work offered, or it means nothing.
+- **It is deliberately not an order.** No status, no completion, no price, no
+  customer. Those are things the platform does not witness and cannot verify,
+  and columns for them would produce numbers nobody could stand behind.
+- **The place is stored twice — `locationSlug` AND `locationName`** — because
+  the location taxonomy is static TypeScript rather than a table (CLAUDE.md).
+  Keeping the name as it read at the time is what stops a renamed district
+  silently rewriting last year's history.
+- **`adminUserId` comes from the token, never the body.** Who dispatched is a
+  fact about the session, and it is the one field in the feature a caller must
+  not be able to choose.
+- Two indexes, one per question the screen asks: `(towTruckId, createdAt)` for
+  "how many and how recently for this driver", and `(locationSlug, createdAt)`
+  for "which places do the calls come from" — the one that tells an operator
+  where they are short of drivers.
+- `onDelete: Cascade` from `TowTruck`: a deleted truck's referrals are
+  meaningless, and the driver-facing «այս ամիս» count is derived from them.
+
+This table is also what makes the subscription defensible. When a driver asks
+what they are paying for, the answer has to be a number with dates behind it —
+and nothing else in the system records that a call was passed on, because the
+dispatcher rings from their own phone.
 
 ## `ProfileChangeRequest` — a driver's edit, before it is live
 

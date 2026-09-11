@@ -24,6 +24,7 @@ and what auth (if any) gates it.
 | `/dashboard` | `pages/dashboard.vue` | Driver's own analytics (`AnalyticsDashboard scope="driver"`) + **full** own-profile editor — it mirrors the registration form field-for-field (name, company, contacts, vehicle facts, equipment, capacity band, platform dimensions, base location, service areas via the shared `ServiceAreaPicker`, description, services, hours, pricing, photos), with `slug` and the main `phone` shown read-only — plus a **Տեղադիրք** block (base parking coordinates, edited in a dialog that saves through its own `PATCH /my/tow-truck/coordinates` — deliberately outside the profile form, so fixing a price never resubmits the coordinates and an invalid coordinate never blocks an unrelated save) and `FreeRoutesManager` for the driver's own routes, plus a collapsed **Գաղտնաբառ** section (`ChangePasswordForm`). When the session carries `mustChangePassword`, that same form is rendered **instead of** the whole dashboard rather than over it — a driver still holding the generated password has exactly one thing to do here, and a blocking screen has nothing behind it to tab into and no dialog to dismiss | Real API only | Driver JWT — redirects to `/login` if not authenticated (`driver-auth` route middleware, client-only) |
 | `/admin` | `pages/admin/index.vue` | Internal moderation panel — registration requests (each card links to its own review page — the panel itself no longer approves or rejects), pending reviews (approve/reject), tow truck list (activate/deactivate/delete, Telegram link management, base parking coordinates via the same `CoordinatesDialog` the driver gets — with the Google Maps steps switched off — expandable per-truck analytics via the same `AnalyticsDashboard` component with `scope="admin"`). The "Էվակուատորներ" section header shows the total/active/inactive counts from `GET /admin/tow-trucks/count`, refetched after any action that changes them (approve, delete, activate/deactivate) — independent of the paginated list itself, see `docs/api-reference.md` — and an "Ուղարկել գաղտնաբառեր" button opening a picker of the drivers who linked Telegram but have no password yet — checkboxes, nothing pre-ticked, sends only to the ticked ones (see `docs/auth-and-security.md` for why the selection is the safety mechanism rather than a convenience) | Real API only | Admin JWT; `noindex`, not linked from public nav, excluded from sitemap |
 | `/admin/registrations/:id` | `pages/admin/registrations/[id].vue` | Reviewing one request. The registration form, pre-filled from what the driver sent and fully editable, plus the three answers registration cannot contain (latin slug, the base, a description) — approving submits the form, so what the moderator sees is what gets published. Photos are shown read-only. Nothing is stored until approval; leaving the page discards the edits. The form itself is `RegistrationFormFields.vue`, the same component `/register` renders — see `docs/api-reference.md` § "Reviewing a registration" | Real API only | Admin JWT; `noindex`, not linked from public nav, excluded from sitemap |
+| `/admin/dispatch` | `pages/admin/dispatch.vue` | The dispatcher's screen — a place (or a coordinate) in, a driver to ring out. Two search modes behind one toggle: **by place**, where picking a suggestion IS the search (no submit button — the extra tap is real in a twenty-second budget) and results come back grouped by tier with recent places as one-tap chips; and **by coordinates**, where the pasted pair goes through the same `CoordinatesInput` the registration form uses (guidance off, as in the admin correction dialog, so the Google Maps link-out is there without the driver-facing steps) and results come back as a flat nearest-first list with a straight-line distance. «Ուղղորդված է» records a referral and asks first — the one irreversible thing on the screen — and is place-mode only; see `docs/api-reference.md` § "The dispatch screen". Designed for a phone held one-handed at night: tall tap targets, the call button sized as the primary action | Real API only | Admin JWT; `noindex`, not linked from public nav, excluded from sitemap |
 | `/about` | `pages/about.vue` | Static "about us" content | Static | Public |
 | `/contact` | `pages/contact.vue` | Static contact info | Static | Public |
 
@@ -204,6 +205,40 @@ Both are covered by `backend/test/vehicle-type-filter.spec.ts`.
 **`/regions` and `/yerevan` were not orphaned.** The footer lists every marz
 and every district on every page, and its two column *headings* now link the
 hubs themselves. Both keep their sitemap entries.
+
+## Locales — `/ru` and `/en`
+
+The site is Armenian first and serves Russian and English from the same pages
+via `@nuxtjs/i18n` with `prefix_except_default`: `hy` has no prefix, the other
+two are one path segment. `/yerevan` and `/ru/yerevan` are the same file, the
+same data and the same components — only `i18n/locales/<code>.json` differs.
+
+**hy is the source language**, not a translation target. Keys are written
+against the Armenian copy that already existed, which is why a missing key is
+a bug rather than a fallback: `tests/localeFiles.spec.ts` fails the build if a
+key in `hy.json` is absent from `ru.json` or `en.json`, if either file contains
+Armenian characters, if an interpolation placeholder differs between the three,
+or if a counted message is missing a plural form its language needs (Russian
+needs `one`/`few`/`many`, English `one`/`many`, Armenian neither).
+
+**What a locale does NOT change:** slugs, routes and the taxonomy. `/ru/yerevan`
+is still `yerevan` — place slugs are identifiers, not words, and translating
+them would fork every URL, every analytics row and every stored `serviceAreas`
+entry three ways. Place *names* are localised at the point of display
+(`usePlaceName`), the geography data itself is not.
+
+**SEO.** Every page emits self-referencing `rel="canonical"` plus `hreflang`
+alternates for `hy-AM`, `ru-RU`, `en-US` and `x-default`, and `<html lang>`
+follows the active locale. The sitemap lists the Armenian URLs only; the
+hreflang annotations on those pages are what lead a crawler to the other two,
+which is sufficient but means a locale URL is discovered one hop later than it
+would be if the sitemap named it.
+
+**Where the Armenian is deliberate.** Comments, admin-panel copy
+(`pages/admin/*`) and the driver dashboard are not translated: the operators
+and the drivers are Armenian-speaking, and the surfaces are behind a login. The
+public pages are translated, with `pages/privacy.vue` the one known exception
+still to do.
 
 ## SEO
 

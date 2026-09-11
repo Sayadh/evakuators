@@ -2,19 +2,20 @@
 import { CONTACT_PHONE, SITE_NAME } from '~/constants/site'
 import { getPhoneHref, getTelegramPhoneUrl, getWhatsAppUrl } from '~/utils/formatPhone'
 
+const { t } = useI18n()
+
 useSeoMetaData({
-  title: `Կապ մեզ հետ | ${SITE_NAME}`,
-  description:
-    'Կապվեք Evakuators.am թիմի հետ հեռախոսով կամ Telegram-ով։ Հարցեր, առաջարկներ և համագործակցություն։',
+  title: `${t('contactPage.title')} | ${SITE_NAME}`,
+  description: t('contactPage.metaDescription'),
   path: '/contact',
 })
 </script>
 
 <template>
   <div class="container contact-page">
-    <h1>Կապ մեզ հետ</h1>
+    <h1>{{ t('contactPage.title') }}</h1>
     <p class="contact-page__intro">
-      Հարցերի, առաջարկների կամ համագործակցության համար կապվեք մեզ հետ ձեզ հարմար եղանակով։
+      {{ t('contactPage.intro') }}
     </p>
 
     <div class="contact-page__cards">
@@ -22,7 +23,7 @@ useSeoMetaData({
         <span class="contact-page__icon" aria-hidden="true">
           <AppIcon name="phone" :size="26" />
         </span>
-        <span class="contact-page__label">Զանգահարել</span>
+        <span class="contact-page__label">{{ t('contactActions.call') }}</span>
         <span class="contact-page__value">{{ CONTACT_PHONE }}</span>
       </a>
 
@@ -35,7 +36,7 @@ useSeoMetaData({
         <span class="contact-page__icon" aria-hidden="true">
           <AppIcon name="whatsapp" :size="26" />
         </span>
-        <span class="contact-page__label">Գրել WhatsApp-ով</span>
+        <span class="contact-page__label">{{ t('contactActions.whatsapp') }}</span>
         <span class="contact-page__value">{{ CONTACT_PHONE }}</span>
       </a>
 
@@ -48,7 +49,7 @@ useSeoMetaData({
         <span class="contact-page__icon" aria-hidden="true">
           <AppIcon name="telegram" :size="26" />
         </span>
-        <span class="contact-page__label">Գրել Telegram-ով</span>
+        <span class="contact-page__label">{{ t('contactActions.telegram') }}</span>
         <span class="contact-page__value">{{ CONTACT_PHONE }}</span>
       </a>
     </div>

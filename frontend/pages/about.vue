@@ -2,34 +2,25 @@
 import { SITE_NAME } from '~/constants/site'
 import { getRegisterRoute, getRegionsRoute } from '~/utils/routeHelpers'
 
+const { t } = useI18n()
+
 useSeoMetaData({
-  title: `Մեր մասին | ${SITE_NAME}`,
-  description:
-    'Evakuators.am-ը Հայաստանի էվակուատորների որոնման հարթակ է. գտեք ձեր տարածքում աշխատող էվակուատոր և զանգահարեք վարորդին անմիջապես։',
+  title: `${t('about.title')} | ${SITE_NAME}`,
+  description: t('about.metaDescription'),
   path: '/about',
 })
 </script>
 
 <template>
   <div class="container static-page">
-    <h1>Մեր մասին</h1>
+    <h1>{{ t('about.title') }}</h1>
     <div class="static-page__content">
-      <p>
-        Evakuators.am-ը հարթակ է, որտեղ մեկ տեղում հավաքված են Հայաստանի բոլոր մարզերում և Երևանի
-        վարչական շրջաններում աշխատող էվակուատորները։ Մեր նպատակն է, որ մեքենայի խնդիր ունեցող
-        ցանկացած մարդ կարողանա 1-2 րոպեում գտնել իր տարածքում հասանելի էվակուատոր և զանգահարել
-        վարորդին ուղիղ՝ առանց միջնորդների։
-      </p>
-      <p>
-        Հարթակում կտեսնեք մեքենաների իրական նկարները, ծառայությունների տեսակները և մեկնարկային
-        գները։
-      </p>
-      <p>
-        Եթե էվակուատորի վարորդ եք, կարող եք գրանցվել և ստանալ պատվերներ ձեր տարածքից։
-      </p>
+      <p>{{ t('about.p1') }}</p>
+      <p>{{ t('about.p2') }}</p>
+      <p>{{ t('about.p3') }}</p>
       <div class="static-page__actions">
-        <AppButton :to="getRegionsRoute()" variant="primary">Գտնել էվակուատոր</AppButton>
-        <AppButton :to="getRegisterRoute()" variant="accent">Գրանցել էվակուատոր</AppButton>
+        <AppButton :to="getRegionsRoute()" variant="primary">{{ t('about.findButton') }}</AppButton>
+        <AppButton :to="getRegisterRoute()" variant="accent">{{ t('common.registerTruck') }}</AppButton>
       </div>
     </div>
   </div>

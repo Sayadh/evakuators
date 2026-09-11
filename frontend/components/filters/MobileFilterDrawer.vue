@@ -7,12 +7,15 @@ interface Props {
 defineProps<Props>()
 
 const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
+
+const { t } = useI18n()
+const plural = usePlural()
 </script>
 
 <template>
   <AppDrawer
     :model-value="modelValue"
-    title="Ֆիլտրեր"
+    :title="t('common.filters')"
     side="bottom"
     @update:model-value="emit('update:modelValue', $event)"
   >
@@ -20,7 +23,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
 
     <template #footer>
       <AppButton variant="primary" block @click="emit('update:modelValue', false)">
-        Ցուցադրել {{ resultsCount }} արդյունք
+        {{ plural('filters.showResults', resultsCount) }}
       </AppButton>
     </template>
   </AppDrawer>

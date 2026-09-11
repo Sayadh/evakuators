@@ -4,6 +4,7 @@ import type { Review } from '~/types/review'
 import type { TowTruck, TowTruckCard } from '~/types/towTruck'
 import { SERVICE_LABELS } from '~/constants/services'
 import { countryLocative, countryName } from '~/i18n/vehicleTypeCopy'
+import { localizedPlaceName, type PlaceKind } from '~/i18n/placeNames'
 import {
   SITE_ALTERNATE_NAME,
   SITE_NAME,
@@ -91,7 +92,12 @@ function toSchemaOpeningHours(workingHours: string | undefined): string | undefi
  * and Google explicitly warns against self-reported ratings with no backing
  * review count, so this key is omitted entirely when there's nothing to show.
  */
-export function buildTowTruckBusinessSchema(truck: TowTruck, reviews: Review[] = []): JsonLd {
+export function buildTowTruckBusinessSchema(
+  truck: TowTruck,
+  reviews: Review[] = [],
+  locale = 'hy',
+  serviceLabel: (slug: string) => string = (slug) => SERVICE_LABELS[slug as keyof typeof SERVICE_LABELS],
+): JsonLd {
   const schema: JsonLd = {
     '@context': 'https://schema.org',
     '@type': 'AutomotiveBusiness',
@@ -101,11 +107,22 @@ export function buildTowTruckBusinessSchema(truck: TowTruck, reviews: Review[] =
     telephone: truck.phone,
     image: truck.images,
     description: truck.description,
-    areaServed: truck.serviceAreas.map((area) => ({ '@type': 'City', name: area.name })),
+    // `route` (a named road corridor) is the place map's `zone` — same mapping
+    // `useAreaName` uses for the on-page chips, kept in sync here so the
+    // structured data and the visible list never disagree.
+    areaServed: truck.serviceAreas.map((area) => ({
+      '@type': 'City',
+      name: localizedPlaceName(
+        (area.type === 'route' ? 'zone' : area.type) as PlaceKind,
+        area.slug,
+        area.name,
+        locale,
+      ),
+    })),
     priceRange: '֏֏',
     makesOffer: truck.services.map((service) => ({
       '@type': 'Offer',
-      itemOffered: { '@type': 'Service', name: SERVICE_LABELS[service] },
+      itemOffered: { '@type': 'Service', name: serviceLabel(service) },
     })),
   }
 

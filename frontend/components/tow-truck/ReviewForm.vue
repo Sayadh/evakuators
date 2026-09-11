@@ -8,6 +8,8 @@ interface Props {
 
 const props = defineProps<Props>()
 
+const { t } = useI18n()
+
 const authorName = ref('')
 const rating = ref(0)
 const text = ref('')
@@ -27,15 +29,15 @@ async function submit(): Promise<void> {
   error.value = ''
 
   if (!authorName.value.trim()) {
-    error.value = 'Գրեք Ձեր անունը'
+    error.value = t('reviews.form.errorName')
     return
   }
   if (rating.value < 1) {
-    error.value = 'Ընտրեք գնահատական (1-5 աստղ)'
+    error.value = t('reviews.form.errorRating')
     return
   }
   if (text.value.trim().length < 5) {
-    error.value = 'Կարծիքի տեքստը շատ կարճ է'
+    error.value = t('reviews.form.errorTextShort')
     return
   }
 
@@ -50,7 +52,7 @@ async function submit(): Promise<void> {
     reset()
     success.value = true
   } catch (err) {
-    error.value = extractErrorMessage(err, 'Կարծիքն ուղարկել չհաջողվեց, փորձեք կրկին։')
+    error.value = extractErrorMessage(err, t('reviews.form.errorSubmit'))
   } finally {
     submitting.value = false
   }
@@ -59,22 +61,22 @@ async function submit(): Promise<void> {
 
 <template>
   <section class="review-form" aria-labelledby="review-form-title">
-    <h2 id="review-form-title">Թողնել կարծիք</h2>
+    <h2 id="review-form-title">{{ t('reviews.form.title') }}</h2>
 
     <p v-if="success" class="review-form__success">
-      Շնորհակալություն։ Ձեր կարծիքը կուղարկվի մոդերացիայի և կերևա էջում հաստատումից հետո։
+      {{ t('reviews.form.success') }}
     </p>
 
     <form v-else class="review-form__form" @submit.prevent="submit">
       <div class="review-form__field">
-        <span class="review-form__label">Գնահատական</span>
+        <span class="review-form__label">{{ t('reviews.form.rating') }}</span>
         <div class="review-form__stars">
           <button
             v-for="n in 5"
             :key="n"
             type="button"
             class="review-form__star-btn"
-            :aria-label="`${n} աստղ 5-ից`"
+            :aria-label="t('reviews.form.starAria', { n })"
             :aria-pressed="n <= rating"
             @click="rating = n"
           >
@@ -83,24 +85,33 @@ async function submit(): Promise<void> {
         </div>
       </div>
 
-      <AppInput v-model="authorName" label="Ձեր անունը" placeholder="Օր.՝ Արամ Ա." required />
-      <AppInput v-model="cityName" label="Քաղաք (ոչ պարտադիր)" placeholder="Օր.՝ Երևան" />
+      <AppInput
+        v-model="authorName"
+        :label="t('reviews.form.yourName')"
+        :placeholder="t('reviews.form.namePlaceholder')"
+        required
+      />
+      <AppInput
+        v-model="cityName"
+        :label="t('reviews.form.city')"
+        :placeholder="t('reviews.form.cityPlaceholder')"
+      />
 
       <div class="review-form__field">
-        <label class="review-form__label" for="review-text">Ձեր կարծիքը</label>
+        <label class="review-form__label" for="review-text">{{ t('reviews.form.yourReview') }}</label>
         <textarea
           id="review-text"
           v-model="text"
           class="review-form__textarea"
           rows="4"
-          placeholder="Պատմեք, թե ինչպես անցավ ծառայությունը..."
+          :placeholder="t('reviews.form.textPlaceholder')"
         />
       </div>
 
       <p v-if="error" class="review-form__error" role="alert">{{ error }}</p>
 
       <AppButton type="submit" variant="success" :disabled="submitting">
-        {{ submitting ? 'Ուղարկվում է…' : 'Ուղարկել կարծիքը' }}
+        {{ submitting ? t('reviews.form.submitting') : t('reviews.form.submit') }}
       </AppButton>
     </form>
   </section>

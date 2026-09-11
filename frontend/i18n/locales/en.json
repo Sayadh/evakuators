@@ -75,7 +75,29 @@
     "seoTitle": "Tow truck services across Armenia"
   },
   "nearest": {
-    "cta": "Find the nearest tow trucks"
+    "cta": "Find the nearest tow trucks",
+    "metaTitle": "Find the nearest tow truck",
+    "breadcrumb": "Nearest tow trucks",
+    "intro": "Press the button and allow location access. We'll show you the nearest active tow trucks — with distance and estimated arrival time. Your location is not stored.",
+    "locating": "Determining your location…",
+    "searching": "Searching…",
+    "locateButton": "Determine my location",
+    "allowanceLimitReached": "Today's {limit} detailed searches have been used. Search keeps working — without road distance and time — and these will be available again tomorrow.",
+    "allowanceRemaining": "You have {left} of {limit} detailed searches left today — with road distance and travel time. Pressing again within an hour won't use up a new search.",
+    "featureDisabledError": "We're working on this feature right now. It will be available soon.",
+    "apiDisabledError": "Search isn't available right now. Use the region and city search below instead.",
+    "searchFailedError": "Couldn't find nearby tow trucks. Check your connection and try again.",
+    "emptyTitle": "No tow trucks found near you",
+    "emptyDescription": "There may not be a registered driver in this area yet, or they haven't set their location yet. Try finding a driver by region or city instead.",
+    "resultsTitle": "The tow trucks nearest to you",
+    "cachedAtDisclaimer": "This list was built at {time}, based on your location at that time.",
+    "distanceDisclaimer": "Distance is calculated from the driver's stated home base, not their real-time GPS position. Confirm the exact time with the driver by phone.",
+    "degradedByAllowanceText": "Straight-line distance is shown because today's detailed searches have been used up. The list is complete — these are the drivers nearest you, just without road distance and travel time. The actual route is usually longer.",
+    "routingDownText": "The road-distance service isn't available right now, so straight-line distance is shown instead. The actual route is usually longer.",
+    "fallbackTitle": "Or find one by region and city",
+    "fallbackText": "If location access is not available, pick your region or city to see all the tow trucks working there.",
+    "regionsButton": "Regions",
+    "yerevanButton": "Yerevan"
   },
   "dispatch": {
     "bannerTitle": "Not sure which truck you need?",
@@ -341,7 +363,11 @@
     "removeChip": "Remove filter: {label}",
     "chipWheelSkates": "With wheel skates",
     "chipDoubleDeck": "Double-deck",
-    "chipTowHitch": "With a trailer"
+    "chipTowHitch": "With a trailer",
+    "showResults": {
+      "one": "Show {count} result",
+      "many": "Show {count} results"
+    }
   },
   "units": {
     "ton": "t",
@@ -380,6 +406,73 @@
       "one": "{count} review",
       "many": "{count} reviews"
     },
-    "empty": "No reviews yet. Be the first to share your experience."
+    "empty": "No reviews yet. Be the first to share your experience.",
+    "form": {
+      "title": "Leave a review",
+      "success": "Thank you! Your review will be sent for moderation and will appear on the page once approved.",
+      "rating": "Rating",
+      "starAria": "{n} out of 5 stars",
+      "yourName": "Your name",
+      "namePlaceholder": "e.g. Aram A.",
+      "city": "City (optional)",
+      "cityPlaceholder": "e.g. Yerevan",
+      "yourReview": "Your review",
+      "textPlaceholder": "Tell us how the service went...",
+      "submitting": "Sending…",
+      "submit": "Submit review",
+      "errorName": "Enter your name",
+      "errorRating": "Choose a rating (1-5 stars)",
+      "errorTextShort": "The review text is too short",
+      "errorSubmit": "Couldn't submit the review, please try again."
+    }
+  },
+  "gallery": {
+    "openImage": "Open the {name} photo in full size",
+    "thumbnails": "Photos",
+    "thumbnail": "Photo {number}",
+    "thumbnailAlt": "{name} — photo {number}",
+    "close": "Close",
+    "prev": "Previous photo",
+    "next": "Next photo"
+  },
+  "contactActions": {
+    "callDriver": "Call the driver",
+    "call": "Call",
+    "whatsapp": "Message on WhatsApp",
+    "telegram": "Message on Telegram"
+  },
+  "serviceAreas": {
+    "title": "Areas served",
+    "allArmenia": "All over Armenia"
+  },
+  "towTruckPage": {
+    "notFound": "Tow truck not found",
+    "metaTitle": "{name} — tow truck in {place} | {site}",
+    "metaDescription": "{name}. {vehicle}, {capacity}.{hours} Call now: {phone}.",
+    "galleryAlt": "{name} — {brand} {model} tow truck",
+    "driverLabel": "Driver: {name}",
+    "contactLabel": "Contact the driver",
+    "secondaryPhoneLabel": "Second number: {phone}",
+    "contactNote": "Mention that you found the number on Evakuators.am."
+  },
+  "about": {
+    "metaDescription": "Evakuators.am is a platform for finding tow trucks in Armenia — find a tow truck working in your area and call the driver directly.",
+    "title": "About us",
+    "p1": "Evakuators.am is a platform that brings together, in one place, tow trucks working in every region of Armenia and every administrative district of Yerevan. Our goal is for anyone with car trouble to find an available tow truck in their area within 1-2 minutes and call the driver directly, with no intermediaries.",
+    "p2": "On the platform you'll see real photos of the vehicles, the types of services offered, and starting prices.",
+    "p3": "If you're a tow truck driver, you can register and start receiving orders from your area.",
+    "findButton": "Find a tow truck"
+  },
+  "contactPage": {
+    "metaDescription": "Get in touch with the Evakuators.am team by phone or Telegram. Questions, suggestions, and partnerships.",
+    "title": "Contact us",
+    "intro": "For questions, suggestions, or partnership inquiries, reach out to us however is most convenient for you."
+  },
+  "cookieConsent": {
+    "text": "This site uses cookies to measure visitor statistics and ad performance. Details in the",
+    "linkText": "Privacy Policy",
+    "accept": "Accept",
+    "reject": "Reject",
+    "dialogLabel": "Cookie notice"
   }
 }

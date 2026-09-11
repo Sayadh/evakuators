@@ -251,3 +251,34 @@ export function localizedPlaceName(
 export function translatedSlugs(locale: 'ru' | 'en', kind: PlaceKind): string[] {
   return Object.keys(BY_LOCALE[locale][kind])
 }
+
+/**
+ * The localized name wrapped in a locative phrase — "in <place>" — matching
+ * the same locale/kind rules used by `buildLocationSeo` and
+ * `buildTranslitParagraph`: Russian avoids declining a name the map only
+ * stores in the nominative by wrapping it in a classifier noun instead
+ * ("в городе X" / "в районе X" / "в марзе X"), and English reads a district
+ * or region as one rather than a bare settlement name.
+ */
+export function localizedWherePhrase(
+  kind: PlaceKind,
+  slug: string,
+  armenianName: string,
+  locale: string,
+): string {
+  const name = localizedPlaceName(kind, slug, armenianName, locale)
+
+  if (locale === 'ru') {
+    if (kind === 'region') return `в марзе ${name}`
+    if (kind === 'district') return `в районе ${name}`
+    return `в городе ${name}`
+  }
+
+  if (locale === 'en') {
+    if (kind === 'region') return `${name} region`
+    if (kind === 'district') return `the ${name} district`
+    return name
+  }
+
+  return `${armenianName}ում`
+}

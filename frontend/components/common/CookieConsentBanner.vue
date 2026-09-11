@@ -30,24 +30,26 @@ import { isAdminRoute } from '~/utils/isAdminRoute'
  */
 const store = useCookieConsentStore()
 const route = useRoute()
+const { t, locale } = useI18n()
 
 const visible = computed(() => store.status === 'pending' && !isAdminRoute(route.path))
+/** Armenian's «։» is its own sentence-final mark; RU/EN use a plain period. */
+const sentenceEnd = computed(() => (locale.value === 'hy' ? '։' : '.'))
 </script>
 
 <template>
   <ClientOnly>
     <div v-if="visible" class="cookie-consent-backdrop" aria-hidden="true" />
-    <div v-if="visible" class="cookie-consent" role="dialog" aria-label="Cookie-ների մասին տեղեկացում">
+    <div v-if="visible" class="cookie-consent" role="dialog" :aria-label="t('cookieConsent.dialogLabel')">
       <p class="cookie-consent__text">
-        Այս կայքն օգտագործում է cookie-ներ՝ այցելուների վիճակագրության և գովազդի
-        արդյունավետության չափման համար։ Մանրամասները՝
+        {{ t('cookieConsent.text') }}
         <NuxtLinkLocale to="/privacy" class="cookie-consent__link">
-          Գաղտնիության քաղաքականությունում
-        </NuxtLinkLocale>։
+          {{ t('cookieConsent.linkText') }}
+        </NuxtLinkLocale>{{ sentenceEnd }}
       </p>
       <div class="cookie-consent__actions">
-        <AppButton variant="ghost" size="md" @click="store.reject()">Մերժել</AppButton>
-        <AppButton variant="primary" size="md" @click="store.accept()">Ընդունել</AppButton>
+        <AppButton variant="ghost" size="md" @click="store.reject()">{{ t('cookieConsent.reject') }}</AppButton>
+        <AppButton variant="primary" size="md" @click="store.accept()">{{ t('cookieConsent.accept') }}</AppButton>
       </div>
     </div>
   </ClientOnly>

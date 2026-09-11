@@ -105,11 +105,19 @@ export function useBreadcrumbs() {
     const { location } = truck
 
     if (location.districtSlug) {
-      trail.push(YEREVAN, { label: location.name, to: getDistrictRoute(location.districtSlug) })
+      trail.push(YEREVAN, {
+        label: placeName('district', location.districtSlug, location.name),
+        to: getDistrictRoute(location.districtSlug),
+      })
     } else if (location.regionSlug && location.citySlug) {
-      if (regionName) trail.push({ label: regionName, to: getRegionRoute(location.regionSlug) })
+      if (regionName) {
+        trail.push({
+          label: placeName('region', location.regionSlug, regionName),
+          to: getRegionRoute(location.regionSlug),
+        })
+      }
       trail.push({
-        label: location.name,
+        label: placeName('city', location.citySlug, location.name),
         to: getCityRoute(location.regionSlug, location.citySlug),
       })
     }

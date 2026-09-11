@@ -6,6 +6,8 @@ interface Props {
 
 const props = defineProps<Props>()
 
+const { t } = useI18n()
+
 const activeIndex = ref(0)
 const isLightboxOpen = ref(false)
 
@@ -76,7 +78,7 @@ onBeforeUnmount(() => {
       v-else
       type="button"
       class="gallery__main-wrap"
-      :aria-label="`Բացել ${alt} նկարը մեծ պատուհանում`"
+      :aria-label="t('gallery.openImage', { name: alt })"
       @click="openLightbox(activeIndex)"
     >
       <NuxtImg
@@ -93,7 +95,7 @@ onBeforeUnmount(() => {
       </span>
     </button>
 
-    <div v-if="hasMultiple" class="gallery__thumbs" role="tablist" aria-label="Նկարներ">
+    <div v-if="hasMultiple" class="gallery__thumbs" role="tablist" :aria-label="t('gallery.thumbnails')">
       <button
         v-for="(image, index) in images"
         :key="image"
@@ -102,12 +104,12 @@ onBeforeUnmount(() => {
         :class="{ 'gallery__thumb--active': index === activeIndex }"
         role="tab"
         :aria-selected="index === activeIndex"
-        :aria-label="`Նկար ${index + 1}`"
+        :aria-label="t('gallery.thumbnail', { number: index + 1 })"
         @click="activeIndex = index"
       >
         <NuxtImg
           :src="image"
-          :alt="`${alt} — նկար ${index + 1}`"
+          :alt="t('gallery.thumbnailAlt', { name: alt, number: index + 1 })"
           width="120"
           height="90"
           loading="lazy"
@@ -128,7 +130,7 @@ onBeforeUnmount(() => {
         @touchend="onTouchEnd"
         @click.self="closeLightbox"
       >
-        <button type="button" class="gallery__lightbox-close" aria-label="Փակել" @click="closeLightbox">
+        <button type="button" class="gallery__lightbox-close" :aria-label="t('gallery.close')" @click="closeLightbox">
           <AppIcon name="close" :size="26" />
         </button>
 
@@ -136,7 +138,7 @@ onBeforeUnmount(() => {
           v-if="hasMultiple"
           type="button"
           class="gallery__lightbox-nav gallery__lightbox-nav--prev"
-          aria-label="Նախորդ նկարը"
+          :aria-label="t('gallery.prev')"
           @click.stop="showPrev"
         >
           <AppIcon name="chevron-left" :size="28" />
@@ -148,7 +150,7 @@ onBeforeUnmount(() => {
           v-if="hasMultiple"
           type="button"
           class="gallery__lightbox-nav gallery__lightbox-nav--next"
-          aria-label="Հաջորդ նկարը"
+          :aria-label="t('gallery.next')"
           @click.stop="showNext"
         >
           <AppIcon name="chevron-right" :size="28" />

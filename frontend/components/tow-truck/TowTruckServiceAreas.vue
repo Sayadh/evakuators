@@ -20,6 +20,9 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), { servesAllArmenia: false })
 
+const { t } = useI18n()
+const areaName = useAreaName()
+
 /**
  * A city's URL is /regions/<region>/<city>, so a chip needs the city's marz —
  * resolved from static data. This previously fetched every tow truck (via
@@ -41,20 +44,20 @@ function getAreaRoute(area: ServiceArea): string | null {
 
 <template>
   <section class="truck-areas" aria-labelledby="truck-areas-title">
-    <h2 id="truck-areas-title" class="truck-areas__title">Սպասարկվող տարածքներ</h2>
+    <h2 id="truck-areas-title" class="truck-areas__title">{{ t('serviceAreas.title') }}</h2>
     <p v-if="props.servesAllArmenia" class="truck-areas__all">
       <AppIcon name="map-pin" :size="16" />
-      Ամբողջ Հայաստան
+      {{ t('serviceAreas.allArmenia') }}
     </p>
     <ul v-else class="truck-areas__list">
       <li v-for="area in props.areas" :key="`${area.type}-${area.slug}`">
         <NuxtLinkLocale v-if="getAreaRoute(area)" :to="getAreaRoute(area)!" class="truck-areas__chip">
           <AppIcon name="map-pin" :size="14" />
-          {{ area.name }}
+          {{ areaName(area) }}
         </NuxtLinkLocale>
         <span v-else class="truck-areas__chip truck-areas__chip--static">
           <AppIcon name="map-pin" :size="14" />
-          {{ area.name }}
+          {{ areaName(area) }}
         </span>
       </li>
     </ul>

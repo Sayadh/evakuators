@@ -1,20 +1,21 @@
 <script setup lang="ts">
 import { useRecentlyViewedStore } from '~/stores/recentlyViewed'
 import { SITE_NAME } from '~/constants/site'
-import { capacityDisplayText } from '~/constants/vehicles'
 import { trackTowTruckView } from '~/utils/analytics'
 import { getPhoneHref } from '~/utils/formatPhone'
 import { getTowTruckRoute } from '~/utils/routeHelpers'
 import { buildTowTruckBusinessSchema } from '~/utils/schemaOrg'
 import { buildLocationSeo } from '~/utils/seoContent'
+import { localizedWherePhrase, type PlaceKind } from '~/i18n/placeNames'
 
 const route = useRoute()
 const slug = route.params.slug as string
 
 const { data: towTruck } = await useTowTruck(slug)
+const { t, locale } = useI18n()
 
 if (!towTruck.value) {
-  throw createError({ statusCode: 404, statusMessage: 'Էվակուատորը չի գտնվել', fatal: true })
+  throw createError({ statusCode: 404, statusMessage: t('towTruckPage.notFound'), fatal: true })
 }
 
 const truck = towTruck.value
@@ -26,23 +27,37 @@ const { forTowTruck } = useBreadcrumbs()
 const breadcrumbs = forTowTruck(truck, region.value?.name)
 
 const displayName = truck.companyName ?? truck.driverName
+const { capacityText, serviceLabel } = useCatalogLabels()
 
 const locationSlug = truck.location.districtSlug ?? truck.location.citySlug
+const locationKind: PlaceKind = truck.location.districtSlug ? 'district' : 'city'
+const wherePhrase = locationSlug
+  ? localizedWherePhrase(locationKind, locationSlug, truck.location.name, locale.value)
+  : truck.location.name
 
 // Only append a real, driver-confirmed hours sentence — never a placeholder.
-const hoursSentence = truck.workingHours ? ` ${truck.workingHours}։` : ''
+// Working hours are driver-entered free text and stay untranslated, like the
+// driver's own name — see the review author/text handling in ReviewForm.
+const hoursSuffix = locale.value === 'hy' ? '։' : '.'
+const hoursSentence = truck.workingHours ? ` ${truck.workingHours}${hoursSuffix}` : ''
 
 useSeoMetaData({
-  title: `${displayName} — էվակուատոր ${truck.location.name}ում | ${SITE_NAME}`,
-  description: `${displayName}. ${truck.vehicle.brand} ${truck.vehicle.model}, ${capacityDisplayText(truck.vehicle.capacityTons)}։${hoursSentence} Զանգահարեք հիմա՝ ${truck.phone}։`,
+  title: t('towTruckPage.metaTitle', { name: displayName, place: wherePhrase, site: SITE_NAME }),
+  description: t('towTruckPage.metaDescription', {
+    name: displayName,
+    vehicle: `${truck.vehicle.brand} ${truck.vehicle.model}`,
+    capacity: capacityText(truck.vehicle.capacityTons),
+    hours: hoursSentence,
+    phone: truck.phone,
+  }),
   keywords: locationSlug
-    ? buildLocationSeo(truck.location.name, locationSlug).keywords
+    ? buildLocationSeo(truck.location.name, locationSlug, locale.value, locationKind).keywords
     : undefined,
   path: getTowTruckRoute(truck.slug),
   image: truck.images[0],
 })
 
-useJsonLd([buildTowTruckBusinessSchema(truck, reviews.value)])
+useJsonLd([buildTowTruckBusinessSchema(truck, reviews.value, locale.value, serviceLabel)])
 
 const { trackPageView } = useAnalyticsTracking()
 
@@ -67,7 +82,7 @@ onMounted(() => {
       <div class="profile__main">
         <TowTruckGallery
           :images="towTruck.images"
-          :alt="`${displayName} — ${towTruck.vehicle.brand} ${towTruck.vehicle.model} էվակուատոր`"
+          :alt="t('towTruckPage.galleryAlt', { name: displayName, brand: towTruck.vehicle.brand, model: towTruck.vehicle.model })"
         />
 
         <section class="profile__card profile__head">
@@ -76,7 +91,7 @@ onMounted(() => {
             <AppBadge v-if="towTruck.works24Hours" variant="accent">24/7</AppBadge>
           </div>
           <p v-if="towTruck.companyName" class="profile__driver">
-            Վարորդ՝ {{ towTruck.driverName }}
+            {{ t('towTruckPage.driverLabel', { name: towTruck.driverName }) }}
           </p>
           <p v-if="towTruck.workingHours" class="profile__hours">
             <AppIcon name="clock" :size="18" />
@@ -99,7 +114,7 @@ onMounted(() => {
 
       <aside class="profile__aside">
         <div class="profile__contact-card">
-          <p class="profile__contact-label">Կապ վարորդի հետ</p>
+          <p class="profile__contact-label">{{ t('towTruckPage.contactLabel') }}</p>
           <p class="profile__phone">{{ towTruck.phone }}</p>
           <a
             v-if="towTruck.secondaryPhone"
@@ -107,11 +122,11 @@ onMounted(() => {
             class="profile__secondary-phone"
           >
             <AppIcon name="phone" :size="14" />
-            Երկրորդ համար՝ {{ towTruck.secondaryPhone }}
+            {{ t('towTruckPage.secondaryPhoneLabel', { phone: towTruck.secondaryPhone }) }}
           </a>
           <TowTruckContactActions :tow-truck="towTruck" />
           <p class="profile__contact-note">
-            Ասեք, որ համարը գտել եք Evakuators.am-ում։
+            {{ t('towTruckPage.contactNote') }}
           </p>
         </div>
 

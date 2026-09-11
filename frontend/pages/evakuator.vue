@@ -55,10 +55,11 @@ import { useNearestSearch } from '~/composables/useNearestSearch'
  * that costs nothing to produce is the half that tells them who to call.
  */
 
+const { t } = useI18n()
+
 useSeoMetaData({
-  title: `Գտնել մոտակա էվակուատորը | ${SITE_NAME}`,
-  description:
-    'Թույլատրեք տեղադրության որոշումը և տեսեք Ձեզ ամենամոտ գտնվող էվակուատորները՝ հեռավորությամբ և մոտավոր հասնելու ժամանակով։',
+  title: `${t('nearest.metaTitle')} | ${SITE_NAME}`,
+  description: t('nearest.intro'),
   path: '/evakuator',
 })
 
@@ -136,7 +137,7 @@ async function findNearest(): Promise<void> {
   // remembers it, so prompting for something we then cannot deliver spends a
   // permission we will want later.
   if (!NEAREST_SEARCH_ENABLED) {
-    searchError.value = 'Այս պահին աշխատում ենք այս գործառույթի վրա։ Այն շուտով հասանելի կլինի։'
+    searchError.value = t('nearest.featureDisabledError')
     return
   }
 
@@ -145,8 +146,7 @@ async function findNearest(): Promise<void> {
   // failing at the fetch — same master switch every service in this app checks
   // (see docs/architecture.md).
   if (!isApiEnabled()) {
-    searchError.value =
-      'Որոնումն այս պահին հասանելի չէ։ Օգտվեք ստորև՝ մարզերի և քաղաքների որոնումից։'
+    searchError.value = t('nearest.apiDisabledError')
     return
   }
 
@@ -183,10 +183,7 @@ async function findNearest(): Promise<void> {
     // straight-line answer has nothing left to charge.
     remember(fresh, !straightLineOnly)
   } catch (error) {
-    searchError.value = extractErrorMessage(
-      error,
-      'Չհաջողվեց գտնել մոտակա էվակուատորները։ Ստուգեք կապը և փորձեք կրկին։',
-    )
+    searchError.value = extractErrorMessage(error, t('nearest.searchFailedError'))
   } finally {
     searching.value = false
   }
@@ -195,13 +192,11 @@ async function findNearest(): Promise<void> {
 
 <template>
   <div class="container nearest-page">
-    <AppBreadcrumbs :items="[{ label: 'Մոտակա էվակուատորներ' }]" />
+    <AppBreadcrumbs :items="[{ label: t('nearest.breadcrumb') }]" />
 
-    <h1>Գտնել մոտակա էվակուատորները</h1>
+    <h1>{{ t('nearest.cta') }}</h1>
     <p class="nearest-page__intro">
-      Սեղմեք կոճակը և թույլատրեք տեղադրության որոշումը։ Մենք կցուցադրենք Ձեզ ամենամոտ գտնվող
-      ակտիվ էվակուատորները՝ հեռավորությամբ և մոտավոր հասնելու ժամանակով։ Ձեր տեղադրությունը չի
-      պահպանվում։
+      {{ t('nearest.intro') }}
     </p>
 
     <AppButton
@@ -212,7 +207,7 @@ async function findNearest(): Promise<void> {
       @click="findNearest"
     >
       <AppIcon name="map-pin" :size="20" />
-      {{ locating ? 'Որոշվում է տեղադրությունը…' : searching ? 'Որոնվում է…' : 'Որոշել իմ տեղադրությունը' }}
+      {{ locating ? t('nearest.locating') : searching ? t('nearest.searching') : t('nearest.locateButton') }}
     </AppButton>
 
     <!-- Gated on `restored` so the figure is never rendered before storage has
@@ -222,14 +217,10 @@ async function findNearest(): Promise<void> {
          that still works. -->
     <p v-if="NEAREST_SEARCH_ENABLED && restored" class="nearest-page__allowance">
       <template v-if="limitReached">
-        Այսօրվա {{ NEAREST_DAILY_SEARCH_LIMIT }} մանրամասն որոնումն օգտագործված է։ Որոնումը
-        շարունակում է աշխատել՝ առանց ճանապարհային հեռավորության և ժամանակի, իսկ դրանք կրկին
-        հասանելի կլինեն վաղը։
+        {{ t('nearest.allowanceLimitReached', { limit: NEAREST_DAILY_SEARCH_LIMIT }) }}
       </template>
       <template v-else>
-        Այսօր մնացել է {{ searchesLeftToday }} մանրամասն որոնում
-        {{ NEAREST_DAILY_SEARCH_LIMIT }}-ից՝ ճանապարհային հեռավորությամբ և ժամանակով։ Կրկնակի
-        սեղմումը մեկ ժամվա ընթացքում նոր որոնում չի ծախսում։
+        {{ t('nearest.allowanceRemaining', { left: searchesLeftToday, limit: NEAREST_DAILY_SEARCH_LIMIT }) }}
       </template>
     </p>
 
@@ -254,14 +245,14 @@ async function findNearest(): Promise<void> {
            so and immediately offers the search that does have answers. -->
       <EmptyState
         v-else-if="hasEmptyResult"
-        title="Ձեր մոտակայքում էվակուատոր չի գտնվել"
-        description="Հնարավոր է՝ այս տարածքում դեռ գրանցված վարորդ չկա, կամ նրանք դեռ չեն նշել իրենց տեղադիրքը։ Փորձեք գտնել վարորդ ըստ մարզի կամ քաղաքի։"
+        :title="t('nearest.emptyTitle')"
+        :description="t('nearest.emptyDescription')"
         icon="truck"
       />
 
       <template v-else-if="result">
         <div class="nearest-page__summary">
-          <h2 class="nearest-page__results-title">Ձեզ ամենամոտ էվակուատորները</h2>
+          <h2 class="nearest-page__results-title">{{ t('nearest.resultsTitle') }}</h2>
           <!-- Shown only for a remembered list. A visitor looking at drivers
                "near me" is entitled to know the answer was computed a while ago
                and from where they stood then — without it, an hour-old list is
@@ -269,7 +260,7 @@ async function findNearest(): Promise<void> {
           <p v-if="servedFromCache && cachedAtLabel" class="nearest-page__disclaimer">
             <AppIcon name="clock" :size="16" />
             <span>
-              Ցուցակը կազմվել է {{ cachedAtLabel }}-ին՝ այն պահի Ձեր տեղադրության հիման վրա։
+              {{ t('nearest.cachedAtDisclaimer', { time: cachedAtLabel }) }}
             </span>
           </p>
           <!-- The honesty line, and the reason it is not fine print: every number
@@ -280,8 +271,7 @@ async function findNearest(): Promise<void> {
           <p class="nearest-page__disclaimer">
             <AppIcon name="info" :size="16" />
             <span>
-              Հեռավորությունը հաշվարկված է վարորդի նշած հիմնական կայանման վայրից, ոչ թե իրական
-              ժամանակի GPS դիրքից։ Ճշգրիտ ժամանակը ճշտեք վարորդի հետ զանգով։
+              {{ t('nearest.distanceDisclaimer') }}
             </span>
           </p>
           <!-- Both branches explain the same missing numbers, and the reason is
@@ -293,13 +283,10 @@ async function findNearest(): Promise<void> {
             <AppIcon v-if="degradedByAllowance" name="info" :size="16" />
             <AppIcon v-else name="alert" :size="16" />
             <span v-if="degradedByAllowance">
-              Ցուցադրվում է ուղիղ գծով հեռավորությունը, քանի որ այսօրվա մանրամասն որոնումներն
-              օգտագործված են։ Ցանկը լրիվ է՝ սրանք Ձեզ ամենամոտ վարորդներն են, պարզապես առանց
-              ճանապարհային հեռավորության և ժամանակի։ Իրական ճանապարհը սովորաբար ավելի երկար է։
+              {{ t('nearest.degradedByAllowanceText') }}
             </span>
             <span v-else>
-              Ճանապարհային հեռավորության ծառայությունն այս պահին հասանելի չէ, ուստի ցուցադրվում է
-              ուղիղ գծով հեռավորությունը։ Իրական ճանապարհը սովորաբար ավելի երկար է։
+              {{ t('nearest.routingDownText') }}
             </span>
           </p>
         </div>
@@ -319,14 +306,13 @@ async function findNearest(): Promise<void> {
          pointing at, and a visitor who has just been refused a permission
          should not have to go looking for it. -->
     <section class="nearest-page__fallback">
-      <h2>Կամ գտեք ըստ մարզի և քաղաքի</h2>
+      <h2>{{ t('nearest.fallbackTitle') }}</h2>
       <p>
-        Եթե տեղադրության որոշումը հասանելի չէ, ընտրեք Ձեր մարզը կամ քաղաքը՝ տեսնելու այնտեղ
-        աշխատող բոլոր էվակուատորները։
+        {{ t('nearest.fallbackText') }}
       </p>
       <div class="nearest-page__fallback-actions">
-        <AppButton to="/regions" variant="outline">Մարզեր</AppButton>
-        <AppButton to="/yerevan" variant="outline">Երևան</AppButton>
+        <AppButton to="/regions" variant="outline">{{ t('nearest.regionsButton') }}</AppButton>
+        <AppButton to="/yerevan" variant="outline">{{ t('nearest.yerevanButton') }}</AppButton>
       </div>
     </section>
   </div>

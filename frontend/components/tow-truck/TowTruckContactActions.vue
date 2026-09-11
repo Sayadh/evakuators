@@ -11,6 +11,8 @@ const props = withDefaults(defineProps<Props>(), { compact: false })
 
 const { phoneHref, whatsappUrl, telegramUrl, onPhoneClick, onWhatsAppClick, onTelegramClick } =
   usePhoneActions(() => props.towTruck)
+
+const { t } = useI18n()
 </script>
 
 <template>
@@ -18,11 +20,11 @@ const { phoneHref, whatsappUrl, telegramUrl, onPhoneClick, onWhatsAppClick, onTe
     <a
       :href="phoneHref"
       class="contact-actions__call"
-      aria-label="Զանգահարել վարորդին"
+      :aria-label="t('contactActions.callDriver')"
       @click="onPhoneClick"
     >
       <AppIcon name="phone" :size="20" />
-      <span>Զանգահարել</span>
+      <span>{{ t('contactActions.call') }}</span>
     </a>
     <a
       v-if="whatsappUrl"
@@ -30,7 +32,7 @@ const { phoneHref, whatsappUrl, telegramUrl, onPhoneClick, onWhatsAppClick, onTe
       target="_blank"
       rel="noopener"
       class="contact-actions__secondary contact-actions__secondary--whatsapp"
-      aria-label="Գրել WhatsApp-ով"
+      :aria-label="t('contactActions.whatsapp')"
       @click="onWhatsAppClick"
     >
       <AppIcon name="whatsapp" :size="20" />
@@ -42,7 +44,7 @@ const { phoneHref, whatsappUrl, telegramUrl, onPhoneClick, onWhatsAppClick, onTe
       target="_blank"
       rel="noopener"
       class="contact-actions__secondary contact-actions__secondary--telegram"
-      aria-label="Գրել Telegram-ով"
+      :aria-label="t('contactActions.telegram')"
       @click="onTelegramClick"
     >
       <AppIcon name="telegram" :size="20" />

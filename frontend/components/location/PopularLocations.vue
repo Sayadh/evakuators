@@ -1,14 +1,28 @@
 <script setup lang="ts">
 import { POPULAR_LOCATIONS, type PopularLocation } from '~/constants/popularLocations'
-import { regionLabel } from '~/utils/geography'
+import { findCityLocation, regionLabel } from '~/utils/geography'
 
 /** Static copy lives in i18n/locales — see nuxt.config's i18n block */
 const { t } = useI18n()
 const placeName = usePlaceName()
 
+/**
+ * `placeName` falls back to its third argument whenever it has no RU/EN
+ * translation for a slug — which, for the `hy` locale, is every slug, since
+ * `i18n/placeNames.ts` only maps `ru`/`en`. That fallback has to be the real
+ * Armenian name, not `location.slug`: `POPULAR_LOCATIONS` deliberately keeps
+ * no name of its own (see that file's own comment), so it is looked up here
+ * from `data/*.ts` — the same source `regionLabel`/`findCityLocation` already
+ * read for every other place name on the site.
+ */
+function armenianNameOf(location: PopularLocation): string {
+  if (location.kind === 'region') return regionLabel(location.slug)
+  return findCityLocation(location.slug)?.name ?? location.slug
+}
+
 /** The town's own name, in the language being read */
 function nameOf(location: PopularLocation): string {
-  return placeName(location.kind, location.slug, location.slug)
+  return placeName(location.kind, location.slug, armenianNameOf(location))
 }
 
 /**

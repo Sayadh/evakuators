@@ -37,7 +37,6 @@ const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
       <!-- The header shows this as an icon only below 768px, which is most of
            the phones that open this drawer — so the number itself is readable
            in exactly one place on mobile, and this is it. -->
-      <LanguageSwitcher variant="inline" class="mobile-menu__lang" />
       <div class="mobile-menu__call">
         <DispatchCallCta variant="header" />
       </div>

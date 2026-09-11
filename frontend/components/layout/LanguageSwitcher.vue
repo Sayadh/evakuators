@@ -30,18 +30,20 @@
  */
 interface Props {
   /**
-   * `dropdown` (default) — a compact trigger showing the active language, and
-   * a panel with the three. What the header wants: three languages spelled out
-   * side by side cost more horizontal room than the nav itself.
+   * `dropdown` — a compact trigger showing the active language, and a panel
+   * with the three. Built for the header, where three languages spelled out
+   * side by side cost more horizontal room than the nav itself; kept for any
+   * future spot with the same tight-strip constraint.
    *
-   * `inline` — all three at once, for the mobile drawer. A popup inside a
-   * drawer is one layer too many, and the drawer has the vertical room the
-   * header does not.
+   * `inline` (default) — all three at once. Used in the footer's bottom bar,
+   * which has the horizontal room a popup doesn't need to save, and it would
+   * suit the mobile drawer's own vertical space were it ever needed there
+   * again.
    */
   variant?: 'dropdown' | 'inline'
 }
 
-withDefaults(defineProps<Props>(), { variant: 'dropdown' })
+withDefaults(defineProps<Props>(), { variant: 'inline' })
 
 const { locale, locales, t } = useI18n()
 const switchLocalePath = useSwitchLocalePath()

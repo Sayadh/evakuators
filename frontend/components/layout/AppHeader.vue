@@ -33,7 +33,6 @@ watch(
              one thing on the site a stranded customer needs from every page,
              but the header already has an accent button and a second one would
              leave neither reading as primary. See DispatchCallCta.vue. -->
-        <LanguageSwitcher class="header__lang" />
         <DispatchCallCta variant="header" />
         <!-- The way back IN, next to the way to sign UP. A driver whose profile
              is the thing they pay for had no link to it from anywhere on the

@@ -159,6 +159,7 @@ const cookieConsent = useCookieConsentStore()
 
       <div class="footer__bottom">
         <p>© {{ currentYear }} Evakuators.am</p>
+        <LanguageSwitcher variant="inline" class="footer__lang" />
         <button type="button" class="footer__cookie-settings" @click="cookieConsent.revisit()">
           {{ t('footer.cookieSettings') }}
         </button>
@@ -373,6 +374,25 @@ const cookieConsent = useCookieConsentStore()
     &:hover,
     &:focus-visible {
       color: var(--color-accent);
+    }
+  }
+
+  // LanguageSwitcher's own colors assume a light surface (it was built for the
+  // header/drawer); this restyles just the inline variant's links for the
+  // footer's navy background instead of forking the component.
+  &__lang {
+    :deep(.lang__item) {
+      color: rgba(255, 255, 255, 0.7);
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--color-accent);
+      }
+    }
+
+    :deep(.lang__item--active) {
+      color: var(--color-accent);
+      background: rgba(255, 255, 255, 0.08);
     }
   }
 }

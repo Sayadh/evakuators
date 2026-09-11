@@ -181,14 +181,13 @@ function reset(): void {
  * one every other screen rejects too, and the messages the dispatcher sees are
  * the ones drivers already know.
  *
- * There is no "mark as referred" here, unlike the place-based list: a referral
- * record needs a place name and type to store (`locationSlug`/`locationName`/
- * `locationType`), and a raw coordinate is not one of the four kinds of place
- * this system tracks (`DispatchLocationType` — see dispatch-ranking.ts). Rather
- * than force a coordinate search to invent a fake city or region for the
- * record, referrals from a driver found this way are logged the normal way
- * once the operator has the place name in hand (which, in practice, the
- * customer usually gives once a call is under way).
+ * «Ուղղորդված է» works here too, same as the place-based list: the referral
+ * still needs a `locationSlug`/`locationName`/`locationType` to store, but a
+ * raw coordinate does not have to pretend to be a city or a district to get
+ * one — `locationType: 'coordinates'` (see `DispatchReferralLocationType` on
+ * the backend) says exactly what it is, and `locationName` is the same pair
+ * `formatCoordinates` already prints above the list. See `confirmLocation`
+ * below for where that gets built.
  */
 const coordinatesText = ref('')
 const coordinatesError = ref('')
@@ -232,6 +231,7 @@ function searchByCoordinates(): void {
   }
   coordinatesError.value = ''
   lastCoordinates.value = { latitude: result.latitude, longitude: result.longitude }
+  referredIds.value = new Set()
   void fetchByCoordinates(result.latitude, result.longitude)
 }
 
@@ -241,6 +241,7 @@ function resetCoordinates(): void {
   lastCoordinates.value = null
   distanceCandidates.value = []
   distanceLoadError.value = ''
+  referredIds.value = new Set()
 }
 
 // One filter dropdown, shared by both searches — re-runs whichever search is
@@ -274,7 +275,7 @@ watch(filter, () => {
  * question that was actually at stake ("this driver, this job") rather than
  * asking "are you sure" about something the operator can no longer see.
  */
-const confirmTarget = ref<DispatchCandidate | null>(null)
+const confirmTarget = ref<DispatchCandidate | DispatchCandidateByDistance | null>(null)
 /**
  * Its own error, not `loadError`: that one belongs to the list behind the
  * dialog, and showing a stale "could not load" inside a confirmation the
@@ -282,14 +283,35 @@ const confirmTarget = ref<DispatchCandidate | null>(null)
  */
 const referError = ref('')
 
-function askReferred(candidate: DispatchCandidate): void {
+/**
+ * The place to attribute the open confirmation's referral to, for whichever
+ * search produced the candidate in it. Place mode has `selected`; coordinate
+ * mode has no named place, so the pair itself becomes the record — formatted
+ * the same way the toolbar above the list already shows it, and tagged
+ * `'coordinates'` rather than borrowed from the four real place kinds (see
+ * `DispatchReferralLocationType` on the backend).
+ */
+const confirmLocation = computed<{ slug: string; name: string; type: string } | null>(() => {
+  if (mode.value === 'place') {
+    return selected.value
+  }
+  if (!lastCoordinates.value) return null
+  const { latitude, longitude } = lastCoordinates.value
+  return {
+    slug: `coords:${latitude},${longitude}`,
+    name: formatCoordinates(latitude, longitude),
+    type: 'coordinates',
+  }
+})
+
+function askReferred(candidate: DispatchCandidate | DispatchCandidateByDistance): void {
   if (referringId.value !== null || referredIds.value.has(candidate.id)) return
   referError.value = ''
   confirmTarget.value = candidate
 }
 
-async function markReferred(candidate: DispatchCandidate): Promise<void> {
-  const place = selected.value
+async function markReferred(candidate: DispatchCandidate | DispatchCandidateByDistance): Promise<void> {
+  const place = confirmLocation.value
   if (!place || referringId.value !== null) return
 
   referringId.value = candidate.id
@@ -528,7 +550,12 @@ useSeoMetaData({
             <section v-else class="dispatch__group">
               <h2 class="dispatch__group-title">Ամենամոտները · {{ distanceCandidates.length }}</h2>
 
-              <article v-for="candidate in distanceCandidates" :key="candidate.id" class="dispatch__card">
+              <article
+                v-for="candidate in distanceCandidates"
+                :key="candidate.id"
+                class="dispatch__card"
+                :class="{ 'dispatch__card--referred': referredIds.has(candidate.id) }"
+              >
                 <div class="dispatch__who">
                   <span class="dispatch__name">
                     {{ candidate.driverName }}
@@ -555,6 +582,14 @@ useSeoMetaData({
                   <a :href="getPhoneHref(candidate.phone)" class="dispatch__call">
                     Զանգել · {{ candidate.phone }}
                   </a>
+                  <AppButton
+                    size="sm"
+                    :variant="referredIds.has(candidate.id) ? 'success' : 'outline'"
+                    :disabled="referringId === candidate.id || referredIds.has(candidate.id)"
+                    @click="askReferred(candidate)"
+                  >
+                    {{ referredIds.has(candidate.id) ? 'Ուղղորդված է ✓' : 'Ուղղորդված է' }}
+                  </AppButton>
                 </div>
               </article>
             </section>
@@ -576,10 +611,10 @@ useSeoMetaData({
           <strong>{{ confirmTarget.driverName }}</strong> — {{ confirmTarget.phone }}
         </p>
         <p class="dispatch__muted">
-          Հաստատում եք, որ այս վարորդը վերցրե՞լ է պատվերը՝ {{ selected?.name }}։
+          Հաստատում եք, որ այս վարորդը վերցրե՞լ է պատվերը՝ {{ confirmLocation?.name }}։
           Գրառումը կավելանա իր ամսվա հաշվին և հետ չի վերցվում։
         </p>
-        <p v-if="loadError" class="dispatch__error" role="alert">{{ loadError }}</p>
+        <p v-if="referError" class="dispatch__error" role="alert">{{ referError }}</p>
         <AppButton
           variant="success"
           block

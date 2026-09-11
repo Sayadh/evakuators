@@ -1090,7 +1090,8 @@ model DispatchReferral {
   /// read back as something a person recognises.
   locationSlug String
   locationName String
-  /// `city` | `district` | `region` — LocationType, as a string for the same
+  /// `city` | `district` | `region` | `route`, or `coordinates` for a referral
+  /// logged from the coordinate-search screen — a plain string for the same
   /// reason `planCode` is one: a taxonomy that lives outside the database.
   locationType String
 

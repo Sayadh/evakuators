@@ -83,8 +83,10 @@ describe('dispatch page, confirming a referral', () => {
 
   it('names the driver and the place, rather than asking "are you sure"', () => {
     // The operator has just been reading a list of near-identical rows.
+    // `confirmLocation`, not `selected` directly — it also covers the
+    // coordinate-search case, which has no `selected` place to name.
     expect(source()).toContain('{{ confirmTarget.driverName }}')
-    expect(source()).toContain('{{ selected?.name }}')
+    expect(source()).toContain('{{ confirmLocation?.name }}')
   })
 
   it('says the record cannot be taken back', () => {

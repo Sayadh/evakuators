@@ -9,27 +9,75 @@ initial nginx/certbot setup, etc.) which isn't repeated here.
 ## Routine deploy (most common case)
 
 ```bash
-git pull
-cd frontend && npm install && npm run build
-cd ../backend && npm install && npx prisma migrate deploy && npm run build && npm run check:di
-cd ..            # ecosystem.config.js lives at the repo ROOT, not in backend/
-pm2 restart ecosystem.config.js
+git pull \
+  && (cd frontend && npm install && npm run build) \
+  && (cd backend && npm install && npx prisma migrate deploy && npm run build && npm run check:di) \
+  && pm2 restart ecosystem.config.js   # ecosystem.config.js lives at the repo ROOT
 ```
 
 Run both sides even if only one changed — cheap insurance, and PM2 restart
 is fast enough that there's no real cost to doing both every time.
 
-Two details in that block that have each cost this project an outage:
+> **If `backend/prisma/schema.prisma` changed in what you just pulled, this
+> block is NOT the one to use** — add `npx prisma generate` before
+> `npm run build`, or the build fails with TypeScript errors that name fields
+> that plainly exist. `git diff HEAD@{1} --stat -- backend/prisma/schema.prisma`
+> after a pull answers it in one line. Full sequence and reasoning in
+> § "The stale Prisma Client trap".
 
-**`cd ..` before `pm2 restart`.** `ecosystem.config.js` is at the repo root. Run
-`pm2 restart ecosystem.config.js` from `backend/` and PM2 answers
+**One chain, not five lines.** Every step is joined with `&&` on purpose: see
+§ "The half-deployed frontend" below for what pasting them as separate lines
+did to this project. The subshells are what make `cd ..` unnecessary — each
+`cd` is scoped to its own `( )`, so `pm2 restart` always runs from the repo
+root whatever happened inside them.
+
+Three details in that block that have each cost this project an outage:
+
+**`pm2 restart` must run from the repo root.** `ecosystem.config.js` is at the
+repo root. Run `pm2 restart ecosystem.config.js` from `backend/` and PM2 answers
 `[PM2][ERROR] File ecosystem.config.js not found` — which scrolls past in the
 middle of a long deploy and leaves the OLD build running, or, worse, leaves a
-process restarted without the ecosystem file's `env` block.
+process restarted without the ecosystem file's `env` block. The subshells in the
+chain above are what keep this from being possible; if you run the steps by hand
+instead, `cd ..` before restarting.
 
 **`npm run check:di` after the build.** See § "The DI-graph trap" below. It takes
 about a second and is the only step before PM2 that fails the same way
 production would.
+
+## The half-deployed frontend
+
+**A frontend build that fails does not stop the deploy — it leaves the previous
+`.output` in place, and PM2 happily restarts the frontend on it.** The backend
+meanwhile updates normally. The result is a site whose two halves are from
+different commits, which is a far more confusing failure than either half being
+broken.
+
+This is not hypothetical. It produced a 400 on «Ապաակտիվացնել» in `/admin`:
+`df6cd9f` added the deactivation-reason dialog to the frontend and made
+`reason` required on the backend **in the same commit**, so the two can only
+disagree if they were deployed separately. The backend had it and rejected
+every deactivation with «Նշեք ապաակտիվացման պատճառը»; the stale frontend was
+still sending `{ isActive: false }` with no reason, from the pre-`df6cd9f`
+`confirm()` it had been built with. Nothing in the logs said "stale build" —
+the backend was behaving exactly as designed.
+
+Nuxt builds are also the step most likely to fail on a small VPS, because they
+are the memory-hungry one: an OOM-killed `nuxt build` prints its error and
+exits non-zero, and in a deploy typed as separate lines that error scrolls past
+while the next line runs anyway.
+
+The `&&` chain above is the fix — a failed frontend build never reaches
+`pm2 restart`. To check whether a running frontend is actually the current
+commit, grep the built bundle for a string only the new code contains:
+
+```bash
+# from the repo root on the server
+grep -rl "Ապաակտիվացման պատճառը" frontend/.output/public/_nuxt/ | head -1
+```
+
+Nothing back means the running build predates that feature, whatever `git log`
+says — `.output`, not the working tree, is what the browser is served.
 
 ## The DI-graph trap
 

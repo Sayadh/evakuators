@@ -8,16 +8,16 @@ interface Props {
 
 const props = defineProps<Props>()
 
+const { t } = useI18n()
+
 const is404 = computed(() => props.error.statusCode === 404)
 
 const title = computed(() =>
-  is404.value ? 'Էջը չի գտնվել' : 'Ինչ-որ բան այն չէ',
+  is404.value ? t('errorPage.title404') : t('errorPage.titleError'),
 )
 
 const description = computed(() =>
-  is404.value
-    ? 'Փնտրած էջը գոյություն չունի կամ տեղափոխվել է։ Ստուգեք հասցեն կամ վերադարձեք գլխավոր էջ։'
-    : 'Տվյալները չհաջողվեց բեռնել։ Փորձեք թարմացնել էջը կամ վերադարձեք գլխավոր էջ։',
+  is404.value ? t('errorPage.description404') : t('errorPage.descriptionError'),
 )
 
 useHead({ title: `${title.value} | Evakuators.am` })
@@ -36,9 +36,9 @@ function goHome(): void {
         <h1>{{ title }}</h1>
         <p class="error-page__description">{{ description }}</p>
         <div class="error-page__actions">
-          <AppButton variant="primary" @click="goHome">Գլխավոր էջ</AppButton>
+          <AppButton variant="primary" @click="goHome">{{ t('errorPage.homeButton') }}</AppButton>
           <AppButton :to="getRegionsRoute()" variant="outline" @click="clearError()">
-            Դիտել մարզերը
+            {{ t('common.viewRegions') }}
           </AppButton>
         </div>
       </div>

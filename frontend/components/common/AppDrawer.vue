@@ -10,6 +10,8 @@ const props = withDefaults(defineProps<Props>(), { title: undefined, side: 'bott
 
 const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
 
+const { t } = useI18n()
+
 function close(): void {
   emit('update:modelValue', false)
 }
@@ -50,7 +52,7 @@ onUnmounted(() => {
           >
             <div class="drawer__header">
               <h3 class="drawer__title">{{ title }}</h3>
-              <button type="button" class="drawer__close" aria-label="Փակել" @click="close">
+              <button type="button" class="drawer__close" :aria-label="t('a11y.close')" @click="close">
                 <AppIcon name="close" :size="22" />
               </button>
             </div>

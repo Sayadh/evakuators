@@ -4,15 +4,28 @@
  * Content goes into the default slot.
  */
 interface Props {
+  /**
+   * Accessible name for the trigger button. Defaults to a generic «Լրացուցիչ
+   * տեղեկություն» in the visitor's own language.
+   *
+   * `undefined` rather than a literal default, because a `withDefaults` default
+   * is evaluated OUTSIDE `setup()` — `useI18n()` is not available there, and a
+   * default that called it would throw on import. Same fix as `AppSelect` and
+   * `PlatformDimensionsInput`.
+   */
   label?: string
 }
 
-withDefaults(defineProps<Props>(), { label: 'Լրացուցիչ տեղեկություն' })
+const props = withDefaults(defineProps<Props>(), { label: undefined })
+
+const { t } = useI18n()
+
+const effectiveLabel = computed(() => props.label ?? t('a11y.moreInfo'))
 </script>
 
 <template>
   <span class="tooltip">
-    <button type="button" class="tooltip__trigger" :aria-label="label">
+    <button type="button" class="tooltip__trigger" :aria-label="effectiveLabel">
       <AppIcon name="info" :size="16" />
     </button>
     <span class="tooltip__bubble" role="tooltip">

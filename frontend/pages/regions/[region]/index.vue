@@ -5,12 +5,13 @@ import { getRegionRoute } from '~/utils/routeHelpers'
 import { buildRegionSeo, buildTranslitParagraph } from '~/utils/seoContent'
 
 const route = useRoute()
+const { t, locale } = useI18n()
 const regionSlug = route.params.region as string
 
 const { data: region } = await useRegion(regionSlug)
 
 if (!region.value) {
-  throw createError({ statusCode: 404, statusMessage: 'Մարզը չի գտնվել', fatal: true })
+  throw createError({ statusCode: 404, statusMessage: t('page.regionNotFound'), fatal: true })
 }
 
 const { data: cities, pending: citiesPending } = useCitiesByRegion(regionSlug)
@@ -20,7 +21,6 @@ const { data: nearbyRegions } = useNearbyRegions(regionSlug)
 const { forRegion } = useBreadcrumbs()
 const breadcrumbs = forRegion(region.value)
 
-const { t, locale } = useI18n()
 const placeName = usePlaceName()
 const plural = usePlural()
 

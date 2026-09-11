@@ -8,6 +8,8 @@ interface Props {
 const props = defineProps<Props>()
 
 const { data: similar, pending } = useSimilarTowTrucks(props.towTruck)
+
+const { t } = useI18n()
 </script>
 
 <template>
@@ -16,7 +18,7 @@ const { data: similar, pending } = useSimilarTowTrucks(props.towTruck)
     class="similar"
     aria-labelledby="similar-title"
   >
-    <h2 id="similar-title" class="similar__title">Նմանատիպ էվակուատորներ մոտակայքում</h2>
+    <h2 id="similar-title" class="similar__title">{{ t('towTruckPage.similarTitle') }}</h2>
     <TowTruckList :tow-trucks="similar" :pending="pending" :skeleton-count="3" />
   </section>
 </template>

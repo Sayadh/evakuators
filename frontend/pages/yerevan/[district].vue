@@ -5,12 +5,13 @@ import { buildTowTruckListSchema } from '~/utils/schemaOrg'
 import { buildLocationSeo, buildTranslitParagraph } from '~/utils/seoContent'
 
 const route = useRoute()
+const { t, locale } = useI18n()
 const districtSlug = route.params.district as string
 
 const { data: district } = await useDistrict(districtSlug)
 
 if (!district.value) {
-  throw createError({ statusCode: 404, statusMessage: 'Շրջանը չի գտնվել', fatal: true })
+  throw createError({ statusCode: 404, statusMessage: t('page.districtNotFound'), fatal: true })
 }
 
 const { data: towTrucks, pending } = await useTowTrucksByDistrict(districtSlug)
@@ -25,7 +26,6 @@ const { isDesktop, isDrawerOpen, openDrawer } = useResponsiveFilters()
 const { forDistrict } = useBreadcrumbs()
 const breadcrumbs = forDistrict(district.value)
 
-const { t, locale } = useI18n()
 const plural = usePlural()
 const placeName = usePlaceName()
 

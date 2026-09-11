@@ -29,7 +29,9 @@
     "social": "Սոցիալական ցանցեր",
     "regionsNav": "Մարզեր",
     "yerevanNav": "Երևանի շրջաններ",
-    "sitePagesNav": "Կայքի էջեր"
+    "sitePagesNav": "Կայքի էջեր",
+    "close": "Փակել",
+    "moreInfo": "Լրացուցիչ տեղեկություն"
   },
   "footer": {
     "regions": "Մարզեր",
@@ -192,7 +194,10 @@
     "emptyDistrictTitle": "Այս շրջանում դեռ գրանցված էվակուատոր չկա",
     "emptyDistrictText": "Կարող եք դիտել մոտակա շրջաններում աշխատող ծառայությունները կամ գրանցել ձեր էվակուատորը։",
     "nearbyCities": "Մոտակա քաղաքներ",
-    "nearbyDistricts": "Մոտակա շրջաններ"
+    "nearbyDistricts": "Մոտակա շրջաններ",
+    "regionNotFound": "Մարզը չի գտնվել",
+    "areaNotFound": "Տարածքը չի գտնվել",
+    "districtNotFound": "Շրջանը չի գտնվել"
   },
   "crossLinks": {
     "titleWithArea": "Հատուկ տեխնիկա {area}",
@@ -448,7 +453,8 @@
     "driverLabel": "Վարորդ՝ {name}",
     "contactLabel": "Կապ վարորդի հետ",
     "secondaryPhoneLabel": "Երկրորդ համար՝ {phone}",
-    "contactNote": "Ասեք, որ համարը գտել եք Evakuators.am-ում։"
+    "contactNote": "Ասեք, որ համարը գտել եք Evakuators.am-ում։",
+    "similarTitle": "Նմանատիպ էվակուատորներ մոտակայքում"
   },
   "about": {
     "metaDescription": "Evakuators.am-ը Հայաստանի էվակուատորների որոնման հարթակ է. գտեք ձեր տարածքում աշխատող էվակուատոր և զանգահարեք վարորդին անմիջապես։",
@@ -602,5 +608,12 @@
     "confirmLabel": "Համաձայն եմ և շարունակում եմ",
     "cancelLabel": "Չեղարկել",
     "submitting": "Ուղարկվում է…"
+  },
+  "errorPage": {
+    "title404": "Էջը չի գտնվել",
+    "titleError": "Ինչ-որ բան այն չէ",
+    "description404": "Փնտրած էջը գոյություն չունի կամ տեղափոխվել է։ Ստուգեք հասցեն կամ վերադարձեք գլխավոր էջ։",
+    "descriptionError": "Տվյալները չհաջողվեց բեռնել։ Փորձեք թարմացնել էջը կամ վերադարձեք գլխավոր էջ։",
+    "homeButton": "Գլխավոր էջ"
   }
 }

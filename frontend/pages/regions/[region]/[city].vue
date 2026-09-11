@@ -20,6 +20,7 @@ import { buildLocationSeo, buildTranslitParagraph } from '~/utils/seoContent'
  * unambiguous.
  */
 const route = useRoute()
+const { t, locale } = useI18n()
 const regionSlug = route.params.region as string
 const citySlug = route.params.city as string
 
@@ -42,7 +43,7 @@ const isLanding = Boolean(landing && landingCity)
 const { data: city } = await useCity(regionSlug, citySlug)
 
 if (!isZone && !isLanding && !city.value) {
-  throw createError({ statusCode: 404, statusMessage: 'Տարածքը չի գտնվել', fatal: true })
+  throw createError({ statusCode: 404, statusMessage: t('page.areaNotFound'), fatal: true })
 }
 
 // Three sources, one shape. A corridor matches its own slug exactly (see
@@ -56,7 +57,6 @@ const { data: towTrucks, pending } = isZone
     : await useTowTrucksByCity(citySlug)
 const { data: nearbyCities } = useNearbyCities(regionSlug, citySlug)
 
-const { t, locale } = useI18n()
 const plural = usePlural()
 const placeName = usePlaceName()
 

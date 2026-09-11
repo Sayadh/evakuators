@@ -12,10 +12,11 @@ import { MANIPULATOR_PAGE, findVehicleTypeGeo } from '~/constants/vehicleTypePag
  * eleven areas and nothing else.
  */
 const route = useRoute()
+const { t } = useI18n()
 const geo = findVehicleTypeGeo(route.params.geo as string)
 
 if (!geo) {
-  throw createError({ statusCode: 404, statusMessage: 'Տարածքը չի գտնվել', fatal: true })
+  throw createError({ statusCode: 404, statusMessage: t('page.areaNotFound'), fatal: true })
 }
 </script>
 

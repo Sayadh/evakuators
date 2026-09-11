@@ -8,6 +8,8 @@ const props = withDefaults(defineProps<Props>(), { title: undefined })
 
 const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
 
+const { t } = useI18n()
+
 function close(): void {
   emit('update:modelValue', false)
 }
@@ -44,7 +46,7 @@ onUnmounted(() => {
     <Transition name="modal-fade">
       <div v-if="modelValue" class="modal__overlay" @click.self="close">
         <div class="modal__panel" role="dialog" aria-modal="true" :aria-label="title">
-          <button type="button" class="modal__close" aria-label="Փակել" @click="close">
+          <button type="button" class="modal__close" :aria-label="t('a11y.close')" @click="close">
             <AppIcon name="close" :size="22" />
           </button>
           <h3 v-if="title" class="modal__title">{{ title }}</h3>

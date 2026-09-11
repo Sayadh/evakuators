@@ -2,7 +2,13 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { adminRepository, isApiEnabled } from '~/repositories'
 import { useAdminAuthStore } from '~/stores/adminAuth'
-import type { DispatchCandidate, DispatchFilter, DispatchTier } from '~/types/dispatch'
+import type {
+  DispatchCandidate,
+  DispatchCandidateByDistance,
+  DispatchFilter,
+  DispatchTier,
+} from '~/types/dispatch'
+import { formatCoordinates, parseCoordinates } from '~/utils/coordinates'
 import {
   rememberDispatchPlace,
   searchDispatchPlaces,
@@ -10,6 +16,7 @@ import {
   type DispatchPlace,
 } from '~/utils/dispatchPlaces'
 import { extractErrorMessage } from '~/utils/errors'
+import { formatDistanceLine } from '~/utils/formatDistance'
 import { getPhoneHref } from '~/utils/formatPhone'
 
 /**
@@ -34,6 +41,22 @@ import { getPhoneHref } from '~/utils/formatPhone'
  */
 const adminAuth = useAdminAuthStore()
 const apiEnabled = isApiEnabled()
+
+/**
+ * Two ways to ask the same question. Place search stays the default — it is
+ * what the operator uses for almost every call, a named location the customer
+ * just said out loud. Coordinate search is for the other case: a customer who
+ * can drop a pin (or read one off Google Maps) but cannot name where they are.
+ *
+ * The two searches, their results and their own loading/error state are kept
+ * entirely separate rather than folded into one set of refs — they are
+ * different questions with different result shapes (a coordinate has no
+ * `DispatchPlace` to derive a `tier` from, see `DispatchCandidateByDistance`),
+ * and switching the toggle does not throw away whichever search is not
+ * currently shown, so flipping back and forth costs nothing.
+ */
+type SearchMode = 'place' | 'coordinates'
+const mode = ref<SearchMode>('place')
 
 const query = ref('')
 const selected = ref<DispatchPlace | null>(null)
@@ -149,8 +172,83 @@ function reset(): void {
   referredIds.value = new Set()
 }
 
+/**
+ * Coordinate search — a separate pipeline from the place one above.
+ *
+ * `CoordinatesInput` carries a single pasted string (see that component), so
+ * this parses it with the same `parseCoordinates` the registration form and
+ * both admin coordinate dialogs already use — a value this screen rejects is
+ * one every other screen rejects too, and the messages the dispatcher sees are
+ * the ones drivers already know.
+ *
+ * There is no "mark as referred" here, unlike the place-based list: a referral
+ * record needs a place name and type to store (`locationSlug`/`locationName`/
+ * `locationType`), and a raw coordinate is not one of the four kinds of place
+ * this system tracks (`DispatchLocationType` — see dispatch-ranking.ts). Rather
+ * than force a coordinate search to invent a fake city or region for the
+ * record, referrals from a driver found this way are logged the normal way
+ * once the operator has the place name in hand (which, in practice, the
+ * customer usually gives once a call is under way).
+ */
+const coordinatesText = ref('')
+const coordinatesError = ref('')
+const lastCoordinates = ref<{ latitude: number; longitude: number } | null>(null)
+const distanceCandidates = ref<DispatchCandidateByDistance[]>([])
+const distanceLoading = ref(false)
+const distanceLoadError = ref('')
+
+function setMode(next: SearchMode): void {
+  mode.value = next
+}
+
+/** Typing again clears the previous parse error — same habit as `onInput` above */
+function onCoordinatesInput(): void {
+  coordinatesError.value = ''
+}
+
+async function fetchByCoordinates(latitude: number, longitude: number): Promise<void> {
+  distanceLoading.value = true
+  distanceLoadError.value = ''
+  try {
+    const answer = await adminRepository.listDispatchCandidatesByCoordinates(
+      latitude,
+      longitude,
+      filter.value,
+    )
+    distanceCandidates.value = answer.items
+  } catch (error) {
+    distanceLoadError.value = extractErrorMessage(error, 'Վարորդներին բեռնել չհաջողվեց։')
+    distanceCandidates.value = []
+  } finally {
+    distanceLoading.value = false
+  }
+}
+
+function searchByCoordinates(): void {
+  const result = parseCoordinates(coordinatesText.value)
+  if (!result.ok) {
+    coordinatesError.value = result.error
+    return
+  }
+  coordinatesError.value = ''
+  lastCoordinates.value = { latitude: result.latitude, longitude: result.longitude }
+  void fetchByCoordinates(result.latitude, result.longitude)
+}
+
+function resetCoordinates(): void {
+  coordinatesText.value = ''
+  coordinatesError.value = ''
+  lastCoordinates.value = null
+  distanceCandidates.value = []
+  distanceLoadError.value = ''
+}
+
+// One filter dropdown, shared by both searches — re-runs whichever search is
+// currently active (either can be, since switching `mode` does not clear the
+// other's state).
 watch(filter, () => {
   if (selected.value) void load()
+  if (lastCoordinates.value) void fetchByCoordinates(lastCoordinates.value.latitude, lastCoordinates.value.longitude)
 })
 
 /**
@@ -215,7 +313,7 @@ async function markReferred(candidate: DispatchCandidate): Promise<void> {
   }
 }
 
-function lastDispatchedLabel(candidate: DispatchCandidate): string {
+function lastDispatchedLabel(candidate: { lastDispatchedAt?: string }): string {
   if (!candidate.lastDispatchedAt) return 'դեռ չի ստացել'
   const days = Math.floor((Date.now() - new Date(candidate.lastDispatchedAt).getTime()) / 86_400_000)
   if (days <= 0) return 'վերջինը՝ այսօր'
@@ -253,108 +351,215 @@ useSeoMetaData({
     />
 
     <template v-else>
-      <!-- One field, always focused on arrival. There is no submit button on
-           purpose: picking a place IS the search, and the extra tap is real in a
-           twenty-second budget. -->
-      <div class="dispatch__search">
-        <AppInput
-          v-model="query"
-          label="Որտեղ է հաճախորդը"
-          placeholder="Աբովյան, Արաբկիր…"
-          autocomplete="off"
-          @update:model-value="onInput"
-        />
-
-        <ul v-if="suggestions.length" class="dispatch__suggestions">
-          <li v-for="place in suggestions" :key="`${place.type}-${place.slug}`">
-            <button type="button" class="dispatch__suggestion" @click="pick(place)">
-              <span class="dispatch__suggestion-name">{{ place.name }}</span>
-              <span v-if="place.context" class="dispatch__muted">{{ place.context }}</span>
-            </button>
-          </li>
-        </ul>
-
-        <!-- Yerevan districts repeat all night; one tap beats six letters. -->
-        <div v-if="recent.length && !selected" class="dispatch__recent">
-          <span class="dispatch__muted">Վերջինները՝</span>
-          <button
-            v-for="place in recent"
-            :key="`recent-${place.type}-${place.slug}`"
-            type="button"
-            class="dispatch__chip"
-            @click="pick(place)"
-          >
-            {{ place.name }}
-          </button>
-        </div>
+      <!-- The two searches ask the same question two different ways — see the
+           `mode` doc comment in the script. -->
+      <div class="dispatch__mode-toggle" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          :aria-selected="mode === 'place'"
+          class="dispatch__mode-btn"
+          :class="{ 'dispatch__mode-btn--active': mode === 'place' }"
+          @click="setMode('place')"
+        >
+          Ըստ վայրի
+        </button>
+        <button
+          type="button"
+          role="tab"
+          :aria-selected="mode === 'coordinates'"
+          class="dispatch__mode-btn"
+          :class="{ 'dispatch__mode-btn--active': mode === 'coordinates' }"
+          @click="setMode('coordinates')"
+        >
+          Ըստ կոորդինատների
+        </button>
       </div>
 
-      <template v-if="selected">
-        <div class="dispatch__toolbar">
-          <strong>{{ selected.name }}</strong>
-          <select v-model="filter" class="dispatch__filter" aria-label="Ֆիլտր">
-            <option v-for="(label, value) in FILTER_LABELS" :key="value" :value="value">
-              {{ label }}
-            </option>
-          </select>
-          <button type="button" class="dispatch__back" @click="reset">Մաքրել</button>
+      <template v-if="mode === 'place'">
+        <!-- One field, always focused on arrival. There is no submit button on
+             purpose: picking a place IS the search, and the extra tap is real in a
+             twenty-second budget. -->
+        <div class="dispatch__search">
+          <AppInput
+            v-model="query"
+            label="Որտեղ է հաճախորդը"
+            placeholder="Աբովյան, Արաբկիր…"
+            autocomplete="off"
+            @update:model-value="onInput"
+          />
+
+          <ul v-if="suggestions.length" class="dispatch__suggestions">
+            <li v-for="place in suggestions" :key="`${place.type}-${place.slug}`">
+              <button type="button" class="dispatch__suggestion" @click="pick(place)">
+                <span class="dispatch__suggestion-name">{{ place.name }}</span>
+                <span v-if="place.context" class="dispatch__muted">{{ place.context }}</span>
+              </button>
+            </li>
+          </ul>
+
+          <!-- Yerevan districts repeat all night; one tap beats six letters. -->
+          <div v-if="recent.length && !selected" class="dispatch__recent">
+            <span class="dispatch__muted">Վերջինները՝</span>
+            <button
+              v-for="place in recent"
+              :key="`recent-${place.type}-${place.slug}`"
+              type="button"
+              class="dispatch__chip"
+              @click="pick(place)"
+            >
+              {{ place.name }}
+            </button>
+          </div>
         </div>
 
-        <p v-if="referError" class="dispatch__error" role="alert">{{ referError }}</p>
-        <p v-if="loading" class="dispatch__muted">Բեռնվում է…</p>
+        <template v-if="selected">
+          <div class="dispatch__toolbar">
+            <strong>{{ selected.name }}</strong>
+            <select v-model="filter" class="dispatch__filter" aria-label="Ֆիլտր">
+              <option v-for="(label, value) in FILTER_LABELS" :key="value" :value="value">
+                {{ label }}
+              </option>
+            </select>
+            <button type="button" class="dispatch__back" @click="reset">Մաքրել</button>
+          </div>
 
-        <p v-else-if="candidates.length === 0" class="dispatch__empty">
-          Այս տարածքի համար վարորդ չի գտնվել։
-          <template v-if="filter !== 'all'">Փորձեք «Բոլորը» ֆիլտրով։</template>
-        </p>
+          <p v-if="referError" class="dispatch__error" role="alert">{{ referError }}</p>
+          <p v-if="loading" class="dispatch__muted">Բեռնվում է…</p>
 
-        <section v-for="group in groups" :key="group.tier" class="dispatch__group">
-          <h2 class="dispatch__group-title">
-            {{ TIER_LABELS[group.tier] }} · {{ group.items.length }}
-          </h2>
+          <p v-else-if="candidates.length === 0" class="dispatch__empty">
+            Այս տարածքի համար վարորդ չի գտնվել։
+            <template v-if="filter !== 'all'">Փորձեք «Բոլորը» ֆիլտրով։</template>
+          </p>
 
-          <article
-            v-for="candidate in group.items"
-            :key="candidate.id"
-            class="dispatch__card"
-            :class="{ 'dispatch__card--referred': referredIds.has(candidate.id) }"
-          >
-            <div class="dispatch__who">
-              <span class="dispatch__name">
-                {{ candidate.driverName }}
-                <span v-if="candidate.isFeatured" title="Լավագույններից">★</span>
-              </span>
-              <span class="dispatch__muted">{{ candidate.vehicle }}</span>
+          <section v-for="group in groups" :key="group.tier" class="dispatch__group">
+            <h2 class="dispatch__group-title">
+              {{ TIER_LABELS[group.tier] }} · {{ group.items.length }}
+            </h2>
+
+            <article
+              v-for="candidate in group.items"
+              :key="candidate.id"
+              class="dispatch__card"
+              :class="{ 'dispatch__card--referred': referredIds.has(candidate.id) }"
+            >
+              <div class="dispatch__who">
+                <span class="dispatch__name">
+                  {{ candidate.driverName }}
+                  <span v-if="candidate.isFeatured" title="Լավագույններից">★</span>
+                </span>
+                <span class="dispatch__muted">{{ candidate.vehicle }}</span>
+              </div>
+
+              <p class="dispatch__meta">
+                <span v-if="candidate.rating">⭐ {{ candidate.rating }}</span>
+                <span>{{ candidate.dispatchesThisMonth }} այս ամիս</span>
+                <span>{{ lastDispatchedLabel(candidate) }}</span>
+              </p>
+
+              <p class="dispatch__meta dispatch__muted">
+                <span v-if="group.tier !== 'local'">բազան՝ {{ candidate.baseName }}</span>
+                <span v-if="candidate.subscriptionStatus === 'overdue'" class="dispatch__warn">
+                  բաժանորդագրությունը սպառվել է
+                </span>
+              </p>
+
+              <div class="dispatch__actions">
+                <a :href="getPhoneHref(candidate.phone)" class="dispatch__call">
+                  Զանգել · {{ candidate.phone }}
+                </a>
+                <AppButton
+                  size="sm"
+                  :variant="referredIds.has(candidate.id) ? 'success' : 'outline'"
+                  :disabled="referringId === candidate.id || referredIds.has(candidate.id)"
+                  @click="askReferred(candidate)"
+                >
+                  {{ referredIds.has(candidate.id) ? 'Ուղղորդված է ✓' : 'Ուղղորդված է' }}
+                </AppButton>
+              </div>
+            </article>
+          </section>
+        </template>
+      </template>
+
+      <template v-else>
+        <!-- Coordinate search: paste the pair, or open Google Maps to find it
+             first — same field and same Maps link every driver already knows
+             from registration, just without the driver-facing steps
+             (`show-guidance="false"`, same as the admin correction dialog). -->
+        <div class="dispatch__coordinates">
+          <CoordinatesInput
+            v-model="coordinatesText"
+            :show-guidance="false"
+            :error="coordinatesError"
+            @update:model-value="onCoordinatesInput"
+          />
+
+          <div class="dispatch__coordinates-actions">
+            <AppButton :disabled="distanceLoading" @click="searchByCoordinates">Փնտրել</AppButton>
+            <button
+              v-if="lastCoordinates"
+              type="button"
+              class="dispatch__back"
+              @click="resetCoordinates"
+            >
+              Մաքրել
+            </button>
+          </div>
+
+          <template v-if="lastCoordinates">
+            <div class="dispatch__toolbar">
+              <strong>{{ formatCoordinates(lastCoordinates.latitude, lastCoordinates.longitude) }}</strong>
+              <select v-model="filter" class="dispatch__filter" aria-label="Ֆիլտր">
+                <option v-for="(label, value) in FILTER_LABELS" :key="value" :value="value">
+                  {{ label }}
+                </option>
+              </select>
             </div>
 
-            <p class="dispatch__meta">
-              <span v-if="candidate.rating">⭐ {{ candidate.rating }}</span>
-              <span>{{ candidate.dispatchesThisMonth }} այս ամիս</span>
-              <span>{{ lastDispatchedLabel(candidate) }}</span>
+            <p v-if="distanceLoadError" class="dispatch__error" role="alert">{{ distanceLoadError }}</p>
+            <p v-if="distanceLoading" class="dispatch__muted">Բեռնվում է…</p>
+
+            <p v-else-if="distanceCandidates.length === 0" class="dispatch__empty">
+              Այս կետի շուրջ վարորդ չի գտնվել։
+              <template v-if="filter !== 'all'">Փորձեք «Բոլորը» ֆիլտրով։</template>
             </p>
 
-            <p class="dispatch__meta dispatch__muted">
-              <span v-if="group.tier !== 'local'">բազան՝ {{ candidate.baseName }}</span>
-              <span v-if="candidate.subscriptionStatus === 'overdue'" class="dispatch__warn">
-                բաժանորդագրությունը սպառվել է
-              </span>
-            </p>
+            <section v-else class="dispatch__group">
+              <h2 class="dispatch__group-title">Ամենամոտները · {{ distanceCandidates.length }}</h2>
 
-            <div class="dispatch__actions">
-              <a :href="getPhoneHref(candidate.phone)" class="dispatch__call">
-                Զանգել · {{ candidate.phone }}
-              </a>
-              <AppButton
-                size="sm"
-                :variant="referredIds.has(candidate.id) ? 'success' : 'outline'"
-                :disabled="referringId === candidate.id || referredIds.has(candidate.id)"
-                @click="askReferred(candidate)"
-              >
-                {{ referredIds.has(candidate.id) ? 'Ուղղորդված է ✓' : 'Ուղղորդված է' }}
-              </AppButton>
-            </div>
-          </article>
-        </section>
+              <article v-for="candidate in distanceCandidates" :key="candidate.id" class="dispatch__card">
+                <div class="dispatch__who">
+                  <span class="dispatch__name">
+                    {{ candidate.driverName }}
+                    <span v-if="candidate.isFeatured" title="Լավագույններից">★</span>
+                  </span>
+                  <span class="dispatch__muted">{{ candidate.vehicle }}</span>
+                </div>
+
+                <p class="dispatch__meta">
+                  <span>{{ formatDistanceLine(candidate.distanceMeters, false) }}</span>
+                  <span v-if="candidate.rating">⭐ {{ candidate.rating }}</span>
+                  <span>{{ candidate.dispatchesThisMonth }} այս ամիս</span>
+                  <span>{{ lastDispatchedLabel(candidate) }}</span>
+                </p>
+
+                <p class="dispatch__meta dispatch__muted">
+                  <span>բազան՝ {{ candidate.baseName }}</span>
+                  <span v-if="candidate.subscriptionStatus === 'overdue'" class="dispatch__warn">
+                    բաժանորդագրությունը սպառվել է
+                  </span>
+                </p>
+
+                <div class="dispatch__actions">
+                  <a :href="getPhoneHref(candidate.phone)" class="dispatch__call">
+                    Զանգել · {{ candidate.phone }}
+                  </a>
+                </div>
+              </article>
+            </section>
+          </template>
+        </div>
       </template>
     </template>
 
@@ -415,6 +620,30 @@ useSeoMetaData({
     cursor: pointer;
   }
 
+  &__mode-toggle {
+    display: flex;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
+  }
+
+  &__mode-btn {
+    flex: 1;
+    padding: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    color: var(--color-text-secondary);
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+
+    &--active {
+      background: var(--color-primary);
+      border-color: var(--color-primary);
+      color: #fff;
+    }
+  }
+
   &__search {
     position: relative;
   }
@@ -467,6 +696,18 @@ useSeoMetaData({
     background: var(--color-surface);
     cursor: pointer;
     font-size: 0.9rem;
+  }
+
+  &__coordinates {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  &__coordinates-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
   }
 
   &__toolbar {

@@ -1,8 +1,10 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common'
+import { assertWithinArmenia } from '../common/coordinates'
 import { ReviewsRepository } from '../reviews/reviews.repository'
 import { isFeaturedNow } from '../tow-trucks/featured'
 import { derivePaymentStatus } from '../subscriptions/subscription-status'
 import { SubscriptionsRepository } from '../subscriptions/subscriptions.repository'
+import { DISPATCH_COORDINATES_LIMIT, DISPATCH_COORDINATES_RADIUS_METERS } from './dispatch.constants'
 import {
   compareCandidates,
   dispatchTier,
@@ -11,7 +13,13 @@ import {
   type DispatchPlace,
 } from './dispatch-ranking'
 import { DispatchRepository, type DispatchCandidateRow } from './dispatch.repository'
-import type { DispatchCandidateApi, DispatchCandidatesApi, DispatchReferralApi } from './dispatch.types'
+import type {
+  DispatchCandidateApi,
+  DispatchCandidateByDistanceApi,
+  DispatchCandidatesApi,
+  DispatchCandidatesByCoordinatesApi,
+  DispatchReferralApi,
+} from './dispatch.types'
 
 /** First instant of the current calendar month, for the "this month" count */
 function startOfMonth(now: Date): Date {
@@ -28,6 +36,16 @@ function readServiceAreas(value: unknown): Array<{ slug: string; type: string }>
       typeof (entry as { slug?: unknown }).slug === 'string' &&
       typeof (entry as { type?: unknown }).type === 'string',
   )
+}
+
+/** The lookups every candidate row needs, gathered once per request and shared by both search modes */
+interface CandidateLookups {
+  stats: Map<number, { total: number; lastDispatchedAt: Date }>
+  monthCounts: Map<number, number>
+  ratingById: Map<number, number>
+  coverage: Map<number, { paidUntil: Date | null }>
+  /** One instant for the whole list, so two rows cannot disagree about it */
+  now: Date
 }
 
 /**
@@ -64,34 +82,12 @@ export class DispatchService {
   ): Promise<DispatchCandidatesApi> {
     const trucks = await this.dispatchRepository.findCandidates(place)
     const ids = trucks.map((truck) => truck.id)
-    const now = new Date()
-
-    // Four reads, all grouped and all in parallel — this list is built while
-    // somebody is on the phone, so the shape that matters is "one round trip
-    // per FACT", never one per driver.
-    const [stats, monthCounts, ratings, coverage] = await Promise.all([
-      this.dispatchRepository.statsFor(ids),
-      this.dispatchRepository.countsSince(ids, startOfMonth(now)),
-      this.reviewsRepository.groupApprovedByTowTruckIds(ids),
-      this.subscriptionsRepository.findCoverage(ids),
-    ])
-
-    const ratingById = new Map(ratings.map((row) => [row.towTruckId, row.averageRating]))
+    const lookups = await this.gatherLookups(ids)
 
     const items = trucks
-      .map((truck) => this.toCandidate(truck, place, { stats, monthCounts, ratingById, coverage, now }))
+      .map((truck) => this.toCandidate(truck, place, lookups))
       .filter((candidate): candidate is DispatchCandidateApi => candidate !== null)
-      .filter((candidate) =>
-        matchesDispatchFilter(
-          {
-            isFeatured: candidate.isFeatured,
-            lastDispatchedAt: candidate.lastDispatchedAt ? new Date(candidate.lastDispatchedAt) : null,
-            dispatchCount: candidate.dispatchesTotal,
-          },
-          filter,
-          now,
-        ),
-      )
+      .filter((candidate) => this.matchesFilter(candidate, filter, lookups.now))
       .sort((a, b) =>
         compareCandidates(
           { tier: a.tier, isFeatured: a.isFeatured, rating: a.rating ?? null, driverName: a.driverName },
@@ -102,17 +98,96 @@ export class DispatchService {
     return { place, items }
   }
 
+  /**
+   * Who is closest to a point the dispatcher typed or read off a map —
+   * "search by coordinates", alongside `listCandidates`'s "search by place".
+   *
+   * Straight-line distance only, deliberately: this is the dispatcher's own
+   * screen, not the customer-facing `nearest-tow-trucks` search, and it does
+   * not draw on that search's OpenRouteService quota — a road-accurate ranking
+   * here would mean two features racing for one shared daily budget for a
+   * screen where the operator already applies their own judgement on top of
+   * the number.
+   */
+  async listCandidatesByCoordinates(
+    latitude: number,
+    longitude: number,
+    filter: DispatchFilter = 'all',
+  ): Promise<DispatchCandidatesByCoordinatesApi> {
+    // Same geography rule every coordinate-accepting endpoint applies — a
+    // dispatcher pointing outside Armenia is a typo, not a place to search.
+    assertWithinArmenia(latitude, longitude)
+
+    const distances = await this.dispatchRepository.findCandidatesByDistance(
+      latitude,
+      longitude,
+      DISPATCH_COORDINATES_RADIUS_METERS,
+      DISPATCH_COORDINATES_LIMIT,
+    )
+    if (distances.length === 0) return { latitude, longitude, items: [] }
+
+    const distanceById = new Map(distances.map((row) => [row.id, row.distanceMeters]))
+    const ids = distances.map((row) => row.id)
+    const [trucks, lookups] = await Promise.all([
+      this.dispatchRepository.findCandidatesByIds(ids),
+      this.gatherLookups(ids),
+    ])
+
+    const items = trucks
+      .map((truck) => this.toCandidateByDistance(truck, distanceById.get(truck.id) ?? 0, lookups))
+      .filter((candidate) => this.matchesFilter(candidate, filter, lookups.now))
+      // Re-sorted explicitly: `findCandidatesByIds` does not preserve the
+      // order `findCandidatesByDistance` returned (Prisma's `id: { in }`
+      // does not), and "nearest first" is the entire point of this search.
+      .sort((a, b) => a.distanceMeters - b.distanceMeters)
+
+    return { latitude, longitude, items }
+  }
+
+  /**
+   * Four reads, all grouped and all in parallel — this list is built while
+   * somebody is on the phone, so the shape that matters is "one round trip
+   * per FACT", never one per driver. Shared by both search modes so neither
+   * one drifts into fetching a fact the other renders differently.
+   */
+  private async gatherLookups(ids: number[]): Promise<CandidateLookups> {
+    const now = new Date()
+    const [stats, monthCounts, ratings, coverage] = await Promise.all([
+      this.dispatchRepository.statsFor(ids),
+      this.dispatchRepository.countsSince(ids, startOfMonth(now)),
+      this.reviewsRepository.groupApprovedByTowTruckIds(ids),
+      this.subscriptionsRepository.findCoverage(ids),
+    ])
+
+    return {
+      stats,
+      monthCounts,
+      ratingById: new Map(ratings.map((row) => [row.towTruckId, row.averageRating])),
+      coverage,
+      now,
+    }
+  }
+
+  private matchesFilter(
+    candidate: { isFeatured: boolean; lastDispatchedAt?: string; dispatchesTotal: number },
+    filter: DispatchFilter,
+    now: Date,
+  ): boolean {
+    return matchesDispatchFilter(
+      {
+        isFeatured: candidate.isFeatured,
+        lastDispatchedAt: candidate.lastDispatchedAt ? new Date(candidate.lastDispatchedAt) : null,
+        dispatchCount: candidate.dispatchesTotal,
+      },
+      filter,
+      now,
+    )
+  }
+
   private toCandidate(
     truck: DispatchCandidateRow,
     place: DispatchPlace,
-    lookups: {
-      stats: Map<number, { total: number; lastDispatchedAt: Date }>
-      monthCounts: Map<number, number>
-      ratingById: Map<number, number>
-      coverage: Map<number, { paidUntil: Date | null }>
-      /** One instant for the whole list, so two rows cannot disagree about it */
-      now: Date
-    },
+    lookups: CandidateLookups,
   ): DispatchCandidateApi | null {
     const tier = dispatchTier(
       {
@@ -129,6 +204,22 @@ export class DispatchService {
     // it cannot place is one the operator must not be shown.
     if (tier === null) return null
 
+    return { ...this.candidateFields(truck, lookups), tier }
+  }
+
+  private toCandidateByDistance(
+    truck: DispatchCandidateRow,
+    distanceMeters: number,
+    lookups: CandidateLookups,
+  ): DispatchCandidateByDistanceApi {
+    return { ...this.candidateFields(truck, lookups), distanceMeters: Math.round(distanceMeters) }
+  }
+
+  /** Everything both candidate shapes share — see `DispatchCandidateByDistanceApi` */
+  private candidateFields(
+    truck: DispatchCandidateRow,
+    lookups: CandidateLookups,
+  ): Omit<DispatchCandidateApi, 'tier'> {
     const stats = lookups.stats.get(truck.id)
     const rating = lookups.ratingById.get(truck.id)
 
@@ -139,7 +230,6 @@ export class DispatchService {
       phone: truck.phone,
       vehicle: [truck.vehicleBrand, truck.vehicleModel].filter(Boolean).join(' '),
       baseName: truck.locationName,
-      tier,
       // Through the window, not the raw flag: an expired placement must not
       // keep a driver at the top of the dispatcher's list, and it must not keep
       // them in the «Լավագույնները» filter either. Same rule as every public

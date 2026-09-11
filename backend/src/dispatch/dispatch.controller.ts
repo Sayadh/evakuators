@@ -1,10 +1,15 @@
-import { Body, Controller, Get, Post, Query, Req, UseGuards } from '@nestjs/common'
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Query, Req, UseGuards } from '@nestjs/common'
 import { AdminJwtGuard } from '../admin-auth/admin-jwt.guard'
 import type { AuthenticatedAdminRequest } from '../admin-auth/admin-jwt.guard'
 import { DISPATCH_FILTERS, type DispatchFilter, type DispatchLocationType } from './dispatch-ranking'
 import { DispatchService } from './dispatch.service'
 import { DISPATCH_LOCATION_TYPES, CreateDispatchReferralDto } from './dto/create-dispatch-referral.dto'
-import type { DispatchCandidatesApi, DispatchReferralApi } from './dispatch.types'
+import { FindDispatchByCoordinatesDto } from './dto/find-dispatch-by-coordinates.dto'
+import type {
+  DispatchCandidatesApi,
+  DispatchCandidatesByCoordinatesApi,
+  DispatchReferralApi,
+} from './dispatch.types'
 
 /**
  * The dispatcher's screen — admin only, and that is the whole access story.
@@ -56,6 +61,22 @@ export class DispatchController {
       },
       chosen,
     )
+  }
+
+  /**
+   * Who is closest to a point the dispatcher typed in or read off a map —
+   * "search by coordinates", alongside `candidates`'s "search by place".
+   *
+   * A POST body, not a GET query, for the same reason `nearest-tow-trucks` is
+   * one: see `FindDispatchByCoordinatesDto`. `200`, not `201`: nothing is
+   * created here either.
+   */
+  @Post('candidates-by-coordinates')
+  @HttpCode(HttpStatus.OK)
+  listCandidatesByCoordinates(
+    @Body() dto: FindDispatchByCoordinatesDto,
+  ): Promise<DispatchCandidatesByCoordinatesApi> {
+    return this.dispatch.listCandidatesByCoordinates(dto.latitude, dto.longitude, dto.filter ?? 'all')
   }
 
   /**

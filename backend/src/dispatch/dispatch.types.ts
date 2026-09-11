@@ -31,6 +31,24 @@ export interface DispatchCandidatesApi {
   items: DispatchCandidateApi[]
 }
 
+/**
+ * One driver as the coordinate search shows them — everything
+ * `DispatchCandidateApi` shows except `tier`, which has no meaning without a
+ * named place to be local to, visiting, or nationwide relative to; a straight
+ * distance replaces it instead.
+ */
+export interface DispatchCandidateByDistanceApi extends Omit<DispatchCandidateApi, 'tier'> {
+  /** Straight-line distance from the searched point, in whole metres */
+  distanceMeters: number
+}
+
+/** The screen's answer for a searched point, nearest first */
+export interface DispatchCandidatesByCoordinatesApi {
+  latitude: number
+  longitude: number
+  items: DispatchCandidateByDistanceApi[]
+}
+
 /** What a recorded referral answers back with */
 export interface DispatchReferralApi {
   id: number

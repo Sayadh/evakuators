@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common'
 import { Prisma } from '@prisma/client'
 import type { DispatchReferral } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
+import { SPECIALIST_VEHICLE_TYPES } from '../tow-trucks/vehicle-types'
 import { YEREVAN_REGION_SLUG } from '../tow-trucks/service-area-limits'
 import type { DispatchPlace } from './dispatch-ranking'
 
@@ -12,26 +13,42 @@ export interface ReferralStatsRow {
   lastDispatchedAt: Date
 }
 
+/** A distance-ranked id, as PostGIS hands it back — nothing else, see findCandidatesByDistance */
+export interface DispatchDistanceRow {
+  id: number
+  distanceMeters: number
+}
+
+/**
+ * The columns every screen on this page needs, regardless of how the
+ * candidates were found.
+ *
+ * Pulled out to a constant rather than left inline so the coordinate-based
+ * search (`findCandidatesByIds`) and the place-based one (`findCandidates`)
+ * cannot drift into showing different fields for the same driver — the same
+ * reasoning `NearestRepository`'s doc comment gives for keeping its raw query
+ * to ids and distances only.
+ */
+const CANDIDATE_SELECT = {
+  id: true,
+  driverName: true,
+  companyName: true,
+  phone: true,
+  vehicleBrand: true,
+  vehicleModel: true,
+  vehicleType: true,
+  locationName: true,
+  regionSlug: true,
+  citySlug: true,
+  districtSlug: true,
+  servesAllArmenia: true,
+  serviceAreas: true,
+  isFeatured: true,
+  featuredUntil: true,
+} as const satisfies Prisma.TowTruckSelect
+
 /** Just enough of a truck to rank it and dial it */
-export type DispatchCandidateRow = Prisma.TowTruckGetPayload<{
-  select: {
-    id: true
-    driverName: true
-    companyName: true
-    phone: true
-    vehicleBrand: true
-    vehicleModel: true
-    vehicleType: true
-    locationName: true
-    regionSlug: true
-    citySlug: true
-    districtSlug: true
-    servesAllArmenia: true
-    serviceAreas: true
-    isFeatured: true
-    featuredUntil: true
-  }
-}>
+export type DispatchCandidateRow = Prisma.TowTruckGetPayload<{ select: typeof CANDIDATE_SELECT }>
 
 @Injectable()
 export class DispatchRepository {
@@ -65,24 +82,87 @@ export class DispatchRepository {
           { servesAllArmenia: true },
         ],
       },
-      select: {
-        id: true,
-        driverName: true,
-        companyName: true,
-        phone: true,
-        vehicleBrand: true,
-        vehicleModel: true,
-        vehicleType: true,
-        locationName: true,
-        regionSlug: true,
-        citySlug: true,
-        districtSlug: true,
-        servesAllArmenia: true,
-        serviceAreas: true,
-        isFeatured: true,
-        featuredUntil: true,
-      },
+      select: CANDIDATE_SELECT,
     })
+  }
+
+  /**
+   * The same candidate rows as `findCandidates`, for an id list instead of a
+   * place — how the coordinate search turns PostGIS's ids back into
+   * dial-able drivers.
+   *
+   * Order is NOT preserved: Prisma's `id: { in: ids }` does not return rows in
+   * the array's order, so `DispatchService.listCandidatesByCoordinates` must
+   * re-sort using the distance map `findCandidatesByDistance` returned.
+   *
+   * `isActive: true` is re-checked here even though `findCandidatesByDistance`
+   * already required it — a driver can be deactivated between the two calls,
+   * and the check-at-both-ends habit the rest of this codebase uses (see
+   * `NearestService.search`'s `cardById` filter) is what keeps that window
+   * from surfacing a driver who is no longer published.
+   */
+  findCandidatesByIds(ids: number[]): Promise<DispatchCandidateRow[]> {
+    if (ids.length === 0) return Promise.resolve([])
+    return this.prisma.towTruck.findMany({
+      where: { id: { in: ids }, isActive: true },
+      select: CANDIDATE_SELECT,
+    })
+  }
+
+  /**
+   * The N nearest ACTIVE, non-specialist drivers to a point, by straight-line
+   * distance — the coordinate-search counterpart to `findCandidates`.
+   *
+   * Raw SQL for the same reason `NearestRepository.findNearestCandidates` is:
+   * Prisma has no geography type, so there is no typed way to express the KNN
+   * ordering (`<->`) or `ST_DWithin`. Deliberately mirrors that query rather
+   * than introducing a second pattern for the same PostGIS column —
+   * `location`, its GiST index, and the exact filter clauses are all shared
+   * infrastructure, not something this module should reinterpret.
+   *
+   * ## Why specialist vehicles are excluded here, unlike `findCandidates`
+   *
+   * A place-based search ("who covers Abovyan") is a fair question to a
+   * manipulator or heavy-duty driver — they may well be the right answer.
+   * "Who is closest to this exact point" is a different question: a
+   * dispatcher pointing at a spot on the map is almost always looking for a
+   * general evacuator, the same case `NearestRepository` reasons about for the
+   * public page. Confirmed with the product owner rather than assumed.
+   *
+   * ids and distances only, same reasoning as `NearestRepository`: selecting
+   * the card columns here would mean a second copy of `CANDIDATE_SELECT` in
+   * raw SQL. `DispatchService` fetches the actual rows through
+   * `findCandidatesByIds`.
+   */
+  async findCandidatesByDistance(
+    latitude: number,
+    longitude: number,
+    radiusMeters: number,
+    limit: number,
+  ): Promise<DispatchDistanceRow[]> {
+    // ST_MakePoint takes X then Y — longitude first, same order as the
+    // generated column in the migration and the same bug if reversed.
+    const rows = await this.prisma.$queryRaw<{ id: number; distanceMeters: number }[]>`
+      WITH origin AS (
+        SELECT ST_SetSRID(ST_MakePoint(${longitude}::double precision, ${latitude}::double precision), 4326)::geography AS point
+      )
+      SELECT
+        t."id",
+        ST_Distance(t."location", o.point) AS "distanceMeters"
+      FROM "TowTruck" t, origin o
+      WHERE t."isActive" = true
+        AND t."vehicleType" NOT IN (${Prisma.join([...SPECIALIST_VEHICLE_TYPES])})
+        AND t."location" IS NOT NULL
+        AND ST_DWithin(t."location", o.point, ${radiusMeters}::double precision)
+      ORDER BY t."location" <-> o.point
+      LIMIT ${limit}::int
+    `
+
+    // $queryRaw hands back whatever the driver produced: distanceMeters comes
+    // from ST_Distance on a double precision expression, which Prisma already
+    // surfaces as a JS number — nothing to normalise, unlike the DECIMAL
+    // latitude/longitude columns NearestRepository has to unwrap.
+    return rows.map((row) => ({ id: row.id, distanceMeters: Number(row.distanceMeters) }))
   }
 
   /**

@@ -6,7 +6,7 @@ import type {
   SubscriptionPlan,
   SubscriptionPlanCode,
 } from '~/types/subscription'
-import type { DispatchCandidates, DispatchFilter } from '~/types/dispatch'
+import type { DispatchCandidates, DispatchCandidatesByCoordinates, DispatchFilter } from '~/types/dispatch'
 import type { RegistrationPayload } from './registration.repository'
 import { useAdminAuthStore } from '~/stores/adminAuth'
 
@@ -702,6 +702,27 @@ export const adminRepository = {
           : {}),
         ...(place.regionZoneSlugs?.length ? { regionZones: place.regionZoneSlugs.join(',') } : {}),
       },
+      headers: authHeader(),
+    })
+  },
+
+  /**
+   * Who is closest to a point the dispatcher typed in or read off a map —
+   * alongside `listDispatchCandidates`'s "search by place".
+   *
+   * POST with the coordinates in the body, not a GET with them in the query
+   * string — same reason as `nearestRepository.findNearest`: a query string
+   * ends up in nginx's `access.log`. See the backend's
+   * `FindDispatchByCoordinatesDto`.
+   */
+  listDispatchCandidatesByCoordinates(
+    latitude: number,
+    longitude: number,
+    filter: DispatchFilter = 'all',
+  ): Promise<DispatchCandidatesByCoordinates> {
+    return apiFetch<DispatchCandidatesByCoordinates>('/admin/dispatch/candidates-by-coordinates', {
+      method: 'POST',
+      body: { latitude, longitude, filter },
       headers: authHeader(),
     })
   },

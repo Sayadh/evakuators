@@ -28,3 +28,21 @@ export interface DispatchCandidates {
   place: { slug: string; name: string; type: DispatchPlaceType }
   items: DispatchCandidate[]
 }
+
+/**
+ * Mirrors backend `DispatchCandidateByDistanceApi` — everything
+ * `DispatchCandidate` has except `tier`, which has no meaning without a named
+ * place to be local to, visiting, or nationwide relative to. Replaced with a
+ * straight-line distance from the searched point.
+ */
+export interface DispatchCandidateByDistance extends Omit<DispatchCandidate, 'tier'> {
+  /** Straight-line distance from the searched point, in whole metres */
+  distanceMeters: number
+}
+
+/** Mirrors backend `DispatchCandidatesByCoordinatesApi` — nearest first */
+export interface DispatchCandidatesByCoordinates {
+  latitude: number
+  longitude: number
+  items: DispatchCandidateByDistance[]
+}

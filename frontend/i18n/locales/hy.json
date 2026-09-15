@@ -213,7 +213,8 @@
     "viewNearbyDistricts": "Դիտել մոտակա շրջանները",
     "emptyFilteredTitle": "Ֆիլտրերին համապատասխանող էվակուատոր չկա",
     "emptyFilteredText": "Փորձեք մեղմել ֆիլտրերը կամ մաքրել դրանք։",
-    "selectPlaceholder": "Ընտրել"
+    "selectPlaceholder": "Ընտրել",
+    "hours24": "Շուրջօրյա (24/7)"
   },
   "vehicleType": {
     "byRegions": "{page} ըստ մարզերի",

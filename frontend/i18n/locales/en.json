@@ -217,7 +217,8 @@
     "viewNearbyDistricts": "See the nearby districts",
     "emptyFilteredTitle": "No tow trucks match these filters",
     "emptyFilteredText": "Try loosening the filters, or clear them.",
-    "selectPlaceholder": "Select"
+    "selectPlaceholder": "Select",
+    "hours24": "24/7"
   },
   "vehicleType": {
     "byRegions": "{page} by region",

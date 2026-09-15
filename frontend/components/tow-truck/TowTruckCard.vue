@@ -28,6 +28,15 @@ const mainAreas = computed(() =>
     .map((area) => areaName(area))
     .join(', '),
 )
+
+// works24Hours is the authoritative signal (see utils/schemaOrg.ts's
+// toSchemaOpeningHours for the same pattern): the backend's workingHours
+// string is Armenian-only for the 24/7 case, so it must not be rendered raw
+// on ru/en pages. Non-24/7 hours are the driver's own free text and stay
+// untranslated, like their name.
+const hoursLabel = computed(() =>
+  props.towTruck.works24Hours ? t('common.hours24') : props.towTruck.workingHours,
+)
 </script>
 
 <template>
@@ -76,9 +85,9 @@ const mainAreas = computed(() =>
           <AppIcon name="weight" :size="15" />
           {{ capacityText(towTruck.vehicle.capacityTons) }}
         </li>
-        <li v-if="towTruck.workingHours">
+        <li v-if="hoursLabel">
           <AppIcon name="clock" :size="15" />
-          {{ towTruck.workingHours }}
+          {{ hoursLabel }}
         </li>
         <!-- Deliberately louder than its neighbours: on a city page the list is
              ordered so the drivers BASED here come first (see sortTowTrucks),

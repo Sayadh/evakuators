@@ -38,8 +38,13 @@ const wherePhrase = locationSlug
 // Only append a real, driver-confirmed hours sentence — never a placeholder.
 // Working hours are driver-entered free text and stay untranslated, like the
 // driver's own name — see the review author/text handling in ReviewForm.
+// works24Hours is the authoritative signal though (see utils/schemaOrg.ts's
+// toSchemaOpeningHours for the same pattern): the backend's workingHours
+// string is Armenian-only for the 24/7 case, so it must not leak raw into
+// ru/en meta descriptions.
 const hoursSuffix = locale.value === 'hy' ? '։' : '.'
-const hoursSentence = truck.workingHours ? ` ${truck.workingHours}${hoursSuffix}` : ''
+const hoursLabel = truck.works24Hours ? t('common.hours24') : truck.workingHours
+const hoursSentence = hoursLabel ? ` ${hoursLabel}${hoursSuffix}` : ''
 
 useSeoMetaData({
   title: t('towTruckPage.metaTitle', { name: displayName, place: wherePhrase, site: SITE_NAME }),
@@ -93,9 +98,9 @@ onMounted(() => {
           <p v-if="towTruck.companyName" class="profile__driver">
             {{ t('towTruckPage.driverLabel', { name: towTruck.driverName }) }}
           </p>
-          <p v-if="towTruck.workingHours" class="profile__hours">
+          <p v-if="hoursLabel" class="profile__hours">
             <AppIcon name="clock" :size="18" />
-            <span>{{ towTruck.workingHours }}</span>
+            <span>{{ hoursLabel }}</span>
           </p>
           <p class="profile__description">{{ towTruck.description }}</p>
         </section>

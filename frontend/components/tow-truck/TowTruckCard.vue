@@ -71,17 +71,25 @@ const hoursLabel = computed(() =>
     <div class="truck-card__body">
       <h3 class="truck-card__name">
         <NuxtLinkLocale :to="getTowTruckRoute(towTruck.slug)">{{ displayName }}</NuxtLinkLocale>
+        <!-- The platform vouching for this driver: a tick beside the name, not
+             a labelled badge. On a grid of cards the words were a second
+             heading competing with the name itself, and the mark reads faster
+             than it reads — which is all a trust mark has to do.
+             `title`/`aria-label` keep the meaning for a hover and for a screen
+             reader, so nothing is lost by not printing it. -->
+        <span
+          v-if="towTruck.isPartner"
+          class="truck-card__partner"
+          role="img"
+          :aria-label="t('common.partnerBadge')"
+          :title="t('common.partnerBadge')"
+        >
+          <!-- The label lives on the wrapper, not the icon: AppIcon renders
+               its svg `aria-hidden`, which would silence an aria-label put
+               there and leave a mark nothing can read out. -->
+          <AppIcon name="check" :size="16" />
+        </span>
       </h3>
-
-      <!-- The platform vouching for this driver, so it sits with the name
-           rather than among the specs below: the specs describe the truck,
-           this describes who is behind it. -->
-      <p v-if="towTruck.isPartner" class="truck-card__partner">
-        <AppBadge variant="primary">
-          <AppIcon name="check" :size="13" />
-          {{ t('common.partnerBadge') }}
-        </AppBadge>
-      </p>
 
       <ul class="truck-card__specs">
         <li>
@@ -182,6 +190,11 @@ const hoursLabel = computed(() =>
   &__name {
     margin: 0;
     font-size: 1.08rem;
+    // Inline so the tick sits with the last word rather than under a wrapped
+    // name; `baseline` keeps it on the text's line, not centred on the block.
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
 
     a {
       color: var(--color-text);
@@ -193,13 +206,9 @@ const hoursLabel = computed(() =>
   }
 
   &__partner {
-    margin: var(--space-1) 0 0;
-
-    :deep(.app-badge) {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-    }
+    display: inline-flex;
+    flex-shrink: 0;
+    color: var(--color-success);
   }
 
   &__specs {

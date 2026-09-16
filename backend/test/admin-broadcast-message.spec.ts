@@ -7,12 +7,9 @@ import { AdminService } from '../src/admin/admin.service'
  * sent verbatim to exactly the active, Telegram-linked drivers an admin
  * ticked.
  *
- * Same shape as `issuePasswordsForLinkedDrivers`
- * (`admin-reset-password.spec.ts`'s sibling for that endpoint), and the
- * properties worth protecting are the same class of thing: that the
- * requested id list can only ever narrow the live candidate pool, never
- * substitute for it, and that one driver's send failing does not swallow the
- * rest.
+ * The properties worth protecting: that the requested id list can only ever
+ * narrow the live candidate pool, never substitute for it, and that one
+ * driver's send failing does not swallow the rest.
  */
 
 type Candidate = { id: number; slug: string; driverName: string; phone: string; telegramChatId: bigint }

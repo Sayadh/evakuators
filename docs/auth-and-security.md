@@ -152,9 +152,8 @@ Three things about it are load-bearing:
   password has been seen by someone who should not have it, and a reset that
   left it working until the driver got round to it would not answer that.
 - **It never messages an already-linked chat, even though it could.**
-  `issuePasswordsForLinkedDrivers` does exactly that for the migration
-  population, and doing it here would save the admin a step. It is not done: a
-  driver who lost their Telegram account is the case where a reset is most
+  Messaging the chat already on file would save the admin a step. It is not
+  done: a driver who lost their Telegram account is the case where a reset is most
   needed and where a stored `telegramChatId` is most likely to now belong to
   someone else. A link the admin passes over a channel they chose can go to the
   phone number on the registration instead. `telegramChatId` itself is left
@@ -172,29 +171,20 @@ No backfill and no shared transitional secret — every pre-existing row has
 `passwordHash` NULL, which correctly means "cannot log in yet". Two
 populations, two different amounts of friction:
 
-- **Already linked Telegram** (`telegramChatId` set — anyone who ever
-  successfully used the old OTP login): the "Ուղարկել գաղտնաբառեր" button in
-  `/admin` opens a picker listing exactly those drivers
-  (`GET /admin/tow-trucks/password-candidates`), and sends only to the ones
-  ticked (`POST /admin/tow-trucks/issue-passwords`, `{ towTruckIds }`). The
-  password goes over the chat already on file — **no re-link, no new tap
-  required**. Each driver is independent (one failed send, e.g. a blocked bot,
-  does not stop the rest), and repeating it is safe: an already-migrated driver
-  is simply no longer a candidate.
+There was once a bulk «Ուղարկել գաղտնաբառեր» picker in `/admin` that handed a
+temporary password over Telegram to every already-linked driver who had none.
+It was a one-time migration tool, the migration is done, and it has been
+removed — endpoint, service, DTO and repository query included. Do not bring it
+back as a standing feature: it was the one action on the panel whose effect
+left the system, and staging's database is a copy of production's, real chat
+ids and all.
 
-  **The selection is not a convenience, it is the safety mechanism.** This was
-  a single "send to everyone" button first. That is the wrong shape for the one
-  action on the panel whose effect leaves the system — a Telegram message
-  cannot be unsent, and a staging database is a copy of production's, real chat
-  ids and all, so one press there would have delivered real messages to real
-  drivers carrying a password that only works on staging. Nothing is pre-ticked
-  for the same reason. On the API side `towTruckIds` is required and non-empty
-  (there is no "omit to mean everyone") and is intersected with the live
-  candidate list, so it can only ever narrow the set, never widen it.
-- **Never linked Telegram** (`telegramChatId` still null): no digital channel
-  exists yet, so the ordinary onboarding path is the only one — admin re-issues
-  their link from `/admin` ("Ուղարկել Telegram link"), sends it out-of-band, and
-  the password arrives the moment they tap it, same as `Step 0` below.
+The remaining path is the ordinary one, and it covers both populations: the
+admin re-issues the driver's link from `/admin` («Ուղարկել Telegram link»),
+sends it out-of-band, and the password arrives the moment the driver taps it,
+same as `Step 0` below. `TelegramWebhookController.handleStart` mints it. For a
+driver who already has a password, «Զրոյացնել գաղտնաբառը» is the way back in —
+see "Resetting a driver's password" above.
 
 ### Changing a password
 
@@ -315,29 +305,22 @@ What is left is narrower but still real:
 `POST /admin/tow-trucks/broadcast-message`
 (`AdminService.broadcastMessage`), the panel's «Ուղարկել հաղորդագրություն»
 button. One admin-authored message, sent verbatim, to the drivers an admin
-explicitly ticks in a picker — same shape and same reasoning as the password
-issuance above (`issuePasswordsForLinkedDrivers`), reused deliberately rather
-than invented fresh:
+explicitly ticks in a picker:
 
 - **Recipients: active, Telegram-linked, and named — never "everyone".**
   `TowTrucksRepository.findActiveWithTelegramLinked()` is the candidate pool;
   `BroadcastMessageDto.towTruckIds` is a filter over it, never a source of
   truth on its own, so a stale or tampered id is skipped rather than
   messaged. There is no "omit the list to mean everyone" shorthand on the
-  API, matching `IssuePasswordsDto` — the same staging risk applies (its
-  database is a copy of production's, real chat ids and all) and the same
-  fix applies: naming recipients makes the blast radius a decision, not a
-  default.
-- **Active only, not "ever approved".** Unlike `findLinkedWithoutPassword`
-  (which deliberately does NOT filter on `isActive` — handing a deactivated
-  truck a password costs nothing), a broadcast is a message about the
+  API — staging's database is a copy of production's, real chat ids and all,
+  so naming recipients makes the blast radius a decision, not a default.
+- **Active only, not "ever approved".** A broadcast is a message about the
   platform sent to someone right now, and a deactivated driver is not
   currently using it. Reactivating a truck does not retroactively deliver
   messages sent while it was inactive.
 - **The justification the warning above asks for.** This is not automatic
   and not frequent — it fires once per admin action, gated behind a
-  confirm() naming the exact recipient count, exactly like the password
-  broadcast. Contact notices fire on their own, every time a visitor takes an
+  confirm() naming the exact recipient count. Contact notices fire on their own, every time a visitor takes an
   action, with no human deciding per-message whether it's worth the
   pressure on the channel; this one has a human deciding every single time.
   That is the difference between a message type needing an opt-out and one

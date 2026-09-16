@@ -137,7 +137,6 @@ function buildService(storedOverrides: Partial<typeof STORED> = {}) {
     towTrucksRepository as never,
     telegram as never,
     {} as never,
-    {} as never,
     privacyConsent as never,
   )
 

@@ -10,7 +10,6 @@ import {
   FEATURED_MAX_DAYS,
   FEATURED_MIN_DAYS,
 } from '../tow-trucks/featured'
-import { DriverAuthService } from '../driver-auth/driver-auth.service'
 import { IMAGE_ORDER } from '../images/image-order'
 import { PrismaService } from '../prisma/prisma.service'
 import { PrivacyConsentService } from '../privacy-consent/privacy-consent.service'
@@ -66,7 +65,6 @@ export class AdminService {
     private readonly towTrucksRepository: TowTrucksRepository,
     private readonly telegram: TelegramService,
     private readonly storage: SupabaseStorageService,
-    private readonly driverAuth: DriverAuthService,
     // Only to re-point a registration's consent at the truck approval creates
     // — see the call inside approve()'s transaction. No consent is ever
     // created here: an admin cannot consent on a driver's behalf.
@@ -573,8 +571,7 @@ export class AdminService {
    * ## Always a link, even when Telegram is already connected
    *
    * We could message a linked driver's existing chat directly and skip the
-   * out-of-band step entirely (`issuePasswordsForLinkedDrivers` does exactly
-   * that for the migration population). It is deliberately not done here: a
+   * out-of-band step entirely. It is deliberately not done here: a
    * driver who has lost their Telegram account is the one case where a password
    * reset is most needed and an existing `telegramChatId` is most likely to be
    * wrong. Sending to it would deliver the new credential to whoever holds that
@@ -614,8 +611,7 @@ export class AdminService {
   }
 
   /**
-   * Who could be handed a password right now: linked Telegram, no password yet.
-   *
+   * The pool for the broadcast picker: active drivers with Telegram linked.
    * Read-only and side-effect free, which is the point — an admin sees the
    * exact list before anything is sent, and can send to some of it. A Telegram
    * message cannot be unsent, so the panel never asks anyone to press a button
@@ -625,105 +621,6 @@ export class AdminService {
    * throws on outright) and the panel has no use for it — "linked" is already
    * implied by being on this list at all. Same reasoning as
    * `AdminTowTruckSummary.hasTelegramLinked`.
-   */
-  async listPasswordCandidates(): Promise<
-    Array<{ id: number; slug: string; driverName: string; phone: string }>
-  > {
-    const candidates = await this.towTrucksRepository.findLinkedWithoutPassword()
-    return candidates.map(({ id, slug, driverName, phone }) => ({ id, slug, driverName, phone }))
-  }
-
-  /**
-   * Hands a temporary password to the drivers an admin explicitly selected.
-   *
-   * ## Why this takes ids rather than doing "everyone"
-   *
-   * It used to send to the whole candidate list on one press. That is the wrong
-   * shape for an action whose effect leaves the system: on staging — whose
-   * database is a copy of production's, with real drivers' real chat ids — a
-   * misfire means dozens of real people receive a real message containing a
-   * password that only works on staging. Naming the recipients makes the blast
-   * radius a decision instead of a default.
-   *
-   * ## The requested list is a filter, never a source of truth
-   *
-   * `towTruckIds` is intersected with the freshly-read candidate list, so an id
-   * that is not genuinely eligible — already has a password, no Telegram
-   * linked, does not exist — is skipped rather than acted on. That matters
-   * beyond tidiness: without it, this endpoint would be a way to reset an
-   * arbitrary driver's password by id. (`issueTemporaryPassword` refuses a
-   * driver who owns their password anyway, so this is the second of two locks,
-   * not the only one.)
-   *
-   * Each driver is independent — one failed Telegram send (a chat the driver
-   * has since blocked) must not stop the rest, so failures are caught per-row
-   * and reported back rather than thrown.
-   */
-  async issuePasswordsForLinkedDrivers(towTruckIds: number[]): Promise<{
-    issued: number
-    failed: Array<{ id: number; slug: string }>
-    /** Requested but no longer eligible — the list an admin saw can go stale between load and send */
-    skipped: number
-  }> {
-    const candidates = await this.towTrucksRepository.findLinkedWithoutPassword()
-    const eligible = new Map(candidates.map((truck) => [truck.id, truck]))
-
-    const failed: Array<{ id: number; slug: string }> = []
-    let issued = 0
-    let skipped = 0
-
-    // Iterating the REQUESTED ids, not the candidate list — so the loop can
-    // only ever touch someone the admin named, and the intersection is what
-    // decides eligibility.
-    for (const id of towTruckIds) {
-      const truck = eligible.get(id)
-      if (!truck) {
-        skipped += 1
-        continue
-      }
-
-      try {
-        const password = await this.driverAuth.issueTemporaryPassword(truck.id)
-        // Cannot be null here — the id came from a query that filtered on
-        // `passwordHash: null` moments ago — but a driver who set their own
-        // password in that gap is exactly the race this guards, and skipping
-        // is the correct outcome for it.
-        if (!password) {
-          skipped += 1
-          continue
-        }
-
-        await this.telegram.sendMessage(
-          truck.telegramChatId,
-          `Բարև, ${truck.driverName}։ Evakuators.am-ի մուտքի եղանակը փոխվեց. այսուհետ մուտք ` +
-            'եք գործում հեռախոսահամարով և գաղտնաբառով, Telegram-ի կոդի փոխարեն։\n\n' +
-            `Հեռախոսահամար՝ ${truck.phone}\n` +
-            `Ժամանակավոր գաղտնաբառ՝ ${password}\n\n` +
-            'Մուտք գործելուց հետո համակարգը կխնդրի փոխել գաղտնաբառը՝ Ձեր նախընտրածով։ ' +
-            'Այս գաղտնաբառը ոչ ոքի մի՛ փոխանցեք։',
-          { text: 'Մուտք գործել', url: this.telegram.loginUrl },
-        )
-        issued += 1
-      } catch (error) {
-        const err = error as Error
-        this.logger.error(
-          `issuePasswordsForLinkedDrivers: failed for TowTruck #${truck.id}: ${err.message}`,
-        )
-        failed.push({ id: truck.id, slug: truck.slug })
-      }
-    }
-
-    this.logger.log(
-      `issuePasswordsForLinkedDrivers: requested ${towTruckIds.length}, ` +
-        `issued ${issued}, failed ${failed.length}, skipped ${skipped}`,
-    )
-    return { issued, failed, skipped }
-  }
-
-  /**
-   * The pool for the broadcast picker: active drivers with Telegram linked.
-   * Read-only, side-effect free — same reasoning as `listPasswordCandidates`,
-   * an admin sees exactly who a send would reach before pressing anything.
    */
   async listBroadcastCandidates(): Promise<
     Array<{ id: number; slug: string; driverName: string; phone: string }>
@@ -735,9 +632,10 @@ export class AdminService {
   /**
    * Sends one admin-authored message, verbatim, to exactly the drivers named.
    *
-   * Same shape as `issuePasswordsForLinkedDrivers`, and for the same reason:
-   * `towTruckIds` is a filter over the live candidate list, never a source of
-   * truth on its own, so an id that is no longer eligible (deactivated,
+   * ## The requested list is a filter, never a source of truth
+   *
+   * `towTruckIds` is intersected with the freshly-read candidate list, never
+   * trusted on its own, so an id that is no longer eligible (deactivated,
    * Telegram unlinked, since the panel loaded) is counted in `skipped` rather
    * than acted on — without that intersection this endpoint would be a way to
    * message an arbitrary driver by id regardless of whether they are even
@@ -745,7 +643,7 @@ export class AdminService {
    *
    * Each send is independent: one failure (a blocked bot, a Telegram outage)
    * must not stop the rest, so failures are caught per-row and reported back
-   * rather than thrown — identical reasoning to the password broadcast.
+   * rather than thrown.
    */
   async broadcastMessage(
     message: string,
@@ -764,8 +662,8 @@ export class AdminService {
     let skipped = 0
 
     // Iterating the REQUESTED ids, not the candidate list — so the loop can
-    // only ever touch someone the admin named, same discipline as
-    // issuePasswordsForLinkedDrivers.
+    // only ever touch someone the admin named, and the intersection is what
+    // decides eligibility.
     for (const id of towTruckIds) {
       const truck = eligible.get(id)
       if (!truck) {

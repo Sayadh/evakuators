@@ -20,7 +20,6 @@ import {
   type AdminTowTruck,
   type AdminTowTruckCounts,
   type BroadcastCandidate,
-  type PasswordCandidate,
 } from '~/repositories'
 import { useAdminAuthStore } from '~/stores/adminAuth'
 import { LocationType, VehicleType } from '~/types/enums'
@@ -245,127 +244,26 @@ const exportDriversError = ref('')
 const towTruckCounts = ref<AdminTowTruckCounts | null>(null)
 
 /**
- * Sending temporary passwords over Telegram.
- *
- * ## Why this is a picker and not a button
- *
- * It was one button that sent to every eligible driver at once. That is the
- * wrong shape for the only action on this page whose effect leaves the system —
- * a Telegram message cannot be unsent, and staging's database is a copy of
- * production's, real chat ids and all. So the panel loads the candidates,
- * shows exactly who is on the list, and sends to the ones an admin ticked.
- *
- * Nothing is fetched until the modal is opened: this list is only interesting
- * during a migration, and every other visit to /admin should not pay for it.
- */
-const passwordModalOpen = ref(false)
-const passwordCandidates = ref<PasswordCandidate[]>([])
-const loadingCandidates = ref(false)
-const candidatesError = ref('')
-/** Ids ticked in the modal. A Set, so the per-row toggle is O(1) and order is irrelevant. */
-const selectedForPassword = ref<Set<number>>(new Set())
-const issuingPasswords = ref(false)
-const issuePasswordsResult = ref('')
-
-const allCandidatesSelected = computed(
-  () =>
-    passwordCandidates.value.length > 0 &&
-    selectedForPassword.value.size === passwordCandidates.value.length,
-)
-
-async function openPasswordModal(): Promise<void> {
-  passwordModalOpen.value = true
-  candidatesError.value = ''
-  issuePasswordsResult.value = ''
-  // Nothing pre-ticked. The default for an irreversible outbound action has to
-  // be "send to nobody" — a pre-filled list turns one stray click into dozens
-  // of real messages.
-  selectedForPassword.value = new Set()
-  loadingCandidates.value = true
-  try {
-    passwordCandidates.value = await adminRepository.listPasswordCandidates()
-  } catch (err) {
-    candidatesError.value = extractErrorMessage(err, 'Ցուցակը բեռնել չհաջողվեց։')
-    passwordCandidates.value = []
-  } finally {
-    loadingCandidates.value = false
-  }
-}
-
-function toggleCandidate(id: number, checked: boolean): void {
-  // Replaced, not mutated: Vue does not track Set mutations, so `.add()` alone
-  // would update the data and never re-render the checkbox that caused it.
-  const next = new Set(selectedForPassword.value)
-  if (checked) next.add(id)
-  else next.delete(id)
-  selectedForPassword.value = next
-}
-
-function toggleAllCandidates(checked: boolean): void {
-  selectedForPassword.value = checked
-    ? new Set(passwordCandidates.value.map((candidate) => candidate.id))
-    : new Set()
-}
-
-/**
- * Confirmed by name and count before sending, unlike the other actions here:
- * this is the one that cannot be undone from inside the system. Everything else
- * on this page (activate, reject, even delete) is a database change.
- */
-async function sendPasswords(): Promise<void> {
-  const ids = [...selectedForPassword.value]
-  if (ids.length === 0) return
-
-  if (
-    !confirm(
-      `Ուղարկե՞լ ժամանակավոր գաղտնաբառ ${ids.length} վարորդի։ ` +
-        'Յուրաքանչյուրը կստանա Telegram հաղորդագրություն, որը հետ կանչել հնարավոր չէ։',
-    )
-  ) {
-    return
-  }
-
-  issuePasswordsResult.value = ''
-  issuingPasswords.value = true
-  try {
-    const result = await adminRepository.issuePasswords(ids)
-
-    const parts = [`Ուղարկվեց ${result.issued} վարորդի։`]
-    if (result.failed.length > 0) {
-      parts.push(`Ձախողվեց ${result.failed.length}՝ ${result.failed.map((f) => f.slug).join(', ')}։`)
-    }
-    // Worth surfacing rather than hiding: it means the list was stale, which
-    // tells an admin the reload below is not optional.
-    if (result.skipped > 0) parts.push(`${result.skipped}-ն այլևս ցուցակում չէր։`)
-    issuePasswordsResult.value = parts.join(' ')
-
-    // Re-read rather than filter locally: everyone just sent now has a
-    // password, so they are no longer candidates, and the server is the only
-    // thing that knows which of them actually went through.
-    selectedForPassword.value = new Set()
-    passwordCandidates.value = await adminRepository.listPasswordCandidates()
-  } catch (err) {
-    issuePasswordsResult.value = extractErrorMessage(err, 'Չհաջողվեց ուղարկել գաղտնաբառերը')
-  } finally {
-    issuingPasswords.value = false
-  }
-}
-
-/**
  * The admin broadcast: one free-text message, sent verbatim over Telegram to
  * every active, Telegram-linked driver an admin explicitly ticks.
  *
- * Same picker discipline as the password modal above, and for the same
- * reason — a Telegram message cannot be unsent, and staging's database is a
- * copy of production's, real chat ids and all. No "send to everyone" call
- * exists on the backend at all; this always names its recipients.
+ * ## Why this is a picker and not a button
+ *
+ * This is the only action on this page whose effect leaves the system — a
+ * Telegram message cannot be unsent, and staging's database is a copy of
+ * production's, real chat ids and all. So the panel loads the candidates,
+ * shows exactly who is on the list, and sends to the ones an admin ticked.
+ * No "send to everyone" call exists on the backend at all.
+ *
+ * Nothing is fetched until the modal is opened: every other visit to /admin
+ * should not pay for a list it will not show.
  */
 const broadcastModalOpen = ref(false)
 const broadcastCandidates = ref<BroadcastCandidate[]>([])
 const loadingBroadcastCandidates = ref(false)
 const broadcastCandidatesError = ref('')
 const broadcastMessage = ref('')
-/** Ids ticked in the modal. A Set, same reasoning as selectedForPassword. */
+/** Ids ticked in the modal. A Set, so the per-row toggle is O(1) and order is irrelevant. */
 const selectedForBroadcast = ref<Set<number>>(new Set())
 const sendingBroadcast = ref(false)
 const broadcastResult = ref('')
@@ -385,8 +283,9 @@ async function openBroadcastModal(): Promise<void> {
   broadcastCandidatesError.value = ''
   broadcastResult.value = ''
   broadcastMessage.value = ''
-  // Nothing pre-ticked — same reasoning as openPasswordModal: the default for
-  // an irreversible outbound action has to be "send to nobody".
+  // Nothing pre-ticked. The default for an irreversible outbound action has to
+  // be "send to nobody" — a pre-filled list turns one stray click into dozens
+  // of real messages.
   selectedForBroadcast.value = new Set()
   loadingBroadcastCandidates.value = true
   try {
@@ -400,6 +299,8 @@ async function openBroadcastModal(): Promise<void> {
 }
 
 function toggleBroadcastCandidate(id: number, checked: boolean): void {
+  // Replaced, not mutated: Vue does not track Set mutations, so `.add()` alone
+  // would update the data and never re-render the checkbox that caused it.
   const next = new Set(selectedForBroadcast.value)
   if (checked) next.add(id)
   else next.delete(id)
@@ -413,9 +314,10 @@ function toggleAllBroadcastCandidates(checked: boolean): void {
 }
 
 /**
- * Confirmed by exact count before sending, same as sendPasswords — this is
- * the other action on this page whose effect leaves the system and cannot be
- * undone from inside it.
+ * Confirmed by exact count before sending, unlike the other actions here: this
+ * is the one whose effect leaves the system and cannot be undone from inside
+ * it. Everything else on this page (activate, reject, even delete) is a
+ * database change.
  */
 async function sendBroadcast(): Promise<void> {
   const ids = [...selectedForBroadcast.value]
@@ -443,8 +345,8 @@ async function sendBroadcast(): Promise<void> {
     if (result.skipped > 0) parts.push(`${result.skipped}-ն այլևս ցուցակում չէր։`)
     broadcastResult.value = parts.join(' ')
 
-    // Cleared on success, same as sendPasswords — the recipients just got
-    // this exact text, so leaving it in the box invites a duplicate send.
+    // Cleared on success: the recipients just got this exact text, so leaving
+    // it in the box invites a duplicate send.
     broadcastMessage.value = ''
     selectedForBroadcast.value = new Set()
   } catch (err) {
@@ -1757,11 +1659,7 @@ async function rejectReview(review: AdminReview): Promise<void> {
           />
 
           <!-- Opens the picker; sends nothing on its own. See
-               openPasswordModal() for why nothing is fetched until then. -->
-          <AppButton variant="outline" size="sm" @click="openPasswordModal">
-            Ուղարկել գաղտնաբառեր
-          </AppButton>
-          <!-- Same lazy-fetch discipline — see openBroadcastModal(). -->
+               openBroadcastModal() for why nothing is fetched until then. -->
           <AppButton variant="outline" size="sm" @click="openBroadcastModal">
             Ուղարկել հաղորդագրություն
           </AppButton>
@@ -1772,7 +1670,6 @@ async function rejectReview(review: AdminReview): Promise<void> {
           </AppButton>
         </div>
 
-        <p v-if="issuePasswordsResult" class="admin-hint">{{ issuePasswordsResult }}</p>
         <p v-if="broadcastResult" class="admin-hint">{{ broadcastResult }}</p>
         <p v-if="exportDriversError" class="admin-error">{{ exportDriversError }}</p>
 
@@ -2182,71 +2079,8 @@ async function rejectReview(review: AdminReview): Promise<void> {
       </AppButton>
     </AppModal>
 
-    <AppModal v-model="passwordModalOpen" title="Ուղարկել ժամանակավոր գաղտնաբառեր">
-      <p class="password-picker__intro">
-        Ցուցակում են այն վարորդները, ովքեր Telegram են կապակցել, բայց դեռ գաղտնաբառ չունեն։
-        Նշիր, ում ուղարկել — միայն նշվածները կստանան հաղորդագրություն։
-      </p>
-
-      <LoadingSkeleton v-if="loadingCandidates" variant="text" :count="3" />
-
-      <p v-else-if="candidatesError" class="admin-error">{{ candidatesError }}</p>
-
-      <!-- Distinct from an error: nothing went wrong, everyone eligible already
-           has a password. During a migration this is the finish line. -->
-      <EmptyState
-        v-else-if="passwordCandidates.length === 0"
-        title="Ուղարկելու վարորդ չկա"
-        description="Բոլոր կապակցված վարորդներն արդեն ունեն գաղտնաբառ։"
-        icon="info"
-      />
-
-      <template v-else>
-        <div class="password-picker__all">
-          <AppCheckbox
-            :model-value="allCandidatesSelected"
-            :label="`Նշել բոլորը (${passwordCandidates.length})`"
-            @update:model-value="toggleAllCandidates"
-          />
-        </div>
-
-        <ul class="password-picker__list">
-          <li v-for="candidate in passwordCandidates" :key="candidate.id">
-            <AppCheckbox
-              :model-value="selectedForPassword.has(candidate.id)"
-              :label="candidate.driverName"
-              @update:model-value="(checked) => toggleCandidate(candidate.id, checked)"
-            />
-            <!-- The phone, not the slug: it is the value the driver will type
-                 into the login form, so it is what an admin needs to recognise
-                 the right person and to read back over the phone if asked. -->
-            <span class="password-picker__phone">{{ candidate.phone }}</span>
-          </li>
-        </ul>
-
-        <AppButton
-          variant="success"
-          block
-          :disabled="issuingPasswords || selectedForPassword.size === 0"
-          @click="sendPasswords"
-        >
-          {{
-            issuingPasswords
-              ? 'Ուղարկվում է…'
-              : selectedForPassword.size === 0
-                ? 'Նշիր առնվազն մեկ վարորդ'
-                : `Ուղարկել ${selectedForPassword.size} վարորդի`
-          }}
-        </AppButton>
-      </template>
-
-      <p v-if="issuePasswordsResult" class="admin-hint password-picker__result">
-        {{ issuePasswordsResult }}
-      </p>
-    </AppModal>
-
     <AppModal v-model="broadcastModalOpen" title="Ուղարկել հաղորդագրություն">
-      <p class="password-picker__intro">
+      <p class="driver-picker__intro">
         Տեքստն ուղարկվում է Telegram-ով, ինչպես գրված է, առանց փոփոխության։ Ցուցակում են
         միայն ակտիվ և Telegram կապակցված վարորդները — նշիր, ում ուղարկել։
       </p>
@@ -2281,7 +2115,7 @@ async function rejectReview(review: AdminReview): Promise<void> {
       />
 
       <template v-else>
-        <div class="password-picker__all">
+        <div class="driver-picker__all">
           <AppCheckbox
             :model-value="allBroadcastCandidatesSelected"
             :label="`Նշել բոլորը (${broadcastCandidates.length})`"
@@ -2289,14 +2123,14 @@ async function rejectReview(review: AdminReview): Promise<void> {
           />
         </div>
 
-        <ul class="password-picker__list">
+        <ul class="driver-picker__list">
           <li v-for="candidate in broadcastCandidates" :key="candidate.id">
             <AppCheckbox
               :model-value="selectedForBroadcast.has(candidate.id)"
               :label="candidate.driverName"
               @update:model-value="(checked) => toggleBroadcastCandidate(candidate.id, checked)"
             />
-            <span class="password-picker__phone">{{ candidate.phone }}</span>
+            <span class="driver-picker__phone">{{ candidate.phone }}</span>
           </li>
         </ul>
 
@@ -2321,7 +2155,7 @@ async function rejectReview(review: AdminReview): Promise<void> {
         </AppButton>
       </template>
 
-      <p v-if="broadcastResult" class="admin-hint password-picker__result">
+      <p v-if="broadcastResult" class="admin-hint driver-picker__result">
         {{ broadcastResult }}
       </p>
     </AppModal>
@@ -2529,7 +2363,7 @@ async function rejectReview(review: AdminReview): Promise<void> {
   margin: 0 0 var(--space-3);
 }
 
-.password-picker {
+.driver-picker {
   &__intro {
     margin: 0 0 var(--space-4);
     font-size: 0.9rem;

@@ -35,10 +35,10 @@ export class BroadcastMessageDto {
   message!: string
 
   /**
-   * Exactly whom to send to. Required and non-empty — same rule and same
-   * reasoning as `IssuePasswordsDto.towTruckIds`: there is no "omit this to
-   * mean everyone" shorthand, because a Telegram message cannot be unsent and
-   * staging's database is a copy of production's, real chat ids and all. The
+   * Exactly whom to send to. Required and non-empty — there is no "omit this
+   * to mean everyone" shorthand, deliberately, because a Telegram message
+   * cannot be unsent and staging's database is a copy of production's, real
+   * chat ids and all. The
    * service intersects this with the live candidate list before acting, so an
    * id that is no longer eligible (deactivated since the panel loaded,
    * Telegram unlinked) is skipped rather than trusted.

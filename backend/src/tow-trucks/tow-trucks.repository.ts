@@ -316,45 +316,14 @@ export class TowTrucksRepository {
   }
 
   /**
-   * Every truck that can be handed a password without a Telegram re-link — it
-   * already has a `telegramChatId` from the OTP era, and just never got one.
-   *
-   * One-time migration query (see `AdminService.issuePasswordsForLinkedDrivers`)
-   * for the population passwords replaced: everyone who linked Telegram before
-   * this feature existed. Everyone else (`telegramChatId` still null) has no
-   * digital channel and can only be reached by re-issuing their link, which
-   * mints a password the normal way — see `TelegramWebhookController.handleStart`.
-   *
-   * Not filtered on `isActive`: a deactivated truck holding no password would
-   * simply be unable to log in the moment it is reactivated, for a reason
-   * nobody would think to check. Handing it one now costs nothing.
-   */
-  async findLinkedWithoutPassword(): Promise<
-    Array<{ id: number; slug: string; driverName: string; phone: string; telegramChatId: bigint }>
-  > {
-    const rows = await this.prisma.towTruck.findMany({
-      where: { telegramChatId: { not: null }, passwordHash: null },
-      select: { id: true, slug: true, driverName: true, phone: true, telegramChatId: true },
-    })
-    // The WHERE clause already guarantees this at the database level; the
-    // filter+assertion here is only to give Prisma's generated type (which
-    // cannot express "not null" from a WHERE) an honest non-null field instead
-    // of forcing every caller to null-check a value that can never be null.
-    return rows
-      .filter((row): row is typeof row & { telegramChatId: bigint } => row.telegramChatId !== null)
-  }
-
-  /**
    * The pool for the admin broadcast message: active drivers who have Telegram
    * linked, since that is the only channel a broadcast can reach them through.
    *
-   * `isActive: true` is deliberate and different from `findLinkedWithoutPassword`
-   * above, which intentionally does NOT filter on it (handing a deactivated
-   * truck a password costs nothing and saves a surprise on reactivation). A
-   * broadcast is different: it is an outbound message to a person, sent right
-   * now, about something happening on the platform now — a deactivated driver
-   * is not currently working through it, so including them would mean texting
-   * someone about a site they are not using. See docs/auth-and-security.md
+   * `isActive: true` is deliberate: this is an outbound message to a person,
+   * sent right now, about something happening on the platform now — a
+   * deactivated driver is not currently working through it, so including them
+   * would mean texting someone about a site they are not using. See
+   * docs/auth-and-security.md
    * § "The admin broadcast" for the full reasoning, including why this is
    * `isActive` rather than `isActive` OR the more permissive "ever approved".
    */
@@ -365,10 +334,10 @@ export class TowTrucksRepository {
       where: { isActive: true, telegramChatId: { not: null } },
       select: { id: true, slug: true, driverName: true, phone: true, telegramChatId: true },
     })
-    // Same non-null narrowing as findLinkedWithoutPassword — the WHERE clause
-    // already guarantees it, this just gives Prisma's generated type an honest
-    // non-null field instead of forcing every caller to null-check a value that
-    // cannot actually be null.
+    // The WHERE clause already guarantees this at the database level; the
+    // filter+assertion here only gives Prisma's generated type (which cannot
+    // express "not null" from a WHERE) an honest non-null field instead of
+    // forcing every caller to null-check a value that cannot actually be null.
     return rows
       .filter((row): row is typeof row & { telegramChatId: bigint } => row.telegramChatId !== null)
   }

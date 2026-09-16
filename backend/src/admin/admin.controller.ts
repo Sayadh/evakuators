@@ -25,7 +25,6 @@ import { AdminService } from './admin.service'
 import { AdminListQuery, AdminPaymentsQuery, AdminRegistrationsQuery, AdminTowTrucksQuery } from './dto/admin-list.query'
 import { ApproveRegistrationDto } from './dto/approve-registration.dto'
 import { BroadcastMessageDto } from './dto/broadcast-message.dto'
-import { IssuePasswordsDto } from './dto/issue-passwords.dto'
 import { RejectProfileChangeDto } from './dto/reject-profile-change.dto'
 import { RemoveServiceAreaDto } from './dto/remove-service-area.dto'
 import { SetPrimaryAreaDto } from './dto/set-primary-area.dto'
@@ -130,40 +129,6 @@ export class AdminController {
   }
 
   /**
-   * The drivers who could be handed a password right now — linked Telegram, no
-   * password yet. Read-only; the panel shows this list with checkboxes so an
-   * admin picks recipients before anything is sent.
-   *
-   * Declared before any `tow-trucks/:id` route for the same reason
-   * `tow-trucks/count` is (see its comment and
-   * admin.controller.count-route.spec.ts).
-   */
-  @Get('tow-trucks/password-candidates')
-  passwordCandidates(): Promise<
-    Array<{ id: number; slug: string; driverName: string; phone: string }>
-  > {
-    return this.adminService.listPasswordCandidates()
-  }
-
-  /**
-   * Sends a temporary password to the drivers named in the body, and only
-   * them. Takes an explicit id list rather than acting on everyone, because a
-   * Telegram message cannot be unsent and staging's database holds real
-   * drivers' real chat ids — see AdminService.issuePasswordsForLinkedDrivers.
-   *
-   * Ids that are no longer eligible are counted as `skipped`, never acted on,
-   * so this is safe to repeat and safe against a stale list.
-   */
-  @Post('tow-trucks/issue-passwords')
-  issuePasswords(@Body() dto: IssuePasswordsDto): Promise<{
-    issued: number
-    failed: Array<{ id: number; slug: string }>
-    skipped: number
-  }> {
-    return this.adminService.issuePasswordsForLinkedDrivers(dto.towTruckIds)
-  }
-
-  /**
    * Takes a driver's password away and returns a fresh link to send them, which
    * is where the replacement comes from. The only way a driver who forgot (or
    * leaked) their password gets back in — there is no self-service reset, by
@@ -174,8 +139,8 @@ export class AdminController {
    * makes the action useful.
    *
    * Three segments, so no shadowing risk against the two-segment
-   * `tow-trucks/password-candidates` and `tow-trucks/count` above — asserted
-   * for the whole route table by admin.controller.count-route.spec.ts.
+   * `tow-trucks/broadcast-candidates` and `tow-trucks/count` — asserted for
+   * the whole route table by admin.controller.count-route.spec.ts.
    */
   @Post('tow-trucks/:id/reset-password')
   resetPassword(
@@ -186,9 +151,12 @@ export class AdminController {
 
   /**
    * The pool for the broadcast picker: active drivers with Telegram linked —
-   * the only ones a broadcast can reach. Read-only, same shape and same reason
-   * as `password-candidates` above. Declared before any `tow-trucks/:id` route
-   * for the same reason that one is.
+   * the only ones a broadcast can reach. Read-only; the panel shows this list
+   * with checkboxes so an admin picks recipients before anything is sent.
+   *
+   * Declared before any `tow-trucks/:id` route for the same reason
+   * `tow-trucks/count` is (see its comment and
+   * admin.controller.count-route.spec.ts).
    */
   @Get('tow-trucks/broadcast-candidates')
   broadcastCandidates(): Promise<
@@ -199,9 +167,11 @@ export class AdminController {
 
   /**
    * Sends one admin-authored message, verbatim, to exactly the drivers named
-   * in the body — never "everyone", for the same reason `issue-passwords`
-   * takes an explicit list: a Telegram message cannot be unsent, and
-   * staging's database holds real drivers' real chat ids.
+   * in the body — never "everyone", deliberately: a Telegram message cannot
+   * be unsent, and staging's database holds real drivers' real chat ids.
+   *
+   * Ids that are no longer eligible are counted as `skipped`, never acted on,
+   * so this is safe to repeat and safe against a stale list.
    */
   @Post('tow-trucks/broadcast-message')
   broadcastMessage(@Body() dto: BroadcastMessageDto): Promise<{

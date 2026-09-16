@@ -11,8 +11,6 @@ export type {
   ApproveRegistrationPayload,
   BroadcastCandidate,
   BroadcastMessageResult,
-  IssuePasswordsResult,
-  PasswordCandidate,
   PaymentStatus,
   RemoveServiceAreaPayload,
   SetPrimaryAreaPayload,

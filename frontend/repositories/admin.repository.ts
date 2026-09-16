@@ -322,29 +322,9 @@ export interface AdminTowTruckCounts {
 }
 
 /**
- * One driver who could be handed a password right now: Telegram linked, no
- * password of their own yet. No `telegramChatId` — it is a BigInt the API
- * cannot serialise, and being on this list already means "linked".
- */
-export interface PasswordCandidate {
-  id: number
-  slug: string
-  driverName: string
-  phone: string
-}
-
-export interface IssuePasswordsResult {
-  issued: number
-  failed: Array<{ id: number; slug: string }>
-  /** Named in the request but no longer eligible — the list can go stale between load and send */
-  skipped: number
-}
-
-/**
- * One driver reachable by the broadcast: active, Telegram linked. Same shape
- * as `PasswordCandidate`, kept as its own type rather than reused because the
- * two lists answer different eligibility questions (has no password yet, vs.
- * is currently active) and could drift independently on the backend.
+ * One driver reachable by the broadcast: active, Telegram linked. No
+ * `telegramChatId` — it is a BigInt the API cannot serialise, and being on
+ * this list already means "linked".
  */
 export interface BroadcastCandidate {
   id: number
@@ -489,36 +469,9 @@ export const adminRepository = {
   },
 
   /**
-   * The drivers who could be handed a password right now — linked Telegram, no
-   * password yet. Read-only: the panel lists these with checkboxes so an admin
-   * chooses recipients before anything leaves the system.
-   */
-  listPasswordCandidates(): Promise<PasswordCandidate[]> {
-    return apiFetch<PasswordCandidate[]>('/admin/tow-trucks/password-candidates', {
-      headers: authHeader(),
-    })
-  },
-
-  /**
-   * Sends a temporary password to exactly the drivers named, over Telegram.
-   *
-   * Always takes an explicit id list — there is no "send to everyone" call,
-   * deliberately, because a Telegram message cannot be unsent. The backend
-   * re-checks eligibility and counts anything stale as `skipped`.
-   */
-  issuePasswords(towTruckIds: number[]): Promise<IssuePasswordsResult> {
-    return apiFetch<IssuePasswordsResult>('/admin/tow-trucks/issue-passwords', {
-      method: 'POST',
-      body: { towTruckIds },
-      headers: authHeader(),
-    })
-  },
-
-  /**
    * Drivers the broadcast can currently reach — active, Telegram linked.
    * Read-only: the panel lists these with checkboxes so an admin chooses
-   * recipients before anything leaves the system, same discipline as the
-   * password picker.
+   * recipients before anything leaves the system.
    */
   listBroadcastCandidates(): Promise<BroadcastCandidate[]> {
     return apiFetch<BroadcastCandidate[]>('/admin/tow-trucks/broadcast-candidates', {

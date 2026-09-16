@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common'
 import { AdminAuthModule } from '../admin-auth/admin-auth.module'
-import { DriverAuthModule } from '../driver-auth/driver-auth.module'
 import { PrivacyConsentModule } from '../privacy-consent/privacy-consent.module'
 import { ProfileChangesModule } from '../profile-changes/profile-changes.module'
 import { RegistrationModule } from '../registration/registration.module'
@@ -19,10 +18,6 @@ import { AdminService } from './admin.service'
     TowTrucksModule,
     TelegramModule,
     AdminAuthModule,
-    // For the one-time bulk password migration — see
-    // AdminService.issuePasswordsForLinkedDrivers. No cycle: DriverAuthModule
-    // depends on neither TelegramModule nor AdminModule.
-    DriverAuthModule,
     StorageModule,
     // The driver-edit moderation queue. No cycle: ProfileChangesModule knows
     // nothing about admin auth, it just exposes approve/reject.

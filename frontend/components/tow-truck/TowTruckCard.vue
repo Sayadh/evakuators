@@ -42,6 +42,22 @@ const hoursLabel = computed(() =>
 <template>
   <article class="truck-card">
     <div class="truck-card__media">
+      <!-- The platform vouching for this driver, on the photo rather than in
+           the text: scanning a grid of cards is looking, not reading, and a
+           mark next to the name was only found once the name had been read.
+           No wording — the tick is the whole message — but `title` and
+           `aria-label` keep it for a hover and a screen reader, on the wrapper
+           because AppIcon renders its svg `aria-hidden`. -->
+      <span
+        v-if="towTruck.isPartner"
+        class="truck-card__partner"
+        role="img"
+        :aria-label="t('common.partnerBadge')"
+        :title="t('common.partnerBadge')"
+      >
+        <AppIcon name="check" :size="18" />
+      </span>
+
       <NuxtLinkLocale :to="getTowTruckRoute(towTruck.slug)" tabindex="-1">
         <NuxtImg
           v-if="towTruck.images[0]"
@@ -71,24 +87,6 @@ const hoursLabel = computed(() =>
     <div class="truck-card__body">
       <h3 class="truck-card__name">
         <NuxtLinkLocale :to="getTowTruckRoute(towTruck.slug)">{{ displayName }}</NuxtLinkLocale>
-        <!-- The platform vouching for this driver: a tick beside the name, not
-             a labelled badge. On a grid of cards the words were a second
-             heading competing with the name itself, and the mark reads faster
-             than it reads — which is all a trust mark has to do.
-             `title`/`aria-label` keep the meaning for a hover and for a screen
-             reader, so nothing is lost by not printing it. -->
-        <span
-          v-if="towTruck.isPartner"
-          class="truck-card__partner"
-          role="img"
-          :aria-label="t('common.partnerBadge')"
-          :title="t('common.partnerBadge')"
-        >
-          <!-- The label lives on the wrapper, not the icon: AppIcon renders
-               its svg `aria-hidden`, which would silence an aria-label put
-               there and leave a mark nothing can read out. -->
-          <AppIcon name="check" :size="16" />
-        </span>
       </h3>
 
       <ul class="truck-card__specs">
@@ -190,11 +188,6 @@ const hoursLabel = computed(() =>
   &__name {
     margin: 0;
     font-size: 1.08rem;
-    // Inline so the tick sits with the last word rather than under a wrapped
-    // name; `baseline` keeps it on the text's line, not centred on the block.
-    display: flex;
-    align-items: baseline;
-    gap: var(--space-2);
 
     a {
       color: var(--color-text);
@@ -205,10 +198,30 @@ const hoursLabel = computed(() =>
     }
   }
 
+  /**
+   * Sits over the top-right of the photo. Solid green with a white tick, not a
+   * tinted overlay: it has to hold up over a bright sky and over a dark truck
+   * alike, and only a filled shape does that at this size. The ring adds the
+   * separation a shadow alone does not give against a busy photo.
+   */
   &__partner {
+    position: absolute;
+    top: var(--space-2);
+    right: var(--space-2);
+    z-index: 2;
     display: inline-flex;
-    flex-shrink: 0;
-    color: var(--color-success);
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--color-success);
+    color: #fff;
+    box-shadow:
+      0 0 0 2px rgba(255, 255, 255, 0.9),
+      0 2px 6px rgba(16, 30, 46, 0.25);
+    // The whole photo is one link; the mark must not swallow a tap meant for it.
+    pointer-events: none;
   }
 
   &__specs {

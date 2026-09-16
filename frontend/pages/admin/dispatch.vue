@@ -479,11 +479,12 @@ useSeoMetaData({
                 <span>{{ lastDispatchedLabel(candidate) }}</span>
               </p>
 
-              <p class="dispatch__meta dispatch__muted">
-                <span v-if="group.tier !== 'local'">բազան՝ {{ candidate.baseName }}</span>
-                <span v-if="candidate.subscriptionStatus === 'overdue'" class="dispatch__warn">
-                  բաժանորդագրությունը սպառվել է
-                </span>
+              <p class="dispatch__base">
+                <AppIcon name="map" :size="14" />
+                Հիմնական գտնվելու վայրը՝ {{ candidate.baseName }}
+              </p>
+              <p v-if="candidate.subscriptionStatus === 'overdue'" class="dispatch__warn">
+                բաժանորդագրությունը սպառվել է
               </p>
 
               <div class="dispatch__actions">
@@ -571,11 +572,12 @@ useSeoMetaData({
                   <span>{{ lastDispatchedLabel(candidate) }}</span>
                 </p>
 
-                <p class="dispatch__meta dispatch__muted">
-                  <span>բազան՝ {{ candidate.baseName }}</span>
-                  <span v-if="candidate.subscriptionStatus === 'overdue'" class="dispatch__warn">
-                    բաժանորդագրությունը սպառվել է
-                  </span>
+                <p class="dispatch__base">
+                  <AppIcon name="map" :size="14" />
+                  Հիմնական գտնվելու վայրը՝ {{ candidate.baseName }}
+                </p>
+                <p v-if="candidate.subscriptionStatus === 'overdue'" class="dispatch__warn">
+                  բաժանորդագրությունը սպառվել է
                 </p>
 
                 <div class="dispatch__actions">
@@ -814,8 +816,23 @@ useSeoMetaData({
     font-size: 0.9rem;
   }
 
+  &__base {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: 0.9rem;
+    color: var(--color-text-secondary);
+
+    svg {
+      flex-shrink: 0;
+      color: var(--color-text-muted);
+    }
+  }
+
   &__warn {
     color: var(--color-danger, #c53030);
+    font-size: 0.9rem;
   }
 
   &__actions {

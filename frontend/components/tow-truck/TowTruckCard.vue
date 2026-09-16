@@ -55,7 +55,7 @@ const hoursLabel = computed(() =>
         :aria-label="t('common.partnerBadge')"
         :title="t('common.partnerBadge')"
       >
-        <AppIcon name="check" :size="18" />
+        <AppIcon name="check" :size="13" />
       </span>
 
       <NuxtLinkLocale :to="getTowTruckRoute(towTruck.slug)" tabindex="-1">
@@ -212,14 +212,16 @@ const hoursLabel = computed(() =>
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 30px;
-    height: 30px;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
     background: var(--color-success);
     color: #fff;
+    // A thinner ring at this size: 2px around a 22px circle reads as a second
+    // shape rather than as separation from the photo.
     box-shadow:
-      0 0 0 2px rgba(255, 255, 255, 0.9),
-      0 2px 6px rgba(16, 30, 46, 0.25);
+      0 0 0 1.5px rgba(255, 255, 255, 0.92),
+      0 1px 4px rgba(16, 30, 46, 0.22);
     // The whole photo is one link; the mark must not swallow a tap meant for it.
     pointer-events: none;
   }

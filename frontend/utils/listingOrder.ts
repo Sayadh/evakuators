@@ -59,18 +59,31 @@ function isMovable(
  * is a driver seeing themselves in the same slot twice running, which a
  * whole-list comparison would call "different" as long as somebody else moved.
  *
- * An unknown previous order — first visit, cleared cookie, a driver added or
- * removed since — is not a repeat. There is nothing to repeat.
+ * No previous order at all — a first visit, a cleared cookie — is not a
+ * repeat. There is nothing to repeat.
+ *
+ * ## Why the two lists may be different lengths, and why that is fine
+ *
+ * The stored list is capped (a cookie travels on every request), and the live
+ * one changes whenever a driver is added, deactivated or filtered out. So the
+ * comparison runs over the overlap rather than demanding the lengths match.
+ *
+ * Demanding it was a real bug: a town with more than the cap never had two
+ * lists of equal length, so every load bailed out here and the guarantee
+ * silently did nothing on exactly the busiest pages. Over the overlap, a
+ * longer list is simply checked as far as the record goes — which is the part
+ * anybody sees.
  */
 export function repeatsAPosition(
   ordered: TowTruckCard[],
   previousIds: number[] | null,
   rankOf: (truck: TowTruckCard) => number,
 ): boolean {
-  if (!previousIds || previousIds.length !== ordered.length) return false
+  if (!previousIds || previousIds.length === 0) return false
 
   const movable = isMovable(ordered, rankOf)
-  for (let i = 0; i < ordered.length; i += 1) {
+  const overlap = Math.min(ordered.length, previousIds.length)
+  for (let i = 0; i < overlap; i += 1) {
     if (movable(i) && ordered[i]?.id === previousIds[i]) return true
   }
   return false

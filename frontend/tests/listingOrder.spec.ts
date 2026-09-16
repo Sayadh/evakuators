@@ -45,9 +45,33 @@ describe('repeatsAPosition', () => {
     expect(repeatsAPosition(ordered, [1, 2, 4, 3], rankOf)).toBe(false)
   })
 
-  it('treats a first visit, and a changed list length, as no repeat', () => {
+  it('treats a first visit as no repeat — there is nothing to repeat', () => {
     expect(repeatsAPosition([truck(1), truck(2)], null, rankOf)).toBe(false)
-    expect(repeatsAPosition([truck(1), truck(2)], [1], rankOf)).toBe(false)
+    expect(repeatsAPosition([truck(1), truck(2)], [], rankOf)).toBe(false)
+  })
+
+  /**
+   * The stored list is capped and the live one moves — a driver is added,
+   * deactivated, filtered out. Demanding equal lengths meant a town with more
+   * drivers than the cap bailed out on every load and the guarantee silently
+   * did nothing there, which is the opposite of where it is wanted.
+   */
+  it('compares the overlap when the stored list is shorter than the live one', () => {
+    const ordered = [truck(1), truck(2), truck(3), truck(4)]
+    // Only the first two were recorded; id 2 is still in slot 1.
+    expect(repeatsAPosition(ordered, [1, 2], rankOf)).toBe(true)
+    // …and if those two moved, the tail beyond the record cannot object.
+    expect(repeatsAPosition(ordered, [9, 8], rankOf)).toBe(false)
+  })
+
+  it('compares the overlap when a driver has since been added', () => {
+    // Yesterday's four, today's five: everyone shifted, nobody repeats.
+    const ordered = [truck(5), truck(1), truck(2), truck(3), truck(4)]
+    expect(repeatsAPosition(ordered, [1, 2, 3, 4], rankOf)).toBe(false)
+
+    // But a list that grew without moving anybody is still a repeat.
+    const unchanged = [truck(1), truck(2), truck(3), truck(4), truck(5)]
+    expect(repeatsAPosition(unchanged, [1, 2, 3, 4], rankOf)).toBe(true)
   })
 })
 

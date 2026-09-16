@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common'
 import { AdminAuthModule } from '../admin-auth/admin-auth.module'
-import { DispatchModule } from '../dispatch/dispatch.module'
 import { DriverAuthModule } from '../driver-auth/driver-auth.module'
 import { PrivacyConsentModule } from '../privacy-consent/privacy-consent.module'
 import { ProfileChangesModule } from '../profile-changes/profile-changes.module'
@@ -36,10 +35,6 @@ import { AdminService } from './admin.service'
     // coverage. Writing a payment lives in that module's own admin service, so
     // there is no cycle: SubscriptionsModule knows nothing about AdminModule.
     SubscriptionsModule,
-    // For DispatchRepository — the referral count on each driver's card. No
-    // cycle: DispatchModule imports AdminAuthModule/Reviews/Subscriptions and
-    // knows nothing about AdminModule, and it already exports the repository.
-    DispatchModule,
   ],
   controllers: [AdminController],
   providers: [AdminService],

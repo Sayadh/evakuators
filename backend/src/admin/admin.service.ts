@@ -35,7 +35,6 @@ import {
   sortPaymentsByUrgency,
   toAdminPaymentSummary,
 } from './admin-payment.mapper'
-import { DispatchRepository } from '../dispatch/dispatch.repository'
 import { AdminTowTruckSummary, toAdminTowTruckSummary } from './admin-tow-truck.mapper'
 import type {
   AdminListQuery,
@@ -75,10 +74,6 @@ export class AdminService {
     // Read-only here: /admin/payments needs each driver's coverage, and
     // writing a payment is the subscriptions module's own admin service.
     private readonly subscriptionsRepository: SubscriptionsRepository,
-    // Read-only too: the referral count on each driver's card. Every referral
-    // is written by /admin/dispatch, which is the only thing that may create
-    // one — an admin does not get to adjust a driver's tally from here.
-    private readonly dispatchRepository: DispatchRepository,
   ) {}
 
   async listRegistrations(query: AdminRegistrationsQuery): Promise<AdminRegistrationSummary[]> {
@@ -844,13 +839,7 @@ export class AdminService {
       yerevan: query.yerevan,
       search: query.search,
     })
-
-    // One grouped query for the whole page — the same reader `/admin/dispatch`
-    // uses, and for the same reason it is grouped there: this list is 50 rows
-    // long, and a count per row is 50 round trips for one integer each.
-    const referrals = await this.dispatchRepository.statsFor(trucks.map((truck) => truck.id))
-
-    return trucks.map((truck) => toAdminTowTruckSummary(truck, referrals.get(truck.id)))
+    return trucks.map(toAdminTowTruckSummary)
   }
 
   /**

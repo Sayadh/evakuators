@@ -209,15 +209,6 @@ export interface AdminTowTruck {
    * up, so an admin sees exactly the words the public profile shows.
    */
   serviceAreas: AdminServiceArea[]
-  /**
-   * How many jobs the dispatcher has passed to this driver, all time — the
-   * same `DispatchReferral` rows `/admin/dispatch` writes and counts. 0 for a
-   * driver who has never been dispatched, which the card renders as its own
-   * sentence rather than as «0».
-   */
-  dispatchesTotal: number
-  /** ISO datetime of the most recent one; absent when there has never been one */
-  lastDispatchedAt?: string
   /** Structural placement — at most one of the two, both unset for corridor-only coverage */
   citySlug?: string
   districtSlug?: string

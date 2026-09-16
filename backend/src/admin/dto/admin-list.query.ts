@@ -106,6 +106,17 @@ export class AdminTowTrucksQuery extends AdminListQuery {
   @IsOptional()
   @IsBoolean()
   yerevan?: boolean
+
+  /**
+   * Matched server-side against driver name, company name and phone — same
+   * semantics as `AdminPaymentsQuery.search` (see
+   * `TowTrucksRepository.findAllForAdmin`), just reused here so the main
+   * driver table gets the same search the payments page already has.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  search?: string
 }
 
 /**

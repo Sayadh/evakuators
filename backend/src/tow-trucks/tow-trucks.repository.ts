@@ -103,6 +103,8 @@ export interface AdminTowTruckFilters {
   citySlug?: string
   districtSlug?: string
   yerevan?: boolean
+  /** Case-insensitive on driverName/companyName; phone is matched as-is — see findAllForAdmin */
+  search?: string
 }
 
 /** All TowTruck database access lives here — services never touch Prisma directly */
@@ -396,6 +398,18 @@ export class TowTrucksRepository {
       // district means the truck is based in Yerevan. See
       // `AdminTowTrucksQuery.yerevan`.
       where.districtSlug = { not: null }
+    }
+    if (filters.search) {
+      // Same convention as findAllForPayments: driverName/companyName get
+      // mode: 'insensitive' (Armenian has no case, but company names can
+      // carry Latin text); phone does not, since it is always normalized to
+      // canonical +374XXXXXXXX form (see IsArmenianPhone) and a
+      // case-insensitive mode would be meaningless there.
+      where.OR = [
+        { driverName: { contains: filters.search, mode: 'insensitive' } },
+        { companyName: { contains: filters.search, mode: 'insensitive' } },
+        { phone: { contains: filters.search } },
+      ]
     }
 
     return this.prisma.towTruck.findMany({

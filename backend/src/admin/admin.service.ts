@@ -837,6 +837,7 @@ export class AdminService {
       citySlug: query.citySlug,
       districtSlug: query.districtSlug,
       yerevan: query.yerevan,
+      search: query.search,
     })
     return trucks.map(toAdminTowTruckSummary)
   }

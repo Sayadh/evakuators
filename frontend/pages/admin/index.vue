@@ -184,6 +184,8 @@ const towTruckTypeFilter = ref<TowTruckTypeFilter>('ALL')
  */
 const towTruckRegionFilter = ref('')
 const towTruckCityFilter = ref('')
+/** Matched server-side against driver name, company name and phone — see AdminRepository.listTowTrucks */
+const towTruckSearch = ref('')
 
 const towTruckRegionOptions = computed(() => buildRegionOptions())
 const towTruckCityOptions = computed(() =>
@@ -572,6 +574,7 @@ async function loadTowTrucks(append = false): Promise<void> {
       limit: ADMIN_PAGE_SIZE,
       offset,
       vehicleType: towTruckTypeFilter.value === 'ALL' ? undefined : towTruckTypeFilter.value,
+      search: towTruckSearch.value.trim() || undefined,
       ...towTruckLocationParams(towTruckRegionFilter.value, towTruckCityFilter.value),
     })
     towTrucks.value = append ? [...towTrucks.value, ...page] : page
@@ -1302,6 +1305,20 @@ watch([towTruckRegionFilter, towTruckCityFilter], () => {
   if (apiEnabled) void loadTowTrucks()
 })
 
+// Debounced, unlike the selects above: free text fires on every keystroke
+// otherwise, one request per letter typed.
+const TOW_TRUCK_SEARCH_DEBOUNCE_MS = 300
+let towTruckSearchDebounceTimer: ReturnType<typeof setTimeout> | undefined
+
+watch(towTruckSearch, () => {
+  clearTimeout(towTruckSearchDebounceTimer)
+  towTruckSearchDebounceTimer = setTimeout(() => {
+    if (apiEnabled) void loadTowTrucks()
+  }, TOW_TRUCK_SEARCH_DEBOUNCE_MS)
+})
+
+onBeforeUnmount(() => clearTimeout(towTruckSearchDebounceTimer))
+
 /* ── Telegram link hand-off (shown after approval and after a reset) ── */
 const telegramLinkModalOpen = ref(false)
 const telegramLinkModalTitle = ref('')
@@ -1685,6 +1702,12 @@ async function rejectReview(review: AdminReview): Promise<void> {
               {{ towTruckCounts.inactive }}
             </p>
           </div>
+
+          <AppInput
+            v-model="towTruckSearch"
+            placeholder="Փնտրել անունով կամ հեռախոսով…"
+            class="admin-section__filter"
+          />
 
           <AppSelect
             v-model="towTruckTypeFilter"

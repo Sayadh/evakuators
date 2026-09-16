@@ -390,6 +390,8 @@ export interface AdminTowTrucksParams extends AdminListParams {
   citySlug?: string
   districtSlug?: string
   yerevan?: boolean
+  /** Matched server-side against driver name, company name and phone — see backend AdminTowTrucksQuery.search */
+  search?: string
 }
 
 /** All moderation reads/writes against the backend admin endpoints */
@@ -584,6 +586,7 @@ export const adminRepository = {
         citySlug: params.citySlug,
         districtSlug: params.districtSlug,
         yerevan: params.yerevan,
+        search: params.search,
       },
       headers: authHeader(),
     })

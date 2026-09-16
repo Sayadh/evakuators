@@ -171,13 +171,10 @@ export function isPromotedAt(truck: TowTruckCard, place: BasePlace | undefined):
  * comparator stays total — see the note on `seed` in `sortTowTrucks`.
  */
 function localRank(truck: TowTruckCard, place: BasePlace): number {
-  const basedHere = isBasedAt(truck, place)
-
   if (isPromotedAt(truck, place)) return 0
-  if (basedHere && truck.isPartner) return 1
-  if (basedHere) return 2
-  if (truck.isPartner) return 3
-  return 4
+  if (truck.isPartner) return 1
+  if (isBasedAt(truck, place)) return 2
+  return 3
 }
 
 /**
@@ -202,25 +199,29 @@ function localRank(truck: TowTruckCard, place: BasePlace): number {
  *
  * 0. drivers holding a paid placement AND based here (`isPromotedAt`), newest
  *    purchase first and NOT shuffled — see the comparator;
- * 1. our own drivers (`isPartner`) based here, in their own shuffled order;
+ * 1. our own drivers (`isPartner`), in their own shuffled order;
  * 2. everyone else actually based in the town or district being searched
  *    (`isBasedAt`), in theirs;
- * 3. our own drivers who merely also cover it;
- * 4. everyone else who merely also covers it.
+ * 3. everyone else who merely also covers it, in theirs.
  *
- * Locality is the OUTER split and being ours is the inner one — deliberately
- * that way round. Someone searching «Ավան» is looking for an Ավան driver first
- * and a driver who merely also drives there second; a partner an hour away is
- * still an hour away, and letting the relationship jump that queue would be
- * the platform quietly serving itself at the customer's expense. So it sorts
- * partners ahead of equally-relevant strangers, never ahead of a nearer
- * driver. Ranks 2 and 4 are the original rule, unchanged.
+ * Being ours is the OUTER split and locality the inner one — that is the
+ * operator's call, made explicitly. It means a partner who merely covers the
+ * town is shown above a stranger based in it, which is a real cost to pay
+ * (the older comment below argues the other way, and the argument still
+ * holds); it is paid because the operator answers for these drivers and a
+ * customer who rings one is the platform's own promise being kept. Ranks 2
+ * and 3 are the original rule between themselves, unchanged.
  *
- * Rank 0 is the paid one, and it sits INSIDE the local tier rather than above
- * it: a promoted driver is a local driver who also paid, never a visitor who
- * bought their way past the locals. That is why `isPromotedAt` requires both.
- * It stays above rank 1 for the same reason it exists: that position was sold,
- * and a relationship that was not sold must not displace it.
+ * Rank 0 is the paid one, and it stays on top of all of it: that position was
+ * sold for money, and a relationship that was not sold must not displace it.
+ * It also still requires `isBasedAt` — what was sold is the top of the
+ * driver's OWN town, never a way to appear in towns they are not in.
+ *
+ * Only rank 0 is ordered inside itself (by purchase date). Ranks 1, 2 and 3
+ * compare equal within themselves, so the shuffle that ran before this sort
+ * survives — they are re-randomised on every page load, which is the point:
+ * a fixed queue would quietly decide which of several equally-good drivers
+ * ever gets called.
  *
  * ## `seed`, and why the shuffle is not in the comparator
  *

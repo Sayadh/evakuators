@@ -9,10 +9,10 @@ import { sortTowTrucks } from '~/utils/towTruckFilters'
  * Two rules decide this, and their order is the product decision:
  *
  * 1. a placement was BOUGHT, so it stays above a relationship that was not;
- * 2. locality is the outer split and being ours is the inner one — a partner
- *    an hour away is still an hour away, and letting the relationship jump
- *    that queue would be the platform serving itself at the customer's
- *    expense.
+ * 2. being ours outranks locality — a partner who merely covers the town is
+ *    shown above a stranger based in it. The operator's explicit call: they
+ *    answer for these drivers, so a customer who rings one is the platform's
+ *    own promise being kept.
  *
  * Tested as behaviour on the real comparator with a fixed seed, like
  * promotedPlacement.spec.ts — these are the rules that decide who gets seen.
@@ -70,21 +70,21 @@ describe('our drivers on a city page', () => {
     expect(flatOrder([ours, paid])).toEqual([1, 2])
   })
 
-  it('do NOT jump ahead of a local driver when they are based elsewhere', () => {
-    // The customer is standing next to a broken car in Abovyan. A partner in
-    // Gyumri who merely covers it is not a better answer for them, and the
-    // relationship must not be allowed to say otherwise.
+  it('come before a local stranger even when based elsewhere', () => {
+    // The cost of rule 2, pinned so nobody has to wonder whether it was
+    // intended: a partner covering Abovyan outranks a driver based in it.
     const localStranger = card({ id: 1 })
     const farPartner = card({ id: 2, isPartner: true, location: ELSEWHERE })
 
-    expect(flatOrder([farPartner, localStranger])).toEqual([1, 2])
+    expect(flatOrder([localStranger, farPartner])).toEqual([2, 1])
   })
 
-  it('but do come first among the drivers who merely cover it', () => {
-    const farPartner = card({ id: 1, isPartner: true, location: ELSEWHERE })
-    const farStranger = card({ id: 2, location: ELSEWHERE })
+  it('leaves based-here above merely-covering among everyone else', () => {
+    // Unchanged original rule, still in force below the partner tier.
+    const local = card({ id: 1 })
+    const covering = card({ id: 2, location: ELSEWHERE })
 
-    expect(flatOrder([farStranger, farPartner])[0]).toBe(1)
+    expect(flatOrder([covering, local])).toEqual([1, 2])
   })
 })
 

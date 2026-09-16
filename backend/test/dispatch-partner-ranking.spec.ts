@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { compareCandidates, type RankedCandidate } from '../src/dispatch/dispatch-ranking'
 
@@ -50,6 +52,27 @@ describe('compareCandidates — partner drivers', () => {
     const visitingPartner = candidate({ tier: 'visiting', isPartner: true, driverName: 'Far' })
 
     expect(firstOf(visitingPartner, localStranger).driverName).toBe('Local')
+  })
+
+  /**
+   * The coordinate search is not this comparator's business at all.
+   *
+   * `listCandidatesByCoordinates` sorts by `distanceMeters` and nothing else —
+   * when a dispatcher has a pin on a map, the only question is who can be
+   * there soonest, and neither a placement nor a relationship changes that.
+   * Asserted on the source because the ordering lives in the service, and the
+   * risk is not that the sort is wrong today but that somebody later reaches
+   * for `compareCandidates` to "make it consistent" with the place search.
+   */
+  it('is not used by the coordinate search, which orders by distance alone', () => {
+    const service = readFileSync(
+      fileURLToPath(new URL('../src/dispatch/dispatch.service.ts', import.meta.url)),
+      'utf8',
+    )
+    const byCoordinates = service.slice(service.indexOf('listCandidatesByCoordinates'))
+
+    expect(byCoordinates).toContain('a.distanceMeters - b.distanceMeters')
+    expect(byCoordinates).not.toContain('compareCandidates')
   })
 
   it('falls through to rating when both are ours', () => {

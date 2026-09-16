@@ -2,6 +2,7 @@ import { useTowTruckFiltersStore } from '~/stores/towTruckFilters'
 import type { TowTruckCard } from '~/types/towTruck'
 import { trackFilterApply } from '~/utils/analytics'
 import { buildFilterQueryParams, parseFilterQueryParams } from '~/utils/queryParams'
+import { pickListingSeed } from '~/utils/listingOrder'
 import { applyTowTruckFilters, type BasePlace } from '~/utils/towTruckFilters'
 
 /**
@@ -29,13 +30,48 @@ export function useTowTruckFilters(
 ) {
   // Read once, in setup: `useState` cannot be reached from inside a computed's
   // getter, and the value must be the same one the SSR pass used anyway.
-  const seed = useListingShuffleSeed()
+  const rawSeed = useListingShuffleSeed()
 
   const store = useTowTruckFiltersStore()
   const route = useRoute()
   const router = useRouter()
 
   store.replace(parseFilterQueryParams(route.query))
+
+  /**
+   * The order this visitor saw last time on this exact list, so the next one
+   * can be guaranteed to differ.
+   *
+   * A cookie rather than `sessionStorage` because the server has to read it:
+   * a refresh is a fresh SSR render, and the server is the one choosing the
+   * order. `sessionStorage` would leave every refresh — the case actually
+   * complained about — with no previous order to avoid.
+   *
+   * Keyed by path, since "the same list" is what a repeat is relative to.
+   * `maxAge` is short on purpose: this is worth remembering for the next
+   * refresh, not for next week, and a stale order from days ago would only
+   * constrain today's shuffle for no reason.
+   */
+  const previousOrder = useCookie<number[] | null>(`listing-order:${route.path}`, {
+    default: () => null,
+    maxAge: 60 * 60,
+    sameSite: 'lax',
+  })
+
+  /**
+   * Chosen once per page load, from the list as it arrives — before any filter
+   * is applied, so that ticking a filter does not re-roll the order under the
+   * visitor. Server and browser run this with the same list and the same
+   * cookie, so they reach the same seed and hydration holds.
+   */
+  const { seed, ordered } = pickListingSeed(rawSeed, previousOrder.value, (candidate) =>
+    applyTowTruckFilters(towTrucks.value, store.$state, candidate, toValue(basePlace)),
+  )
+
+  // Written back for the next load. Capped because a cookie is sent on every
+  // request to this origin, and only the first screenful is what anybody
+  // notices repeating.
+  previousOrder.value = ordered.slice(0, 30).map((truck) => truck.id)
 
   function syncQuery(): void {
     const query = Object.fromEntries(

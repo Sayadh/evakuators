@@ -290,7 +290,16 @@ describe('the seed reaches both runtimes', () => {
       expect(line).toContain('recommendedWith(useListingShuffleSeed())')
     }
 
+    // Same rule here, one indirection later: the payload seed is read in setup
+    // as `rawSeed`, then `pickListingSeed` picks the nearby seed whose order
+    // leaves nobody in their previous slot (see utils/listingOrder.ts). Both
+    // runtimes run that with the same list and the same cookie, so they still
+    // agree — what must not happen is either call moving inside a computed.
     const filters = read('composables/useTowTruckFilters.ts')
-    expect(filters).toContain('const seed = useListingShuffleSeed()')
+    expect(filters).toContain('const rawSeed = useListingShuffleSeed()')
+    expect(filters).toContain('pickListingSeed(rawSeed,')
+    // The computed renders the CHOSEN seed, not the raw one — otherwise the
+    // derangement is computed and then thrown away.
+    expect(filters).toContain('store.$state, seed,')
   })
 })

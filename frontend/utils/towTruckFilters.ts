@@ -170,7 +170,7 @@ export function isPromotedAt(truck: TowTruckCard, place: BasePlace | undefined):
  * Lower sorts first. Returned as a number rather than compared pairwise so the
  * comparator stays total — see the note on `seed` in `sortTowTrucks`.
  */
-function localRank(truck: TowTruckCard, place: BasePlace): number {
+export function localRank(truck: TowTruckCard, place: BasePlace): number {
   const basedHere = isBasedAt(truck, place)
 
   if (isPromotedAt(truck, place)) return 0

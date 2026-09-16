@@ -297,9 +297,66 @@ describe('the seed reaches both runtimes', () => {
     // agree — what must not happen is either call moving inside a computed.
     const filters = read('composables/useTowTruckFilters.ts')
     expect(filters).toContain('const rawSeed = useListingShuffleSeed()')
-    expect(filters).toContain('pickListingSeed(rawSeed,')
+    expect(filters).toContain('pickListingSeed(')
+    expect(filters).toContain('rawSeed,')
     // The computed renders the CHOSEN seed, not the raw one — otherwise the
-    // derangement is computed and then thrown away.
-    expect(filters).toContain('store.$state, seed,')
+    // derangement is worked out and then thrown away.
+    expect(filters).toContain('computed(() => orderWith(seed))')
+  })
+
+  /**
+   * The decision travels; it is not repeated.
+   *
+   * A real regression, worth describing so nobody re-introduces it while
+   * "simplifying". Reading the cookie, picking a seed from it and writing the
+   * cookie back is correct on the server and wrong the second time it runs:
+   * the browser hydrates AFTER the response's Set-Cookie has been applied, so
+   * it reads the order the server just wrote, avoids a different set of
+   * positions, picks a different seed — and the list visibly re-renders a
+   * moment after it appears. `useState` is what fixes it: the initialiser runs
+   * once, server-side, and the browser reads the number out of the payload.
+   */
+  it('decides the seed once, in useState, so the browser never re-derives it', () => {
+    const filters = read('composables/useTowTruckFilters.ts')
+
+    expect(filters).toContain('useState<number>(`listing-seed:')
+
+    const initialiser = filters.slice(
+      filters.indexOf('useState<number>(`listing-seed:'),
+      filters.indexOf('}).value'),
+    )
+    expect(initialiser).toContain('pickListingSeed(')
+  })
+
+  /**
+   * The cookie records what was SHOWN, not a second opinion about it.
+   *
+   * The other half of the same regression. While the order written to the
+   * cookie was computed separately from the order rendered, the two could
+   * disagree — and they did: the next load then avoided an arrangement nobody
+   * had seen, and happily repeated the one they had. Reading it back off the
+   * rendered computed is what makes "what you saw last time" true by
+   * construction.
+   */
+  it('records the rendered order, not a separately computed one', () => {
+    const filters = read('composables/useTowTruckFilters.ts')
+
+    expect(filters).toContain('previousOrder.value = filteredTowTrucks.value')
+
+    // And one ordering expression feeds both the chooser and the render, so
+    // there is nothing left for them to disagree about.
+    expect(filters).toContain('const orderWith = ')
+  })
+
+  /**
+   * A cookie name is an RFC 6265 token. `/` and `:` are not in it, and a name
+   * containing them is stored by the browser and then not found by the server
+   * — the avoidance silently does nothing, which is how it behaved.
+   */
+  it('builds a cookie name the server can read back', () => {
+    const filters = read('composables/useTowTruckFilters.ts')
+
+    expect(filters).toContain("route.path.replace(/[^a-z0-9]+/gi, '-')")
+    expect(filters).not.toContain('`listing-order:${route.path}`')
   })
 })

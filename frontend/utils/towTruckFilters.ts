@@ -171,9 +171,11 @@ export function isPromotedAt(truck: TowTruckCard, place: BasePlace | undefined):
  * comparator stays total — see the note on `seed` in `sortTowTrucks`.
  */
 function localRank(truck: TowTruckCard, place: BasePlace): number {
+  const basedHere = isBasedAt(truck, place)
+
   if (isPromotedAt(truck, place)) return 0
-  if (truck.isPartner) return 1
-  if (isBasedAt(truck, place)) return 2
+  if (basedHere && truck.isPartner) return 1
+  if (basedHere) return 2
   return 3
 }
 
@@ -199,23 +201,23 @@ function localRank(truck: TowTruckCard, place: BasePlace): number {
  *
  * 0. drivers holding a paid placement AND based here (`isPromotedAt`), newest
  *    purchase first and NOT shuffled — see the comparator;
- * 1. our own drivers (`isPartner`), in their own shuffled order;
- * 2. everyone else actually based in the town or district being searched
- *    (`isBasedAt`), in theirs;
- * 3. everyone else who merely also covers it, in theirs.
+ * 1. our own drivers (`isPartner`) whose BASE is this town or district;
+ * 2. everyone else based here (`isBasedAt`);
+ * 3. everyone else — the drivers who cover this place but are not based in it.
  *
- * Being ours is the OUTER split and locality the inner one — that is the
- * operator's call, made explicitly. It means a partner who merely covers the
- * town is shown above a stranger based in it, which is a real cost to pay
- * (the older comment below argues the other way, and the argument still
- * holds); it is paid because the operator answers for these drivers and a
- * customer who rings one is the platform's own promise being kept. Ranks 2
- * and 3 are the original rule between themselves, unchanged.
+ * Being based here is the OUTER split; being ours sorts inside it. Someone
+ * searching «Ավան» is choosing among Ավան drivers, and a driver an hour away
+ * is an hour away whoever they are — so the relationship decides which of the
+ * local drivers is seen first, never whether a non-local one outranks them.
+ * That is also why a partner who merely covers the place sits in rank 3 with
+ * everyone else who merely covers it, rather than in a rank of their own:
+ * once a driver is not based here, being ours is not what the customer
+ * standing next to the broken car is choosing on.
  *
- * Rank 0 is the paid one, and it stays on top of all of it: that position was
- * sold for money, and a relationship that was not sold must not displace it.
- * It also still requires `isBasedAt` — what was sold is the top of the
- * driver's OWN town, never a way to appear in towns they are not in.
+ * Rank 0 stays on top of all of it: that position was sold for money, and a
+ * relationship that was not sold must not displace it. It requires
+ * `isBasedAt` too — what was sold is the top of the driver's OWN town, never
+ * a way to appear in towns they are not in.
  *
  * Only rank 0 is ordered inside itself (by purchase date). Ranks 1, 2 and 3
  * compare equal within themselves, so the shuffle that ran before this sort

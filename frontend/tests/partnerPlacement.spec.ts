@@ -6,13 +6,16 @@ import { sortTowTrucks } from '~/utils/towTruckFilters'
 /**
  * "Our drivers" in the public Recommended order.
  *
- * Two rules decide this, and their order is the product decision:
+ * On a city or district page the base location is the outer split and being
+ * ours sorts inside it:
  *
- * 1. a placement was BOUGHT, so it stays above a relationship that was not;
- * 2. being ours outranks locality — a partner who merely covers the town is
- *    shown above a stranger based in it. The operator's explicit call: they
- *    answer for these drivers, so a customer who rings one is the platform's
- *    own promise being kept.
+ *   paid placement → ours, based here → based here → everyone else covering
+ *
+ * So the relationship decides which of the LOCAL drivers is seen first, and
+ * never whether a driver an hour away outranks them. A partner who merely
+ * covers the place is in the last group with everyone else who merely covers
+ * it — once a driver is not based here, being ours is not what the customer
+ * standing next to the broken car is choosing on.
  *
  * Tested as behaviour on the real comparator with a fixed seed, like
  * promotedPlacement.spec.ts — these are the rules that decide who gets seen.
@@ -63,6 +66,15 @@ describe('our drivers on a city page', () => {
     expect(flatOrder([stranger, ours])[0]).toBe(1)
   })
 
+  it('only when they are based here — the base location is the outer split', () => {
+    const oursHere = card({ id: 1, isPartner: true })
+    const oursElsewhere = card({ id: 2, isPartner: true, location: ELSEWHERE })
+    const strangerHere = card({ id: 3 })
+
+    // Ours-here first, then the local stranger, and only then ours-from-away.
+    expect(flatOrder([oursElsewhere, strangerHere, oursHere])).toEqual([1, 3, 2])
+  })
+
   it('still come after a paid placement — that position was sold', () => {
     const paid = card({ id: 1, promotedAt: '2026-09-09T00:00:00.000Z' })
     const ours = card({ id: 2, isPartner: true })
@@ -70,17 +82,16 @@ describe('our drivers on a city page', () => {
     expect(flatOrder([ours, paid])).toEqual([1, 2])
   })
 
-  it('come before a local stranger even when based elsewhere', () => {
-    // The cost of rule 2, pinned so nobody has to wonder whether it was
-    // intended: a partner covering Abovyan outranks a driver based in it.
+  it('do NOT outrank a local driver when based elsewhere', () => {
+    // A partner an hour away is an hour away. The relationship decides which
+    // of the local drivers is seen first, not whether a non-local one is.
     const localStranger = card({ id: 1 })
     const farPartner = card({ id: 2, isPartner: true, location: ELSEWHERE })
 
-    expect(flatOrder([localStranger, farPartner])).toEqual([2, 1])
+    expect(flatOrder([farPartner, localStranger])).toEqual([1, 2])
   })
 
-  it('leaves based-here above merely-covering among everyone else', () => {
-    // Unchanged original rule, still in force below the partner tier.
+  it('leaves based-here above merely-covering, as it always was', () => {
     const local = card({ id: 1 })
     const covering = card({ id: 2, location: ELSEWHERE })
 

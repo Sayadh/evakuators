@@ -91,6 +91,29 @@ describe('our drivers on a city page', () => {
     expect(flatOrder([farPartner, localStranger])).toEqual([1, 2])
   })
 
+  /**
+   * The bug as it was reported: on the Արաբկիր page an Աջափնյակ-based driver
+   * was showing among the Արաբկիր ones. Swept across seeds rather than pinned
+   * to one, because the shuffle runs before this sort and a single seed can
+   * pass by luck — the rank has to win whatever the shuffle did.
+   */
+  it('keeps a driver based elsewhere last, whatever the shuffle did', () => {
+    const trucks = [
+      card({ id: 1 }),
+      card({ id: 2 }),
+      card({ id: 99, isPartner: true, location: ELSEWHERE }),
+      card({ id: 3 }),
+      card({ id: 4 }),
+    ]
+
+    for (const seed of [1, 7, 12345, 98765]) {
+      const order = sortTowTrucks(trucks, SortOption.Recommended, seed, false, ABOVYAN).map(
+        (t) => t.id,
+      )
+      expect(order[order.length - 1], `seed ${seed}`).toBe(99)
+    }
+  })
+
   it('leaves based-here above merely-covering, as it always was', () => {
     const local = card({ id: 1 })
     const covering = card({ id: 2, location: ELSEWHERE })

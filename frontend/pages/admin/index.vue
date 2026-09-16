@@ -1628,11 +1628,32 @@ async function rejectReview(review: AdminReview): Promise<void> {
             </p>
           </div>
 
-          <AppInput
-            v-model="towTruckSearch"
-            placeholder="Փնտրել անունով կամ հեռախոսով…"
-            class="admin-section__filter"
-          />
+          <!-- Its own full-width row rather than one more 180px chip in the
+               filter strip: this is the first control an admin reaches for on
+               a list that is paginated and thousands of rows long, and at
+               filter width it truncated its own placeholder. The wrap is done
+               in CSS (`flex-basis: 100%`), so the selects and buttons after it
+               keep a line of their own instead of competing for this one. -->
+          <div class="admin-search">
+            <AppIcon name="search" :size="18" class="admin-search__icon" />
+            <AppInput
+              v-model="towTruckSearch"
+              placeholder="Փնտրել անունով կամ հեռախոսահամարով…"
+              class="admin-search__input"
+            />
+            <!-- Only when there is something to clear. Clearing through the
+                 same ref the field writes to means it goes through the debounce
+                 watcher like any other edit — no second refetch path. -->
+            <button
+              v-if="towTruckSearch"
+              type="button"
+              class="admin-search__clear"
+              aria-label="Մաքրել որոնումը"
+              @click="towTruckSearch = ''"
+            >
+              <AppIcon name="close" :size="16" />
+            </button>
+          </div>
 
           <AppSelect
             v-model="towTruckTypeFilter"
@@ -2349,6 +2370,71 @@ async function rejectReview(review: AdminReview): Promise<void> {
 
   &__filter {
     min-width: 180px;
+  }
+}
+
+/**
+ * The driver search — deliberately not an `admin-section__filter`.
+ *
+ * `flex: 1 0 100%` is what puts it on a row of its own inside the section
+ * header: the header is a wrapping flex row, so a 100% basis forces a break
+ * before and after it without a second container or a media query. The heavier
+ * border and the tinted background are the rest of the answer to the same
+ * problem — a white field on a white card next to four identical-looking
+ * selects is not findable at a glance, and this is the control that is used
+ * most.
+ */
+.admin-search {
+  position: relative;
+  flex: 1 0 100%;
+
+  &__icon {
+    position: absolute;
+    top: 50%;
+    inset-inline-start: var(--space-3);
+    transform: translateY(-50%);
+    color: var(--color-text-muted);
+    /* Decoration — the field underneath owns the click and the focus. */
+    pointer-events: none;
+  }
+
+  /* :deep() because AppInput's styles are scoped to that component; this is
+     the field inside it, not a class this file renders. */
+  &__input :deep(.app-input__field) {
+    /* Room for the icon on one side and the clear button on the other, so a
+       long value never runs underneath either. */
+    padding-inline-start: calc(var(--space-3) * 2 + 18px);
+    padding-inline-end: calc(var(--space-3) * 2 + 16px);
+    font-size: 1.05rem;
+    border-width: 2px;
+    background: var(--color-bg);
+
+    &:focus {
+      background: var(--color-surface);
+      box-shadow: var(--shadow-sm);
+    }
+  }
+
+  &__clear {
+    position: absolute;
+    top: 50%;
+    inset-inline-end: var(--space-3);
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-1);
+    border: 0;
+    border-radius: var(--radius-full);
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    transition: color var(--transition), background var(--transition);
+
+    &:hover {
+      background: var(--color-border);
+      color: var(--color-text);
+    }
   }
 }
 

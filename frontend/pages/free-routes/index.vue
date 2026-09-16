@@ -44,9 +44,20 @@ onMounted(trackFreeRoutesView)
       <FreeRouteCard v-for="route in routes" :key="route.id" :route="route" />
     </div>
 
-    <p v-else class="free-routes-page__empty">
-      {{ t('freeRoutes.empty') }}
-    </p>
+    <!-- Nothing to show is the one moment on this page when the visitor has
+         no driver to ring, so it is the moment to offer the operator's own
+         number rather than "check back later" — same offer the listing pages
+         carry as a banner, in the shape an empty state already has. -->
+    <EmptyState
+      v-else
+      :title="t('freeRoutes.emptyTitle')"
+      :description="t('freeRoutes.empty')"
+      icon="phone"
+    >
+      <template #actions>
+        <DispatchCallCta variant="empty" />
+      </template>
+    </EmptyState>
 
     <FaqSection :items="faqItems" class="free-routes-page__section" />
   </div>
@@ -74,11 +85,6 @@ onMounted(trackFreeRoutesView)
     @media (min-width: 1024px) {
       grid-template-columns: repeat(3, 1fr);
     }
-  }
-
-  &__empty {
-    color: var(--color-text-secondary);
-    padding: var(--space-6) 0;
   }
 
   &__section {

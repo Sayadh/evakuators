@@ -405,7 +405,8 @@
     "metaDescription": "Find a tow truck already heading your way empty. Contact the driver directly.",
     "h1": "Free routes",
     "intro": "These drivers are heading empty along the route shown, and can pick up an order on the way or at the destination. Contact the driver directly.",
-    "empty": "There are no active free routes right now. Check back a little later."
+    "emptyTitle": "No active free routes right now",
+    "empty": "Call us — our specialist will help you find a suitable option."
   },
   "reviews": {
     "title": "Reviews",

@@ -56,8 +56,11 @@ interface Props {
    * - `hero`   — under the homepage search, on the dark gradient.
    * - `banner` — a card in the reading flow of a listing page.
    * - `bar`    — the floating call button on listing pages, phones only.
+   * - `empty`  — the bare dial link, for an `EmptyState`'s actions slot: the
+   *              card around it is the empty state's own, so this variant
+   *              brings no chrome of its own, only the button.
    */
-  variant: 'header' | 'hero' | 'banner' | 'bar'
+  variant: 'header' | 'hero' | 'banner' | 'bar' | 'empty'
 }
 
 const props = defineProps<Props>()
@@ -137,6 +140,22 @@ function onClick(): void {
       </div>
     </AppModal>
   </template>
+
+  <!-- An empty state has already said what is missing and drawn the card to
+       say it in; all this adds is the way out of it. A variant rather than a
+       `tel:` anchor written at the call site for the reason in the component
+       comment above: the tracking and the class the Pixel buckets on come
+       with it instead of having to be remembered. -->
+  <a
+    v-else-if="variant === 'empty'"
+    :href="phoneHref"
+    class="dispatch-cta__call dispatch-cta__call--empty"
+    :aria-label="t('dispatch.callUsWithNumber', { phone: CONTACT_PHONE })"
+    @click="onClick"
+  >
+    <AppIcon name="phone" :size="20" />
+    <span class="dispatch-cta__number">{{ CONTACT_PHONE }}</span>
+  </a>
 
   <div v-else class="dispatch-cta" :class="`dispatch-cta--${variant}`">
     <div class="dispatch-cta__text">
@@ -291,6 +310,20 @@ function onClick(): void {
   font-weight: 700;
   font-size: 1.05rem;
   white-space: nowrap;
+
+  &:hover {
+    background: #178a49;
+    color: #fff;
+  }
+}
+
+/* Same green as the banner's and the dialog's: this is the same offer, and
+   the only thing that changes between placements is what surrounds it. Base
+   layout (inline-flex, padding, radius, weight) already comes from
+   `.dispatch-cta__call`, which is a standalone class, not a descendant. */
+.dispatch-cta__call--empty {
+  background: var(--color-success);
+  color: #fff;
 
   &:hover {
     background: #178a49;

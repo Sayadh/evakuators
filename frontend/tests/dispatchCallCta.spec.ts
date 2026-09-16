@@ -32,11 +32,14 @@ const layout = readFileSync(`${ROOT}layouts/default.vue`, 'utf8')
 
 describe('DispatchCallCta wiring', () => {
   it('keeps the class the Pixel buckets on, in every variant', () => {
-    // All three anchors carry it — the header link, the floating button and the
-    // shared one. If any loses it, those clicks silently become `site_contact`.
+    // All four anchors carry it — the header link, the dialog's dial link, the
+    // shared card one and the empty-state one. If any loses it, those clicks
+    // silently become `site_contact`. The count is pinned so that ADDING an
+    // anchor is a deliberate edit here rather than something that slips in
+    // unclassed.
     const anchors = component.match(/:href="phoneHref"/g) ?? []
     const classed = component.match(/class="dispatch-cta__call/g) ?? []
-    expect(anchors.length).toBe(3)
+    expect(anchors.length).toBe(4)
     expect(classed.length).toBe(anchors.length)
   })
 

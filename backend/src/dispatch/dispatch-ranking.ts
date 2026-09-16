@@ -165,6 +165,8 @@ export interface RankedCandidate {
   tier: DispatchTier
   /** Admin-marked "one of the good ones" — `TowTruck.isFeatured` */
   isFeatured: boolean
+  /** "Our driver" — `TowTruck.isPartner`, a standing relationship, never bought */
+  isPartner: boolean
   /** Confirmed-review average, or null when nobody has rated them */
   rating: number | null
   driverName: string
@@ -198,6 +200,13 @@ export function compareCandidates(a: RankedCandidate, b: RankedCandidate): numbe
   if (byTier !== 0) return byTier
 
   if (a.isFeatured !== b.isFeatured) return a.isFeatured ? -1 : 1
+
+  // Below the paid placement and above everything else, which is the whole
+  // instruction: the operator's own drivers get the call first, but never over
+  // a driver who paid for that position. Inside the tier, not across it — a
+  // partner two towns away must not be offered before a local who can actually
+  // be there in ten minutes, and the tier above is what protects that.
+  if (a.isPartner !== b.isPartner) return a.isPartner ? -1 : 1
 
   const ratingA = a.rating ?? -1
   const ratingB = b.rating ?? -1

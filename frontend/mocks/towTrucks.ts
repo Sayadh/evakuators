@@ -39,6 +39,12 @@ interface TowTruckSeed {
   secondaryPhone?: string
   telegram?: string
   works24Hours?: boolean
+  /**
+   * "Our driver". Set on a couple of the mocks rather than none, so the badge
+   * and the ordering it drives are both visible in mock mode — a flag nothing
+   * in the demo data ever sets is a flag nobody notices is broken.
+   */
+  isPartner?: boolean
   /** Only meaningful when works24Hours is false/unset — omit to demo the "hidden" case */
   workingHoursText?: string
   startingPrice?: number
@@ -81,6 +87,7 @@ function defineTowTruck(seed: TowTruckSeed): TowTruck {
     whatsapp: seed.phone,
     telegram: seed.telegram,
     works24Hours,
+    isPartner: seed.isPartner ?? false,
     // No fake fallback — only 24/7 trucks and ones with an explicit seed
     // value show a working-hours line, matching real driver-entered data.
     workingHours: works24Hours ? 'Շուրջօրյա (24/7)' : seed.workingHoursText,
@@ -142,6 +149,7 @@ export const mockTowTrucks: TowTruck[] = [
     secondaryPhone: '+374 99 11 00 01',
     telegram: 'arman_evak_demo',
     works24Hours: true,
+    isPartner: true,
     startingPrice: 15000,
     perKm: 280,
     waitingPerHour: 3000,
@@ -185,6 +193,7 @@ export const mockTowTrucks: TowTruck[] = [
     companyName: 'Sevan Evak Service',
     phone: '+374 93 00 00 02',
     works24Hours: true,
+    isPartner: true,
     startingPrice: 14000,
     vehicle: {
       brand: 'Hyundai',

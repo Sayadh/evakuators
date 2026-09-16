@@ -32,6 +32,7 @@ import { SetPrimaryAreaDto } from './dto/set-primary-area.dto'
 import { SetTowTruckActiveDto } from './dto/set-tow-truck-active.dto'
 import type { AdminFeaturedResult } from './admin-tow-truck.mapper'
 import { SetTowTruckFeaturedDto } from './dto/set-tow-truck-featured.dto'
+import { SetTowTruckPartnerDto } from './dto/set-tow-truck-partner.dto'
 import { SetTowTruckHeavyEquipmentDto } from './dto/set-tow-truck-heavy-equipment.dto'
 import { SetTowTruckPhoneDto } from './dto/set-tow-truck-phone.dto'
 
@@ -294,6 +295,20 @@ export class AdminController {
     @Body() dto: SetTowTruckFeaturedDto,
   ): Promise<AdminFeaturedResult> {
     return this.adminService.setTowTruckFeatured(id, dto.isFeatured, dto.days)
+  }
+
+  /**
+   * Mark this driver as one of ours, or stop.
+   *
+   * Separate from `/featured` on purpose — see SetTowTruckPartnerDto. Both
+   * push a driver up a list; only one of them is sold, expires, and is swept.
+   */
+  @Patch('tow-trucks/:id/partner')
+  setPartner(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SetTowTruckPartnerDto,
+  ): Promise<{ id: number; isPartner: boolean }> {
+    return this.adminService.setTowTruckPartner(id, dto.isPartner)
   }
 
   /**

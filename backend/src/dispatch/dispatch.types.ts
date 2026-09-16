@@ -12,6 +12,8 @@ export interface DispatchCandidateApi {
   baseName: string
   tier: DispatchTier
   isFeatured: boolean
+  /** "Our driver" — ranked above the rest of their tier, below a live placement */
+  isPartner: boolean
   /** Confirmed-review average; undefined when nobody has rated them */
   rating?: number
   /** Whether their subscription is currently clear — shown, never filtered on (see DispatchService) */

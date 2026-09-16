@@ -222,6 +222,7 @@
     "emptyFilteredTitle": "Нет эвакуаторов, подходящих под фильтры",
     "emptyFilteredText": "Попробуйте смягчить фильтры или сбросить их.",
     "selectPlaceholder": "Выбрать",
+    "partnerBadge": "Наш водитель",
     "hours24": "Круглосуточно (24/7)"
   },
   "vehicleType": {

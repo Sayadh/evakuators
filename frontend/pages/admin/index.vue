@@ -759,6 +759,29 @@ function featuredDaysLeft(truck: AdminTowTruck): number | null {
  * Mirrors `isFeaturedNow` on the server; a null end date is an open-ended
  * legacy grant and is live.
  */
+/**
+ * Mark a driver as one of ours, or stop.
+ *
+ * No dialog, unlike a placement: that one is sold for a number of days and the
+ * admin has to say how many, so it has something to ask. This is one bit with
+ * no term attached, and pressing the same button again reverses it.
+ *
+ * The row is updated from what the server answered rather than from what was
+ * sent — the same discipline every other toggle on this page follows.
+ */
+async function togglePartner(truck: AdminTowTruck): Promise<void> {
+  actioningId.value = truck.id
+  towTrucksError.value = ''
+  try {
+    const updated = await adminRepository.setTowTruckPartner(truck.id, !truck.isPartner)
+    truck.isPartner = updated.isPartner
+  } catch (error) {
+    towTrucksError.value = extractErrorMessage(error, 'Կարգավիճակը փոխել չհաջողվեց։')
+  } finally {
+    actioningId.value = null
+  }
+}
+
 function isPromotionLive(truck: AdminTowTruck): boolean {
   if (!truck.isFeatured) return false
   if (!truck.featuredUntil) return true
@@ -1784,6 +1807,11 @@ async function rejectReview(review: AdminReview): Promise<void> {
                 <!-- The remaining days, not just the fact: an operator whose
                      driver rings to ask "how long do I have left" should not
                      have to open anything to answer. -->
+                <!-- Ours, and the same badge the public card shows. First in
+                     the row because it is the standing fact about the driver;
+                     the promotion badges beside it describe a term that is
+                     currently running. -->
+                <AppBadge v-if="truck.isPartner" variant="primary">Մեր վարորդ</AppBadge>
                 <AppBadge v-if="isPromotionLive(truck)" variant="accent">
                   Առաջխաղացում{{
                     featuredDaysLeft(truck) === null ? '' : ` · ${featuredDaysLeft(truck)} օր`
@@ -2056,6 +2084,14 @@ async function rejectReview(review: AdminReview): Promise<void> {
                   @click="removeFeatured(truck)"
                 >
                   Հանել առաջխաղացումից
+                </AppButton>
+                <AppButton
+                  :variant="truck.isPartner ? 'success' : 'outline'"
+                  size="sm"
+                  :disabled="actioningId === truck.id"
+                  @click="togglePartner(truck)"
+                >
+                  {{ truck.isPartner ? 'Մեր վարորդն է ✓' : 'Նշել որպես մեր վարորդ' }}
                 </AppButton>
                 <AppButton
                   variant="outline"

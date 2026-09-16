@@ -16,6 +16,8 @@ export interface DispatchCandidate {
   baseName: string
   tier: DispatchTier
   isFeatured: boolean
+  /** "Our driver" — ranked above the rest of their tier, below a live placement */
+  isPartner: boolean
   rating?: number
   subscriptionStatus: 'unpaid' | 'paid' | 'due-soon' | 'overdue'
   dispatchesThisMonth: number

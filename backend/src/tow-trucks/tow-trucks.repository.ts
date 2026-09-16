@@ -54,6 +54,9 @@ const CARD_SELECT = {
   isFeatured: true,
   featuredAt: true,
   featuredUntil: true,
+  // "Our driver", also for the card ordering — a standing relationship rather
+  // than a bought placement, so it has no window to read alongside it.
+  isPartner: true,
   // IMAGE_ORDER, not just `position` — every legacy row shares position 0, so
   // without the id tiebreak "the thumbnail" is whatever Postgres returns first
   // and can differ between two requests for the same truck.
@@ -610,6 +613,11 @@ export class TowTrucksRepository {
   }
 
   /** Admin-set "can move heavy machinery" — see AdminService.setTowTruckHeavyEquipment */
+  /** "Our driver" on or off. No window to clear — see AdminService.setTowTruckPartner */
+  setPartner(id: number, isPartner: boolean): Promise<TowTruck> {
+    return this.prisma.towTruck.update({ where: { id }, data: { isPartner } })
+  }
+
   setHeavyEquipment(id: number, heavyEquipment: boolean): Promise<TowTruck> {
     return this.prisma.towTruck.update({ where: { id }, data: { heavyEquipment } })
   }

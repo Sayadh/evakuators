@@ -196,6 +196,15 @@ export interface TowTruckCard {
    * Used only by `sortTowTrucks`, and only on the driver's own town's page.
    */
   promotedAt?: string
+  /**
+   * "Our driver" — a standing relationship with the operator, mirrored from
+   * `TowTruckCardApi.isPartner`.
+   *
+   * Always present, unlike `promotedAt`: this is a state every driver has, not
+   * a commercial term that applies to some of them. Read by `sortTowTrucks` on
+   * every listing, and rendered as the «Մեր վարորդ» badge on the card.
+   */
+  isPartner: boolean
 }
 
 /**

@@ -205,6 +205,9 @@ export function toTowTruckCardApi(
     ...(isFeaturedNow(truck, now) && truck.featuredAt
       ? { promotedAt: truck.featuredAt.toISOString() }
       : {}),
+    // No window to apply, unlike the placement above: this one is on until an
+    // admin turns it off, so the column IS the answer.
+    isPartner: truck.isPartner,
     // The repository already capped this at one row (`take: 1`, ordered by
     // position). Kept as an array so the frontend's card type stays a strict
     // subset of the full TowTruck type.

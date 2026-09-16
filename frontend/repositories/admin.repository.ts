@@ -209,6 +209,8 @@ export interface AdminTowTruck {
    * up, so an admin sees exactly the words the public profile shows.
    */
   serviceAreas: AdminServiceArea[]
+  /** "Our driver" — a standing relationship, not a bought placement */
+  isPartner: boolean
   /** Structural placement — at most one of the two, both unset for corridor-only coverage */
   citySlug?: string
   districtSlug?: string
@@ -623,6 +625,20 @@ export const adminRepository = {
    * refusal: a duration attached to "take it away" is a caller that has
    * misunderstood what it is asking for.
    */
+  /**
+   * Mark a driver as one of ours, or stop.
+   *
+   * No `days`, unlike `setTowTruckFeatured`: a placement is bought for a
+   * period and expires, this is on until an admin turns it off.
+   */
+  setTowTruckPartner(id: number, isPartner: boolean): Promise<{ id: number; isPartner: boolean }> {
+    return apiFetch<{ id: number; isPartner: boolean }>(`/admin/tow-trucks/${id}/partner`, {
+      method: 'PATCH',
+      body: { isPartner },
+      headers: authHeader(),
+    })
+  },
+
   setTowTruckFeatured(
     id: number,
     isFeatured: boolean,

@@ -73,6 +73,16 @@ const hoursLabel = computed(() =>
         <NuxtLinkLocale :to="getTowTruckRoute(towTruck.slug)">{{ displayName }}</NuxtLinkLocale>
       </h3>
 
+      <!-- The platform vouching for this driver, so it sits with the name
+           rather than among the specs below: the specs describe the truck,
+           this describes who is behind it. -->
+      <p v-if="towTruck.isPartner" class="truck-card__partner">
+        <AppBadge variant="primary">
+          <AppIcon name="check" :size="13" />
+          {{ t('common.partnerBadge') }}
+        </AppBadge>
+      </p>
+
       <ul class="truck-card__specs">
         <li>
           <AppIcon name="truck" :size="15" />
@@ -179,6 +189,16 @@ const hoursLabel = computed(() =>
       &:hover {
         color: var(--color-primary-light);
       }
+    }
+  }
+
+  &__partner {
+    margin: var(--space-1) 0 0;
+
+    :deep(.app-badge) {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
     }
   }
 

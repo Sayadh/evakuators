@@ -20,6 +20,12 @@ export interface AdminTowTruckSummary {
   /** Admin-curated "best tow trucks" homepage pick — see AdminService.setTowTruckFeatured */
   isFeatured: boolean
   /**
+   * "Our driver" — a standing relationship with the operator, not a bought
+   * placement. Ranks above everyone except a live placement, in both the
+   * public listing and the dispatch screen. See schema.prisma.
+   */
+  isPartner: boolean
+  /**
    * When the paid placement runs out — ISO, absent when there is none or when
    * it is one of the open-ended grants that predate durations.
    *
@@ -130,6 +136,7 @@ export function toAdminTowTruckSummary(
     // what a visitor is actually seeing, which is the difference an operator
     // needs when a driver rings to ask why they are no longer on top.
     isFeatured: truck.isFeatured,
+    isPartner: truck.isPartner,
     ...(truck.featuredUntil ? { featuredUntil: truck.featuredUntil.toISOString() } : {}),
     vehicleBrand: truck.vehicleBrand,
     vehicleModel: truck.vehicleModel ?? undefined,

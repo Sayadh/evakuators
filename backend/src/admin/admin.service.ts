@@ -1282,6 +1282,27 @@ export class AdminService {
    * can put anyone on. Keeping the column to "what an admin decided" makes
    * that self-promotion impossible rather than merely unlikely.
    */
+  /**
+   * Mark a driver as one of ours, or stop.
+   *
+   * No window, no sweep, no second field — unlike a placement, this is on
+   * until an admin turns it off. The no-op guard is the same one
+   * `setTowTruckHeavyEquipment` uses and for the same reason: `updatedAt`
+   * feeds the sitemap's <lastmod>, and a request that changed nothing must
+   * not claim the page changed.
+   */
+  async setTowTruckPartner(id: number, isPartner: boolean): Promise<{ id: number; isPartner: boolean }> {
+    const towTruck = await this.towTrucksRepository.findById(id)
+    if (!towTruck) throw new NotFoundException(`Էվակուատոր #${id}-ը չի գտնվել`)
+
+    if (isPartner === towTruck.isPartner) {
+      return { id: towTruck.id, isPartner: towTruck.isPartner }
+    }
+
+    const updated = await this.towTrucksRepository.setPartner(id, isPartner)
+    return { id: updated.id, isPartner: updated.isPartner }
+  }
+
   async setTowTruckHeavyEquipment(
     id: number,
     heavyEquipment: boolean,

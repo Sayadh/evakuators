@@ -90,8 +90,20 @@ export class DispatchService {
       .filter((candidate) => this.matchesFilter(candidate, filter, lookups.now))
       .sort((a, b) =>
         compareCandidates(
-          { tier: a.tier, isFeatured: a.isFeatured, rating: a.rating ?? null, driverName: a.driverName },
-          { tier: b.tier, isFeatured: b.isFeatured, rating: b.rating ?? null, driverName: b.driverName },
+          {
+            tier: a.tier,
+            isFeatured: a.isFeatured,
+            isPartner: a.isPartner,
+            rating: a.rating ?? null,
+            driverName: a.driverName,
+          },
+          {
+            tier: b.tier,
+            isFeatured: b.isFeatured,
+            isPartner: b.isPartner,
+            rating: b.rating ?? null,
+            driverName: b.driverName,
+          },
         ),
       )
 
@@ -235,6 +247,8 @@ export class DispatchService {
       // them in the «Լավագույնները» filter either. Same rule as every public
       // read — see `isFeaturedNow`.
       isFeatured: isFeaturedNow(truck, lookups.now),
+      // No window to apply — see schema.prisma's own note on the column.
+      isPartner: truck.isPartner,
       rating: rating === undefined ? undefined : Number(rating.toFixed(1)),
       subscriptionStatus: derivePaymentStatus(lookups.coverage.get(truck.id)?.paidUntil ?? null),
       dispatchesThisMonth: lookups.monthCounts.get(truck.id) ?? 0,

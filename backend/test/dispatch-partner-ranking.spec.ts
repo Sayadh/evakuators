@@ -1,0 +1,61 @@
+import { describe, expect, it } from 'vitest'
+import { compareCandidates, type RankedCandidate } from '../src/dispatch/dispatch-ranking'
+
+/**
+ * "Our drivers" rank above everyone except a driver holding a paid placement.
+ *
+ * The order of the three rules is the product decision, and it is the kind
+ * that gets quietly inverted by a later edit: a placement is SOLD, so it must
+ * outrank a relationship that was not. Below that, a partner outranks a
+ * stranger. Below that, rating decides as it always did.
+ */
+const candidate = (patch: Partial<RankedCandidate>): RankedCandidate => ({
+  tier: 'local',
+  isFeatured: false,
+  isPartner: false,
+  rating: null,
+  driverName: 'Բ',
+  ...patch,
+})
+
+const firstOf = (a: RankedCandidate, b: RankedCandidate): RankedCandidate =>
+  [a, b].sort(compareCandidates)[0]!
+
+describe('compareCandidates — partner drivers', () => {
+  it('puts our driver above a stranger in the same tier', () => {
+    const ours = candidate({ isPartner: true, driverName: 'Ours' })
+    const other = candidate({ driverName: 'Other' })
+
+    expect(firstOf(other, ours).driverName).toBe('Ours')
+  })
+
+  it('still puts a paid placement above our driver — the placement was bought', () => {
+    const paid = candidate({ isFeatured: true, driverName: 'Paid' })
+    const ours = candidate({ isPartner: true, driverName: 'Ours' })
+
+    expect(firstOf(ours, paid).driverName).toBe('Paid')
+  })
+
+  it('beats a higher rating, because it is checked before rating', () => {
+    const ours = candidate({ isPartner: true, rating: 3, driverName: 'Ours' })
+    const betterRated = candidate({ rating: 5, driverName: 'Better' })
+
+    expect(firstOf(betterRated, ours).driverName).toBe('Ours')
+  })
+
+  it('never crosses a tier: a local stranger still beats a partner from elsewhere', () => {
+    // The tier is what keeps somebody ten minutes away ahead of somebody an
+    // hour away. A partner must not buy their way past distance.
+    const localStranger = candidate({ tier: 'local', driverName: 'Local' })
+    const visitingPartner = candidate({ tier: 'visiting', isPartner: true, driverName: 'Far' })
+
+    expect(firstOf(visitingPartner, localStranger).driverName).toBe('Local')
+  })
+
+  it('falls through to rating when both are ours', () => {
+    const better = candidate({ isPartner: true, rating: 5, driverName: 'Better' })
+    const worse = candidate({ isPartner: true, rating: 2, driverName: 'Worse' })
+
+    expect(firstOf(worse, better).driverName).toBe('Better')
+  })
+})

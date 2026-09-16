@@ -105,6 +105,17 @@ export interface TowTruckCardApi {
    */
   promotedAt?: string
   /**
+   * "Our driver" — a standing relationship with the operator, shown on the
+   * card as «Մեր վարորդ» and ranked above everyone except a live placement.
+   *
+   * A plain boolean, unlike `promotedAt`, and the difference says what each
+   * one is: a placement is bought, so it has a start date the ordering needs;
+   * this is not bought, has no queue to be in, and no date to publish. Always
+   * present rather than omitted-when-false — it is a state every driver has,
+   * not a term that applies to some of them.
+   */
+  isPartner: boolean
+  /**
    * Approved reviews only, and **omitted entirely when there are none** —
    * never `null`, never a zero, and never an invented default.
    *

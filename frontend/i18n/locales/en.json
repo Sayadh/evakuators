@@ -218,6 +218,7 @@
     "emptyFilteredTitle": "No tow trucks match these filters",
     "emptyFilteredText": "Try loosening the filters, or clear them.",
     "selectPlaceholder": "Select",
+    "partnerBadge": "Our driver",
     "hours24": "24/7"
   },
   "vehicleType": {

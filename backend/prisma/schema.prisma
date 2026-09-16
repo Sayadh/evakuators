@@ -345,6 +345,14 @@ model TowTruck {
   /// window below. A row can be `true` with a `featuredUntil` in the past for
   /// up to an hour, until the sweep catches it.
   isFeatured         Boolean             @default(false)
+  /// "Our driver" — a standing relationship with the operator, shown publicly
+  /// as «Մեր վարորդ» and ranked above everyone except a paid placement.
+  ///
+  /// Deliberately its own column rather than a second meaning for `isFeatured`:
+  /// that one is sold by the day and expires, this one has no duration and
+  /// nobody buys it. Revoking a placement must not end the relationship, and
+  /// the hourly expiry sweep must never see this field.
+  isPartner          Boolean             @default(false)
   /// When the placement was granted — the ORDER among drivers holding one in
   /// the same town, newest first. Not decoration: a driver who pays today is
   /// first tomorrow, and the one who paid last week moves down by one instead
@@ -1045,7 +1053,7 @@ model SubscriptionPayment {
   /// the driver another month for one payment. See IdramService.
   providerTransactionId String? @unique
 
-  status    SubscriptionPaymentStatus @default(PENDING)
+  status SubscriptionPaymentStatus @default(PENDING)
 
   /// When an admin acknowledged this payment in `/admin/payments`.
   ///
@@ -1055,8 +1063,8 @@ model SubscriptionPayment {
   /// is deliberately a nullable timestamp rather than another status.
   reviewedAt DateTime?
 
-  createdAt DateTime                  @default(now())
-  updatedAt DateTime                  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   /// The driver's own history list, newest first.
   @@index([towTruckId, createdAt])

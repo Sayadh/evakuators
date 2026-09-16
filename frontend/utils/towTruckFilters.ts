@@ -171,9 +171,13 @@ export function isPromotedAt(truck: TowTruckCard, place: BasePlace | undefined):
  * comparator stays total — see the note on `seed` in `sortTowTrucks`.
  */
 function localRank(truck: TowTruckCard, place: BasePlace): number {
+  const basedHere = isBasedAt(truck, place)
+
   if (isPromotedAt(truck, place)) return 0
-  if (isBasedAt(truck, place)) return 1
-  return 2
+  if (basedHere && truck.isPartner) return 1
+  if (basedHere) return 2
+  if (truck.isPartner) return 3
+  return 4
 }
 
 /**
@@ -198,19 +202,25 @@ function localRank(truck: TowTruckCard, place: BasePlace): number {
  *
  * 0. drivers holding a paid placement AND based here (`isPromotedAt`), newest
  *    purchase first and NOT shuffled — see the comparator;
- * 1. everyone else actually based in the town or district being searched
- *    (`isBasedAt`), in their own shuffled order;
- * 2. everyone who merely also covers it, in theirs.
+ * 1. our own drivers (`isPartner`) based here, in their own shuffled order;
+ * 2. everyone else actually based in the town or district being searched
+ *    (`isBasedAt`), in theirs;
+ * 3. our own drivers who merely also cover it;
+ * 4. everyone else who merely also covers it.
  *
- * Ranks 1 and 2 are the original rule and the reason has not changed: someone
- * searching «Ավան» is looking for an Ավան driver first and a driver who merely
- * also drives there second — the shuffle answers "which of the several
- * equally-relevant drivers do I see on top", not "should a local driver ever be
- * less visible than one who is not local at all".
+ * Locality is the OUTER split and being ours is the inner one — deliberately
+ * that way round. Someone searching «Ավան» is looking for an Ավան driver first
+ * and a driver who merely also drives there second; a partner an hour away is
+ * still an hour away, and letting the relationship jump that queue would be
+ * the platform quietly serving itself at the customer's expense. So it sorts
+ * partners ahead of equally-relevant strangers, never ahead of a nearer
+ * driver. Ranks 2 and 4 are the original rule, unchanged.
  *
  * Rank 0 is the paid one, and it sits INSIDE the local tier rather than above
  * it: a promoted driver is a local driver who also paid, never a visitor who
  * bought their way past the locals. That is why `isPromotedAt` requires both.
+ * It stays above rank 1 for the same reason it exists: that position was sold,
+ * and a relationship that was not sold must not displace it.
  *
  * ## `seed`, and why the shuffle is not in the comparator
  *
@@ -291,9 +301,17 @@ export function sortTowTrucks(
         })
       }
 
+      // Our own drivers first, then bands. Partner before band rather than
+      // after it because that is what "priority" was asked to mean — and this
+      // mode has no locality to protect: a marz, vehicle-type or homepage list
+      // is not about one town, so there is no nearer driver to displace.
+      //
       // Bands, not scores. Equal bands compare 0, and a stable sort then
       // leaves the shuffled order in place — which is the whole mechanism.
-      return base.sort((a, b) => ratingBand(b) - ratingBand(a))
+      return base.sort((a, b) => {
+        if (a.isPartner !== b.isPartner) return a.isPartner ? -1 : 1
+        return ratingBand(b) - ratingBand(a)
+      })
     }
   }
 }

@@ -1,0 +1,18 @@
+-- "Our driver" — the operator's own drivers, shown publicly as «Մեր վարորդ».
+--
+-- ## What it is, and what it is not
+--
+-- Not a second `isFeatured`. A featured placement is SOLD: it is bought for a
+-- number of days, it expires, and it pins a driver to the top of their own
+-- town's page. This is a standing relationship the operator has with a driver,
+-- has no duration, and nobody buys it. The two therefore cannot share a column
+-- even though they both push a driver up a list — a revoked placement must not
+-- take the relationship with it, and an expiry sweep must never touch this.
+--
+-- ## Why no index
+--
+-- Nothing queries by it. Both orderings that use it — the public listing's
+-- Recommended sort and the dispatch screen's candidate ranking — already hold
+-- the rows in memory when they apply it, so an index here would be written on
+-- every driver update and read by nothing.
+ALTER TABLE "TowTruck" ADD COLUMN "isPartner" BOOLEAN NOT NULL DEFAULT false;

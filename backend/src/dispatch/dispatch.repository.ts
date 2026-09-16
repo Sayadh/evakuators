@@ -45,6 +45,7 @@ const CANDIDATE_SELECT = {
   serviceAreas: true,
   isFeatured: true,
   featuredUntil: true,
+  isPartner: true,
 } as const satisfies Prisma.TowTruckSelect
 
 /** Just enough of a truck to rank it and dial it */

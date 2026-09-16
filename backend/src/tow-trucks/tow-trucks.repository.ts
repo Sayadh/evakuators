@@ -409,16 +409,35 @@ export class TowTrucksRepository {
    * Every published driver, unpaginated, for the admin CSV export — active
    * and deactivated alike, same "admin sees everyone" rule as
    * `findAllForAdmin`. A `select`, not the default full row: the export reads
-   * four columns, and pulling `description`, coverage JSON, coordinates and
+   * five columns, and pulling `description`, coverage JSON, coordinates and
    * every other column for every driver just to throw them away would be the
    * wide read `findByCard`'s own comment warns against, at the scale of the
    * WHOLE table instead of one page of it.
+   *
+   * The selected set is the sheet's own columns and nothing else — see
+   * `DRIVER_EXPORT_HEADER` in `analytics/admin-drivers-export.rows.ts`, which
+   * is where a column is added or removed. `locationName` rather than the
+   * three base slugs because the backend has no geography to turn a slug into
+   * a label (CLAUDE.md); that string is composed once, on the frontend, when
+   * an admin sets the base.
    */
   findAllForExport(): Promise<
-    { id: number; driverName: string; companyName: string | null; phone: string; isActive: boolean }[]
+    {
+      id: number
+      driverName: string
+      phone: string
+      locationName: string
+      isPartner: boolean
+    }[]
   > {
     return this.prisma.towTruck.findMany({
-      select: { id: true, driverName: true, companyName: true, phone: true, isActive: true },
+      select: {
+        id: true,
+        driverName: true,
+        phone: true,
+        locationName: true,
+        isPartner: true,
+      },
       orderBy: { createdAt: 'asc' },
     })
   }

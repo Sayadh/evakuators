@@ -175,8 +175,34 @@ export interface RankedCandidate {
 const TIER_ORDER: Record<DispatchTier, number> = { local: 0, visiting: 1, nationwide: 2 }
 
 /**
- * The order inside the screen: tier, then the drivers the operator marked as
- * good, then rating.
+ * Which band a candidate falls in — the same four the public city page uses
+ * (`localRank` in the frontend's towTruckFilters), so the dispatcher and the
+ * customer are looking at one ordering rule rather than two that drift.
+ *
+ *   0. a paid placement, and based here
+ *   1. one of ours, and based here
+ *   2. anybody else based here
+ *   3. everybody else — reachable, but not from this town
+ *
+ * Being based here is the OUTER split and the rest sorts inside it. A partner
+ * two towns away is still two towns away, and the operator's own relationship
+ * must not put them in front of somebody who can be there in ten minutes.
+ * That is also why a placement counts only for a local driver: what was sold
+ * is the top of their OWN town.
+ *
+ * Rank 3 keeps `visiting` ahead of `nationwide` between themselves — the
+ * original distinction, unchanged, now applied only where it still decides
+ * something.
+ */
+function bandOf(candidate: RankedCandidate): number {
+  if (candidate.tier !== 'local') return 3 + TIER_ORDER[candidate.tier]
+  if (candidate.isFeatured) return 0
+  if (candidate.isPartner) return 1
+  return 2
+}
+
+/**
+ * The order inside the screen: the band above, then rating.
  *
  * ## Why "who has waited longest" is NOT the sort
  *
@@ -196,17 +222,8 @@ const TIER_ORDER: Record<DispatchTier, number> = { local: 0, visiting: 1, nation
  * with a record.
  */
 export function compareCandidates(a: RankedCandidate, b: RankedCandidate): number {
-  const byTier = TIER_ORDER[a.tier] - TIER_ORDER[b.tier]
-  if (byTier !== 0) return byTier
-
-  if (a.isFeatured !== b.isFeatured) return a.isFeatured ? -1 : 1
-
-  // Below the paid placement and above everything else, which is the whole
-  // instruction: the operator's own drivers get the call first, but never over
-  // a driver who paid for that position. Inside the tier, not across it — a
-  // partner two towns away must not be offered before a local who can actually
-  // be there in ten minutes, and the tier above is what protects that.
-  if (a.isPartner !== b.isPartner) return a.isPartner ? -1 : 1
+  const byBand = bandOf(a) - bandOf(b)
+  if (byBand !== 0) return byBand
 
   const ratingA = a.rating ?? -1
   const ratingB = b.rating ?? -1

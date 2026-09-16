@@ -45,13 +45,53 @@ describe('compareCandidates — partner drivers', () => {
     expect(firstOf(betterRated, ours).driverName).toBe('Ours')
   })
 
-  it('never crosses a tier: a local stranger still beats a partner from elsewhere', () => {
-    // The tier is what keeps somebody ten minutes away ahead of somebody an
-    // hour away. A partner must not buy their way past distance.
+  it('never crosses the local split: a local stranger beats a partner from elsewhere', () => {
+    // Being based here is the outer split. A partner two towns away is still
+    // two towns away, and the relationship must not buy past distance.
     const localStranger = candidate({ tier: 'local', driverName: 'Local' })
     const visitingPartner = candidate({ tier: 'visiting', isPartner: true, driverName: 'Far' })
 
     expect(firstOf(visitingPartner, localStranger).driverName).toBe('Local')
+  })
+
+  it('does not let a placement bought elsewhere jump a local driver either', () => {
+    // What was sold is the top of the driver's OWN town — the same rule the
+    // public listing applies through `isPromotedAt`.
+    const localStranger = candidate({ tier: 'local', driverName: 'Local' })
+    const visitingPaid = candidate({ tier: 'visiting', isFeatured: true, driverName: 'Far' })
+
+    expect(firstOf(visitingPaid, localStranger).driverName).toBe('Local')
+  })
+
+  it('keeps visiting ahead of nationwide among everyone who is not local', () => {
+    const visiting = candidate({ tier: 'visiting', driverName: 'Nearer' })
+    const nationwide = candidate({ tier: 'nationwide', driverName: 'Anywhere' })
+
+    expect(firstOf(nationwide, visiting).driverName).toBe('Nearer')
+  })
+
+  /**
+   * The whole point of the rewrite: the dispatcher and the customer see one
+   * ordering rule, not two that drift. This is the public city page's
+   * `localRank` written out — paid, ours, based here, everyone else — and it
+   * must hold end to end in one list.
+   */
+  it('matches the public city page: paid, ours, local, then the rest', () => {
+    const list = [
+      candidate({ tier: 'nationwide', driverName: 'Anywhere' }),
+      candidate({ tier: 'local', driverName: 'Local' }),
+      candidate({ tier: 'local', isFeatured: true, driverName: 'Paid' }),
+      candidate({ tier: 'visiting', isPartner: true, driverName: 'OursFar' }),
+      candidate({ tier: 'local', isPartner: true, driverName: 'OursHere' }),
+    ]
+
+    expect([...list].sort(compareCandidates).map((c) => c.driverName)).toEqual([
+      'Paid',
+      'OursHere',
+      'Local',
+      'OursFar',
+      'Anywhere',
+    ])
   })
 
   /**

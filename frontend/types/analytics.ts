@@ -49,8 +49,15 @@ export interface AnalyticsOverview {
    * opening a page, so it is counted per job rather than deduplicated to once
    * per visitor per day like everything in `totals` is. See the backend's
    * AnalyticsDispatchCountersApi.
+   *
+   * Optional, unlike its backend twin, and deliberately so: the frontend does
+   * not get to assume which version of the API answered it. Frontend and
+   * backend restart at different moments in a deploy, so there is always a
+   * window where this build is live and the response predates the field —
+   * and a dashboard that throws during that window is a far worse bug than a
+   * counter that reads 0 for a minute. See analyticsCardValues.ts.
    */
-  dispatches: AnalyticsDispatchCounters
+  dispatches?: AnalyticsDispatchCounters
 }
 
 export interface AnalyticsDispatchCounters {

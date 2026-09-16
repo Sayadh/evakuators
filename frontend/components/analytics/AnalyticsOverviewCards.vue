@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ANALYTICS_OVERVIEW_CARDS, type AnalyticsCardDefinition } from '~/constants/analytics'
 import type { AnalyticsOverview } from '~/types/analytics'
+import { cardAllTimeValue, cardPeriodValue } from '~/utils/analyticsCardValues'
 import { formatCount } from '~/utils/formatters'
 
 /**
@@ -19,36 +20,18 @@ interface Props {
 
 const props = defineProps<Props>()
 
-/** Value inside the selected period */
+/**
+ * Both readers live in `utils/analyticsCardValues.ts` as pure functions — they
+ * have edge cases worth testing directly (a response from a backend that
+ * predates a field, above all), and a rule reachable only through a mounted
+ * component is a rule with no test.
+ */
 function periodValue(card: AnalyticsCardDefinition): number {
-  switch (card.source.kind) {
-    case 'event':
-      return props.overview.totals[card.source.eventType]
-    case 'uniqueVisitors':
-      return props.overview.uniqueVisitors
-    case 'dispatches':
-      return props.overview.dispatches.period
-  }
+  return cardPeriodValue(card, props.overview)
 }
 
-/**
- * Lifetime value, or null where none exists.
- *
- * Unique visitors deliberately has none: the per-visitor ledger it is computed
- * from is purged on a retention schedule, so an "all-time unique visitors"
- * number would quietly shrink over time, and showing nothing is more honest
- * than showing a number that decreases (see docs/analytics.md). Referrals have
- * one — `DispatchReferral` rows are never purged.
- */
 function allTimeValue(card: AnalyticsCardDefinition): number | null {
-  switch (card.source.kind) {
-    case 'event':
-      return props.overview.allTimeTotals[card.source.eventType]
-    case 'uniqueVisitors':
-      return null
-    case 'dispatches':
-      return props.overview.dispatches.allTime
-  }
+  return cardAllTimeValue(card, props.overview)
 }
 
 /** True for the one card whose number is period-only, so the row can say so */

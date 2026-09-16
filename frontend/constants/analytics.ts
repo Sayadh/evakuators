@@ -125,6 +125,21 @@ export const ANALYTICS_OVERVIEW_CARDS: AnalyticsCardDefinition[] = [
     source: { kind: 'event', eventType: AnalyticsEventType.PageView },
     hint: 'Քանի անգամ է բացվել ձեր էջը (օրական՝ մեկ այցելու = 1)',
   },
+  // Second, not last: everything around it measures interest — people looking,
+  // people tapping a button — and this one measures work that actually reached
+  // the driver. It is the number they scroll to find, so it does not sit below
+  // three contact-channel counters.
+  {
+    id: AnalyticsCard.Dispatches,
+    label: 'Ուղղորդումներ',
+    icon: 'arrow-right',
+    source: { kind: 'dispatches' },
+    // No daily-dedup sentence here, and its absence is the point: this is the
+    // one card that counts jobs, not visitor-days. Two calls handed to the
+    // same driver on the same day are two — saying «օրական՝ մեկ = 1» would be
+    // a plain lie about this number.
+    hint: 'Ադմինիստրատորի կողմից ձեզ տրամադրված պատվերները, որոնք դուք կատարել եք',
+  },
   {
     id: AnalyticsCard.UniqueVisitors,
     label: 'Եզակի այցելուներ',
@@ -156,17 +171,6 @@ export const ANALYTICS_OVERVIEW_CARDS: AnalyticsCardDefinition[] = [
     icon: 'telegram',
     source: { kind: 'event', eventType: AnalyticsEventType.TelegramClick },
     hint: 'Քանի անգամ է սեղմվել Telegram-ի կոճակը (օրական՝ մեկ այցելու = 1)',
-  },
-  {
-    id: AnalyticsCard.Dispatches,
-    label: 'Ուղղորդումներ',
-    icon: 'arrow-right',
-    source: { kind: 'dispatches' },
-    // No daily-dedup sentence here, and its absence is the point: this is the
-    // one card that counts jobs, not visitor-days. Two calls handed to the
-    // same driver on the same day are two — saying «օրական՝ մեկ = 1» would be
-    // a plain lie about this number.
-    hint: 'Քանի անգամ ենք ձեզ ուղղորդել հաճախորդի զանգ',
   },
 ]
 

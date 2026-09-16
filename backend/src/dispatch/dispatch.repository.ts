@@ -196,6 +196,23 @@ export class DispatchRepository {
   }
 
   /**
+   * How many referrals one driver was given inside an instant window — what
+   * the dashboard's period selector asks for.
+   *
+   * Takes instants, not the analytics module's date keys: the dependency runs
+   * analytics → dispatch, and it stays that way. Converting an Armenia
+   * calendar range into the window it really covers is the analytics module's
+   * own job (`dateKeyRangeToInstants`), done once at that boundary.
+   *
+   * Half-open for the same reason that helper produces a half-open range.
+   */
+  countInRange(towTruckId: number, range: { gte: Date; lt: Date }): Promise<number> {
+    return this.prisma.dispatchReferral.count({
+      where: { towTruckId, createdAt: { gte: range.gte, lt: range.lt } },
+    })
+  }
+
+  /**
    * How many each driver was given since `since` — the "this month" number.
    *
    * A second grouped query rather than a window function, because Prisma has

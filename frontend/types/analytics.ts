@@ -43,6 +43,23 @@ export interface AnalyticsOverview {
   allTimeTotals: AnalyticsEventTotals
   reviews: AnalyticsReviewCounters
   ratings: AnalyticsRatingCounters
+  /**
+   * Jobs the dispatcher passed to this driver. Not a visitor metric and not in
+   * `totals`: a referral is an operator handing over a job, not somebody
+   * opening a page, so it is counted per job rather than deduplicated to once
+   * per visitor per day like everything in `totals` is. See the backend's
+   * AnalyticsDispatchCountersApi.
+   */
+  dispatches: AnalyticsDispatchCounters
+}
+
+export interface AnalyticsDispatchCounters {
+  /** Referrals inside the selected period */
+  period: number
+  /** Over the driver's whole history — referral rows are never purged */
+  allTime: number
+  /** ISO datetime of the most recent one; absent when there has never been one */
+  lastDispatchedAt?: string
 }
 
 export interface AnalyticsChartPoint {

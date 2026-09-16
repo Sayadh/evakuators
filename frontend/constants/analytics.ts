@@ -65,17 +65,33 @@ export const ANALYTICS_DEFAULT_PERIOD = AnalyticsPeriod.Last30Days
 
 /* ── Overview cards ──────────────────────────────────────────────────────── */
 
+/**
+ * Where a card's two numbers come from.
+ *
+ * This used to be a nullable `eventType`, where null meant "the derived one" —
+ * which worked only while there was exactly one derived card to be. The moment
+ * a second arrived (referrals), `eventType === null` stopped naming anything:
+ * the reader could no longer tell which derived metric it had, and the card
+ * component's `null` branch would have silently rendered unique-visitor counts
+ * under a referral label. Naming the source makes each card say what it reads,
+ * and makes a new kind a compile error everywhere it has to be handled rather
+ * than a wrong number.
+ */
+export type AnalyticsCardSource =
+  /** A per-event counter out of `totals`/`allTimeTotals`, deduplicated daily */
+  | { kind: 'event'; eventType: AnalyticsEventType }
+  /** COUNT(DISTINCT visitor) over the window — period only, no lifetime figure */
+  | { kind: 'uniqueVisitors' }
+  /** Jobs the dispatcher handed over — counted per job, not per visitor */
+  | { kind: 'dispatches' }
+
 export interface AnalyticsCardDefinition {
   id: AnalyticsCard
   label: string
   /** Name from AppIcon's ICONS map — no new icons are introduced by this feature */
   icon: IconName
-  /**
-   * Which event type's counter this card shows, or null for the derived
-   * unique-visitors card (which is not a per-event counter — see
-   * docs/analytics.md).
-   */
-  eventType: AnalyticsEventType | null
+  /** Which numbers this card reads, and how — see AnalyticsCardSource */
+  source: AnalyticsCardSource
   /** One-line explanation shown under the number, so the metric can't be misread */
   hint: string
 }
@@ -106,21 +122,21 @@ export const ANALYTICS_OVERVIEW_CARDS: AnalyticsCardDefinition[] = [
     id: AnalyticsCard.PageViews,
     label: 'Դիտումներ',
     icon: 'zoom-in',
-    eventType: AnalyticsEventType.PageView,
+    source: { kind: 'event', eventType: AnalyticsEventType.PageView },
     hint: 'Քանի անգամ է բացվել ձեր էջը (օրական՝ մեկ այցելու = 1)',
   },
   {
     id: AnalyticsCard.UniqueVisitors,
     label: 'Եզակի այցելուներ',
     icon: 'user',
-    eventType: null,
+    source: { kind: 'uniqueVisitors' },
     hint: 'Տարբեր մարդիկ, ովքեր բացել են ձեր էջը ընտրված ժամանակահատվածում',
   },
   {
     id: AnalyticsCard.PhoneClicks,
     label: 'Զանգի սեղմումներ',
     icon: 'phone',
-    eventType: AnalyticsEventType.PhoneClick,
+    source: { kind: 'event', eventType: AnalyticsEventType.PhoneClick },
     // Same daily-dedup rule as Դիտումներ above, and stated the same way. One
     // person who calls on three different days is 3 here, not 1 — the number
     // is visitor-days, and a hint reading plainly "how many visitors" would
@@ -131,15 +147,26 @@ export const ANALYTICS_OVERVIEW_CARDS: AnalyticsCardDefinition[] = [
     id: AnalyticsCard.WhatsAppClicks,
     label: 'WhatsApp',
     icon: 'whatsapp',
-    eventType: AnalyticsEventType.WhatsAppClick,
+    source: { kind: 'event', eventType: AnalyticsEventType.WhatsAppClick },
     hint: 'Քանի անգամ է սեղմվել WhatsApp-ի կոճակը (օրական՝ մեկ այցելու = 1)',
   },
   {
     id: AnalyticsCard.TelegramClicks,
     label: 'Telegram',
     icon: 'telegram',
-    eventType: AnalyticsEventType.TelegramClick,
+    source: { kind: 'event', eventType: AnalyticsEventType.TelegramClick },
     hint: 'Քանի անգամ է սեղմվել Telegram-ի կոճակը (օրական՝ մեկ այցելու = 1)',
+  },
+  {
+    id: AnalyticsCard.Dispatches,
+    label: 'Ուղղորդումներ',
+    icon: 'arrow-right',
+    source: { kind: 'dispatches' },
+    // No daily-dedup sentence here, and its absence is the point: this is the
+    // one card that counts jobs, not visitor-days. Two calls handed to the
+    // same driver on the same day are two — saying «օրական՝ մեկ = 1» would be
+    // a plain lie about this number.
+    hint: 'Քանի անգամ ենք ձեզ ուղղորդել հաճախորդի զանգ',
   },
 ]
 

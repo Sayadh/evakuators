@@ -55,6 +55,75 @@ export function dateToDateKey(value: Date): AnalyticsDateKey {
   return value.toISOString().slice(0, 10)
 }
 
+/**
+ * The same formatter, but with the clock fields too — used to read what wall
+ * time Armenia is showing at a given instant, which is how the UTC offset is
+ * derived below instead of being hardcoded.
+ */
+const zonedPartsFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: ANALYTICS_TIMEZONE,
+  hour12: false,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+})
+
+/** How far ahead of UTC Armenia is at this instant, in milliseconds */
+function zoneOffsetMs(instant: Date): number {
+  const parts = new Map(zonedPartsFormatter.formatToParts(instant).map((p) => [p.type, p.value]))
+  const hour = Number(parts.get('hour'))
+  return (
+    Date.UTC(
+      Number(parts.get('year')),
+      Number(parts.get('month')) - 1,
+      Number(parts.get('day')),
+      // ICU spells midnight as 24 under hour12: false in some versions.
+      hour === 24 ? 0 : hour,
+      Number(parts.get('minute')),
+      Number(parts.get('second')),
+    ) - instant.getTime()
+  )
+}
+
+/**
+ * Date key → the instant that Armenia calendar day actually begins.
+ *
+ * NOT the same thing as `dateKeyToDate` above, and the difference is the whole
+ * reason this exists. That one is for `@db.Date` columns, where the stored
+ * value is a day label and UTC midnight is merely how Prisma spells it. A
+ * `DateTime` column holds a real instant: a referral logged at 01:00 on the
+ * 16th Armenia time is `2026-09-15T21:00Z`, so filtering it with
+ * `>= 2026-09-16T00:00Z` would file it under the 15th and quietly drop it out
+ * of the day the operator remembers making it.
+ *
+ * The offset is read from the IANA database rather than written as +04:00.
+ * Armenia has had no DST since 2012, so the constant would be right today —
+ * but it is right by circumstance, and the day that changes is not a day
+ * anyone would think to come back and check this line.
+ */
+export function dateKeyToInstant(key: AnalyticsDateKey): Date {
+  const asIfUtc = dateKeyToDate(key)
+  return new Date(asIfUtc.getTime() - zoneOffsetMs(asIfUtc))
+}
+
+/**
+ * An inclusive date-key window → the half-open instant range covering it.
+ *
+ * Half-open (`gte`/`lt`) rather than inclusive on both ends because the end is
+ * a whole day: the alternative is "23:59:59.999 on the last day", which is a
+ * millisecond away from wrong and gets copied. `lt` is simply where the next
+ * day starts.
+ */
+export function dateKeyRangeToInstants(
+  from: AnalyticsDateKey,
+  to: AnalyticsDateKey,
+): { gte: Date; lt: Date } {
+  return { gte: dateKeyToInstant(from), lt: dateKeyToInstant(shiftDateKey(to, 1)) }
+}
+
 /** Shift a date key by whole days (negative shifts backwards) */
 export function shiftDateKey(key: AnalyticsDateKey, days: number): AnalyticsDateKey {
   return dateToDateKey(new Date(dateKeyToDate(key).getTime() + days * MS_PER_DAY))

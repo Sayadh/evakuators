@@ -205,4 +205,5 @@ export enum AnalyticsCard {
   WhatsAppClicks = 'WHATSAPP_CLICKS',
   TelegramClicks = 'TELEGRAM_CLICKS',
   EmailClicks = 'EMAIL_CLICKS',
+  Dispatches = 'DISPATCHES',
 }

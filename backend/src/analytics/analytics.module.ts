@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common'
 import { AdminAuthModule } from '../admin-auth/admin-auth.module'
+import { DispatchModule } from '../dispatch/dispatch.module'
 import { DriverAuthModule } from '../driver-auth/driver-auth.module'
 import { ReviewsModule } from '../reviews/reviews.module'
 import { TelegramModule } from '../telegram/telegram.module'
@@ -35,7 +36,17 @@ import { SiteAnalyticsRepository } from './site-analytics.repository'
  * could be removed by deleting this folder and one line in app.module.
  */
 @Module({
-  imports: [TowTrucksModule, ReviewsModule, DriverAuthModule, AdminAuthModule, TelegramModule],
+  // DispatchModule for DispatchRepository — the referral counters on the
+  // overview. No cycle: DispatchModule imports AdminAuth/Reviews/Subscriptions
+  // and knows nothing about analytics, and it already exports the repository.
+  imports: [
+    TowTrucksModule,
+    ReviewsModule,
+    DriverAuthModule,
+    AdminAuthModule,
+    TelegramModule,
+    DispatchModule,
+  ],
   controllers: [
     AnalyticsController,
     MyAnalyticsController,

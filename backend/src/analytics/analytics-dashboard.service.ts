@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
+import { DispatchRepository } from '../dispatch/dispatch.repository'
 import { ReviewsRepository } from '../reviews/reviews.repository'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
 import { AnalyticsClock } from './analytics-clock.service'
@@ -25,7 +26,7 @@ import type {
   AnalyticsReviewsApi,
   SiteAnalyticsOverviewApi,
 } from './analytics.types'
-import { buildDateKeyRange } from './analytics.utils'
+import { buildDateKeyRange, dateKeyRangeToInstants } from './analytics.utils'
 
 /**
  * The READ half of the module.
@@ -47,6 +48,10 @@ export class AnalyticsDashboardService {
     private readonly reviewsRepository: ReviewsRepository,
     private readonly towTrucksRepository: TowTrucksRepository,
     private readonly clock: AnalyticsClock,
+    // Read-only, and one direction only: referrals are written by
+    // /admin/dispatch and this module never creates one. Analytics depends on
+    // dispatch, never the reverse.
+    private readonly dispatchRepository: DispatchRepository,
   ) {}
 
   /**
@@ -129,16 +134,26 @@ export class AnalyticsDashboardService {
   async getOverview(towTruckId: number, period: AnalyticsPeriod): Promise<AnalyticsOverviewApi> {
     const range = this.clock.resolveRange(period)
 
-    const [periodRows, allTimeRows, uniqueVisitors, reviewStats] = await Promise.all([
-      this.analyticsRepository.sumByEventType(towTruckId, range),
-      this.analyticsRepository.sumByEventType(towTruckId),
-      this.analyticsRepository.countUniqueVisitors(
-        towTruckId,
-        ANALYTICS_UNIQUE_VISITOR_EVENT_TYPE,
-        range,
-      ),
-      this.reviewsRepository.groupStatsByApproval(towTruckId),
-    ])
+    const [periodRows, allTimeRows, uniqueVisitors, reviewStats, dispatchesInPeriod, dispatchStats] =
+      await Promise.all([
+        this.analyticsRepository.sumByEventType(towTruckId, range),
+        this.analyticsRepository.sumByEventType(towTruckId),
+        this.analyticsRepository.countUniqueVisitors(
+          towTruckId,
+          ANALYTICS_UNIQUE_VISITOR_EVENT_TYPE,
+          range,
+        ),
+        this.reviewsRepository.groupStatsByApproval(towTruckId),
+        // The period window converted to the instants it really covers — a
+        // referral at 01:00 Armenia time belongs to that Armenia day, not to
+        // the UTC one its timestamp happens to fall in.
+        this.dispatchRepository.countInRange(towTruckId, dateKeyRangeToInstants(range.from, range.to)),
+        // All-time count and the most recent one, from the grouped reader the
+        // dispatch screen already uses.
+        this.dispatchRepository.statsFor([towTruckId]),
+      ])
+
+    const dispatches = dispatchStats.get(towTruckId)
 
     return {
       range,
@@ -147,6 +162,14 @@ export class AnalyticsDashboardService {
       allTimeTotals: toEventTotals(allTimeRows),
       reviews: toReviewCounters(reviewStats),
       ratings: toRatingCounters(reviewStats),
+      dispatches: {
+        period: dispatchesInPeriod,
+        // `statsFor` omits drivers with no referrals rather than returning a
+        // zero row, so "absent" is "none" — mapped here, not pushed onto the
+        // response shape as an optional number.
+        allTime: dispatches?.total ?? 0,
+        ...(dispatches ? { lastDispatchedAt: dispatches.lastDispatchedAt.toISOString() } : {}),
+      },
     }
   }
 

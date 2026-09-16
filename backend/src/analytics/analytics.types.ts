@@ -45,6 +45,31 @@ export interface AnalyticsRatingCountersApi {
   pendingAverage: number | null
 }
 
+/**
+ * Jobs the dispatcher actually passed to this driver.
+ *
+ * Deliberately NOT an `AnalyticsEventType`. Everything in `totals` is written
+ * through the visitor-event pipeline and deduplicated to once per visitor per
+ * Armenia day (see docs/analytics.md) — which is the right rule for "somebody
+ * looked at your page" and the wrong one here. A referral is not a visitor
+ * action at all: it is an operator handing over a job, each one is a separate
+ * job, and two in one day must read as two. Pushing it through that pipeline
+ * would silently collapse them, and would also invent a "unique visitors"
+ * reading for a number that has no visitors in it.
+ *
+ * So it is counted straight off `DispatchReferral`, the row the dispatch
+ * screen already writes as the authoritative record, exactly as `reviews` and
+ * `ratings` below are counted off `Review`.
+ */
+export interface AnalyticsDispatchCountersApi {
+  /** Referrals inside the selected period */
+  period: number
+  /** Over the driver's whole history — referral rows are never purged */
+  allTime: number
+  /** ISO datetime of the most recent one; absent when there has never been one */
+  lastDispatchedAt?: string
+}
+
 /** GET /my/analytics — the overview cards + customer-activity block */
 export interface AnalyticsOverviewApi {
   range: AnalyticsRangeApi
@@ -56,6 +81,8 @@ export interface AnalyticsOverviewApi {
   allTimeTotals: AnalyticsEventTotals
   reviews: AnalyticsReviewCountersApi
   ratings: AnalyticsRatingCountersApi
+  /** Not a visitor metric — see AnalyticsDispatchCountersApi for why it is separate */
+  dispatches: AnalyticsDispatchCountersApi
 }
 
 /** One point on the daily chart — zero-filled for days with no traffic */

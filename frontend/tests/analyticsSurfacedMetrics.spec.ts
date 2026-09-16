@@ -22,7 +22,9 @@ const tracking = readFileSync(`${ROOT}composables/useAnalyticsTracking.ts`, 'utf
 describe('no dashboard metric is surfaced that nothing can produce', () => {
   it('has no Email card', () => {
     expect(
-      ANALYTICS_OVERVIEW_CARDS.some((card) => card.eventType === AnalyticsEventType.EmailClick),
+      ANALYTICS_OVERVIEW_CARDS.some(
+        (card) => card.source.kind === 'event' && card.source.eventType === AnalyticsEventType.EmailClick,
+      ),
     ).toBe(false)
   })
 
@@ -54,7 +56,7 @@ describe('no dashboard metric is surfaced that nothing can produce', () => {
  */
 describe('the counter hints state the daily-dedup rule', () => {
   it('every per-event card explains it', () => {
-    const counterCards = ANALYTICS_OVERVIEW_CARDS.filter((card) => card.eventType !== null)
+    const counterCards = ANALYTICS_OVERVIEW_CARDS.filter((card) => card.source.kind === 'event')
     expect(counterCards.length).toBeGreaterThan(0)
 
     for (const card of counterCards) {
@@ -63,8 +65,21 @@ describe('the counter hints state the daily-dedup rule', () => {
   })
 
   it('the unique-visitors card does NOT, because it is not that metric', () => {
-    const unique = ANALYTICS_OVERVIEW_CARDS.find((card) => card.eventType === null)
+    const unique = ANALYTICS_OVERVIEW_CARDS.find((card) => card.source.kind === 'uniqueVisitors')
     expect(unique).toBeDefined()
     expect(unique?.hint).not.toContain('օրական՝ մեկ այցելու = 1')
+  })
+
+  /**
+   * Referrals are jobs, not visitor-days: the dispatcher handing the same
+   * driver two calls in one afternoon is two, and the dedup sentence the
+   * counter cards carry would be a false statement about this number. It is
+   * asserted rather than left to review because the sentence is boilerplate
+   * that gets copied when a card is added.
+   */
+  it('the referrals card does NOT either, because it counts jobs', () => {
+    const dispatches = ANALYTICS_OVERVIEW_CARDS.find((card) => card.source.kind === 'dispatches')
+    expect(dispatches).toBeDefined()
+    expect(dispatches?.hint).not.toContain('օրական՝ մեկ այցելու = 1')
   })
 })

@@ -31,6 +31,9 @@ export interface DispatchDistanceRow {
  */
 const CANDIDATE_SELECT = {
   id: true,
+  // For the link to the driver's own public page — the dispatcher checking a
+  // profile mid-call is the one thing this screen could not do.
+  slug: true,
   driverName: true,
   companyName: true,
   phone: true,

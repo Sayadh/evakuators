@@ -3,6 +3,8 @@ import type { DispatchLocationType, DispatchTier } from './dispatch-ranking'
 /** One driver as the dispatch screen shows them */
 export interface DispatchCandidateApi {
   id: number
+  /** Their public profile's slug, so the screen can link to it */
+  slug: string
   driverName: string
   companyName?: string
   /** The number the dispatcher dials — the driver's own login phone */

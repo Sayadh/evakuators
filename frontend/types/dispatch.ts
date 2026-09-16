@@ -9,6 +9,8 @@ export type DispatchFilter = 'all' | 'never-dispatched' | 'featured' | 'long-wai
 /** Mirrors backend `DispatchCandidateApi` */
 export interface DispatchCandidate {
   id: number
+  /** Their public profile's slug — the screen links the name to it */
+  slug: string
   driverName: string
   companyName?: string
   phone: string

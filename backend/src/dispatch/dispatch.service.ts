@@ -237,6 +237,7 @@ export class DispatchService {
 
     return {
       id: truck.id,
+      slug: truck.slug,
       driverName: truck.driverName,
       companyName: truck.companyName ?? undefined,
       phone: truck.phone,

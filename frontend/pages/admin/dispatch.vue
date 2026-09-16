@@ -18,6 +18,7 @@ import {
 import { extractErrorMessage } from '~/utils/errors'
 import { formatDistanceLine } from '~/utils/formatDistance'
 import { getPhoneHref } from '~/utils/formatPhone'
+import { getTowTruckRoute } from '~/utils/routeHelpers'
 
 /**
  * The dispatcher's screen: somebody is on the phone saying where they are, and
@@ -466,10 +467,18 @@ useSeoMetaData({
               :class="{ 'dispatch__card--referred': referredIds.has(candidate.id) }"
             >
               <div class="dispatch__who">
-                <span class="dispatch__name">
+                <!-- A link, and a new tab on purpose: this screen is read with
+                     somebody on the phone, and navigating away would throw away
+                     the search that produced the list. -->
+                <NuxtLink
+                  :to="getTowTruckRoute(candidate.slug)"
+                  target="_blank"
+                  class="dispatch__name"
+                >
                   {{ candidate.driverName }}
                   <span v-if="candidate.isFeatured" title="Լավագույններից">★</span>
-                </span>
+                  <AppBadge v-if="candidate.isPartner" variant="primary">Մեր վարորդ</AppBadge>
+                </NuxtLink>
                 <span class="dispatch__muted">{{ candidate.vehicle }}</span>
               </div>
 
@@ -558,10 +567,18 @@ useSeoMetaData({
                 :class="{ 'dispatch__card--referred': referredIds.has(candidate.id) }"
               >
                 <div class="dispatch__who">
-                  <span class="dispatch__name">
+                  <!-- A link, and a new tab on purpose: this screen is read with
+                       somebody on the phone, and navigating away would throw away
+                       the search that produced the list. -->
+                  <NuxtLink
+                    :to="getTowTruckRoute(candidate.slug)"
+                    target="_blank"
+                    class="dispatch__name"
+                  >
                     {{ candidate.driverName }}
                     <span v-if="candidate.isFeatured" title="Լավագույններից">★</span>
-                  </span>
+                    <AppBadge v-if="candidate.isPartner" variant="primary">Մեր վարորդ</AppBadge>
+                  </NuxtLink>
                   <span class="dispatch__muted">{{ candidate.vehicle }}</span>
                 </div>
 
@@ -799,8 +816,20 @@ useSeoMetaData({
   }
 
   &__name {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
     font-weight: 600;
     font-size: 1.05rem;
+    color: var(--color-text);
+
+    // Underlined on hover only: a dozen underlined names reads as a wall of
+    // links, and this is a name first and a link second.
+    &:hover {
+      color: var(--color-primary);
+      text-decoration: underline;
+    }
   }
 
   &__meta {

@@ -113,10 +113,34 @@ export interface AdminTowTruckSummary {
    * which queries for precisely this row rather than "the latest ever".
    */
   privacyConsent: AdminConsentSummary | null
+  /**
+   * How many jobs the dispatcher has actually passed to this driver, all time.
+   *
+   * The same `DispatchReferral` rows `/admin/dispatch` counts — that screen is
+   * where they are written, and until now it was also the only place they
+   * could be read. But the question "how much has this driver had from us"
+   * gets asked about a driver, not about a place: when they ring to ask why
+   * they are not getting work, or when an admin is deciding whether a
+   * placement is earning its keep. That conversation happens over this card.
+   *
+   * 0 rather than absent for a driver who has never been dispatched — the
+   * panel draws a different row for the two, and "never" is a real answer
+   * here, not missing data.
+   */
+  dispatchesTotal: number
+  /** ISO datetime of the most recent one; absent when there has never been one */
+  lastDispatchedAt?: string
 }
 
 export function toAdminTowTruckSummary(
   truck: TowTruckWithImages & { privacyConsents: Pick<DriverPrivacyConsent, 'policyVersion' | 'acceptedAt' | 'revokedAt'>[] },
+  /**
+   * This driver's row out of `DispatchRepository.statsFor`, or undefined when
+   * they have never been dispatched — that reader omits drivers with no
+   * referrals rather than returning zeroes, so "missing" IS "none" and is
+   * mapped to 0 here instead of being pushed onto every caller.
+   */
+  referrals?: { total: number; lastDispatchedAt: Date },
 ): AdminTowTruckSummary {
   return {
     id: truck.id,
@@ -154,6 +178,8 @@ export function toAdminTowTruckSummary(
     createdAt: truck.createdAt.toISOString(),
     images: truck.images.map((image) => ({ id: image.id, url: image.url })),
     privacyConsent: toAdminConsentSummary(truck.privacyConsents?.[0]),
+    dispatchesTotal: referrals?.total ?? 0,
+    ...(referrals ? { lastDispatchedAt: referrals.lastDispatchedAt.toISOString() } : {}),
   }
 }
 

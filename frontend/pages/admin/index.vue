@@ -1918,6 +1918,22 @@ async function rejectReview(review: AdminReview): Promise<void> {
                      for most of the list, not a problem with the row. -->
                 <dd v-else class="admin-card__muted">Տեղադիրքը նշված չէ</dd>
               </div>
+              <!-- What this driver has actually had from us. The number is
+                   written by /admin/dispatch and until now could only be read
+                   there, one place at a time — but it gets asked about a
+                   driver, which is this card. The date comes out of the same
+                   grouped query, and «12» without «when» is the question it
+                   immediately raises. -->
+              <div>
+                <dt>Ուղղորդումներ</dt>
+                <dd v-if="truck.dispatchesTotal > 0">
+                  <strong>{{ truck.dispatchesTotal }}</strong>
+                  <span v-if="truck.lastDispatchedAt" class="admin-card__muted">
+                    · վերջինը՝ {{ formatDate(truck.lastDispatchedAt) }}
+                  </span>
+                </dd>
+                <dd v-else class="admin-card__muted">Դեռ չի ուղղորդվել</dd>
+              </div>
             </dl>
 
             <!-- Same picker the approval modal uses, pointed at a truck that

@@ -59,6 +59,24 @@ watch(
 </template>
 
 <style scoped lang="scss">
+/**
+ * The width at which the full nav replaces the burger — one name, because the
+ * two rules that read it (`&__nav` showing and `&__burger` hiding) are the
+ * same decision and a mismatch between them would leave a width with both, or
+ * with neither.
+ *
+ * Measured, not chosen: the bar's contents on one line are 1365px (logo 97 +
+ * nav 777 + the call/login/register group 460, plus the two 16px gaps), and
+ * the container adds 48px of padding, so 1413px is the narrowest viewport
+ * that fits. Below it the nav used to wrap onto a second line; now the burger
+ * takes over instead, which is the honest answer — the drawer carries every
+ * one of these links already.
+ *
+ * Keep this at or above 1413px. If a nav link is ever added, re-measure
+ * rather than nudging it.
+ */
+$nav-breakpoint: 1425px;
+
 .header {
   position: sticky;
   top: 0;
@@ -103,7 +121,7 @@ watch(
     display: none;
     gap: var(--space-4);
 
-    @media (min-width: 1024px) {
+    @media (min-width: $nav-breakpoint) {
       display: flex;
     }
   }
@@ -170,7 +188,8 @@ watch(
       background: var(--color-bg);
     }
 
-    @media (min-width: 1024px) {
+    // Exactly where the nav appears — see $nav-breakpoint.
+    @media (min-width: $nav-breakpoint) {
       display: none;
     }
   }

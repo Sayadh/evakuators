@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common'
 import { SubscriptionPaymentStatus, type SubscriptionPayment } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 import type { SubscriptionPeriod } from './subscription-period'
+import { resolveCoveredUntil } from './subscription-status'
 
 /**
  * Upper bound on a driver's own payment history response. Nothing caps how
@@ -42,10 +43,28 @@ const REVIEW_LIST_LIMIT = 200
  */
 const ABANDONED_PENDING_TTL_MS = 24 * 60 * 60 * 1000
 
-/** What one driver's confirmed payments add up to — see DriverPaymentCoverage in admin-payment.mapper.ts */
+/**
+ * What one driver is covered by right now — see DriverPaymentCoverage in
+ * admin-payment.mapper.ts.
+ *
+ * `paidThrough` and `coveredUntil` are both here, and picking the wrong one is
+ * the mistake this shape exists to make hard:
+ *
+ * - **`coveredUntil`** answers "may this driver work today" — status, the
+ *   dashboard gate, `SubscriptionActiveGuard`. It counts an admin's deadline.
+ * - **`paidThrough`** answers "what has this driver actually bought" — the
+ *   only input a renewal may stack onto. Renewing from `coveredUntil` would
+ *   turn a 5-day grace into 5 days of paid time the driver never paid for,
+ *   every time.
+ */
 export interface PaymentCoverageRow {
   towTruckId: number
-  paidUntil: Date | null
+  /** Furthest `periodEnd` among PAID payments. Money, and nothing else. */
+  paidThrough: Date | null
+  /** The deadline an admin set — `TowTruck.paymentDueAt`. A promise, not money. */
+  paymentDueAt: Date | null
+  /** `resolveCoveredUntil(paidThrough, paymentDueAt)` — what every status decision reads. */
+  coveredUntil: Date | null
   lastPaidAt: Date | null
   pendingCount: number
 }
@@ -104,7 +123,7 @@ export class SubscriptionsRepository {
   async findCoverage(towTruckIds: number[]): Promise<Map<number, PaymentCoverageRow>> {
     if (towTruckIds.length === 0) return new Map()
 
-    const [confirmed, pending] = await Promise.all([
+    const [confirmed, pending, due] = await Promise.all([
       this.prisma.subscriptionPayment.groupBy({
         by: ['towTruckId'],
         where: { towTruckId: { in: towTruckIds }, status: SubscriptionPaymentStatus.PAID },
@@ -115,19 +134,32 @@ export class SubscriptionsRepository {
         where: { towTruckId: { in: towTruckIds }, status: SubscriptionPaymentStatus.PENDING },
         _count: { _all: true },
       }),
+      // The admin-set deadlines, read here rather than left to each caller:
+      // every one of them needs coverage, none of them should have to know it
+      // now comes from two tables.
+      this.prisma.towTruck.findMany({
+        where: { id: { in: towTruckIds } },
+        select: { id: true, paymentDueAt: true },
+      }),
     ])
 
     const pendingByTruck = new Map(pending.map((row) => [row.towTruckId, row._count._all]))
+    const dueByTruck = new Map(due.map((row) => [row.id, row.paymentDueAt]))
     const coverage = new Map<number, PaymentCoverageRow>()
 
     for (const id of towTruckIds) {
       const paid = confirmed.find((row) => row.towTruckId === id)
+      // MAX(periodEnd), not "the newest row's periodEnd": a driver who renews
+      // early has a later period than their most recent purchase would
+      // suggest, and the question here is how far they are covered.
+      const paidThrough = paid?._max.periodEnd ?? null
+      const paymentDueAt = dueByTruck.get(id) ?? null
+
       coverage.set(id, {
         towTruckId: id,
-        // MAX(periodEnd), not "the newest row's periodEnd": a driver who
-        // renews early has a later period than their most recent purchase
-        // would suggest, and the question here is how far they are covered.
-        paidUntil: paid?._max.periodEnd ?? null,
+        paidThrough,
+        paymentDueAt,
+        coveredUntil: resolveCoveredUntil(paidThrough, paymentDueAt),
         lastPaidAt: paid?._max.periodStart ?? null,
         pendingCount: pendingByTruck.get(id) ?? 0,
       })

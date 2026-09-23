@@ -43,7 +43,7 @@ interface CandidateLookups {
   stats: Map<number, { total: number; lastDispatchedAt: Date }>
   monthCounts: Map<number, number>
   ratingById: Map<number, number>
-  coverage: Map<number, { paidUntil: Date | null }>
+  coverage: Map<number, { coveredUntil: Date | null }>
   /** One instant for the whole list, so two rows cannot disagree about it */
   now: Date
 }
@@ -251,7 +251,7 @@ export class DispatchService {
       // No window to apply — see schema.prisma's own note on the column.
       isPartner: truck.isPartner,
       rating: rating === undefined ? undefined : Number(rating.toFixed(1)),
-      subscriptionStatus: derivePaymentStatus(lookups.coverage.get(truck.id)?.paidUntil ?? null),
+      subscriptionStatus: derivePaymentStatus(lookups.coverage.get(truck.id)?.coveredUntil ?? null),
       dispatchesThisMonth: lookups.monthCounts.get(truck.id) ?? 0,
       dispatchesTotal: stats?.total ?? 0,
       lastDispatchedAt: stats?.lastDispatchedAt.toISOString(),

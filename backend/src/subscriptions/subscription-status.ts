@@ -32,27 +32,74 @@ export type PaymentStatus = 'unpaid' | 'paid' | 'due-soon' | 'overdue'
  * Five days, which is exactly the warning the old thresholds gave (25 vs 30) —
  * kept identical on purpose so the change of mechanism does not quietly become
  * a change of policy.
+ *
+ * It is also the grace «Դարձնել վճարովի» hands out, and that is one
+ * constant rather than two by construction: setting the deadline exactly this
+ * far ahead puts the driver into `due-soon` on the press and keeps them there
+ * until it passes. Raise this and the grace widens with it; set the deadline
+ * further ahead than this and the driver sits in `paid` — told their
+ * subscription is active, when they have never had one.
  */
 export const PAYMENT_DUE_SOON_WITHIN_DAYS = 5
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
 /**
- * `paidUntil` (the furthest `periodEnd` among this driver's PAID subscription
- * payments) plus "now" → which of the four states applies.
+ * The two sources of coverage, reduced to the one date every other decision
+ * reads.
  *
- * `null` means no confirmed payment has ever covered them — a brand-new
- * driver, or one whose only payments are still PENDING. Both read as "unpaid":
- * a request nobody has confirmed has not paid for anything.
+ * ## Why there are two
+ *
+ * `paidThrough` is money: the furthest `periodEnd` among this driver's PAID
+ * payments. `paymentDueAt` is a promise: a deadline an admin set for a driver
+ * who has never paid, so that the billing cycle can start for them at all.
+ * They are stored apart on purpose — a promise written into the payments
+ * table would be revenue that never arrived — and joined here, once, so that
+ * no caller has to remember to do it.
+ *
+ * ## MAX, not a fallback
+ *
+ * `paidThrough ?? paymentDueAt` is the tempting one-liner and it is wrong.
+ * A driver whose real coverage lapsed in August has a non-null `paidThrough`,
+ * so the `??` would return August and leave them locked out no matter what
+ * deadline an admin just gave them — the exact case the button exists for.
+ * MAX is also what makes the reverse safe: a stale deadline sitting behind a
+ * live subscription is simply ignored, so nothing has to clear it when a
+ * driver finally pays.
+ *
+ * Both null — never paid, never billed — stays null, which `derivePaymentStatus`
+ * reads as `unpaid`: the state that is deliberately never locked out.
+ */
+export function resolveCoveredUntil(
+  paidThrough: Date | null,
+  paymentDueAt: Date | null,
+): Date | null {
+  if (paidThrough === null) return paymentDueAt
+  if (paymentDueAt === null) return paidThrough
+  return paidThrough.getTime() >= paymentDueAt.getTime() ? paidThrough : paymentDueAt
+}
+
+/**
+ * `coveredUntil` (see `resolveCoveredUntil`) plus "now" → which of the four
+ * states applies.
+ *
+ * `null` means nothing covers them — no confirmed payment and no deadline an
+ * admin set. A brand-new driver, one whose only payments are still PENDING,
+ * and one nobody has started billing yet all read as "unpaid": a request
+ * nobody has confirmed has not paid for anything, and a driver nobody has
+ * billed owes nothing yet.
  *
  * Takes `now` as a parameter rather than reading the clock so this stays
  * testable without faking global time — same reasoning as `armeniaDateKey`
  * in `common/armenia-day.ts`.
  */
-export function derivePaymentStatus(paidUntil: Date | null, now: Date = new Date()): PaymentStatus {
-  if (paidUntil === null) return 'unpaid'
+export function derivePaymentStatus(
+  coveredUntil: Date | null,
+  now: Date = new Date(),
+): PaymentStatus {
+  if (coveredUntil === null) return 'unpaid'
 
-  const msLeft = paidUntil.getTime() - now.getTime()
+  const msLeft = coveredUntil.getTime() - now.getTime()
   if (msLeft <= 0) return 'overdue'
   if (msLeft <= PAYMENT_DUE_SOON_WITHIN_DAYS * DAY_MS) return 'due-soon'
   return 'paid'

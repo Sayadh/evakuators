@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, UseGuards } from '@nestjs/common'
+import { Body, Controller, Get, Param, Patch, ParseIntPipe, Post, UseGuards } from '@nestjs/common'
 import { AdminJwtGuard } from '../admin-auth/admin-jwt.guard'
 import { AdminSubscriptionsService } from './admin-subscriptions.service'
 import { GrantSubscriptionPaymentDto } from './dto/grant-subscription-payment.dto'
+import { SetPaymentDueDto } from './dto/set-payment-due.dto'
 import type {
   AdminPendingPaymentApi,
   SubscriptionPaymentApi,
@@ -53,5 +54,27 @@ export class AdminSubscriptionsController {
   @Post(':id/review')
   review(@Param('id', ParseIntPipe) id: number): Promise<SubscriptionPaymentApi> {
     return this.adminSubscriptions.review(id)
+  }
+
+  /**
+   * «Դարձնել վճարովի» on a driver's card — start billing someone who has never
+   * paid, or take it back.
+   *
+   * The `:id` here is a TOW TRUCK, unlike every other `:id` on this controller,
+   * which is a payment. Hence the segment: `tow-trucks/:id/payment-due` cannot
+   * be read as `:id/review`'s sibling by accident, and the route table stays
+   * unambiguous without depending on declaration order.
+   *
+   * On this controller rather than AdminController because the rule it applies
+   * is a subscription rule — it reads coverage, and its deadline is the
+   * `due-soon` window. The button that calls it lives on the admin card; where
+   * the button is does not decide where the logic belongs.
+   */
+  @Patch('tow-trucks/:id/payment-due')
+  setPaymentDue(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SetPaymentDueDto,
+  ): Promise<{ id: number; paymentDueAt?: string }> {
+    return this.adminSubscriptions.setPaymentDue(id, dto.due)
   }
 }

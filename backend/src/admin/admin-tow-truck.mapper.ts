@@ -25,6 +25,8 @@ export interface AdminTowTruckSummary {
    * public listing and the dispatch screen. See schema.prisma.
    */
   isPartner: boolean
+  /** ISO datetime — the billing deadline an admin set, if this driver is being billed */
+  paymentDueAt?: string
   /**
    * When the paid placement runs out — ISO, absent when there is none or when
    * it is one of the open-ended grants that predate durations.
@@ -137,6 +139,7 @@ export function toAdminTowTruckSummary(
     // needs when a driver rings to ask why they are no longer on top.
     isFeatured: truck.isFeatured,
     isPartner: truck.isPartner,
+    paymentDueAt: truck.paymentDueAt?.toISOString(),
     ...(truck.featuredUntil ? { featuredUntil: truck.featuredUntil.toISOString() } : {}),
     vehicleBrand: truck.vehicleBrand,
     vehicleModel: truck.vehicleModel ?? undefined,

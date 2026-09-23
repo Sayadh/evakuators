@@ -147,9 +147,34 @@ into a PAID row so no driver's status changed on the deploy.
 That replacement was forced by the 4-month plan. The old rule counted days
 since `lastPaymentAt` (25 → due soon, 30 → overdue), which encoded a monthly
 cadence into the status itself: a driver who had paid for four months read as
-**overdue on day 31**. Status now comes from `paidUntil` — the furthest
+**overdue on day 31**. Status now comes from `coveredUntil` — the furthest
 `periodEnd` among that driver's PAID payments — so plan length stops mattering
 (`subscriptions/subscription-status.ts`).
+
+### Coverage has two sources, and only one of them is money
+
+`coveredUntil = MAX(paidThrough, TowTruck.paymentDueAt)` — see
+`resolveCoveredUntil`.
+
+- **`paidThrough`** is the furthest `periodEnd` among PAID payments. Money.
+- **`paymentDueAt`** is a deadline an admin set for a driver who has never
+  paid, so that billing can start for them at all. A promise.
+
+They are stored apart deliberately. Recording a promise as a PAID row would
+put money that never arrived into the one table that answers "how much did we
+earn" — the mistake the `LEGACY_MONTHLY` 0 ֏ backfill rows already made once.
+
+Every status and lock decision reads `coveredUntil`. **Renewals read
+`paidThrough`** (`AdminSubscriptionsService.grant`): stacking a new plan onto a
+deadline would hand the driver the grace days a second time, as paid time they
+never paid for.
+
+MAX rather than a `??` fallback, and the difference is not cosmetic: a driver
+whose coverage lapsed in August has a non-null `paidThrough`, so `??` would
+return August and leave them locked no matter what deadline an admin just gave
+them — the exact case the button exists for. MAX also makes a stale deadline
+behind live coverage harmless, which is why nothing has to clear it when a
+driver finally pays.
 
 Two ways a payment becomes PAID, and a third coming:
 
@@ -158,6 +183,10 @@ Two ways a payment becomes PAID, and a third coming:
 | Driver requests | `POST /my/subscription-payments` | a PENDING row — grants nothing |
 | Admin confirms | `PATCH /admin/subscription-payments/:id` `{ status: 'PAID' }` | flips it to PAID and **recomputes** the period |
 | Admin records an offline payment | `POST /admin/subscription-payments` `{ towTruckId, planId, paidAt? }` | a PAID row directly |
+
+And one way a driver becomes billable without any payment at all:
+`PATCH /admin/subscription-payments/tow-trucks/:id/payment-due` writes
+`TowTruck.paymentDueAt` and no row anywhere near the ledger.
 | *(later)* the provider | its webhook | the same PAID row — nothing else changes |
 
 Confirmation recomputes the window rather than honouring the one stored at
@@ -222,6 +251,13 @@ everyone who signed up before any of this existed. Locking that group would
 take the platform's drivers offline on the deploy that ships it, for money
 nobody ever asked them for. The rule is "you had it and it ran out"
 (`isLockedOut`).
+
+That is also why a driver who never paid has to be opted in one at a time:
+«Դարձնել վճարովի» on their admin card sets `paymentDueAt` to exactly
+`PAYMENT_DUE_SOON_WITHIN_DAYS` ahead, which drops them into `due-soon` on the
+press and holds them there until it passes — warned every day, then locked.
+One constant for the window and the grace, so the warning a driver sees and
+the time they are given cannot drift apart.
 
 Five days out — the same threshold `due-soon` already uses — the dashboard
 shows a dismissible dialog naming the date. It reappears on every visit while
@@ -461,6 +497,7 @@ Other things worth knowing:
 | `GET` | `/admin/subscription-payments/pending` | Every request waiting on a decision, oldest first, each with the driver who made it |
 | `POST` | `/admin/subscription-payments` | Records an off-platform payment as PAID. `{ towTruckId, planId, paidAt? }` — a plan, never an amount. `paidAt` is when the coverage STARTS: today or later, and a past date is rejected (see § "Paying twice" for why) |
 | `PATCH` | `/admin/subscription-payments/:id` | `{ status: 'PAID' \| 'CANCELLED' }`. Guarded against two admins deciding the same request — the second gets a 409, not a silent overwrite |
+| `PATCH` | `/admin/subscription-payments/tow-trucks/:id/payment-due` | `{ due: boolean }` — «Դարձնել վճարովի» on the driver's admin card. Starts billing a driver who has never paid by writing `TowTruck.paymentDueAt` exactly `PAYMENT_DUE_SOON_WITHIN_DAYS` (5 days) ahead; `false` clears it. **No date parameter**: any other distance would put the driver in `paid`, told their subscription is active when they never bought one. **409** when a real payment already covers them, since coverage is a MAX and the deadline would be stored and then ignored. Writes nothing to `SubscriptionPayment` — the `:id` here is a tow truck, not a payment |
 
 ### Reviewing a registration
 

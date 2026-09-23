@@ -357,6 +357,19 @@ async function sendBroadcast(): Promise<void> {
 }
 
 /**
+ * Said in full because the button's own label cannot be: this is the press
+ * that turns a driver who owes nothing into a driver on a deadline, and five
+ * days later takes their page off the site if nothing arrives.
+ *
+ * The number is not repeated from the backend — it is the backend's to decide
+ * — so this says «5 օր» the way the driver's own dashboard says it, as the
+ * shape of the policy rather than as a value read from anywhere.
+ */
+const PAYMENT_DUE_CONFIRM =
+  'Դարձնե՞լ այս վարորդին վճարման ենթակա։ Նա կտեսնի վճարման հիշեցում, ' +
+  'և 5 օր հետո, եթե վճարում չլինի, իր էջի կառավարումը կկողպվի։'
+
+/**
  * Full-size image viewer for the request and tow-truck thumbnail grids — an
  * admin needs to actually see what was uploaded, not a 84x84 thumbnail.
  *
@@ -679,6 +692,38 @@ async function togglePartner(truck: AdminTowTruck): Promise<void> {
     truck.isPartner = updated.isPartner
   } catch (error) {
     towTrucksError.value = extractErrorMessage(error, 'Կարգավիճակը փոխել չհաջողվեց։')
+  } finally {
+    actioningId.value = null
+  }
+}
+
+/**
+ * Start billing a driver who has never paid, or take it back.
+ *
+ * ## Why this confirms and «Մեր վարորդ» does not
+ *
+ * Both are one bit with no term. The difference is who feels it: marking a
+ * driver as ours changes where they sit in a list, while this one starts a
+ * clock that ends with their dashboard locked and their page off the site.
+ * The confirm names the date so the admin presses it having read the
+ * consequence, not the label.
+ *
+ * The date is the server's to choose — see AdminSubscriptionsService.
+ * `paymentDueAt` is read back from the response for the same reason every
+ * other toggle here does: the row should show what was stored, not what was
+ * hoped for.
+ */
+async function togglePaymentDue(truck: AdminTowTruck): Promise<void> {
+  const turningOn = !truck.paymentDueAt
+  if (turningOn && !confirm(PAYMENT_DUE_CONFIRM)) return
+
+  actioningId.value = truck.id
+  towTrucksError.value = ''
+  try {
+    const updated = await adminRepository.setTowTruckPaymentDue(truck.id, turningOn)
+    truck.paymentDueAt = updated.paymentDueAt
+  } catch (error) {
+    towTrucksError.value = extractErrorMessage(error, 'Վճարման ժամկետը փոխել չհաջողվեց։')
   } finally {
     actioningId.value = null
   }
@@ -2010,6 +2055,22 @@ async function rejectReview(review: AdminReview): Promise<void> {
                   @click="togglePartner(truck)"
                 >
                   {{ truck.isPartner ? 'Մեր վարորդն է ✓' : 'Նշել որպես մեր վարորդ' }}
+                </AppButton>
+                <!-- Billing, not placement — hence `danger` once it is on: the
+                     live state here is a clock running against the driver, and
+                     it should not read like the green «Մեր վարորդն է» two
+                     buttons away. See togglePaymentDue(). -->
+                <AppButton
+                  :variant="truck.paymentDueAt ? 'danger' : 'outline'"
+                  size="sm"
+                  :disabled="actioningId === truck.id"
+                  @click="togglePaymentDue(truck)"
+                >
+                  {{
+                    truck.paymentDueAt
+                      ? `Վճարման օր՝ ${formatDateNumeric(truck.paymentDueAt)} ✕`
+                      : 'Դարձնել վճարովի'
+                  }}
                 </AppButton>
                 <AppButton
                   variant="outline"

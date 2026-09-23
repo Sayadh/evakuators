@@ -119,8 +119,8 @@ export class SubscriptionsService {
       this.subscriptionsRepository.findCoverage([towTruckId]),
       this.towTrucksRepository.findStatusById(towTruckId),
     ])
-    const paidUntil = coverage.get(towTruckId)?.paidUntil ?? null
-    const status = derivePaymentStatus(paidUntil)
+    const coveredUntil = coverage.get(towTruckId)?.coveredUntil ?? null
+    const status = derivePaymentStatus(coveredUntil)
     // Both halves, exactly as SubscriptionActiveGuard computes them: a
     // gateway to pay through, and this driver being inside the rollout. If
     // these two ever diverge, a driver sees a paywall the API does not
@@ -130,8 +130,11 @@ export class SubscriptionsService {
 
     return {
       status,
-      paidUntil: paidUntil?.toISOString(),
-      daysLeft: daysUntil(paidUntil),
+      // Named `paidUntil` on the wire since before deadlines existed. From
+      // the driver's side the question it answers is unchanged — "what is my
+      // date" — and renaming it would break the dashboard for a word.
+      paidUntil: coveredUntil?.toISOString(),
+      daysLeft: daysUntil(coveredUntil),
       // Two independent reasons to lock, and only one of them is about money.
       //
       // The expiry half is gated on `paymentsEnabled` for the same reason
@@ -227,9 +230,12 @@ export class SubscriptionsService {
     if (!plan) throw new BadRequestException(UNKNOWN_PLAN_MESSAGE)
 
     const coverage = await this.subscriptionsRepository.findCoverage([towTruckId])
-    const paidUntil = coverage.get(towTruckId)?.paidUntil ?? null
-    if (derivePaymentStatus(paidUntil) === 'paid') {
-      throw new ConflictException(alreadyCoveredMessage(paidUntil))
+    // Coverage, not money: a driver inside an admin's 5-day deadline is
+    // `due-soon`, so this lets them through to pay — which is the entire point
+    // of having given them the deadline.
+    const coveredUntil = coverage.get(towTruckId)?.coveredUntil ?? null
+    if (derivePaymentStatus(coveredUntil) === 'paid') {
+      throw new ConflictException(alreadyCoveredMessage(coveredUntil))
     }
 
     const period = subscriptionPeriod(new Date(), plan.durationMonths)

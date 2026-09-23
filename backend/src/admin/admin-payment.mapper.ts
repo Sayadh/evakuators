@@ -17,8 +17,12 @@ export type { PaymentStatus }
  * `AdminService.listTowTruckPayments` assembles it.
  */
 export interface DriverPaymentCoverage {
+  /** `resolveCoveredUntil(paidThrough, paymentDueAt)` — money OR an admin's deadline */
+  coveredUntil: Date | null
   /** Furthest `periodEnd` among this driver's PAID payments — `null` if none was ever confirmed */
-  paidUntil: Date | null
+  paidThrough: Date | null
+  /** The deadline an admin set, if any. What tells the page a date is a promise, not a receipt. */
+  paymentDueAt: Date | null
   /** `periodStart` of the most recently confirmed payment — the "last paid" column */
   lastPaidAt: Date | null
   /** Requests still waiting for someone to confirm or cancel them */
@@ -37,8 +41,17 @@ export interface AdminPaymentSummary {
   driverName: string
   companyName?: string
   phone: string
-  /** ISO datetime. Undefined means no payment was ever confirmed for this driver. */
+  /**
+   * ISO datetime — the date this driver is covered to, whichever source it
+   * came from. Undefined means neither a confirmed payment nor a deadline.
+   */
   paidUntil?: string
+  /**
+   * Set only when the date above is an admin's deadline rather than a
+   * confirmed payment, so the row can say «Ժամկետ» instead of «Վճարված» — the
+   * page must never show a promise in the colour it shows money.
+   */
+  paymentDueAt?: string
   /** ISO datetime — when the last confirmed payment's period began. */
   lastPaidAt?: string
   /**
@@ -59,6 +72,18 @@ export interface AdminPaymentSummary {
   isActive: boolean
 }
 
+/**
+ * `now` is a parameter for the same reason `derivePaymentStatus` takes one,
+ * and this function reaching for the global clock was a real defect rather
+ * than a style point: its test pinned the coverage dates to a frozen fixture
+ * while the status underneath was judged against the wall clock, so the suite
+ * passed on the day it was written and failed every day after — «paid» became
+ * «due-soon» became «overdue» as the calendar walked past a hard-coded date.
+ *
+ * The caller also gains something real: one instant for a whole page, so 200
+ * rows are judged against the same moment instead of 200 slightly different
+ * ones — which is what makes the urgency sort below stable.
+ */
 export function toAdminPaymentSummary(
   truck: {
     id: number
@@ -68,16 +93,23 @@ export function toAdminPaymentSummary(
     isActive: boolean
   },
   coverage: DriverPaymentCoverage,
+  now: Date = new Date(),
 ): AdminPaymentSummary {
   return {
     id: truck.id,
     driverName: truck.driverName,
     companyName: truck.companyName ?? undefined,
     phone: truck.phone,
-    paidUntil: coverage.paidUntil?.toISOString(),
+    paidUntil: coverage.coveredUntil?.toISOString(),
+    // Only when the deadline is the thing doing the covering. A stale deadline
+    // sitting behind live paid coverage is not what the row is about.
+    paymentDueAt:
+      coverage.paymentDueAt !== null && coverage.paymentDueAt === coverage.coveredUntil
+        ? coverage.paymentDueAt.toISOString()
+        : undefined,
     lastPaidAt: coverage.lastPaidAt?.toISOString(),
     pendingCount: coverage.pendingCount,
-    status: derivePaymentStatus(coverage.paidUntil),
+    status: derivePaymentStatus(coverage.coveredUntil, now),
     isActive: truck.isActive,
   }
 }

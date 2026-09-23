@@ -1247,12 +1247,21 @@ export class AdminService {
     // One grouped query for the whole page rather than one per driver — see
     // SubscriptionsRepository.findCoverage.
     const coverage = await this.subscriptionsRepository.findCoverage(trucks.map((truck) => truck.id))
+    // One instant for the whole page — see toAdminPaymentSummary.
+    const now = new Date()
 
     return sortPaymentsByUrgency(
       trucks.map((truck) =>
         toAdminPaymentSummary(
           truck,
-          coverage.get(truck.id) ?? { paidUntil: null, lastPaidAt: null, pendingCount: 0 },
+          coverage.get(truck.id) ?? {
+            coveredUntil: null,
+            paidThrough: null,
+            paymentDueAt: null,
+            lastPaidAt: null,
+            pendingCount: 0,
+          },
+          now,
         ),
       ),
     )

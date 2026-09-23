@@ -59,7 +59,14 @@ function guardWith(paidUntil: Date | null, gateway = true, rollout = 'all'): Sub
   const repository = {
     findCoverage: vi.fn(async (ids: number[]) => {
       const map = new Map()
-      for (const id of ids) map.set(id, { towTruckId: id, paidUntil, lastPaidAt: null, pendingCount: 0 })
+      for (const id of ids) map.set(id, {
+          towTruckId: id,
+          paidThrough: paidUntil,
+          paymentDueAt: null,
+          coveredUntil: paidUntil,
+          lastPaidAt: null,
+          pendingCount: 0,
+        })
       return map
     }),
   } as unknown as SubscriptionsRepository
@@ -132,7 +139,14 @@ function statusServiceWith(
   const repository = {
     findCoverage: async (ids: number[]) => {
       const map = new Map()
-      for (const id of ids) map.set(id, { towTruckId: id, paidUntil, lastPaidAt: null, pendingCount: 0 })
+      for (const id of ids) map.set(id, {
+          towTruckId: id,
+          paidThrough: paidUntil,
+          paymentDueAt: null,
+          coveredUntil: paidUntil,
+          lastPaidAt: null,
+          pendingCount: 0,
+        })
       return map
     },
   } as unknown as SubscriptionsRepository

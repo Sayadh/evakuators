@@ -1,4 +1,4 @@
-import { armeniaDateKey } from '../common/armenia-day'
+import { armeniaDateKey, armeniaDateLabel } from '../common/armenia-day'
 import { Cron, CronExpression } from '@nestjs/schedule'
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { SubscriptionPaymentStatus } from '@prisma/client'
@@ -6,6 +6,7 @@ import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
 import { UNKNOWN_PLAN_MESSAGE } from './dto/create-subscription-payment.dto'
 import { renewalPeriod } from './subscription-period'
 import { findSubscriptionPlan } from './subscription-plans'
+import { PAYMENT_DUE_SOON_WITHIN_DAYS } from './subscription-status'
 import { toAdminPendingPaymentApi, toSubscriptionPaymentApi } from './subscription.mapper'
 import type { AdminPendingPaymentApi, SubscriptionPaymentApi } from './subscription.types'
 import { ListingRestorationService } from './listing-restoration.service'
@@ -93,6 +94,69 @@ export class AdminSubscriptionsService {
   }
 
   /**
+   * Starts billing a driver who has never paid, or stops.
+   *
+   * ## The thing this is NOT
+   *
+   * It is not «Գրանցել վճարում» with the date moved. That records a PAID row,
+   * and a PAID row is a claim that money arrived. This driver has paid
+   * nothing; the only true statement available is "they owe by this date", and
+   * that is what gets written — to `TowTruck.paymentDueAt`, outside the money
+   * ledger entirely. `SUM(amount) WHERE status = 'PAID'` stays real revenue no
+   * matter how many deadlines get handed out.
+   *
+   * ## Why the date is not a parameter
+   *
+   * `PAYMENT_DUE_SOON_WITHIN_DAYS` ahead, always. That constant is the width
+   * of the `due-soon` window, so a deadline exactly that far out drops the
+   * driver into `due-soon` the instant this returns and holds them there until
+   * it passes: «Վճարման ժամկետը մոտենում է» every day, then «սպառվել է» and
+   * the lock. One constant, so the warning and the grace cannot drift apart.
+   *
+   * ## Refusing a driver who is already covered
+   *
+   * Coverage is MAX(paid, deadline), so a deadline set behind live paid
+   * coverage would be written and then ignored — a button that reports success
+   * and changes nothing an admin can see. Better to say why.
+   *
+   * Turning it OFF is always allowed, including for a covered driver: that is
+   * how a deadline set by mistake gets taken back.
+   */
+  async setPaymentDue(
+    towTruckId: number,
+    due: boolean,
+  ): Promise<{ id: number; paymentDueAt?: string }> {
+    const towTruck = await this.towTrucksRepository.findById(towTruckId)
+    if (!towTruck) throw new NotFoundException(`Էվակուատոր #${towTruckId}-ը չի գտնվել`)
+
+    if (!due) {
+      const cleared = await this.towTrucksRepository.setPaymentDueAt(towTruckId, null)
+      this.logger.warn(`Payment deadline cleared for TowTruck #${towTruckId} by an admin`)
+      return { id: cleared.id, paymentDueAt: undefined }
+    }
+
+    const now = new Date()
+    const coverage = await this.subscriptionsRepository.findCoverage([towTruckId])
+    const paidThrough = coverage.get(towTruckId)?.paidThrough ?? null
+    if (paidThrough !== null && paidThrough.getTime() > now.getTime()) {
+      throw new ConflictException(
+        `Այս վարորդը վճարված է մինչև ${armeniaDateLabel(paidThrough)} — ժամկետ դնելու կարիք չկա։`,
+      )
+    }
+
+    const paymentDueAt = new Date(
+      now.getTime() + PAYMENT_DUE_SOON_WITHIN_DAYS * 24 * 60 * 60 * 1000,
+    )
+    const updated = await this.towTrucksRepository.setPaymentDueAt(towTruckId, paymentDueAt)
+
+    this.logger.warn(
+      `Payment deadline set for TowTruck #${towTruckId} by an admin: ` +
+        `due ${paymentDueAt.toISOString()} (${PAYMENT_DUE_SOON_WITHIN_DAYS} days)`,
+    )
+    return { id: updated.id, paymentDueAt: updated.paymentDueAt?.toISOString() }
+  }
+
+  /**
    * Records a payment that arrived outside the platform, as a PAID row.
    *
    * This is the replacement for the old «նշել վճարված» button, and the reason
@@ -109,7 +173,14 @@ export class AdminSubscriptionsService {
 
     const from = this.parsePaidAt(paidAt)
     const coverage = await this.subscriptionsRepository.findCoverage([towTruckId])
-    const period = renewalPeriod(coverage.get(towTruckId)?.paidUntil ?? null, from, plan.durationMonths)
+    // `paidThrough`, never `coveredUntil`: stacking onto an admin's deadline
+    // would hand the driver the grace days a second time, as paid time they
+    // did not pay for.
+    const period = renewalPeriod(
+      coverage.get(towTruckId)?.paidThrough ?? null,
+      from,
+      plan.durationMonths,
+    )
 
     const payment = await this.subscriptionsRepository.create(towTruckId, {
       planCode: plan.code,

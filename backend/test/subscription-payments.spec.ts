@@ -66,7 +66,14 @@ function fakeRepository(paidUntil: Date | null = null): {
   const repository = {
     findCoverage: vi.fn(async (ids: number[]) => {
       const map = new Map()
-      for (const id of ids) map.set(id, { towTruckId: id, paidUntil, lastPaidAt: null, pendingCount: 0 })
+      for (const id of ids) map.set(id, {
+          towTruckId: id,
+          paidThrough: paidUntil,
+          paymentDueAt: null,
+          coveredUntil: paidUntil,
+          lastPaidAt: null,
+          pendingCount: 0,
+        })
       return map
     }),
     create: vi.fn(async (towTruckId: number, data: SubscriptionPaymentCreateData) => {

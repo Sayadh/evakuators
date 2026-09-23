@@ -1,0 +1,21 @@
+-- A deadline an admin gave a driver who has not paid.
+--
+-- NOT a payment, which is the whole reason it is a column here rather than a
+-- `SubscriptionPayment` row with `status = PAID`. Recording a promise as a
+-- payment would put money that never arrived into the one table that answers
+-- "how much did we earn" — the same way the LEGACY_MONTHLY backfill put 0 ֏
+-- rows there and made every report explain itself.
+--
+-- Nullable, and null is the meaningful value: it means "this driver is not
+-- being billed yet", which is exactly where every driver who has never paid
+-- starts. Coverage reads MAX(real periodEnd, this), so a null contributes
+-- nothing and the driver stays `unpaid` — unlocked, undisturbed — until an
+-- admin presses the button on their card.
+--
+-- No default and no backfill for the same reason: this ships without changing
+-- a single existing driver's state.
+--
+-- No index. It is read one driver at a time (the dashboard, the guard) or for
+-- a page of ids already narrowed by the tow-truck query (/admin/payments), so
+-- there is no query that would scan on it.
+ALTER TABLE "TowTruck" ADD COLUMN "paymentDueAt" TIMESTAMP(3);

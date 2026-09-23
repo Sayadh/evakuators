@@ -353,15 +353,28 @@ model TowTruck {
   /// nobody buys it. Revoking a placement must not end the relationship, and
   /// the hourly expiry sweep must never see this field.
   isPartner          Boolean             @default(false)
+
+  /// The date an admin told this driver their payment is due, for a driver who
+  /// has never paid. Null means they are not being billed yet — the state every
+  /// driver starts in and stays in until an admin presses «Դարձնել վճարովի».
+  ///
+  /// Deliberately NOT a `SubscriptionPayment` row with `status = PAID`. That
+  /// table is the money ledger; a promise is not money, and writing one there
+  /// would corrupt every revenue figure derived from it.
+  ///
+  /// Coverage is MAX(furthest PAID periodEnd, this) — see `resolveCoveredUntil`
+  /// in subscriptions/subscription-status.ts. Renewals deliberately do NOT read
+  /// it: a promise must never become paid-for time stacked onto a real plan.
+  paymentDueAt  DateTime?
   /// When the placement was granted — the ORDER among drivers holding one in
   /// the same town, newest first. Not decoration: a driver who pays today is
   /// first tomorrow, and the one who paid last week moves down by one instead
   /// of being displaced.
-  featuredAt         DateTime?
+  featuredAt    DateTime?
   /// When it stops. NULL means no end — the state of every placement granted
   /// before durations existed; expiring those on deploy would have removed
   /// editorial picks nobody asked to remove. New grants always carry a date.
-  featuredUntil      DateTime?
+  featuredUntil DateTime?
   /// LEGACY — no longer read or written by anything. Kept only because it is
   /// the record of what the manual bookkeeping said before subscriptions
   /// existed.
@@ -377,9 +390,9 @@ model TowTruck {
   /// table is now the only thing the status is computed from. The column is
   /// left in place rather than dropped in the same change that replaced it:
   /// dropping data is irreversible, and nothing costs anything by keeping it.
-  lastPaymentAt      DateTime?
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
+  lastPaymentAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   images     TowTruckImage[]
   reviews    Review[]

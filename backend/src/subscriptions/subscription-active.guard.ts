@@ -99,7 +99,7 @@ export class SubscriptionActiveGuard implements CanActivate {
     if (!isInSubscriptionRollout(this.rollout, towTruckId)) return true
 
     const coverage = await this.subscriptionsRepository.findCoverage([towTruckId])
-    const status = derivePaymentStatus(coverage.get(towTruckId)?.paidUntil ?? null)
+    const status = derivePaymentStatus(coverage.get(towTruckId)?.coveredUntil ?? null)
 
     if (isLockedOut(status)) {
       throw new HttpException(SUBSCRIPTION_EXPIRED_MESSAGE, HttpStatus.PAYMENT_REQUIRED)

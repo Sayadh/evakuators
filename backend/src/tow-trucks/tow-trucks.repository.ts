@@ -610,6 +610,19 @@ export class TowTrucksRepository {
     return this.prisma.towTruck.update({ where: { id }, data: { heavyEquipment } })
   }
 
+  /**
+   * The billing deadline for a driver who has never paid, or `null` to stop
+   * billing them — see AdminSubscriptionsService.setPaymentDue.
+   *
+   * Takes the instant rather than computing it: the deadline is derived from
+   * `PAYMENT_DUE_SOON_WITHIN_DAYS`, which belongs to the subscriptions module,
+   * and a repository that knew that constant would be the second place it
+   * lives.
+   */
+  setPaymentDueAt(id: number, paymentDueAt: Date | null): Promise<TowTruck> {
+    return this.prisma.towTruck.update({ where: { id }, data: { paymentDueAt } })
+  }
+
   /* setPayment() lived here, writing the "paid this month" marker an admin
      clicked. Payments are SubscriptionPayment rows now — see
      subscriptions/admin-subscriptions.service.ts — and TowTruck.lastPaymentAt

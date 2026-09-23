@@ -77,7 +77,14 @@ function timelineRepository(): { repository: SubscriptionsRepository; rows: Row[
         const paidUntil = paid.length
           ? new Date(Math.max(...paid.map((row) => row.periodEnd.getTime())))
           : null
-        map.set(id, { towTruckId: id, paidUntil, lastPaidAt: null, pendingCount: 0 })
+        map.set(id, {
+          towTruckId: id,
+          paidThrough: paidUntil,
+          paymentDueAt: null,
+          coveredUntil: paidUntil,
+          lastPaidAt: null,
+          pendingCount: 0,
+        })
       }
       return map
     },

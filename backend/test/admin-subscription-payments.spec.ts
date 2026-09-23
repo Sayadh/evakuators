@@ -3,6 +3,7 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { SubscriptionPaymentStatus } from '@prisma/client'
 import { describe, expect, it, vi } from 'vitest'
 import { AdminSubscriptionsService } from '../src/subscriptions/admin-subscriptions.service'
+import { PAYMENT_DUE_SOON_WITHIN_DAYS } from '../src/subscriptions/subscription-status'
 import type { SubscriptionsRepository } from '../src/subscriptions/subscriptions.repository'
 import type { TowTrucksRepository } from '../src/tow-trucks/tow-trucks.repository'
 
@@ -24,7 +25,8 @@ interface FakeRepos {
 }
 
 function build(options: {
-  paidUntil?: Date | null
+  paidUntil?: Date
+  paymentDueAt?: Date | null
   payment?: { id: number; towTruckId: number; durationMonths: number; status: SubscriptionPaymentStatus } | null
   truckExists?: boolean
   alreadyReviewed?: boolean
@@ -58,7 +60,17 @@ function build(options: {
     findCoverage: vi.fn(async (ids: number[]) => {
       const map = new Map()
       for (const id of ids) {
-        map.set(id, { towTruckId: id, paidUntil: options.paidUntil ?? null, lastPaidAt: null, pendingCount: 0 })
+        // `paidThrough` is what grant() renews from; `coveredUntil` is what a
+        // status decision would read. The fake keeps them separate so a test
+        // that confuses them fails here rather than passing by coincidence.
+        map.set(id, {
+          towTruckId: id,
+          paidThrough: options.paidUntil ?? null,
+          paymentDueAt: options.paymentDueAt ?? null,
+          coveredUntil: options.paymentDueAt ?? options.paidUntil ?? null,
+          lastPaidAt: null,
+          pendingCount: 0,
+        })
       }
       return map
     }),
@@ -95,8 +107,15 @@ function build(options: {
     }),
   } as unknown as SubscriptionsRepository
 
+  const dueWrites: Array<Date | null> = []
   const trucks = {
-    findById: vi.fn(async () => (options.truckExists === false ? null : { id: 7 })),
+    findById: vi.fn(async () =>
+      options.truckExists === false ? null : { id: 7, paymentDueAt: options.paymentDueAt ?? null },
+    ),
+    setPaymentDueAt: vi.fn(async (id: number, paymentDueAt: Date | null) => {
+      dueWrites.push(paymentDueAt)
+      return { id, paymentDueAt }
+    }),
   } as unknown as TowTrucksRepository
 
   return {
@@ -105,6 +124,7 @@ function build(options: {
     confirmed,
     reviewed,
     sweep,
+    dueWrites,
   }
 }
 
@@ -247,5 +267,68 @@ describe('AdminSubscriptionsService.cancelAbandoned', () => {
 
     expect(sweep.cancelled).toBe(1)
     expect(confirmed).toHaveLength(0)
+  })
+})
+
+describe('AdminSubscriptionsService.setPaymentDue', () => {
+  const DAY = 24 * 60 * 60 * 1000
+
+  it('writes a deadline exactly the due-soon window ahead, and no payment', async () => {
+    const { service, dueWrites, created } = build()
+    const before = Date.now()
+
+    const result = await service.setPaymentDue(7, true)
+
+    const written = dueWrites[0]
+    expect(written).toBeInstanceOf(Date)
+    const aheadMs = (written as Date).getTime() - before
+    expect(aheadMs).toBeGreaterThanOrEqual(PAYMENT_DUE_SOON_WITHIN_DAYS * DAY)
+    // A second of slack for the clock read inside the service, and not a day
+    // more: a deadline further out than the window would park the driver in
+    // `paid`, told their subscription is active when they never bought one.
+    expect(aheadMs).toBeLessThan(PAYMENT_DUE_SOON_WITHIN_DAYS * DAY + 1000)
+    expect(result.paymentDueAt).toBe((written as Date).toISOString())
+
+    // The whole point: no row lands in the money ledger.
+    expect(created).toHaveLength(0)
+  })
+
+  it('clears the deadline when turned off', async () => {
+    const { service, dueWrites } = build({ paymentDueAt: new Date(Date.now() + 3 * DAY) })
+
+    const result = await service.setPaymentDue(7, false)
+
+    expect(dueWrites).toEqual([null])
+    expect(result.paymentDueAt).toBeUndefined()
+  })
+
+  it('refuses to bill a driver a real payment already covers', async () => {
+    // Coverage is MAX(paid, deadline), so this deadline would be stored and
+    // then ignored — a button that reports success and changes nothing.
+    const { service, dueWrites } = build({ paidUntil: new Date(Date.now() + 40 * DAY) })
+
+    await expect(service.setPaymentDue(7, true)).rejects.toBeInstanceOf(ConflictException)
+    expect(dueWrites).toHaveLength(0)
+  })
+
+  it('bills a driver whose coverage has already lapsed', async () => {
+    const { service, dueWrites } = build({ paidUntil: new Date(Date.now() - 40 * DAY) })
+
+    await service.setPaymentDue(7, true)
+
+    expect(dueWrites).toHaveLength(1)
+  })
+
+  it('clears a deadline even for a covered driver — that is how a mistake is undone', async () => {
+    const { service, dueWrites } = build({ paidUntil: new Date(Date.now() + 40 * DAY) })
+
+    await service.setPaymentDue(7, false)
+
+    expect(dueWrites).toEqual([null])
+  })
+
+  it('refuses a driver that does not exist', async () => {
+    const { service } = build({ truckExists: false })
+    await expect(service.setPaymentDue(7, true)).rejects.toBeInstanceOf(NotFoundException)
   })
 })

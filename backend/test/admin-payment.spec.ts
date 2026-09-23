@@ -70,10 +70,12 @@ describe('toAdminPaymentSummary', () => {
 
   it('projects coverage into the row the admin page reads', () => {
     const summary = toAdminPaymentSummary(truck, {
-      paidUntil: inDays(20),
+      coveredUntil: inDays(20),
+      paidThrough: inDays(20),
+      paymentDueAt: null,
       lastPaidAt: inDays(-10),
       pendingCount: 0,
-    })
+    }, NOW)
 
     expect(summary).toMatchObject({
       id: 4,
@@ -90,10 +92,12 @@ describe('toAdminPaymentSummary', () => {
   it('is "unpaid" — not "paid" — for a driver whose only request is still pending', () => {
     // The property that keeps the page honest: a request is not a payment.
     const summary = toAdminPaymentSummary(truck, {
-      paidUntil: null,
+      coveredUntil: null,
+      paidThrough: null,
+      paymentDueAt: null,
       lastPaidAt: null,
       pendingCount: 1,
-    })
+    }, NOW)
     expect(summary.status).toBe('unpaid')
     expect(summary.pendingCount).toBe(1)
   })

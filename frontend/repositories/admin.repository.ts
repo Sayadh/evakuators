@@ -211,6 +211,12 @@ export interface AdminTowTruck {
   serviceAreas: AdminServiceArea[]
   /** "Our driver" — a standing relationship, not a bought placement */
   isPartner: boolean
+  /**
+   * ISO datetime — the billing deadline an admin set. Undefined means this
+   * driver is not being billed yet, which is where every driver who has never
+   * paid starts.
+   */
+  paymentDueAt?: string
   /** Structural placement — at most one of the two, both unset for corridor-only coverage */
   citySlug?: string
   districtSlug?: string
@@ -256,6 +262,12 @@ export interface AdminPayment {
   phone: string
   /** ISO datetime — how far this driver is covered. Undefined = no payment ever confirmed. */
   paidUntil?: string
+  /**
+   * Set only when the date above is a deadline an admin set rather than a
+   * confirmed payment. The row says «Ժամկետ» instead of «Մինչև» for it —
+   * a promise must never be shown in the words used for money.
+   */
+  paymentDueAt?: string
   /** ISO datetime — when the last confirmed payment's period began */
   lastPaidAt?: string
   /** Requests this driver has made that nobody has confirmed or cancelled yet */
@@ -590,6 +602,24 @@ export const adminRepository = {
       body: { isPartner },
       headers: authHeader(),
     })
+  },
+
+  /**
+   * Start billing a driver who has never paid, or take it back.
+   *
+   * No date: the backend always sets it `PAYMENT_DUE_SOON_WITHIN_DAYS` ahead,
+   * so the driver lands in `due-soon` immediately and is warned every day
+   * until it passes. See AdminSubscriptionsService.setPaymentDue.
+   *
+   * 409 when the driver is already covered by a real payment — a deadline
+   * behind live coverage would be written and then ignored, so the API says so
+   * instead of silently doing nothing.
+   */
+  setTowTruckPaymentDue(id: number, due: boolean): Promise<{ id: number; paymentDueAt?: string }> {
+    return apiFetch<{ id: number; paymentDueAt?: string }>(
+      `/admin/subscription-payments/tow-trucks/${id}/payment-due`,
+      { method: 'PATCH', body: { due }, headers: authHeader() },
+    )
   },
 
   setTowTruckFeatured(

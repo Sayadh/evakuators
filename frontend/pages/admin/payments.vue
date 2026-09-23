@@ -440,7 +440,13 @@ async function confirmDeactivate(reason: DeactivationReason): Promise<void> {
                 <AppBadge :variant="STATUS_BADGE_VARIANT[payment.status]">
                   {{ STATUS_LABEL[payment.status] }}
                 </AppBadge>
-                <span v-if="payment.paidUntil" class="payments__muted">
+                <!-- Same date, two different things it can mean. «Մինչև» is
+                     what money bought; «Ժամկետ» is what an admin promised and
+                     nobody has paid for yet — see AdminPayment.paymentDueAt. -->
+                <span v-if="payment.paymentDueAt" class="payments__due">
+                  Ժամկետ՝ {{ formatDateNumeric(payment.paymentDueAt) }}
+                </span>
+                <span v-else-if="payment.paidUntil" class="payments__muted">
                   Մինչև՝ {{ formatDateNumeric(payment.paidUntil) }}
                 </span>
                 <span v-if="payment.pendingCount > 0" class="payments__muted">
@@ -702,6 +708,15 @@ async function confirmDeactivate(reason: DeactivationReason): Promise<void> {
     align-items: center;
     gap: var(--space-2);
     white-space: normal;
+  }
+
+  /* Deliberately not `__muted`: an unpaid deadline is the one date on this
+     page that should catch the eye rather than sit behind the badge. */
+  &__due {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--color-danger);
+    white-space: nowrap;
   }
 
   &__muted {

@@ -80,12 +80,23 @@ watch(
   }
 
   &__logo-img {
-    // Scaled down with `--header-height` (64px → 56px) so the logo keeps the
-    // same margin above/below it inside the shorter bar, instead of nearly
-    // touching the top/bottom edges.
+    // Scaled with `--header-height`, so the logo keeps roughly the same margin
+    // above and below it in either bar instead of nearly touching the edges:
+    // 30 of 56 on a phone, 46 of 76 on a desktop.
+    //
+    // A height and `width: auto`, never the reverse — the file is cropped to
+    // the artwork (ratio ~2.1), so height is the dimension that has to be
+    // predictable inside a bar whose own height is fixed. This broke once, when
+    // the SVGs were re-exported on a full A4 canvas: the art then filled 26% of
+    // the file's height, so `height: 30px` drew a 8px logo. If it ever looks
+    // small again, check the viewBox before touching this number.
     height: 30px;
     width: auto;
     display: block;
+
+    @media (min-width: 1024px) {
+      height: 46px;
+    }
   }
 
   &__nav {

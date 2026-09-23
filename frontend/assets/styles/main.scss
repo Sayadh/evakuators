@@ -47,8 +47,47 @@
     Arial, sans-serif;
 
   --transition: 0.2s ease;
-  --container-width: 1200px;
+
+  /**
+   * 1440, not 1200, because of what the header has to hold on one line: the
+   * logo, four nav links, the call number, «Մուտք» and the accent «Գրանցել»
+   * measure 1365px together, and 1200 − 48 of padding left 93px of that with
+   * nowhere to go, so the nav wrapped onto a second line — the exact failure
+   * constants/navigation.ts warns about. The page content follows the same
+   * track, which is the point: the logo has to sit above the first card, not
+   * 100px to the left of it.
+   *
+   * The number is 1365 + 48 rounded up to a round breakpoint, not a taste
+   * call. 1400 was tried first and is 13px short — close enough to look
+   * deliberate and still wrap. Anything added to the bar from here has ~27px
+   * of slack before this has to move again.
+   *
+   * Only viewports wider than 1200px see any difference at all — below that
+   * the container was already narrower than its own max-width.
+   */
+  --container-width: 1440px;
+
+  /**
+   * Phone first. Desktop gets a taller bar (see the media query below) so the
+   * logo can be read at arm's length instead of squinted at; on a phone the
+   * bar is sticky and every pixel of it is a pixel of the page not shown.
+   */
   --header-height: 56px;
+}
+
+/**
+ * Desktop: a taller bar and a bigger logo, together.
+ *
+ * 1024px is the width the nav itself appears at (see AppHeader's `&__nav`), so
+ * the bar grows exactly when it gains something to hold. Everything positioned
+ * against the header — the sticky sidebars on the city and profile pages, the
+ * scroll-margin on /evakuator — reads `--header-height` through calc(), so
+ * they follow this on their own and none of them needed touching.
+ */
+@media (min-width: 1024px) {
+  :root {
+    --header-height: 76px;
+  }
 }
 
 /* ── Reset & base ── */

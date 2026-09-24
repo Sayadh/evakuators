@@ -3,20 +3,20 @@ import { SITE_NAME, SOCIAL_LINKS } from '~/constants/site'
 
 /**
  * The link-in-bio page — what an Instagram or TikTok profile points at, since
- * those bios allow exactly one URL and we have five destinations.
+ * those bios allow exactly one URL and we have six destinations.
  *
  * ## Why it has no header
  *
  * Someone arriving here came from a social profile and is deciding where to go
  * next. A site header offering eight more destinations is the one thing that
- * can stop a five-choice page from working, so the `bare` layout drops the
+ * can stop a six-choice page from working, so the `bare` layout drops the
  * header, the footer and the floating call button — see `layouts/bare.vue` for
  * what it deliberately keeps.
  *
  * ## Armenian only
  *
  * `defineI18nRoute` restricts the route, so `/ru/links` and `/en/links`
- * do not exist. The page is a list of five links to Armenian-language
+ * do not exist. The page is a list of six links to Armenian-language
  * destinations; translating the handful of labels around them would produce
  * two more URLs with nothing different on them, which is the
  * duplicate-content shape `hreflang` exists to prevent rather than create. `useSeoMetaData`'s
@@ -24,9 +24,9 @@ import { SITE_NAME, SOCIAL_LINKS } from '~/constants/site'
  *
  * ## `noindex`
  *
- * Five links and no prose at all is thin by construction, and every destination
- * is already reachable: the homepage from the whole site, `/evakuator` from
- * the nav and the seven pages that place its CTA, the profiles from the footer
+ * Six links and one line of explanation is thin by construction, and every
+ * destination is already reachable: the homepage from the whole site,
+ * `/evakuator` and `/free-routes` from the nav, the profiles from the footer
  * and from schema.org `sameAs`. This page exists for people who
  * were handed its URL, not for search.
  */
@@ -132,6 +132,31 @@ const siteHost = SITE_NAME.toLowerCase()
         </span>
         <span class="near__go" aria-hidden="true">
           <AppIcon name="arrow-right" :size="18" />
+        </span>
+      </NuxtLinkLocale>
+
+      <!-- The third thing the platform does, and the one nobody arrives
+           knowing: a driver heading somewhere empty, who will take a job on
+           the way. The other two cards can be understood from their label
+           alone; this one cannot, so it is the only card here that explains
+           itself.
+
+           The heading comes from `/free-routes` rather than being written
+           again, and that heading carries «Պապուտի» — the borrowed «по пути»
+           everyone actually says for this. The formal name is what the page is
+           called; the borrowed one is what makes someone recognise it, and a
+           card that dropped it would be naming a thing its reader has heard of
+           under a name they have not. -->
+      <NuxtLinkLocale to="/free-routes" class="free">
+        <span class="free__plate" aria-hidden="true">
+          <AppIcon name="truck" :size="22" />
+        </span>
+        <span class="free__text">
+          <span class="free__title">{{ t('freeRoutes.h1') }}</span>
+          <span class="free__hint">{{ t('links.freeRoutesHint') }}</span>
+        </span>
+        <span class="free__go" aria-hidden="true">
+          <AppIcon name="chevron-right" :size="18" />
         </span>
       </NuxtLinkLocale>
 
@@ -257,7 +282,7 @@ $navy: #14304f;
 
 /**
  * The page's one filled surface, and the only thing on it that is not a card
- * of the same family. That is the whole point: a visitor scanning five
+ * of the same family. That is the whole point: a visitor scanning six
  * destinations should not have to read them to find the urgent one.
  *
  * Navy on amber rather than amber on navy — the inverse of everything else
@@ -389,6 +414,89 @@ $navy: #14304f;
     background: $accent;
     color: $navy;
     box-shadow: 0 8px 20px -8px rgba(247, 181, 44, 0.85);
+  }
+}
+
+/**
+ * Quiet on purpose. The amber card above is the urgent one and there can only
+ * be one of those; this is the card someone reads rather than reaches for.
+ *
+ * The one flourish is a road's dashed centre line along the top edge — the
+ * same marking as the page background and the brand's own image, inset from
+ * the corners and faded at both ends so it reads as a detail rather than as a
+ * border that failed to render.
+ */
+.free {
+  @include pressable;
+
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: var(--space-4);
+    right: var(--space-4);
+    height: 2px;
+    background: repeating-linear-gradient(90deg, $accent 0 12px, transparent 12px 24px);
+    -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 25%, #000 75%, transparent 100%);
+    mask-image: linear-gradient(90deg, transparent 0%, #000 25%, #000 75%, transparent 100%);
+    opacity: 0.45;
+  }
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.085);
+    border-color: rgba(255, 255, 255, 0.22);
+  }
+
+  /* Outlined rather than filled: a solid amber plate is what the card above
+     uses, and two of them would be two primary actions. */
+  &__plate {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 13px;
+    color: $accent;
+    background: rgba(247, 181, 44, 0.12);
+    border: 1px solid rgba(247, 181, 44, 0.3);
+  }
+
+  &__text {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__title {
+    display: block;
+    font-size: 0.95rem;
+    font-weight: 700;
+    line-height: 1.3;
+  }
+
+  &__hint {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.76rem;
+    line-height: 1.4;
+    color: #8fa4be;
+  }
+
+  &__go {
+    flex: none;
+    display: flex;
+    color: #7c93b0;
   }
 }
 

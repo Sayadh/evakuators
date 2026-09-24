@@ -14,7 +14,7 @@
  * that is not there to help someone navigate.
  *
  * Everything else is deliberately gone. A link-in-bio page exists to offer
- * five destinations; a site header offering eight more is the one thing that
+ * six destinations; a site header offering eight more is the one thing that
  * can make it fail at that.
  */
 </script>

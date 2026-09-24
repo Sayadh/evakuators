@@ -27,6 +27,16 @@ describe('/links', () => {
     expect(page).not.toContain('useNearestSearch(')
   })
 
+  it('names the free routes the way `/free-routes` names them', () => {
+    // That heading carries the borrowed «по пути» alongside the formal term,
+    // and the borrowed one is what makes someone recognise the thing. Taking
+    // the heading rather than retyping it is what keeps the two pages calling
+    // it the same thing.
+    expect(page).toContain('<NuxtLinkLocale to="/free-routes"')
+    expect(page).toContain("t('freeRoutes.h1')")
+    expect(page).not.toContain('Ազատ երթուղ')
+  })
+
   it('takes that label from the key every other entry point uses', () => {
     // Seven placements share `nearest.cta` through `NearestTowTrucksCta`. This
     // page cannot use that component — it is an `AppButton` built for the

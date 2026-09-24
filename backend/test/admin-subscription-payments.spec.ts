@@ -302,7 +302,7 @@ describe('AdminSubscriptionsService.setPaymentDue', () => {
     expect(result.paymentDueAt).toBeUndefined()
   })
 
-  it('refuses to bill a driver a real payment already covers', async () => {
+  it('refuses a driver a real payment already covers', async () => {
     // Coverage is MAX(paid, deadline), so this deadline would be stored and
     // then ignored — a button that reports success and changes nothing.
     const { service, dueWrites } = build({ paidUntil: new Date(Date.now() + 40 * DAY) })
@@ -311,12 +311,15 @@ describe('AdminSubscriptionsService.setPaymentDue', () => {
     expect(dueWrites).toHaveLength(0)
   })
 
-  it('bills a driver whose coverage has already lapsed', async () => {
+  it('refuses a driver who paid once and lapsed — "ever", not "covered today"', async () => {
+    // The narrow rule would restart someone who paid in March and stopped in
+    // April. They are already inside the cycle: their own period expired and
+    // locked them, and the answer is to chase the renewal, not to hand them
+    // another five free days. This is the guard behind the hidden button.
     const { service, dueWrites } = build({ paidUntil: new Date(Date.now() - 40 * DAY) })
 
-    await service.setPaymentDue(7, true)
-
-    expect(dueWrites).toHaveLength(1)
+    await expect(service.setPaymentDue(7, true)).rejects.toBeInstanceOf(ConflictException)
+    expect(dueWrites).toHaveLength(0)
   })
 
   it('clears a deadline even for a covered driver — that is how a mistake is undone', async () => {

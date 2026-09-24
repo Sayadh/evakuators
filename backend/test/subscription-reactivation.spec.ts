@@ -46,10 +46,13 @@ interface TruckRow {
   slug: string
   isActive: boolean
   deactivationReason: DeactivationReason | null
+  /** Present because afterPayment retires it before it reactivates anything */
+  paymentDueAt?: Date | null
 }
 
 function buildService(truck: TruckRow, conflict: TruckRow | null = null) {
   const setActive = vi.fn(async () => truck)
+  const setPaymentDueAt = vi.fn(async () => truck)
 
   const subscriptions = {
     findById: async () => ({
@@ -62,7 +65,15 @@ function buildService(truck: TruckRow, conflict: TruckRow | null = null) {
     }),
     findCoverage: async (ids: number[]) => {
       const map = new Map()
-      for (const id of ids) map.set(id, { towTruckId: id, paidUntil: null, lastPaidAt: null, pendingCount: 0 })
+      for (const id of ids)
+        map.set(id, {
+          towTruckId: id,
+          paidThrough: null,
+          paymentDueAt: null,
+          coveredUntil: null,
+          lastPaidAt: null,
+          pendingCount: 0,
+        })
       return map
     },
     confirm: async (
@@ -91,6 +102,7 @@ function buildService(truck: TruckRow, conflict: TruckRow | null = null) {
     findById: async () => truck,
     findByMainPhoneAnyStatus: async () => conflict,
     setActive,
+    setPaymentDueAt,
   } as unknown as TowTrucksRepository
 
   const config = {
@@ -107,7 +119,7 @@ function buildService(truck: TruckRow, conflict: TruckRow | null = null) {
     { isConfigured: true, paymentForm: () => undefined } as unknown as IdramService,
     config,
   )
-  return { service, setActive }
+  return { service, setActive, setPaymentDueAt }
 }
 
 const deactivated = (reason: DeactivationReason | null): TruckRow => ({
@@ -116,6 +128,49 @@ const deactivated = (reason: DeactivationReason | null): TruckRow => ({
   slug: 'test-driver',
   isActive: false,
   deactivationReason: reason,
+})
+
+describe('the billing deadline, once money arrives', () => {
+  const active = (paymentDueAt: Date | null): TruckRow => ({
+    id: 7,
+    phone: '+37491000001',
+    slug: 'test-driver',
+    isActive: true,
+    deactivationReason: null,
+    paymentDueAt,
+  })
+
+  it('retires the deadline for any driver who pays, deactivated or not', async () => {
+    // Outside the reactivation check on purpose: this driver was never taken
+    // off the site, so `paymentRestoresListing` returns early for them — and
+    // their deadline still has to go, because «Դարձնել վճարովի» is hidden once
+    // they have paid and nobody could clear it afterwards.
+    const { service, setPaymentDueAt, setActive } = buildService(active(new Date()))
+
+    await service.confirmPayment(1)
+
+    expect(setPaymentDueAt).toHaveBeenCalledWith(7, null)
+    expect(setActive).not.toHaveBeenCalled()
+  })
+
+  it('writes nothing when there was no deadline to retire', async () => {
+    const { service, setPaymentDueAt } = buildService(active(null))
+    await service.confirmPayment(1)
+    expect(setPaymentDueAt).not.toHaveBeenCalled()
+  })
+
+  it('retires it for a deactivated driver too, before putting them back', async () => {
+    const truck = deactivated(DeactivationReason.UNPAID)
+    const { service, setPaymentDueAt, setActive } = buildService({
+      ...truck,
+      paymentDueAt: new Date(),
+    })
+
+    await service.confirmPayment(1)
+
+    expect(setPaymentDueAt).toHaveBeenCalledWith(7, null)
+    expect(setActive).toHaveBeenCalledWith(7, true, null)
+  })
 })
 
 describe('confirmPayment restoring a listing', () => {

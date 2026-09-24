@@ -2056,11 +2056,17 @@ async function rejectReview(review: AdminReview): Promise<void> {
                 >
                   {{ truck.isPartner ? 'Մեր վարորդն է ✓' : 'Նշել որպես մեր վարորդ' }}
                 </AppButton>
+                <!-- Only for a driver who has never paid. Anyone with a
+                     payment behind them is already in the billing cycle: their
+                     own period drives their status and locks them when it
+                     lapses, so a deadline would be stored and then ignored.
+                     The API refuses it too — see setPaymentDue(). -->
                 <!-- Billing, not placement — hence `danger` once it is on: the
                      live state here is a clock running against the driver, and
                      it should not read like the green «Մեր վարորդն է» two
                      buttons away. See togglePaymentDue(). -->
                 <AppButton
+                  v-if="!truck.hasPaidBefore"
                   :variant="truck.paymentDueAt ? 'danger' : 'outline'"
                   size="sm"
                   :disabled="actioningId === truck.id"

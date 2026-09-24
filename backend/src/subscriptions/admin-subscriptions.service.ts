@@ -113,14 +113,22 @@ export class AdminSubscriptionsService {
    * it passes: «Վճարման ժամկետը մոտենում է» every day, then «սպառվել է» and
    * the lock. One constant, so the warning and the grace cannot drift apart.
    *
-   * ## Refusing a driver who is already covered
+   * ## Only for a driver who has never paid
    *
-   * Coverage is MAX(paid, deadline), so a deadline set behind live paid
-   * coverage would be written and then ignored — a button that reports success
-   * and changes nothing an admin can see. Better to say why.
+   * Not "not covered right now" — ever. A driver with any confirmed payment is
+   * already inside the billing cycle: their own `periodEnd` drives their
+   * status, and when it lapses they go `overdue` and are locked without anyone
+   * pressing anything. A deadline for them would be stored and then ignored
+   * (coverage is a MAX), which is a button reporting success and changing
+   * nothing. The admin panel hides it for them; this is the same rule at the
+   * API, because a hidden button is a suggestion and a guard is not.
    *
-   * Turning it OFF is always allowed, including for a covered driver: that is
-   * how a deadline set by mistake gets taken back.
+   * The narrower "not covered today" rule would have let an admin restart a
+   * driver who paid in March and lapsed in April. The answer there is to chase
+   * the renewal, not to hand them another five free days.
+   *
+   * Turning it OFF is always allowed, whatever their history: that is how a
+   * deadline set by mistake gets taken back.
    */
   async setPaymentDue(
     towTruckId: number,
@@ -135,17 +143,17 @@ export class AdminSubscriptionsService {
       return { id: cleared.id, paymentDueAt: undefined }
     }
 
-    const now = new Date()
     const coverage = await this.subscriptionsRepository.findCoverage([towTruckId])
     const paidThrough = coverage.get(towTruckId)?.paidThrough ?? null
-    if (paidThrough !== null && paidThrough.getTime() > now.getTime()) {
+    if (paidThrough !== null) {
       throw new ConflictException(
-        `Այս վարորդը վճարված է մինչև ${armeniaDateLabel(paidThrough)} — ժամկետ դնելու կարիք չկա։`,
+        `Այս վարորդն արդեն վճարել է (ծածկույթը՝ մինչև ${armeniaDateLabel(paidThrough)}) — ` +
+          'նա արդեն սովորական վճարային ցիկլում է։',
       )
     }
 
     const paymentDueAt = new Date(
-      now.getTime() + PAYMENT_DUE_SOON_WITHIN_DAYS * 24 * 60 * 60 * 1000,
+      Date.now() + PAYMENT_DUE_SOON_WITHIN_DAYS * 24 * 60 * 60 * 1000,
     )
     const updated = await this.towTrucksRepository.setPaymentDueAt(towTruckId, paymentDueAt)
 

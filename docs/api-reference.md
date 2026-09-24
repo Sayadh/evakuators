@@ -259,6 +259,21 @@ press and holds them there until it passes — warned every day, then locked.
 One constant for the window and the grace, so the warning a driver sees and
 the time they are given cannot drift apart.
 
+**The button appears only for a driver who has never paid** — `hasPaidBefore`
+on `AdminTowTruckSummary`, which is `paidThrough != null` for the page's
+coverage read. Anyone with a confirmed payment behind them is already inside
+the cycle: their own `periodEnd` drives their status and locks them when it
+lapses, so a deadline would be stored and then ignored (coverage is a MAX).
+The API enforces the same rule with a **409**, because a hidden button is a
+suggestion and a guard is not. "Ever", not "covered today": restarting a driver
+who paid in March and lapsed in April would hand them five more free days
+instead of chasing the renewal.
+
+Once money arrives from anywhere, `ListingRestorationService.afterPayment`
+retires the deadline. That runs for every payer, outside the reactivation
+check next to it — a driver who was never taken off the site still needs it
+cleared, because the button that could clear it is now hidden for them.
+
 Five days out — the same threshold `due-soon` already uses — the dashboard
 shows a dismissible dialog naming the date. It reappears on every visit while
 that window is open: it is the last thing standing between a driver and a
@@ -497,7 +512,7 @@ Other things worth knowing:
 | `GET` | `/admin/subscription-payments/pending` | Every request waiting on a decision, oldest first, each with the driver who made it |
 | `POST` | `/admin/subscription-payments` | Records an off-platform payment as PAID. `{ towTruckId, planId, paidAt? }` — a plan, never an amount. `paidAt` is when the coverage STARTS: today or later, and a past date is rejected (see § "Paying twice" for why) |
 | `PATCH` | `/admin/subscription-payments/:id` | `{ status: 'PAID' \| 'CANCELLED' }`. Guarded against two admins deciding the same request — the second gets a 409, not a silent overwrite |
-| `PATCH` | `/admin/subscription-payments/tow-trucks/:id/payment-due` | `{ due: boolean }` — «Դարձնել վճարովի» on the driver's admin card. Starts billing a driver who has never paid by writing `TowTruck.paymentDueAt` exactly `PAYMENT_DUE_SOON_WITHIN_DAYS` (5 days) ahead; `false` clears it. **No date parameter**: any other distance would put the driver in `paid`, told their subscription is active when they never bought one. **409** when a real payment already covers them, since coverage is a MAX and the deadline would be stored and then ignored. Writes nothing to `SubscriptionPayment` — the `:id` here is a tow truck, not a payment |
+| `PATCH` | `/admin/subscription-payments/tow-trucks/:id/payment-due` | `{ due: boolean }` — «Դարձնել վճարովի» on the driver's admin card. Starts billing a driver who has never paid by writing `TowTruck.paymentDueAt` exactly `PAYMENT_DUE_SOON_WITHIN_DAYS` (5 days) ahead; `false` clears it. **No date parameter**: any other distance would put the driver in `paid`, told their subscription is active when they never bought one. **409** when the driver has EVER had a confirmed payment, since coverage is a MAX and the deadline would be stored and then ignored — the same rule that hides the button. `false` is always allowed, whatever their history, so a misclick can be undone. Writes nothing to `SubscriptionPayment` — the `:id` here is a tow truck, not a payment |
 
 ### Reviewing a registration
 

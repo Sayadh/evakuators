@@ -737,7 +737,17 @@ export class AdminService {
       yerevan: query.yerevan,
       search: query.search,
     })
-    return trucks.map(toAdminTowTruckSummary)
+
+    // One grouped query for the page, not one per card — same reasoning as
+    // listTowTruckPayments. `paidThrough` is non-null exactly when a payment
+    // was ever confirmed, which is what hides «Դարձնել վճարովի».
+    const coverage = await this.subscriptionsRepository.findCoverage(
+      trucks.map((truck) => truck.id),
+    )
+
+    return trucks.map((truck) =>
+      toAdminTowTruckSummary(truck, coverage.get(truck.id)?.paidThrough != null),
+    )
   }
 
   /**

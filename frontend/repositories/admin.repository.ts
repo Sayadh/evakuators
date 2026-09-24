@@ -217,6 +217,12 @@ export interface AdminTowTruck {
    * paid starts.
    */
   paymentDueAt?: string
+  /**
+   * Whether any payment was ever confirmed for this driver. False is what
+   * shows «Դարձնել վճարովի» — see AdminTowTruckSummary.hasPaidBefore for why
+   * it is "ever", not "covered today".
+   */
+  hasPaidBefore: boolean
   /** Structural placement — at most one of the two, both unset for corridor-only coverage */
   citySlug?: string
   districtSlug?: string

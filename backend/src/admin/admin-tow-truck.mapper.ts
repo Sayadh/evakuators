@@ -28,6 +28,20 @@ export interface AdminTowTruckSummary {
   /** ISO datetime — the billing deadline an admin set, if this driver is being billed */
   paymentDueAt?: string
   /**
+   * Whether any payment was ever confirmed for this driver.
+   *
+   * What «Դարձնել վճարովի» is hidden by: the button is the on-ramp into
+   * billing, and a driver who has paid is already on it — their own
+   * `periodEnd` drives their status, and lapses lock them without anyone
+   * pressing anything. Offering it to them would be offering a deadline
+   * that coverage (a MAX) would store and then ignore.
+   *
+   * Deliberately not "is covered right now": a driver who paid in March and
+   * lapsed in April has still been billed, and the answer for them is to chase
+   * the renewal, not to start them over.
+   */
+  hasPaidBefore: boolean
+  /**
    * When the paid placement runs out — ISO, absent when there is none or when
    * it is one of the open-ended grants that predate durations.
    *
@@ -123,8 +137,17 @@ export interface AdminTowTruckSummary {
   privacyConsent: AdminConsentSummary | null
 }
 
+/**
+ * `hasPaidBefore` is a parameter rather than a column because it is not one:
+ * it is "does this driver have any PAID SubscriptionPayment", which the list
+ * answers for a whole page at once (`SubscriptionsRepository.findCoverage`)
+ * rather than per row. Defaults to true — the conservative end, since being
+ * wrong that way hides a button, and being wrong the other way offers an
+ * admin an action the API would then refuse.
+ */
 export function toAdminTowTruckSummary(
   truck: TowTruckWithImages & { privacyConsents: Pick<DriverPrivacyConsent, 'policyVersion' | 'acceptedAt' | 'revokedAt'>[] },
+  hasPaidBefore = true,
 ): AdminTowTruckSummary {
   return {
     id: truck.id,
@@ -140,6 +163,7 @@ export function toAdminTowTruckSummary(
     isFeatured: truck.isFeatured,
     isPartner: truck.isPartner,
     paymentDueAt: truck.paymentDueAt?.toISOString(),
+    hasPaidBefore,
     ...(truck.featuredUntil ? { featuredUntil: truck.featuredUntil.toISOString() } : {}),
     vehicleBrand: truck.vehicleBrand,
     vehicleModel: truck.vehicleModel ?? undefined,

@@ -78,10 +78,32 @@ const siteHost = SITE_NAME.toLowerCase()
            does not. -->
       <h1 class="visually-hidden">{{ t('links.title') }}</h1>
 
-      <!-- The first thing on the page, and the loudest, because it is the
-           one action a visitor might need RIGHT NOW: most people who open a
-           link-in-bio from a tow-truck brand are standing next to a car that
-           will not move.
+      <!-- The site, given the whole card rather than a row: it is the one
+           destination we own, and the picture is what makes "this is the
+           website" a thing you see rather than read. -->
+      <NuxtLinkLocale to="/" class="site" :aria-label="t('links.siteOpen', { site: siteHost })">
+        <!-- The Open Graph image, reused deliberately: it is already the
+             brand's one wide composition, so this page cannot drift from what
+             gets shown when the same link is pasted into a chat. Dimensions
+             are on the tag so the card does not resize under the thumb after
+             the image lands. -->
+        <img class="site__shot" src="/og-image.png" alt="" width="1200" height="630" fetchpriority="high">
+        <span class="site__bar">
+          <span class="site__text">
+            <span class="site__label">{{ t('links.siteLabel') }}</span>
+            <span class="site__url">{{ siteHost }}</span>
+          </span>
+          <span class="site__go" aria-hidden="true">
+            <AppIcon name="arrow-right" :size="17" />
+          </span>
+        </span>
+      </NuxtLinkLocale>
+
+      <!-- Second, and still the only filled surface on the page: the site
+           card above is where someone who came to look at the brand is going,
+           and this is where someone who came with a problem is going. Order
+           decides which is the default; colour decides which is impossible to
+           miss, and that one is this.
 
            It is a link, not a search. `/evakuator` owns the geolocation
            prompt, the hour-long answer cache and the daily routing allowance
@@ -110,27 +132,6 @@ const siteHost = SITE_NAME.toLowerCase()
         </span>
         <span class="near__go" aria-hidden="true">
           <AppIcon name="arrow-right" :size="18" />
-        </span>
-      </NuxtLinkLocale>
-
-      <!-- The site, given the whole card rather than a row: it is the one
-           destination we own, and the picture is what makes "this is the
-           website" a thing you see rather than read. -->
-      <NuxtLinkLocale to="/" class="site" :aria-label="t('links.siteOpen', { site: siteHost })">
-        <!-- The Open Graph image, reused deliberately: it is already the
-             brand's one wide composition, so this page cannot drift from what
-             gets shown when the same link is pasted into a chat. Dimensions
-             are on the tag so the card does not resize under the thumb after
-             the image lands. -->
-        <img class="site__shot" src="/og-image.png" alt="" width="1200" height="630" fetchpriority="high">
-        <span class="site__bar">
-          <span class="site__text">
-            <span class="site__label">{{ t('links.siteLabel') }}</span>
-            <span class="site__url">{{ siteHost }}</span>
-          </span>
-          <span class="site__go" aria-hidden="true">
-            <AppIcon name="arrow-right" :size="17" />
-          </span>
         </span>
       </NuxtLinkLocale>
 

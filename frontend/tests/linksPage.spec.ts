@@ -36,12 +36,14 @@ describe('/links', () => {
     expect(page).not.toContain('Գտնել')
   })
 
-  it('puts it above the site card, because it is the one that might be urgent', () => {
-    // Someone who opens a tow-truck brand's link-in-bio is often standing next
-    // to a car that will not move. Source order is the order on the page.
+  it('sits below the site card, which is the page\'s first destination', () => {
+    // Source order is the order on the page, and the order is a product
+    // decision rather than an accident of how the template was assembled —
+    // so it is pinned. The nearest search does not need to be first to be
+    // found: it is the only filled card on the page.
     const nearest = page.indexOf('to="/evakuator"')
     expect(nearest).toBeGreaterThan(-1)
-    expect(nearest).toBeLessThan(page.indexOf('class="site"'))
+    expect(nearest).toBeGreaterThan(page.indexOf('class="site"'))
   })
 
   it('renders the profiles from SOCIAL_LINKS, not from a second copy of them', () => {

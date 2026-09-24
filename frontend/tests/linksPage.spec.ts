@@ -46,14 +46,19 @@ describe('/links', () => {
     expect(page).not.toContain('Գտնել')
   })
 
-  it('sits below the site card, which is the page\'s first destination', () => {
-    // Source order is the order on the page, and the order is a product
+  it('orders the page site, free routes, nearest, profiles', () => {
+    // Source order is the order on the page, and this order is a product
     // decision rather than an accident of how the template was assembled —
-    // so it is pinned. The nearest search does not need to be first to be
-    // found: it is the only filled card on the page.
-    const nearest = page.indexOf('to="/evakuator"')
-    expect(nearest).toBeGreaterThan(-1)
-    expect(nearest).toBeGreaterThan(page.indexOf('class="site"'))
+    // which is exactly the kind of thing the next edit to this file reverses
+    // without noticing.
+    const at = (needle: string) => {
+      const index = page.indexOf(needle)
+      expect(index, `${needle} is not on the page`).toBeGreaterThan(-1)
+      return index
+    }
+    expect(at('class="site"')).toBeLessThan(at('to="/free-routes"'))
+    expect(at('to="/free-routes"')).toBeLessThan(at('to="/evakuator"'))
+    expect(at('to="/evakuator"')).toBeLessThan(at('v-for="social in socials"'))
   })
 
   it('renders the profiles from SOCIAL_LINKS, not from a second copy of them', () => {

@@ -99,11 +99,42 @@ const siteHost = SITE_NAME.toLowerCase()
         </span>
       </NuxtLinkLocale>
 
-      <!-- Second, and still the only filled surface on the page: the site
-           card above is where someone who came to look at the brand is going,
-           and this is where someone who came with a problem is going. Order
-           decides which is the default; colour decides which is impossible to
-           miss, and that one is this.
+      <!-- This card and the one below it are a pair, and are built to look
+           like one: same surface, same border, same type. They differ in the
+           plate and in the dashed line above this one, and in nothing else —
+           enough to tell apart at a glance, not enough for either to read as
+           the other's secondary. Both are what the platform is for.
+
+           First of the two because it is the cheaper answer to the same
+           problem: a driver already heading that way, rather than one sent
+           out for you.
+
+           It is also the only card on the page that explains itself. The site
+           and the nearest search are understood from their labels; nobody
+           arrives knowing what a free route is.
+
+           The heading comes from `/free-routes` rather than being written
+           again, and that heading carries «Պապուտի» — the borrowed «по пути»
+           everyone actually says for this. The formal name is what the page is
+           called; the borrowed one is what makes someone recognise it, and a
+           card that dropped it would be naming a thing its reader has heard of
+           under a name they have not. -->
+      <NuxtLinkLocale to="/free-routes" class="free">
+        <span class="free__plate" aria-hidden="true">
+          <AppIcon name="truck" :size="22" />
+        </span>
+        <span class="free__text">
+          <span class="free__title">{{ t('freeRoutes.h1') }}</span>
+          <span class="free__hint">{{ t('links.freeRoutesHint') }}</span>
+        </span>
+        <span class="free__go" aria-hidden="true">
+          <AppIcon name="chevron-right" :size="18" />
+        </span>
+      </NuxtLinkLocale>
+
+      <!-- The other half of the pair — see the card above for why the two
+           look alike. This one takes the filled plate, which is the whole of
+           the difference plus the dashed line that one carries.
 
            It is a link, not a search. `/evakuator` owns the geolocation
            prompt, the hour-long answer cache and the daily routing allowance
@@ -132,31 +163,6 @@ const siteHost = SITE_NAME.toLowerCase()
         </span>
         <span class="near__go" aria-hidden="true">
           <AppIcon name="arrow-right" :size="18" />
-        </span>
-      </NuxtLinkLocale>
-
-      <!-- The third thing the platform does, and the one nobody arrives
-           knowing: a driver heading somewhere empty, who will take a job on
-           the way. The other two cards can be understood from their label
-           alone; this one cannot, so it is the only card here that explains
-           itself.
-
-           The heading comes from `/free-routes` rather than being written
-           again, and that heading carries «Պապուտի» — the borrowed «по пути»
-           everyone actually says for this. The formal name is what the page is
-           called; the borrowed one is what makes someone recognise it, and a
-           card that dropped it would be naming a thing its reader has heard of
-           under a name they have not. -->
-      <NuxtLinkLocale to="/free-routes" class="free">
-        <span class="free__plate" aria-hidden="true">
-          <AppIcon name="truck" :size="22" />
-        </span>
-        <span class="free__text">
-          <span class="free__title">{{ t('freeRoutes.h1') }}</span>
-          <span class="free__hint">{{ t('links.freeRoutesHint') }}</span>
-        </span>
-        <span class="free__go" aria-hidden="true">
-          <AppIcon name="chevron-right" :size="18" />
         </span>
       </NuxtLinkLocale>
 
@@ -281,34 +287,57 @@ $navy: #14304f;
 }
 
 /**
- * The page's one filled surface, and the only thing on it that is not a card
- * of the same family. That is the whole point: a visitor scanning six
- * destinations should not have to read them to find the urgent one.
+ * The two service cards.
  *
- * Navy on amber rather than amber on navy — the inverse of everything else
- * here — so it reads as a button in a list of links rather than as a
- * louder link.
+ * One surface for both, because they are a pair: the site card is where
+ * someone who came to look at the brand is going, and these two are where
+ * someone who came with a problem is going. Ranking one above the other in
+ * colour would make the quieter one read as an afterthought, and neither of
+ * them is.
+ *
+ * So the difference between them is deliberately small — the icon plate, and
+ * the dashed line `.free` carries. Enough to tell them apart without reading;
+ * not enough to say one matters more.
+ *
+ * Amber-tinted glass rather than filled amber: filled, twice in a row, is two
+ * primary actions shouting over each other, and there is a third card above
+ * them with an amber button of its own.
  */
-.near {
+@mixin service {
   @include pressable;
 
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-4);
   border-radius: var(--radius-lg);
-  color: $navy;
-  background: linear-gradient(135deg, #ffca4d 0%, #f7b52c 55%, #eda314 100%);
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  overflow: hidden;
+  color: inherit;
+  background: linear-gradient(
+    135deg,
+    rgba(247, 181, 44, 0.16) 0%,
+    rgba(247, 181, 44, 0.04) 55%,
+    rgba(255, 255, 255, 0.05) 100%
+  );
+  border: 1px solid rgba(247, 181, 44, 0.42);
   box-shadow:
-    0 16px 34px -18px rgba(247, 181, 44, 0.75),
-    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+    0 18px 38px -22px rgba(0, 0, 0, 0.95),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
 
   &:hover {
-    background: linear-gradient(135deg, #ffd166 0%, #ffbe3d 55%, #f3ab1c 100%);
-    border-color: rgba(255, 255, 255, 0.4);
+    border-color: rgba(247, 181, 44, 0.62);
+    background: linear-gradient(
+      135deg,
+      rgba(247, 181, 44, 0.22) 0%,
+      rgba(247, 181, 44, 0.07) 55%,
+      rgba(255, 255, 255, 0.07) 100%
+    );
   }
+}
 
+/* Everything inside a service card except the plate, which is the difference */
+@mixin service-body {
   &__plate {
     flex: none;
     display: flex;
@@ -317,8 +346,6 @@ $navy: #14304f;
     width: 46px;
     height: 46px;
     border-radius: 14px;
-    color: $accent;
-    background: $navy;
   }
 
   &__text {
@@ -335,19 +362,55 @@ $navy: #14304f;
 
   &__hint {
     display: block;
-    margin-top: 3px;
-    /* Navy at 72%, not a grey: a neutral secondary colour over amber goes
-       muddy, and this stays the same hue as the title it sits under. */
-    color: rgba(20, 48, 79, 0.72);
+    margin-top: 4px;
     font-size: 0.76rem;
-    font-weight: 600;
-    line-height: 1.35;
+    line-height: 1.4;
+    color: #9fb3cc;
   }
 
   &__go {
     flex: none;
     display: flex;
-    color: rgba(20, 48, 79, 0.8);
+    color: $accent;
+  }
+}
+
+.free {
+  @include service;
+  @include service-body;
+
+  /* A road's dashed centre line along the top edge — the same marking as the
+     page background and the brand's own image. Inset from the corners and
+     faded at both ends, so it reads as a detail rather than as a border that
+     failed to render. */
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: var(--space-4);
+    right: var(--space-4);
+    height: 2px;
+    background: repeating-linear-gradient(90deg, $accent 0 12px, transparent 12px 24px);
+    -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 25%, #000 75%, transparent 100%);
+    mask-image: linear-gradient(90deg, transparent 0%, #000 25%, #000 75%, transparent 100%);
+    opacity: 0.5;
+  }
+
+  &__plate {
+    color: $accent;
+    background: rgba(247, 181, 44, 0.14);
+    border: 1px solid rgba(247, 181, 44, 0.4);
+  }
+}
+
+.near {
+  @include service;
+  @include service-body;
+
+  &__plate {
+    color: $navy;
+    background: $accent;
+    box-shadow: 0 8px 20px -8px rgba(247, 181, 44, 0.8);
   }
 }
 
@@ -414,89 +477,6 @@ $navy: #14304f;
     background: $accent;
     color: $navy;
     box-shadow: 0 8px 20px -8px rgba(247, 181, 44, 0.85);
-  }
-}
-
-/**
- * Quiet on purpose. The amber card above is the urgent one and there can only
- * be one of those; this is the card someone reads rather than reaches for.
- *
- * The one flourish is a road's dashed centre line along the top edge — the
- * same marking as the page background and the brand's own image, inset from
- * the corners and faded at both ends so it reads as a detail rather than as a
- * border that failed to render.
- */
-.free {
-  @include pressable;
-
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  color: inherit;
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: var(--space-4);
-    right: var(--space-4);
-    height: 2px;
-    background: repeating-linear-gradient(90deg, $accent 0 12px, transparent 12px 24px);
-    -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 25%, #000 75%, transparent 100%);
-    mask-image: linear-gradient(90deg, transparent 0%, #000 25%, #000 75%, transparent 100%);
-    opacity: 0.45;
-  }
-
-  &:hover {
-    background: rgba(255, 255, 255, 0.085);
-    border-color: rgba(255, 255, 255, 0.22);
-  }
-
-  /* Outlined rather than filled: a solid amber plate is what the card above
-     uses, and two of them would be two primary actions. */
-  &__plate {
-    flex: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 42px;
-    height: 42px;
-    border-radius: 13px;
-    color: $accent;
-    background: rgba(247, 181, 44, 0.12);
-    border: 1px solid rgba(247, 181, 44, 0.3);
-  }
-
-  &__text {
-    flex: 1;
-    min-width: 0;
-  }
-
-  &__title {
-    display: block;
-    font-size: 0.95rem;
-    font-weight: 700;
-    line-height: 1.3;
-  }
-
-  &__hint {
-    display: block;
-    margin-top: 4px;
-    font-size: 0.76rem;
-    line-height: 1.4;
-    color: #8fa4be;
-  }
-
-  &__go {
-    flex: none;
-    display: flex;
-    color: #7c93b0;
   }
 }
 

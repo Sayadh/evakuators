@@ -100,7 +100,8 @@ $nav-breakpoint: 1425px;
   &__logo-img {
     // Scaled with `--header-height`, so the logo keeps roughly the same margin
     // above and below it in either bar instead of nearly touching the edges:
-    // 30 of 56 on a phone, 46 of 76 on a desktop.
+    // 40 of 64 on a phone, 46 of 76 on a desktop — 12px of air against 15px,
+    // which is why the two bars read as the same bar at two sizes.
     //
     // A height and `width: auto`, never the reverse — the file is cropped to
     // the artwork (ratio ~2.1), so height is the dimension that has to be
@@ -108,7 +109,7 @@ $nav-breakpoint: 1425px;
     // the SVGs were re-exported on a full A4 canvas: the art then filled 26% of
     // the file's height, so `height: 30px` drew a 8px logo. If it ever looks
     // small again, check the viewBox before touching this number.
-    height: 30px;
+    height: 40px;
     width: auto;
     display: block;
 

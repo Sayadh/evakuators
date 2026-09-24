@@ -71,8 +71,16 @@
    * Phone first. Desktop gets a taller bar (see the media query below) so the
    * logo can be read at arm's length instead of squinted at; on a phone the
    * bar is sticky and every pixel of it is a pixel of the page not shown.
+   *
+   * 64, up from 56, because the logo grew with it. The wordmark under the
+   * truck is the part that stops being readable first, and at 30px it was
+   * being recognised rather than read. Keeping the bar at 56 and growing only
+   * the logo would have left 9px above and below it — a mark that looks
+   * wedged in rather than placed. 40 of 64 is the same proportion the desktop
+   * bar already has (46 of 76), so the two now differ in size and not in
+   * shape. The cost is 8px of a sticky bar, about 1% of a phone screen.
    */
-  --header-height: 56px;
+  --header-height: 64px;
 }
 
 /**

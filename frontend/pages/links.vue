@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { SITE_NAME, SITE_ORGANIZATION_DESCRIPTION, SOCIAL_LINKS } from '~/constants/site'
+import { SITE_NAME, SOCIAL_LINKS } from '~/constants/site'
 
 /**
  * The link-in-bio page — what an Instagram or TikTok profile points at, since
@@ -17,14 +17,14 @@ import { SITE_NAME, SITE_ORGANIZATION_DESCRIPTION, SOCIAL_LINKS } from '~/consta
  *
  * `defineI18nRoute` restricts the route, so `/ru/links` and `/en/links`
  * do not exist. The page is a list of five links to Armenian-language
- * destinations; translating the two sentences around them would produce two
- * more URLs with nothing different on them, which is the duplicate-content
- * shape `hreflang` exists to prevent rather than create. `useSeoMetaData`'s
+ * destinations; translating the handful of labels around them would produce
+ * two more URLs with nothing different on them, which is the
+ * duplicate-content shape `hreflang` exists to prevent rather than create. `useSeoMetaData`'s
  * `locales` option keeps the alternate set off the page for the same reason.
  *
  * ## `noindex`
  *
- * Five links and two sentences is thin by construction, and every destination
+ * Five links and no prose at all is thin by construction, and every destination
  * is already reachable: the homepage from the whole site, `/evakuator` from
  * the nav and the seven pages that place its CTA, the profiles from the footer
  * and from schema.org `sameAs`. This page exists for people who
@@ -70,39 +70,13 @@ const siteHost = SITE_NAME.toLowerCase()
 <template>
   <div class="links">
     <div class="links__inner">
-      <header class="profile">
-        <!-- A cover, the way every profile this page links to has one. It is
-             what makes the card read as an identity rather than an icon over a
-             background, and it gives the avatar an edge to sit on.
-
-             Deliberately empty: the brand's one wide image is the site card
-             below, and using it twice inside a 420px column would be the same
-             picture twice. -->
-        <span class="profile__cover" aria-hidden="true" />
-        <!-- The square brand mark, which is what `favicon.svg` already is —
-             not a crop of the wordmark lockup, which would be unreadable at
-             this size. -->
-        <span class="profile__avatar">
-          <img src="/favicon.svg" alt="" width="88" height="88">
-        </span>
-        <h1 class="profile__name">{{ SITE_NAME }}</h1>
-        <!-- The organisation's own one-line description — the same string the
-             Organization schema publishes, so the page and the structured data
-             cannot describe the brand differently.
-
-             It replaced a sentence about this page («all our links in one
-             place»): someone who arrived from a bio can see that the page is a
-             list of links, and what they cannot see is what the brand behind
-             it does. -->
-        <p class="profile__what">{{ SITE_ORGANIZATION_DESCRIPTION }}</p>
-        <!-- Two claims, both the homepage's own and taken by key rather than
-             retyped here. A link-in-bio page that promised something the site
-             does not would be a promise no other file knows was made. -->
-        <ul class="profile__facts">
-          <li class="profile__fact">{{ t('home.heroPointCountry') }}</li>
-          <li class="profile__fact">{{ t('common.hours24') }}</li>
-        </ul>
-      </header>
+      <!-- The page's heading, present for the document rather than for the
+           screen. The brand card that used to sit here is gone: the site card
+           below carries the mark and the wordmark, and a page of five links
+           does not need to say who it is twice. A page with no <h1> is still
+           a page nobody can outline, so the heading stays and the styling
+           does not. -->
+      <h1 class="visually-hidden">{{ t('links.title') }}</h1>
 
       <!-- The first thing on the page, and the loudest, because it is the
            one action a visitor might need RIGHT NOW: most people who open a
@@ -254,127 +228,9 @@ $navy: #14304f;
   }
 }
 
-.profile {
-  position: relative;
-  padding: 0 var(--space-5) var(--space-5);
-  text-align: center;
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.05);
-  box-shadow:
-    0 20px 44px -26px rgba(0, 0, 0, 0.95),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
-
-  /* Bleeds through the card's own padding, and fades out at the bottom rather
-     than ending on a border. A hard edge there would be a line for the
-     avatar's translucent ring to cross, which is the detail that makes an
-     overlapping avatar look pasted on. */
-  &__cover {
-    position: relative;
-    display: block;
-    height: 104px;
-    margin: 0 calc(var(--space-5) * -1);
-    background:
-      radial-gradient(130% 150% at 14% -10%, rgba(247, 181, 44, 0.32) 0%, rgba(247, 181, 44, 0) 60%),
-      linear-gradient(180deg, #1e4877 0%, #163a5f 55%, rgba(22, 58, 95, 0) 100%);
-
-    /* The page's own road markings, a little more present here than on the
-       background — near enough to read as texture, far enough not to be a
-       pattern anyone names. Masked so the stripes end where the gradient
-       does. */
-    &::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      opacity: 0.06;
-      background: repeating-linear-gradient(115deg, #fff 0 2px, transparent 2px 26px);
-      -webkit-mask-image: linear-gradient(180deg, #000 40%, transparent 100%);
-      mask-image: linear-gradient(180deg, #000 40%, transparent 100%);
-    }
-  }
-
-  &__avatar {
-    position: relative;
-    display: block;
-    width: 88px;
-    height: 88px;
-    /* Half on the cover, half on the card — the one proportion that reads as a
-       profile rather than as a logo that happens to sit near a band. */
-    margin: -46px auto 0;
-    border-radius: 26px;
-    overflow: hidden;
-    border: 1px solid rgba(247, 181, 44, 0.5);
-    background: #0d2439;
-    /* A translucent plate, not an opaque one: it sits across the cover and the
-       card at once, and any solid colour would be right against one of them
-       and visibly wrong against the other. */
-    box-shadow:
-      0 0 0 5px rgba(255, 255, 255, 0.1),
-      0 0 0 6px rgba(247, 181, 44, 0.14),
-      0 18px 34px -16px rgba(0, 0, 0, 0.9);
-
-    img {
-      display: block;
-      width: 100%;
-      height: 100%;
-    }
-  }
-
-  &__name {
-    margin: var(--space-4) 0 0;
-    font-size: 1.45rem;
-    font-weight: 800;
-    letter-spacing: -0.4px;
-  }
-
-  &__what {
-    margin: var(--space-2) auto 0;
-    max-width: 290px;
-    font-size: 0.85rem;
-    line-height: 1.5;
-    color: #9fb3cc;
-  }
-
-  &__facts {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: var(--space-2);
-    margin: var(--space-4) 0 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  &__fact {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 5px 11px;
-    border-radius: var(--radius-full);
-    font-size: 0.72rem;
-    font-weight: 600;
-    color: #cfe0f2;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-
-    &::before {
-      content: '';
-      width: 5px;
-      height: 5px;
-      border-radius: 50%;
-      background: $accent;
-    }
-  }
-}
-
-/* Shared by the site card and the profile rows */
+/* Shared by every card on the page */
 @mixin pressable {
-  /* Both are whole cards. The underline the browser puts under an anchor is
-     for a link inside a sentence, and here it draws a line under the label of
-     something that is already unmistakably a button. */
   text-decoration: none;
-
   transition:
     transform var(--transition),
     background var(--transition),

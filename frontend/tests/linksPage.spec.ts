@@ -16,6 +16,34 @@ const page = readFileSync(`${ROOT}pages/links.vue`, 'utf8')
 const layout = readFileSync(`${ROOT}layouts/bare.vue`, 'utf8')
 
 describe('/links', () => {
+  it('leads with the nearest search, and reaches it by link rather than by asking', () => {
+    // `/evakuator` owns the permission prompt, the hour-long answer cache and
+    // the daily routing allowance. Asking for a position here would raise a
+    // prompt on a page nobody opened for that, and a browser that refuses once
+    // remembers — which would cost the site the prompt it wants on the page
+    // where the visitor chose this.
+    expect(page).toContain('<NuxtLinkLocale to="/evakuator"')
+    expect(page).not.toContain('useGeolocation(')
+    expect(page).not.toContain('useNearestSearch(')
+  })
+
+  it('takes that label from the key every other entry point uses', () => {
+    // Seven placements share `nearest.cta` through `NearestTowTrucksCta`. This
+    // page cannot use that component — it is an `AppButton` built for the
+    // site's light surfaces — so the wording is the one thing that has to come
+    // from the same place. A retyped label is a label that drifts.
+    expect(page).toContain("t('nearest.cta')")
+    expect(page).not.toContain('Գտնել')
+  })
+
+  it('puts it above the site card, because it is the one that might be urgent', () => {
+    // Someone who opens a tow-truck brand's link-in-bio is often standing next
+    // to a car that will not move. Source order is the order on the page.
+    const nearest = page.indexOf('to="/evakuator"')
+    expect(nearest).toBeGreaterThan(-1)
+    expect(nearest).toBeLessThan(page.indexOf('class="site"'))
+  })
+
   it('renders the profiles from SOCIAL_LINKS, not from a second copy of them', () => {
     // The failure this prevents is quiet: a handle changes, the footer and the
     // `sameAs` in the Organization schema follow, and this page keeps sending

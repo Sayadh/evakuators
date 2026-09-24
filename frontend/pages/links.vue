@@ -3,20 +3,20 @@ import { SITE_NAME, SITE_ORGANIZATION_DESCRIPTION, SOCIAL_LINKS } from '~/consta
 
 /**
  * The link-in-bio page — what an Instagram or TikTok profile points at, since
- * those bios allow exactly one URL and we have four destinations.
+ * those bios allow exactly one URL and we have five destinations.
  *
  * ## Why it has no header
  *
  * Someone arriving here came from a social profile and is deciding where to go
  * next. A site header offering eight more destinations is the one thing that
- * can stop a four-choice page from working, so the `bare` layout drops the
+ * can stop a five-choice page from working, so the `bare` layout drops the
  * header, the footer and the floating call button — see `layouts/bare.vue` for
  * what it deliberately keeps.
  *
  * ## Armenian only
  *
  * `defineI18nRoute` restricts the route, so `/ru/links` and `/en/links`
- * do not exist. The page is a list of four links to Armenian-language
+ * do not exist. The page is a list of five links to Armenian-language
  * destinations; translating the two sentences around them would produce two
  * more URLs with nothing different on them, which is the duplicate-content
  * shape `hreflang` exists to prevent rather than create. `useSeoMetaData`'s
@@ -24,9 +24,10 @@ import { SITE_NAME, SITE_ORGANIZATION_DESCRIPTION, SOCIAL_LINKS } from '~/consta
  *
  * ## `noindex`
  *
- * Four links and two sentences is thin by construction, and every destination
- * is already reachable: the homepage from the whole site, the profiles from
- * the footer and from schema.org `sameAs`. This page exists for people who
+ * Five links and two sentences is thin by construction, and every destination
+ * is already reachable: the homepage from the whole site, `/evakuator` from
+ * the nav and the seven pages that place its CTA, the profiles from the footer
+ * and from schema.org `sameAs`. This page exists for people who
  * were handed its URL, not for search.
  */
 definePageMeta({ layout: 'bare' })
@@ -102,6 +103,41 @@ const siteHost = SITE_NAME.toLowerCase()
           <li class="profile__fact">{{ t('common.hours24') }}</li>
         </ul>
       </header>
+
+      <!-- The first thing on the page, and the loudest, because it is the
+           one action a visitor might need RIGHT NOW: most people who open a
+           link-in-bio from a tow-truck brand are standing next to a car that
+           will not move.
+
+           It is a link, not a search. `/evakuator` owns the geolocation
+           prompt, the hour-long answer cache and the daily routing allowance
+           (`useNearestSearch`), and asking for a position here would raise a
+           permission prompt on a page nobody opened for that — the exact
+           reason `NearestTowTrucksCta` does not do it either. A browser that
+           refuses once remembers, so the ask belongs after the choice.
+
+           Rendered unconditionally, including while NEAREST_SEARCH_ENABLED is
+           false: that is the site-wide decision recorded in
+           `constants/features.ts` — the entry points stay, and the page they
+           lead to says the feature is coming. -->
+      <NuxtLinkLocale to="/evakuator" class="near">
+        <span class="near__plate" aria-hidden="true">
+          <AppIcon name="map-pin" :size="22" />
+        </span>
+        <span class="near__text">
+          <!-- The label every other entry point uses, by key. Six placements
+               already share `nearest.cta` through `NearestTowTrucksCta`; this
+               page cannot use that component (it is an `AppButton` built for
+               the site's light surfaces, and this page is deliberately outside
+               them), so it takes the one thing that must never drift — the
+               wording — from the same place the component does. -->
+          <span class="near__title">{{ t('nearest.cta') }}</span>
+          <span class="near__hint">{{ t('links.nearestHint') }}</span>
+        </span>
+        <span class="near__go" aria-hidden="true">
+          <AppIcon name="arrow-right" :size="18" />
+        </span>
+      </NuxtLinkLocale>
 
       <!-- The site, given the whole card rather than a row: it is the one
            destination we own, and the picture is what makes "this is the
@@ -359,6 +395,77 @@ $navy: #14304f;
     &:active {
       transform: none;
     }
+  }
+}
+
+/**
+ * The page's one filled surface, and the only thing on it that is not a card
+ * of the same family. That is the whole point: a visitor scanning five
+ * destinations should not have to read them to find the urgent one.
+ *
+ * Navy on amber rather than amber on navy — the inverse of everything else
+ * here — so it reads as a button in a list of links rather than as a
+ * louder link.
+ */
+.near {
+  @include pressable;
+
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  color: $navy;
+  background: linear-gradient(135deg, #ffca4d 0%, #f7b52c 55%, #eda314 100%);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow:
+    0 16px 34px -18px rgba(247, 181, 44, 0.75),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+
+  &:hover {
+    background: linear-gradient(135deg, #ffd166 0%, #ffbe3d 55%, #f3ab1c 100%);
+    border-color: rgba(255, 255, 255, 0.4);
+  }
+
+  &__plate {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+    color: $accent;
+    background: $navy;
+  }
+
+  &__text {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__title {
+    display: block;
+    font-size: 0.98rem;
+    font-weight: 800;
+    line-height: 1.3;
+  }
+
+  &__hint {
+    display: block;
+    margin-top: 3px;
+    /* Navy at 72%, not a grey: a neutral secondary colour over amber goes
+       muddy, and this stays the same hue as the title it sits under. */
+    color: rgba(20, 48, 79, 0.72);
+    font-size: 0.76rem;
+    font-weight: 600;
+    line-height: 1.35;
+  }
+
+  &__go {
+    flex: none;
+    display: flex;
+    color: rgba(20, 48, 79, 0.8);
   }
 }
 

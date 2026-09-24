@@ -177,15 +177,28 @@ async function submit(): Promise<void> {
 </template>
 
 <style scoped lang="scss">
+/**
+ * Deliberately NOT a flex container.
+ *
+ * It was one — `display: flex; justify-content: center` — purely to centre the
+ * card, and that one declaration is what turned a framework bug into a broken
+ * page: when the dashboard was patched into this page's root element (see the
+ * note on `<NuxtPage>` in app.vue), it inherited this rule and laid its
+ * sections out in a row.
+ *
+ * The key in app.vue is the fix for the reuse. This is the reason the reuse
+ * was catastrophic rather than cosmetic, so it goes too: a page root that only
+ * ever needs to centre one child can do it with a margin, and a margin cannot
+ * reflow someone else's page.
+ */
 .login-page {
-  display: flex;
-  justify-content: center;
   padding: var(--space-7) var(--space-4);
 }
 
 .login-card {
   width: 100%;
   max-width: 420px;
+  margin-inline: auto;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);

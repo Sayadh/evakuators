@@ -39,7 +39,34 @@ useHead({
 <template>
   <div>
     <NuxtLayout>
-      <NuxtPage />
+      <!--
+        The key is explicit because Nuxt's default one can come back
+        `undefined`, and an unkeyed page is a page Vue is allowed to patch
+        into the next one instead of replacing it.
+
+        What that looked like: a driver logs in, `login.vue` calls
+        `navigateTo('/dashboard')`, and the dashboard renders INSIDE the login
+        page's root `<div>` — the element is reused, its children are swapped
+        for the dashboard's, and its static `class` and scope id are not
+        repatched. The browser then lays the whole dashboard out with
+        `.login-page { display: flex }`: four blocks side by side, and it stays
+        that way until a reload.
+
+        Nuxt derives the key from `route.matched.find(m => m.components
+        ?.default === Component.type)` (`generateRouteKey`). On a route whose
+        component is still resolving when the navigation happens — a lazily
+        loaded, client-only page reached BY navigating, which is exactly
+        `/dashboard` — that lookup misses, the key is `undefined`, and
+        `RouteProvider` is rendered with no key at all.
+
+        It only ever showed up after a login, so it was invisible to anyone
+        already holding a session and constant for anyone signing in fresh.
+
+        `route.path`, not `fullPath`: the listing pages keep their filters in
+        the query string, and keying on those would throw the page away on
+        every filter change.
+      -->
+      <NuxtPage :page-key="(route) => route.path" />
     </NuxtLayout>
   </div>
 </template>

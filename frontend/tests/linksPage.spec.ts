@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { SOCIAL_LINKS } from '~/constants/site'
 
 /**
- * `/socials` — the link-in-bio page an Instagram or TikTok bio points at.
+ * `/links` — the link-in-bio page an Instagram or TikTok bio points at.
  *
  * Source-read rather than mounted, the same way `featuredStripOrder.spec.ts`
  * is: the properties worth protecting here are all decisions in the file, and
@@ -12,10 +12,10 @@ import { SOCIAL_LINKS } from '~/constants/site'
  * be free to change.
  */
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
-const page = readFileSync(`${ROOT}pages/socials.vue`, 'utf8')
+const page = readFileSync(`${ROOT}pages/links.vue`, 'utf8')
 const layout = readFileSync(`${ROOT}layouts/bare.vue`, 'utf8')
 
-describe('/socials', () => {
+describe('/links', () => {
   it('renders the profiles from SOCIAL_LINKS, not from a second copy of them', () => {
     // The failure this prevents is quiet: a handle changes, the footer and the
     // `sameAs` in the Organization schema follow, and this page keeps sending
@@ -54,7 +54,7 @@ describe('/socials', () => {
   })
 
   it('is Armenian only, and says so to both the router and the crawler', () => {
-    // `defineI18nRoute` is what makes /ru/socials and /en/socials 404;
+    // `defineI18nRoute` is what makes /ru/links and /en/links 404;
     // `locales` is what keeps the page from advertising them in `hreflang`.
     // One without the other is a page pointing at its own missing translations.
     expect(page).toContain("defineI18nRoute({ locales: ['hy'] })")
@@ -66,6 +66,6 @@ describe('/socials', () => {
     expect(page).toContain('noindex: true')
     // Listing a noindex URL asks a crawler to index what the page tells it not
     // to — the two signals have to agree.
-    expect(sitemap).not.toContain('/socials')
+    expect(sitemap).not.toContain('/links')
   })
 })

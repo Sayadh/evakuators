@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * A page with no chrome around it — no header, no footer, no floating call
- * button. Used by `/socials`, the link-in-bio page.
+ * button. Used by `/links`, the link-in-bio page.
  *
  * ## Why a layout and not `layout: false`
  *

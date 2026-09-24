@@ -60,7 +60,7 @@ const ARMENIAN = /[԰-֏]/
  * here whose page is NOT locale-restricted fails, so the exemption cannot
  * outlive its reason.
  */
-const ARMENIAN_ONLY = [{ namespace: 'socials', page: 'pages/socials.vue' }] as const
+const ARMENIAN_ONLY = [{ namespace: 'links', page: 'pages/links.vue' }] as const
 
 const ARMENIAN_ONLY_KEY = (key: string) =>
   ARMENIAN_ONLY.some((entry) => key.startsWith(`${entry.namespace}.`))

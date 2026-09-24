@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import en from '~/i18n/locales/en.json'
 import hy from '~/i18n/locales/hy.json'
@@ -48,6 +50,39 @@ const SAME_ON_PURPOSE = new Set([
 
 const ARMENIAN = /[԰-֏]/
 
+/**
+ * Namespaces that live in Armenian alone, because the page that renders them
+ * does.
+ *
+ * Not a loophole: a key missing from a locale that page is never served in is
+ * not a missing translation, it is a translation with nowhere to appear. The
+ * test below proves the claim rather than trusting this list — a namespace
+ * here whose page is NOT locale-restricted fails, so the exemption cannot
+ * outlive its reason.
+ */
+const ARMENIAN_ONLY = [{ namespace: 'socials', page: 'pages/socials.vue' }] as const
+
+const ARMENIAN_ONLY_KEY = (key: string) =>
+  ARMENIAN_ONLY.some((entry) => key.startsWith(`${entry.namespace}.`))
+
+describe('the Armenian-only exemption', () => {
+  const ROOT = fileURLToPath(new URL('..', import.meta.url))
+
+  it.each(ARMENIAN_ONLY)(
+    'is claimed by $page, which really is restricted to Armenian',
+    ({ namespace, page }) => {
+      const source = readFileSync(`${ROOT}${page}`, 'utf8')
+      // Without this the namespace is simply untranslated, and the guard above
+      // has been told to stop noticing.
+      expect(source, `${page} is not locale-restricted`).toContain(
+        "defineI18nRoute({ locales: ['hy'] })",
+      )
+      expect(HY.has(`${namespace}.title`) || [...HY.keys()].some((key) => key.startsWith(`${namespace}.`)))
+        .toBe(true)
+    },
+  )
+})
+
 describe('locale files', () => {
   it('has keys at all', () => {
     expect(HY.size).toBeGreaterThan(20)
@@ -57,12 +92,12 @@ describe('locale files', () => {
     // A superset is allowed in one direction only: Russian carries `.few` and
     // `.many` forms that Armenian legitimately does not have, and a key the
     // Armenian site uses but Russian lacks would render as its own key path.
-    const missing = [...HY.keys()].filter((key) => !RU.has(key))
+    const missing = [...HY.keys()].filter((key) => !RU.has(key) && !ARMENIAN_ONLY_KEY(key))
     expect(missing).toEqual([])
   })
 
   it('defines every Armenian key in English', () => {
-    const missing = [...HY.keys()].filter((key) => !EN.has(key))
+    const missing = [...HY.keys()].filter((key) => !EN.has(key) && !ARMENIAN_ONLY_KEY(key))
     expect(missing).toEqual([])
   })
 
@@ -141,6 +176,7 @@ describe('locale files', () => {
       ...new Set(text.match(/\{[a-zA-Z0-9_]+\}/g) ?? []),
     ].sort()
     for (const [key, armenian] of HY) {
+      if (ARMENIAN_ONLY_KEY(key)) continue
       expect({ key, placeholders: placeholders(RU.get(key) ?? '') }).toEqual({
         key,
         placeholders: placeholders(armenian),

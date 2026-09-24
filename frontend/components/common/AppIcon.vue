@@ -108,6 +108,12 @@ const ICONS: Record<IconName, IconDefinition> = {
     paths: ['M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.77 5.82 21 7 14.14 2 9.27l6.91-1.01L12 2z'],
     filled: true,
   },
+  'arrow-right': {
+    paths: ['M5 12h14', 'M13 6l6 6-6 6'],
+  },
+  'chevron-right': {
+    paths: ['M9 6l6 6-6 6'],
+  },
   facebook: {
     paths: ['M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z'],
   },

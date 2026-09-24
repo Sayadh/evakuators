@@ -16,6 +16,18 @@ interface SeoPageOptions {
   keywords?: string
   image?: string
   noindex?: boolean
+  /**
+   * The locales this page actually exists in. Defaults to all of them, which
+   * is true of every page but one.
+   *
+   * A page restricted with `defineI18nRoute({ locales: [...] })` has no route
+   * under the other prefixes, so emitting the full alternate set would point
+   * crawlers at URLs that 404 — and a single-language page has nothing to
+   * disambiguate in the first place, which is why one entry here drops the
+   * alternates and the `x-default` with them rather than emitting a set of
+   * one.
+   */
+  locales?: readonly string[]
 }
 
 /**
@@ -54,11 +66,19 @@ export function useSeoMetaData(options: SeoPageOptions): void {
   const url = `${SITE_URL}${localePath(options.path)}`
   const image = options.image ?? `${SITE_URL}/og-image.png`
 
-  const alternates = (locales.value as { code: string; language?: string }[]).map((entry) => ({
-    code: entry.code,
-    hreflang: entry.language ?? entry.code,
-    href: `${SITE_URL}${localePath(options.path, entry.code as 'hy' | 'ru' | 'en')}`,
-  }))
+  const available = (locales.value as { code: string; language?: string }[]).filter(
+    (entry) => options.locales === undefined || options.locales.includes(entry.code),
+  )
+  // One version means no alternate set: `hreflang` answers "which of these is
+  // for you", and a list of one is not a question.
+  const alternates =
+    available.length > 1
+      ? available.map((entry) => ({
+          code: entry.code,
+          hreflang: entry.language ?? entry.code,
+          href: `${SITE_URL}${localePath(options.path, entry.code as 'hy' | 'ru' | 'en')}`,
+        }))
+      : []
   const armenian = alternates.find((entry) => entry.code === 'hy')
 
   useSeoMeta({

@@ -295,7 +295,7 @@ payload, so the browser reads the same value instead of inventing its own. Every
 listing derives its order from it, and `seededShuffle` is deterministic given a
 seed.
 
-Three rules follow, and each is guarded by
+Four rules follow, and each is guarded by
 `frontend/tests/listingShuffle.spec.ts`:
 
 - **Read the seed in setup**, never inside a `useAsyncData` transform or a
@@ -306,6 +306,25 @@ Three rules follow, and each is guarded by
   stable, so sorting the already-shuffled array by the grouping keys leaves the
   shuffled order intact within a group.
 - **The price sort is never shuffled.** The customer asked for cheapest first.
+- **Shuffle exactly once on the way to the screen.** `SortOption.Recommended`
+  is a shuffle, not a key, so applying it twice is not the no-op that sorting
+  twice by a key would be. Both layers read the same
+  `useListingShuffleSeed()`, so the same Fisher–Yates draws produce the same
+  positional permutation P twice and the list arrives as P² — and squares are
+  not uniform. Every 2-cycle squares to the identity, so the identity is wildly
+  over-represented and the order is dragged back toward whatever the API sent.
+
+  This shipped: the three composables feeding the two pages with a filter
+  sidebar carried `transform: recommendedWith(seed)` while those pages shuffled
+  again in `useTowTruckFilters`. On a ten-driver town the API's first driver led
+  20% of loads instead of 10%; on a four-driver one, 50%, and the list came back
+  completely unshuffled 42% of the time. A refresh looked fine only because the
+  cookie-backed `pickListingSeed` then forced a different order and hid it.
+
+  So `useTowTrucksByCity`, `useTowTrucksByDistrict` and `useTowTrucksByZone`
+  hand over the API's own order. Every other listing keeps its transform,
+  because nothing downstream reorders it — `featuredStripOrder.spec.ts` names
+  both sets so neither can drift.
 
 ## A CSS grid with a viewport-conditional child is an SSR bug waiting to happen
 

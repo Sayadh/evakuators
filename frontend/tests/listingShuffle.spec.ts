@@ -360,3 +360,84 @@ describe('the seed reaches both runtimes', () => {
     expect(filters).not.toContain('`listing-order:${route.path}`')
   })
 })
+
+describe('the shuffle runs exactly once on the way to the screen', () => {
+  /**
+   * The bug this pins, in one line: `SortOption.Recommended` shuffles, so
+   * applying it twice with the same seed applies the same permutation P twice.
+   * P² is not a uniform shuffle — every 2-cycle squares to the identity, so the
+   * identity is hugely over-represented and the list is pulled back toward the
+   * order the API sent.
+   *
+   * It shipped as `transform: recommendedWith(seed)` on the three composables
+   * feeding the two pages that then shuffle again in `useTowTruckFilters`. The
+   * symptom was a first visit to a small town — an Ashtarak, a Nor Norq —
+   * opening on the same driver far too often, while a refresh looked fine
+   * (the refresh has a cookie, and `pickListingSeed` forces a different order,
+   * which hid the skew).
+   *
+   * Fixed seeds, not `Math.random()`: a statistical test that can fail on a
+   * bad afternoon teaches everyone to re-run the suite instead of reading it.
+   */
+  const SEEDS = Array.from({ length: 4000 }, (_, i) => (i * 2654435761) >>> 0)
+  const TOWN = Array.from({ length: 10 }, (_, i) => truck(i + 1))
+
+  /** How often each driver led the page, as a share of 1 */
+  function leadShares(order: (seed: number) => TowTruckCard[]): number[] {
+    const wins = new Map<number, number>()
+    for (const seed of SEEDS) {
+      const first = order(seed)[0]!.id
+      wins.set(first, (wins.get(first) ?? 0) + 1)
+    }
+    return TOWN.map((t) => (wins.get(t.id) ?? 0) / SEEDS.length)
+  }
+
+  it('gives every driver the top of a ten-driver town about a tenth of the time', () => {
+    const shares = leadShares((seed) => sortTowTrucks(TOWN, SortOption.Recommended, seed, false))
+
+    // ±25% of 0.1. Wide enough that 4000 draws never trip it by luck, tight
+    // enough that the 2x skew below cannot slip through.
+    for (const share of shares) {
+      expect(share).toBeGreaterThan(0.075)
+      expect(share).toBeLessThan(0.125)
+    }
+  })
+
+  it('would catch the double shuffle: the API’s first driver leads twice as often', () => {
+    // Exactly what the removed `transform` did — shuffle, then let the page
+    // shuffle the result again with the same seed.
+    const shares = leadShares((seed) =>
+      sortTowTrucks(sortTowTrucks(TOWN, SortOption.Recommended, seed), SortOption.Recommended, seed, false),
+    )
+
+    expect(shares[0]).toBeGreaterThan(0.18)
+    expect(shares[0]!).toBeGreaterThan(2 * shares[1]!)
+  })
+
+  it('leaves no more drivers in their original slot than chance does', () => {
+    // A uniform shuffle leaves exactly 1 element in place on average, whatever
+    // the list length. The double shuffle left 2 — the same defect seen from a
+    // different angle, and the one that made whole small-town lists come back
+    // untouched.
+    let stayed = 0
+    for (const seed of SEEDS) {
+      const order = sortTowTrucks(TOWN, SortOption.Recommended, seed, false)
+      order.forEach((t, index) => {
+        if (t.id === TOWN[index]!.id) stayed += 1
+      })
+    }
+    expect(stayed / SEEDS.length).toBeLessThan(1.35)
+  })
+
+  it('never returns the API order untouched more often than chance', () => {
+    const untouched = SEEDS.filter((seed) =>
+      sortTowTrucks(TOWN, SortOption.Recommended, seed, false).every(
+        (t, index) => t.id === TOWN[index]!.id,
+      ),
+    ).length
+
+    // 10! is 3.6 million, so across 4000 seeds the honest answer is zero.
+    // The double shuffle hit this on 0.25% of seeds — about ten of these.
+    expect(untouched).toBe(0)
+  })
+})

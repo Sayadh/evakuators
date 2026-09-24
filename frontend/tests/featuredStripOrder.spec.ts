@@ -22,22 +22,49 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const composables = readFileSync(`${ROOT}composables/useTowTrucks.ts`, 'utf8')
 const service = readFileSync(`${ROOT}services/towTrucks.service.ts`, 'utf8')
 
-function featuredBlock(): string {
-  const start = composables.indexOf('export function useFeaturedTowTrucks')
-  expect(start).toBeGreaterThan(-1)
+function blockFor(name: string): string {
+  const start = composables.indexOf(`export function ${name}`)
+  expect(start, `${name} not found`).toBeGreaterThan(-1)
   return composables.slice(start, composables.indexOf('export function', start + 10))
 }
 
+/**
+ * The three whose pages call `useTowTruckFilters`, which shuffles. They must
+ * NOT pre-sort: the same seed reaches both, so a `transform` here applies the
+ * same permutation P a second time and the list comes out as P² — not a
+ * uniform shuffle, and biased toward the order the API sent. See
+ * listingShuffle.spec.ts § "the shuffle runs exactly once".
+ */
+const FILTERED_PAGES = ['useTowTrucksByCity', 'useTowTrucksByDistrict', 'useTowTrucksByZone']
+
+/** The ones that render what they are given, so the transform is their only ordering */
+const SELF_ORDERING = [
+  'useTowTrucksInYerevan',
+  'useTowTrucksByVehicleType',
+  'useTowTrucksByVehicleTypeInGeo',
+  'useTowTrucksByRegion',
+  'useSimilarTowTrucks',
+]
+
 describe('featured strip', () => {
   it('does not re-sort what the server ordered by purchase', () => {
-    expect(featuredBlock()).not.toContain('recommendedWith')
+    expect(blockFor('useFeaturedTowTrucks')).not.toContain('recommendedWith')
   })
 
-  it('still shuffles every other listing', () => {
-    // The guard against "fixed" meaning "removed everywhere".
-    expect(composables.split('recommendedWith(useListingShuffleSeed())').length - 1).toBeGreaterThan(
-      5,
-    )
+  it('still shuffles every listing that has nothing else to order it', () => {
+    // The guard against "fixed" meaning "removed everywhere". Named rather
+    // than counted: a count has to be edited every time a listing is added or
+    // a page starts filtering, and the edit is indistinguishable from someone
+    // quietly deleting the shuffle.
+    for (const name of SELF_ORDERING) {
+      expect(blockFor(name), `${name} lost its shuffle`).toContain('recommendedWith')
+    }
+  })
+
+  it('leaves the filter pages unsorted, so their own shuffle is the only one', () => {
+    for (const name of FILTERED_PAGES) {
+      expect(blockFor(name), `${name} would shuffle twice`).not.toContain('recommendedWith')
+    }
   })
 
   it('applies the limit in API mode, not only in mock mode', () => {

@@ -30,10 +30,30 @@ import { sortTowTrucks } from '~/utils/towTruckFilters'
  * (`works24Hours`, then `createdAt`), so with every truck on 24/7 it was
  * effectively oldest-registered-last.
  *
- * Putting it in the composable means a page cannot forget: there is no listing
- * that reaches a component without passing through here. The filter pages
- * re-sort on top of this whenever the visitor picks a different option, which
- * is harmless — sorting an already-sorted array by the same key is a no-op.
+ * Putting it in the composable means a page cannot forget — with three
+ * exceptions, marked below, and they are exceptions because of what
+ * "Recommended" actually is.
+ *
+ * ## It is a SHUFFLE, so applying it twice is not a no-op
+ *
+ * This used to say re-sorting on top was harmless, "sorting an already-sorted
+ * array by the same key". It is not a key. `SortOption.Recommended` shuffles
+ * first (`sortTowTrucks`), and the pages with a filter sidebar shuffle again —
+ * with the SAME seed, since both read `useListingShuffleSeed()`. Same seed,
+ * same Fisher–Yates draws, so the same positional permutation P lands twice:
+ * the list comes out as P², and squares are not uniform. Every 2-cycle squares
+ * to the identity, so the identity is wildly over-represented and the list is
+ * dragged back toward the order the backend sent.
+ *
+ * Measured on a ten-driver town: the driver the API returns first led the page
+ * 20% of the time instead of 10%, twice as many drivers sat in their original
+ * slot, and the whole list came back completely unshuffled 0.25% of the time
+ * against 0.000028% for a real shuffle. On a four-driver town — an Ashtarak,
+ * a Nor Norq — it was 50% and 42%.
+ *
+ * So the three composables whose pages call `useTowTruckFilters` hand over the
+ * API's own order and let that one shuffle be the only one. The other five
+ * render what they are given and keep the transform.
  *
  * The backend's `ORDER BY` stays as it is. It is not redundant: it is what
  * makes `limit`/`offset` paging return a stable set of rows (see the `id`
@@ -52,18 +72,22 @@ function recommendedWith(seed: number) {
     sortTowTrucks(trucks, SortOption.Recommended, seed)
 }
 
+/**
+ * No `transform` — `/regions/[region]/[city]` runs `useTowTruckFilters`, which
+ * shuffles. See the § above for what the second shuffle did to the first.
+ */
 export function useTowTrucksByCity(citySlug: string) {
   return useAsyncData(`tow-trucks-city-${citySlug}`, () => towTrucksService.getByCitySlug(citySlug), {
     default: () => [],
-    transform: recommendedWith(useListingShuffleSeed()),
   })
 }
 
+/** No `transform` — `/yerevan/[district]` shuffles in `useTowTruckFilters`. */
 export function useTowTrucksByDistrict(districtSlug: string) {
   return useAsyncData(
     `tow-trucks-district-${districtSlug}`,
     () => towTrucksService.getByDistrictSlug(districtSlug),
-    { default: () => [], transform: recommendedWith(useListingShuffleSeed()) },
+    { default: () => [] },
   )
 }
 
@@ -123,12 +147,15 @@ export function useYerevanTowTruckCount() {
  * Drivers on one road corridor — exact slug match, no city fallback. Its own
  * composable rather than a flag on `useTowTrucksByCity`, because it is a
  * different endpoint answering a different question.
+ *
+ * No `transform`, for the same reason as the two above: it is served by
+ * `/regions/[region]/[city]`, which shuffles in `useTowTruckFilters`.
  */
 export function useTowTrucksByZone(zoneSlug: string) {
   return useAsyncData(
     `tow-trucks-zone-${zoneSlug}`,
     () => towTrucksService.getByZoneSlug(zoneSlug),
-    { default: () => [], transform: recommendedWith(useListingShuffleSeed()) },
+    { default: () => [] },
   )
 }
 

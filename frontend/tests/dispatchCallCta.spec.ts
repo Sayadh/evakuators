@@ -90,12 +90,26 @@ describe('DispatchCallCta placements', () => {
     expect(cta).toBeLessThan(register)
   })
 
-  it('sits under the homepage search, not above it', () => {
-    // Above the search it would read as the recommended path and undercut the
-    // listings the drivers pay to be in.
+  it('sits above the homepage search, and stays quieter than it', () => {
+    // Position and weight are split on purpose. Somebody whose car has just
+    // stopped is offered a person before a list — but the listings are what
+    // drivers pay to be in, so the search box keeps the louder treatment and
+    // this stays outlined. Both halves are the decision; a filled button here
+    // would be the half that was not asked for.
     const search = hero.indexOf('<LocationSearch')
     const cta = hero.indexOf('<DispatchCallCta variant="hero"')
-    expect(cta).toBeGreaterThan(search)
+    expect(cta).toBeGreaterThan(-1)
+    expect(cta).toBeLessThan(search)
+    expect(cta).toBeGreaterThan(hero.indexOf('hero__subtitle'))
+  })
+
+  it('keeps the hero button outlined now that it comes first', () => {
+    // The other half of the same decision. Moving it above the search made it
+    // the first thing offered; filling it would also make it the loudest, and
+    // the listings below are what drivers pay to be found through.
+    const heroRule = component.slice(component.indexOf('&--hero {'), component.indexOf('&--banner {'))
+    expect(heroRule).toContain('border: 2px solid')
+    expect(heroRule).not.toContain('background: var(--color-accent)')
   })
 
   it('renders the floating button once, in the layout, behind the route rule', () => {

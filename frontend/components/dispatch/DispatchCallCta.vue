@@ -222,16 +222,18 @@ function onClick(): void {
   &--hero {
     align-items: center;
     text-align: center;
-    margin-top: var(--space-5);
+    // Both sides: it now sits between the subtitle and the search box, and
+    // the search box carries no vertical margin of its own.
+    margin-block: var(--space-5);
     color: rgba(255, 255, 255, 0.92);
 
     .dispatch-cta__subtitle {
       color: rgba(255, 255, 255, 0.78);
     }
 
-    /* Outline, not filled. The search box above it is the primary action on
-       this page, and a second solid button directly under it would read as the
-       recommended one. */
+    /* Outline, not filled. The search box below it is what the drivers pay to
+       be found through, and a solid button sitting above it would take that
+       page's weight as well as its position. */
     .dispatch-cta__call {
       border: 2px solid rgba(255, 255, 255, 0.85);
       color: #fff;

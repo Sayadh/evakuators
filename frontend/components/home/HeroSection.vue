@@ -24,13 +24,19 @@ const { t } = useI18n()
           {{ t('home.heroSubtitle') }}
         </p>
       </div>
-      <LocationSearch class="hero__search" />
+      <!-- Above the search, not under it. Somebody whose car has just stopped
+           wants a person, not a list to work through, and the number is the
+           shortest path to one — so it is offered before the page asks them to
+           choose anything.
 
-      <!-- Directly under the search, not above it: this is the ALTERNATIVE to
-           choosing, and standing the two side by side is what explains it
-           without a word of instruction. Outline rather than filled for the
-           same reason — the search is still the main way through this page. -->
+           Still outlined rather than filled, and that is the balance this page
+           has to keep: the listings are what drivers pay to be in, so the
+           search stays the LOUDER of the two even though the phone now comes
+           first. Position says "start here"; weight still says "the drivers
+           are right below". -->
       <DispatchCallCta variant="hero" class="hero__dispatch" />
+
+      <LocationSearch class="hero__search" />
       <ul class="hero__points">
         <li><AppIcon name="check" :size="16" /> {{ t('home.heroPointCountry') }}</li>
         <li><AppIcon name="clock" :size="16" /> {{ t('home.heroPointHours') }}</li>

@@ -63,7 +63,7 @@ useSeoMetaData({
   path: '/evakuator',
 })
 
-const { locating, error: geolocationError, locate } = useGeolocation()
+const { locating, error: geolocationError, permission, locate } = useGeolocation()
 const {
   restore,
   restored,
@@ -98,6 +98,47 @@ onMounted(restore)
 
 const busy = computed(() => locating.value || searching.value)
 const shownError = computed(() => geolocationError.value || searchError.value)
+
+/**
+ * The browser has already been told no, and will not ask again.
+ *
+ * True both when `permissions.query` said so before any press and when a press
+ * came back `PERMISSION_DENIED` — `useGeolocation` collapses the two, because
+ * from this page's side they are the same fact and deserve the same screen.
+ */
+const locationBlocked = computed(() => permission.value === 'denied')
+const permissionHelpOpen = ref(false)
+
+/**
+ * Pressing a button that cannot work is the thing this avoids. While the
+ * browser is refusing, the same button opens the instructions instead of
+ * calling `locate()` — which would set an error and change nothing.
+ */
+function onLocatePress(): void {
+  if (locationBlocked.value) {
+    permissionHelpOpen.value = true
+    return
+  }
+  void findNearest()
+}
+
+/**
+ * They went to the browser's settings — there is no API to open those for
+ * them — and turned it back on. Running the search here is the whole point of
+ * watching: the alternative is a visitor who fixed the permission, came back
+ * to an unchanged page, and has to work out that they must press again.
+ *
+ * Gated on the previous state being `denied` so this can never fire for
+ * someone who simply answered the browser's own prompt with "allow": that
+ * press is already inside `findNearest`, and running it twice would spend two
+ * of the day's detailed searches on one question.
+ */
+watch(permission, (next, previous) => {
+  if (previous === 'denied' && next === 'granted') {
+    permissionHelpOpen.value = false
+    void findNearest()
+  }
+})
 
 /**
  * Wraps whichever of the three post-press states (empty result, result list,
@@ -204,10 +245,13 @@ async function findNearest(): Promise<void> {
       size="lg"
       :disabled="busy"
       class="nearest-page__locate"
-      @click="findNearest"
+      @click="onLocatePress"
     >
       <AppIcon name="map-pin" :size="20" />
-      {{ locating ? t('nearest.locating') : searching ? t('nearest.searching') : t('nearest.locateButton') }}
+      <template v-if="locationBlocked">{{ t('nearest.permissionHelp') }}</template>
+      <template v-else>
+        {{ locating ? t('nearest.locating') : searching ? t('nearest.searching') : t('nearest.locateButton') }}
+      </template>
     </AppButton>
 
     <!-- Gated on `restored` so the figure is never rendered before storage has
@@ -225,6 +269,32 @@ async function findNearest(): Promise<void> {
     </p>
 
     <p v-if="shownError" class="nearest-page__error" role="alert">{{ shownError }}</p>
+    <!-- The error says what happened; this is the only thing that can be done
+         about it, so it sits with the error rather than somewhere calmer. -->
+    <AppButton
+      v-if="locationBlocked"
+      variant="outline"
+      size="sm"
+      class="nearest-page__permission-help"
+      @click="permissionHelpOpen = true"
+    >
+      {{ t('nearest.permissionHelp') }}
+    </AppButton>
+
+    <!-- A page cannot open the browser's own settings — no API does that, by
+         design, or any site could reopen a prompt it had just been refused.
+         What it can do is say exactly where the switch is. -->
+    <AppModal v-model="permissionHelpOpen" :title="t('nearest.permissionTitle')">
+      <div class="nearest-page__permission">
+        <p>{{ t('nearest.permissionIntro') }}</p>
+        <ul>
+          <li>{{ t('nearest.permissionChrome') }}</li>
+          <li>{{ t('nearest.permissionSafari') }}</li>
+          <li>{{ t('nearest.permissionInApp') }}</li>
+        </ul>
+        <p class="nearest-page__permission-fallback">{{ t('nearest.permissionFallback') }}</p>
+      </div>
+    </AppModal>
 
     <!--
       One wrapper around all three post-press states, so there is a single
@@ -328,6 +398,26 @@ async function findNearest(): Promise<void> {
     color: var(--color-text-secondary);
     max-width: 640px;
     margin-bottom: var(--space-5);
+  }
+
+  &__permission-help {
+    margin-bottom: var(--space-4);
+  }
+
+  &__permission {
+    ul {
+      margin: var(--space-3) 0;
+      padding-left: var(--space-5);
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-3);
+      line-height: 1.5;
+    }
+  }
+
+  &__permission-fallback {
+    margin: 0;
+    color: var(--color-text-secondary);
   }
 
   &__locate {

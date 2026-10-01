@@ -57,9 +57,55 @@ const GEOLOCATION_TIMEOUT_MS = 15_000
  */
 const GEOLOCATION_MAX_AGE_MS = 60_000
 
+/**
+ * What the browser will do on the next `getCurrentPosition`, as far as we can
+ * tell. `unknown` is its own state and not a synonym for `prompt`: Safari does
+ * not answer `permissions.query({ name: 'geolocation' })` at all, and a page
+ * that treated silence as "will ask" would be guessing about the one thing
+ * this exists to stop guessing about.
+ */
+export type GeolocationPermission = 'granted' | 'denied' | 'prompt' | 'unknown'
+
 export function useGeolocation() {
   const locating = ref(false)
   const error = ref('')
+
+  /**
+   * Read before the visitor presses anything.
+   *
+   * A browser that has been refused once remembers it: `getCurrentPosition`
+   * then fails immediately, with no prompt raised at all. Without this, the
+   * page offers a button that cannot work and only explains itself after it
+   * has been pressed — an invitation to fail. With it, the page can say so up
+   * front and show what to change.
+   *
+   * It is also the only way to notice the fix. There is no API that opens the
+   * browser's own settings, so the visitor leaves the page to flip the switch;
+   * `onchange` is what tells us they came back having flipped it, so the
+   * search can run itself instead of asking them to find the button again.
+   */
+  const permission = ref<GeolocationPermission>('unknown')
+  let status: PermissionStatus | null = null
+
+  onMounted(async () => {
+    // `navigator.permissions` is absent in older WebViews, and Safari rejects
+    // the geolocation name rather than returning a state. Both are `unknown`.
+    if (!navigator.permissions?.query) return
+    try {
+      status = await navigator.permissions.query({ name: 'geolocation' as PermissionName })
+      permission.value = status.state
+      status.onchange = () => {
+        if (status) permission.value = status.state
+      }
+    } catch {
+      permission.value = 'unknown'
+    }
+  })
+
+  onUnmounted(() => {
+    if (status) status.onchange = null
+    status = null
+  })
 
   /**
    * Resolves with a position, or `null` after setting `error` to a message the
@@ -95,13 +141,20 @@ export function useGeolocation() {
       }
     } catch (caught) {
       error.value = messageFor(caught)
+      // The answer to the question `permissions.query` could not answer. On
+      // Safari this is the only place the page ever learns it was refused, so
+      // "denied" has one meaning for callers whether it was known in advance
+      // or only after the press.
+      if ((caught as { code?: number } | null)?.code === PERMISSION_DENIED) {
+        permission.value = 'denied'
+      }
       return null
     } finally {
       locating.value = false
     }
   }
 
-  return { locating, error, locate }
+  return { locating, error, permission, locate }
 }
 
 function messageFor(caught: unknown): string {

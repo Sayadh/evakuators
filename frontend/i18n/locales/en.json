@@ -77,6 +77,13 @@
     "seoTitle": "Tow truck services across Armenia"
   },
   "nearest": {
+    "permissionHelp": "How to turn on location",
+    "permissionTitle": "Location access is turned off",
+    "permissionIntro": "The browser remembered the refusal, so the button no longer asks. Turning it back on takes about 10 seconds.",
+    "permissionChrome": "Chrome (Android): the lock icon on the left of the address bar → “Permissions” → “Location” → “Allow”.",
+    "permissionSafari": "Safari (iPhone): the “aA” button in the address bar → “Website Settings” → “Location” → “Ask” or “Allow”.",
+    "permissionInApp": "If you opened this page from Telegram or Instagram, the cause is often the app itself, which has no location access. Open its menu and choose “Open in browser”.",
+    "permissionFallback": "Or carry on with the search by region and city below.",
     "cta": "Find the nearest tow trucks",
     "metaTitle": "Find the nearest tow truck",
     "breadcrumb": "Nearest tow trucks",

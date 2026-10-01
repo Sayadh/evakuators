@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { adminRepository, isApiEnabled } from '~/repositories'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { adminRepository, isApiEnabled, type AdminTowTruck } from '~/repositories'
 import { useAdminAuthStore } from '~/stores/adminAuth'
 import type {
   DispatchCandidate,
@@ -56,7 +56,7 @@ const apiEnabled = isApiEnabled()
  * and switching the toggle does not throw away whichever search is not
  * currently shown, so flipping back and forth costs nothing.
  */
-type SearchMode = 'place' | 'coordinates'
+type SearchMode = 'place' | 'coordinates' | 'driver'
 const mode = ref<SearchMode>('place')
 
 const query = ref('')
@@ -236,6 +236,101 @@ function searchByCoordinates(): void {
   void fetchByCoordinates(result.latitude, result.longitude)
 }
 
+/**
+ * The third search, and the only one that is not asking the page's question.
+ *
+ * «Ըստ վայրի» and «Ըստ կոորդինատների» both ask "who should take this job".
+ * This one asks "where is this driver" — the dispatcher referred somebody an
+ * hour ago and now needs them on the phone, and the alternative was leaving
+ * this screen for the admin panel mid-call.
+ *
+ * ## No «Ուղղորդված է» on these cards
+ *
+ * Not an omission. A referral is stored against a place — `locationSlug`,
+ * `locationName`, `locationType` are all required by the endpoint — and a name
+ * typed into a box is not one. The place and coordinate searches can both
+ * answer that question; this one cannot, and inventing a placeholder location
+ * to make the button fit would put rows in the referral log that no report can
+ * read. Call, and open the profile. The two searches that know where the job
+ * is are where a referral gets recorded.
+ *
+ * ## Why it reuses the admin list endpoint
+ *
+ * `GET /admin/tow-trucks?search=` already matches driver name, company name
+ * and phone server-side — the same query the panel's own search box sends. A
+ * dispatch-specific endpoint would be a second definition of "matches a
+ * driver", and the day they disagreed, the panel and this screen would
+ * disagree about who exists.
+ *
+ * The cost is a thinner card: `AdminTowTruck` carries no tier, no dispatch
+ * counts and no subscription status. All three are answers to "should this
+ * driver get the job", which is the question this search is not asking.
+ */
+const DRIVER_SEARCH_MIN_LENGTH = 2
+/** Long enough that typing a seven-digit number is one request, not seven */
+const DRIVER_SEARCH_DEBOUNCE_MS = 300
+const DRIVER_SEARCH_LIMIT = 20
+
+const driverQuery = ref('')
+const driverResults = ref<AdminTowTruck[]>([])
+const driverLoading = ref(false)
+const driverError = ref('')
+/** False until a request has come back, so "nothing found" cannot show before one has */
+const driverSearched = ref(false)
+let driverTimer: ReturnType<typeof setTimeout> | null = null
+
+/** The same string the dispatch cards show, composed the same way the backend composes it */
+function driverVehicle(driver: AdminTowTruck): string {
+  return [driver.vehicleBrand, driver.vehicleModel].filter(Boolean).join(' ')
+}
+
+async function fetchDrivers(search: string): Promise<void> {
+  driverLoading.value = true
+  driverError.value = ''
+  try {
+    driverResults.value = await adminRepository.listTowTrucks({
+      search,
+      limit: DRIVER_SEARCH_LIMIT,
+    })
+  } catch (error) {
+    driverError.value = extractErrorMessage(error, 'Վարորդներին բեռնել չհաջողվեց։')
+    driverResults.value = []
+  } finally {
+    driverLoading.value = false
+    driverSearched.value = true
+  }
+}
+
+/**
+ * Debounced, unlike the place search above — that one reads a static index in
+ * memory, this one is a request, and the dispatcher is typing while talking.
+ */
+function onDriverInput(): void {
+  if (driverTimer !== null) clearTimeout(driverTimer)
+  const term = driverQuery.value.trim()
+  if (term.length < DRIVER_SEARCH_MIN_LENGTH) {
+    driverResults.value = []
+    driverError.value = ''
+    driverSearched.value = false
+    return
+  }
+  driverTimer = setTimeout(() => void fetchDrivers(term), DRIVER_SEARCH_DEBOUNCE_MS)
+}
+
+function resetDriverSearch(): void {
+  if (driverTimer !== null) clearTimeout(driverTimer)
+  driverQuery.value = ''
+  driverResults.value = []
+  driverError.value = ''
+  driverSearched.value = false
+}
+
+// A pending debounce outliving the page would fire a request for a screen
+// nobody is looking at, with a token that may already be gone.
+onUnmounted(() => {
+  if (driverTimer !== null) clearTimeout(driverTimer)
+})
+
 function resetCoordinates(): void {
   coordinatesText.value = ''
   coordinatesError.value = ''
@@ -397,6 +492,16 @@ useSeoMetaData({
         >
           Ըստ կոորդինատների
         </button>
+        <button
+          type="button"
+          role="tab"
+          :aria-selected="mode === 'driver'"
+          class="dispatch__mode-btn"
+          :class="{ 'dispatch__mode-btn--active': mode === 'driver' }"
+          @click="setMode('driver')"
+        >
+          Ըստ վարորդի
+        </button>
       </div>
 
       <template v-if="mode === 'place'">
@@ -514,7 +619,7 @@ useSeoMetaData({
         </template>
       </template>
 
-      <template v-else>
+      <template v-else-if="mode === 'coordinates'">
         <!-- Coordinate search: paste the pair, or open Google Maps to find it
              first — same field and same Maps link every driver already knows
              from registration, just without the driver-facing steps
@@ -613,6 +718,71 @@ useSeoMetaData({
               </article>
             </section>
           </template>
+        </div>
+      </template>
+
+      <!-- Find a driver, rather than find a driver FOR something — see the
+           `fetchDrivers` comment in the script for why these cards carry no
+           «Ուղղորդված է». -->
+      <template v-else>
+        <div class="dispatch__search">
+          <AppInput
+            v-model="driverQuery"
+            label="Վարորդի անունը կամ հեռախոսը"
+            placeholder="Արամ, ՍՊԸ-ի անունը, 077…"
+            autocomplete="off"
+            @update:model-value="onDriverInput"
+          />
+
+          <div v-if="driverQuery" class="dispatch__toolbar">
+            <button type="button" class="dispatch__back" @click="resetDriverSearch">
+              Մաքրել
+            </button>
+          </div>
+
+          <p v-if="driverError" class="dispatch__error" role="alert">{{ driverError }}</p>
+          <p v-else-if="driverLoading" class="dispatch__muted">Բեռնվում է…</p>
+          <p
+            v-else-if="driverQuery.trim().length < DRIVER_SEARCH_MIN_LENGTH"
+            class="dispatch__muted"
+          >
+            Անուն, ընկերություն կամ հեռախոսահամար՝ գոնե երկու նիշ։
+          </p>
+          <p v-else-if="driverSearched && driverResults.length === 0" class="dispatch__empty">
+            Այդպիսի վարորդ չգտնվեց։
+          </p>
+
+          <article v-for="driver in driverResults" :key="driver.id" class="dispatch__card">
+            <div class="dispatch__who">
+              <NuxtLink
+                :to="getTowTruckRoute(driver.slug)"
+                target="_blank"
+                class="dispatch__name"
+              >
+                {{ driver.driverName }}
+                <span v-if="driver.isFeatured" title="Լավագույններից">★</span>
+                <AppBadge v-if="driver.isPartner" variant="primary">Մեր վարորդ</AppBadge>
+              </NuxtLink>
+              <span class="dispatch__muted">{{ driverVehicle(driver) }}</span>
+            </div>
+
+            <!-- Shown here and not on the other two lists because they only
+                 ever contain active drivers. This search finds anyone by name,
+                 and a deactivated driver is exactly who an operator might be
+                 calling about. -->
+            <p v-if="!driver.isActive" class="dispatch__warn">էջը ապաակտիվացված է</p>
+
+            <p class="dispatch__base">
+              <AppIcon name="map" :size="14" />
+              Հիմնական գտնվելու վայրը՝ {{ driver.locationName }}
+            </p>
+
+            <div class="dispatch__actions">
+              <a :href="getPhoneHref(driver.phone)" class="dispatch__call">
+                Զանգել · {{ driver.phone }}
+              </a>
+            </div>
+          </article>
         </div>
       </template>
     </template>

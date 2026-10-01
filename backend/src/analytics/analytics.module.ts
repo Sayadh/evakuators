@@ -3,6 +3,7 @@ import { AdminAuthModule } from '../admin-auth/admin-auth.module'
 import { DispatchModule } from '../dispatch/dispatch.module'
 import { DriverAuthModule } from '../driver-auth/driver-auth.module'
 import { ReviewsModule } from '../reviews/reviews.module'
+import { SubscriptionsModule } from '../subscriptions/subscriptions.module'
 import { TelegramModule } from '../telegram/telegram.module'
 import { TowTrucksModule } from '../tow-trucks/tow-trucks.module'
 import { AdminAnalyticsController } from './admin-analytics.controller'
@@ -46,6 +47,10 @@ import { SiteAnalyticsRepository } from './site-analytics.repository'
     AdminAuthModule,
     TelegramModule,
     DispatchModule,
+    // SubscriptionsModule for the CSV export's payment columns. Inbound
+    // only, like every edge above, and no cycle: subscriptions knows
+    // nothing about analytics.
+    SubscriptionsModule,
   ],
   controllers: [
     AnalyticsController,

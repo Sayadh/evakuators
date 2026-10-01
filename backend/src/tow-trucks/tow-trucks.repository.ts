@@ -428,6 +428,7 @@ export class TowTrucksRepository {
       phone: string
       locationName: string
       isPartner: boolean
+      isActive: boolean
     }[]
   > {
     return this.prisma.towTruck.findMany({
@@ -437,6 +438,10 @@ export class TowTrucksRepository {
         phone: true,
         locationName: true,
         isPartner: true,
+        // Read for the export's own «Ակտիվ» column, which is there because a
+        // deactivated driver is usually deactivated OVER money — see the
+        // header's comment in `admin-drivers-export.rows.ts`.
+        isActive: true,
       },
       orderBy: { createdAt: 'asc' },
     })

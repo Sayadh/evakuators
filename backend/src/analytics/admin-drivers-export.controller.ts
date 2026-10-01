@@ -2,6 +2,7 @@ import { Controller, Get, Header, UseGuards } from '@nestjs/common'
 import { AdminJwtGuard } from '../admin-auth/admin-jwt.guard'
 import { toExcelCsv } from '../common/csv'
 import { DispatchRepository } from '../dispatch/dispatch.repository'
+import { SubscriptionsRepository } from '../subscriptions/subscriptions.repository'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
 import { buildDriverExportRows } from './admin-drivers-export.rows'
 import { groupEventTotalsByTruck } from './analytics.mapper'
@@ -29,6 +30,12 @@ import { AnalyticsRepository } from './analytics.repository'
  * already imports for the overview's referral counters — so the referral
  * column costs no new module edge.
  *
+ * `SubscriptionsRepository` is the one edge this controller did add, for the
+ * payment columns. Inbound only and no cycle: subscriptions knows nothing
+ * about analytics, and reading the same repository the panel and the billing
+ * crons read is what keeps the sheet's answer and the product's answer the
+ * same answer.
+ *
  * A separate controller from `AdminAnalyticsController` because that one is
  * nested under `:towTruckId` — a route with no id in it belongs on its own.
  */
@@ -39,6 +46,7 @@ export class AdminDriversExportController {
     private readonly towTrucksRepository: TowTrucksRepository,
     private readonly analyticsRepository: AnalyticsRepository,
     private readonly dispatchRepository: DispatchRepository,
+    private readonly subscriptionsRepository: SubscriptionsRepository,
   ) {}
 
   @Get('export.csv')
@@ -50,15 +58,38 @@ export class AdminDriversExportController {
       this.analyticsRepository.sumByEventTypeForAllTrucks(),
     ])
 
-    // Sequential, unlike the two above: the referral counts are keyed by the
-    // truck ids the first read returns, so there is nothing to parallelise.
-    const dispatchStats = await this.dispatchRepository.statsFor(trucks.map((truck) => truck.id))
+    // A second round, because both of these are keyed by the truck ids the
+    // first read returns — but parallel with each other, since neither needs
+    // the other's answer.
+    const ids = trucks.map((truck) => truck.id)
+    const [dispatchStats, coverage] = await Promise.all([
+      this.dispatchRepository.statsFor(ids),
+      this.subscriptionsRepository.findCoverage(ids),
+    ])
+
     const dispatchTotals = new Map(
       [...dispatchStats].map(([towTruckId, stats]) => [towTruckId, stats.total]),
     )
+    // Only `coveredUntil` crosses into the sheet. The rest of the coverage row
+    // — what was money and what was an admin's promise — is a distinction the
+    // panel makes and a CSV cell cannot.
+    const coveredUntil = new Map(
+      [...coverage].map(([towTruckId, row]) => [towTruckId, row.coveredUntil]),
+    )
+
+    // One instant for the whole sheet. Read per row, a long export could put
+    // two different "todays" in one file and call two identical drivers
+    // «Պետք է վճարի» and «Ժամկետանց է».
+    const now = new Date()
 
     return toExcelCsv(
-      buildDriverExportRows(trucks, groupEventTotalsByTruck(statRows), dispatchTotals),
+      buildDriverExportRows(
+        trucks,
+        groupEventTotalsByTruck(statRows),
+        dispatchTotals,
+        coveredUntil,
+        now,
+      ),
     )
   }
 }

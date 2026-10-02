@@ -179,16 +179,29 @@ export const ANALYTICS_OVERVIEW_CARDS: AnalyticsCardDefinition[] = [
 /**
  * Metrics selectable on the daily chart, in display order.
  *
+ * Calls first, and that is not only an order — the chart opens on whichever
+ * metric is first here (`ANALYTICS_CHART_DEFAULT_METRIC`). A driver asks one
+ * question of this page: did anybody ring me. Views are how many people looked
+ * and did not, which is worth knowing second and is a worse number to be shown
+ * first, because it is always the bigger one.
+ *
  * No Email line, for the same reason there is no Email card — see
  * ANALYTICS_OVERVIEW_CARDS above. On a chart it would be worse than on a card:
  * a flat line at zero across the whole window reads as a measured result.
  */
 export const ANALYTICS_CHART_METRICS: { eventType: AnalyticsEventType; label: string }[] = [
-  { eventType: AnalyticsEventType.PageView, label: 'Դիտումներ' },
   { eventType: AnalyticsEventType.PhoneClick, label: 'Զանգեր' },
+  { eventType: AnalyticsEventType.PageView, label: 'Դիտումներ' },
   { eventType: AnalyticsEventType.WhatsAppClick, label: 'WhatsApp' },
   { eventType: AnalyticsEventType.TelegramClick, label: 'Telegram' },
 ]
+
+/**
+ * The tab the chart opens on — the first one, by definition rather than by
+ * coincidence. Written as a derivation so the selected tab cannot drift away
+ * from the leftmost one the day somebody reorders the list above.
+ */
+export const ANALYTICS_CHART_DEFAULT_METRIC = ANALYTICS_CHART_METRICS[0].eventType
 
 /** Star values for the rating histogram, high → low (how review UIs read) */
 export const ANALYTICS_RATING_VALUES_DESC = [5, 4, 3, 2, 1] as const

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ANALYTICS_CHART_METRICS } from '~/constants/analytics'
+import { ANALYTICS_CHART_DEFAULT_METRIC, ANALYTICS_CHART_METRICS } from '~/constants/analytics'
 import type { AnalyticsCharts } from '~/types/analytics'
-import { AnalyticsEventType } from '~/types/enums'
+import type { AnalyticsEventType } from '~/types/enums'
 import { formatCount, formatDateKeyLong, formatDateKeyShort } from '~/utils/formatters'
 
 /**
@@ -23,7 +23,7 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const selectedMetric = ref<AnalyticsEventType>(AnalyticsEventType.PageView)
+const selectedMetric = ref<AnalyticsEventType>(ANALYTICS_CHART_DEFAULT_METRIC)
 
 /** SVG user-space geometry. Fixed viewBox + width:100% = responsive, no JS resize. */
 const GEOMETRY = {

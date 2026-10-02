@@ -158,7 +158,17 @@ function onClick(): void {
   </a>
 
   <div v-else class="dispatch-cta" :class="`dispatch-cta--${variant}`">
-    <div class="dispatch-cta__text">
+    <!-- Not on the hero. There the block sits directly under the page's own
+         «Ընտրեք մարզը կամ քաղաքը…» line, and two sentences of instruction
+         stacked on each other is one more thing to read before the first
+         thing to do. On a listing page the heading is doing different work —
+         it is what tells a visitor scrolling past a wall of drivers that they
+         do not have to pick one — so it stays there.
+
+         Not rendered rather than hidden in CSS: the `aria-label` on the link
+         below already says «Զանգահարել մեզ՝ +374…», so nothing is lost by
+         leaving the markup out, and hidden markup is markup that comes back. -->
+    <div v-if="variant !== 'hero'" class="dispatch-cta__text">
       <strong class="dispatch-cta__title">{{ t('dispatch.bannerTitle') }}</strong>
       <span class="dispatch-cta__subtitle">
         {{ t('dispatch.bannerText') }}
@@ -226,10 +236,6 @@ function onClick(): void {
     // the search box carries no vertical margin of its own.
     margin-block: var(--space-5);
     color: rgba(255, 255, 255, 0.92);
-
-    .dispatch-cta__subtitle {
-      color: rgba(255, 255, 255, 0.78);
-    }
 
     /* Outline, not filled. The search box below it is what the drivers pay to
        be found through, and a solid button sitting above it would take that

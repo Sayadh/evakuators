@@ -103,6 +103,19 @@ describe('DispatchCallCta placements', () => {
     expect(cta).toBeGreaterThan(hero.indexOf('hero__subtitle'))
   })
 
+  it('leaves the hero with the number alone, and keeps the heading elsewhere', () => {
+    // On the homepage the block sits under «Ընտրեք մարզը կամ քաղաքը…», and a
+    // second sentence of instruction there is one more thing to read before
+    // the first thing to do. A listing page's heading does different work —
+    // it tells someone scrolling past a wall of drivers that they need not
+    // pick one — so the banner keeps it.
+    expect(component).toContain(`<div v-if="variant !== 'hero'" class="dispatch-cta__text">`)
+    // Left out, not hidden: the link's own aria-label still says «Զանգահարել
+    // մեզ՝ +374…», so nothing is lost — and hidden markup is markup that
+    // comes back.
+    expect(component).toContain("t('dispatch.callUsWithNumber'")
+  })
+
   it('keeps the hero button outlined now that it comes first', () => {
     // The other half of the same decision. Moving it above the search made it
     // the first thing offered; filling it would also make it the loudest, and

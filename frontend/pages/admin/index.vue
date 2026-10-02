@@ -2332,12 +2332,28 @@ async function rejectReview(review: AdminReview): Promise<void> {
   padding-top: var(--space-6);
   padding-bottom: var(--space-8);
 
+  /**
+   * Stacked on a phone, a row from 768px up.
+   *
+   * «Ադմին վահանակ» and three actions do not share a 390px line. Side by side
+   * the title broke into two words over two lines and the actions still ran
+   * out of room beside it — a heading squeezed by a toolbar that did not fit
+   * either. The title gets its own row and the actions get the one under it,
+   * which is also the order they are used in.
+   */
   &__header {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-4);
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-3);
     margin-bottom: var(--space-5);
+
+    @media (min-width: 768px) {
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-4);
+    }
 
     h1 {
       margin: 0;
@@ -2347,6 +2363,9 @@ async function rejectReview(review: AdminReview): Promise<void> {
   &__header-actions {
     display: flex;
     align-items: center;
+    /* Measured at 390px the three fit on one line with room to spare; this is
+       for the width where they stop, not for the one they are at. */
+    flex-wrap: wrap;
     gap: var(--space-3);
   }
 

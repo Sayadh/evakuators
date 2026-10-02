@@ -15,6 +15,10 @@ export interface DispatchCandidate {
   companyName?: string
   phone: string
   vehicle: string
+  /** Rated tonnage — printed through `capacityDisplayText`, as everywhere else */
+  capacityTons: number
+  /** Skates for a car whose wheels will not roll; false also means "not asked of this type" */
+  wheelSkates: boolean
   baseName: string
   tier: DispatchTier
   isFeatured: boolean
@@ -22,6 +26,8 @@ export interface DispatchCandidate {
   isPartner: boolean
   rating?: number
   subscriptionStatus: 'unpaid' | 'paid' | 'due-soon' | 'overdue'
+  /** Phone-button presses on their profile over the last 30 days — see backend DISPATCH_CALLS_WINDOW_DAYS */
+  callsRecent: number
   dispatchesThisMonth: number
   dispatchesTotal: number
   /** ISO datetime; absent when they have never been given a job */

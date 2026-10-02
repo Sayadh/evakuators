@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common'
-import { Prisma } from '@prisma/client'
+import { AnalyticsEventType, Prisma } from '@prisma/client'
 import type { DispatchReferral } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 import { SPECIALIST_VEHICLE_TYPES } from '../tow-trucks/vehicle-types'
@@ -40,6 +40,11 @@ const CANDIDATE_SELECT = {
   vehicleBrand: true,
   vehicleModel: true,
   vehicleType: true,
+  // The two specs a dispatcher decides on while the customer describes the
+  // car: will it fit, and will it load if the wheels do not turn. Everything
+  // else about the truck is a tap away on the profile.
+  capacityTons: true,
+  wheelSkates: true,
   locationName: true,
   regionSlug: true,
   citySlug: true,
@@ -223,6 +228,41 @@ export class DispatchRepository {
    * no typed way to express one and the alternative (raw SQL) would put this
    * screen's shape outside the schema's reach for the sake of one integer.
    */
+  /**
+   * Phone-button presses per truck since a date, for the dispatcher's card.
+   *
+   * Reads `AnalyticsDailyStat` directly instead of going through
+   * `AnalyticsRepository`, and that is a dependency decision rather than a
+   * shortcut: `AnalyticsModule` already imports `DispatchModule` for the
+   * overview's referral counters, so an import the other way would close a
+   * cycle. What is borrowed is a table, not behaviour — no aggregation rule
+   * lives in analytics that this would be reimplementing.
+   *
+   * Cheap by construction: the table holds one pre-aggregated row per (truck,
+   * day, event type) that actually happened, so a 30-day window is at most 30
+   * rows per driver and the read is one grouped query for the whole list.
+   *
+   * `statDate` is a DATE in Armenia's calendar (see the column's own note), so
+   * the caller passes a date built from an Armenia date key rather than a raw
+   * instant — otherwise the window would start at a different hour depending
+   * on where the server thinks it is.
+   */
+  async phoneClicksSince(towTruckIds: number[], since: Date): Promise<Map<number, number>> {
+    if (towTruckIds.length === 0) return new Map()
+
+    const rows = await this.prisma.analyticsDailyStat.groupBy({
+      by: ['towTruckId'],
+      where: {
+        towTruckId: { in: towTruckIds },
+        eventType: AnalyticsEventType.PHONE_CLICK,
+        statDate: { gte: since },
+      },
+      _sum: { eventCount: true },
+    })
+
+    return new Map(rows.map((row) => [row.towTruckId, row._sum.eventCount ?? 0]))
+  }
+
   async countsSince(towTruckIds: number[], since: Date): Promise<Map<number, number>> {
     if (towTruckIds.length === 0) return new Map()
 

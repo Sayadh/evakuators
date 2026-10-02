@@ -8,6 +8,7 @@ import type {
   DispatchFilter,
   DispatchTier,
 } from '~/types/dispatch'
+import { capacityDisplayText } from '~/constants/vehicles'
 import { formatCoordinates, parseCoordinates } from '~/utils/coordinates'
 import {
   rememberDispatchPlace,
@@ -584,11 +585,30 @@ useSeoMetaData({
                   <span v-if="candidate.isFeatured" title="Լավագույններից">★</span>
                   <AppBadge v-if="candidate.isPartner" variant="primary">Մեր վարորդ</AppBadge>
                 </NuxtLink>
-                <span class="dispatch__muted">{{ candidate.vehicle }}</span>
+                <!-- The truck, then the two specs a dispatcher decides on while
+                     the customer is still describing the car: will it fit, and
+                     will it load if the wheels do not turn. Capacity goes
+                     through the same `capacityDisplayText` the public profile
+                     uses, so the dispatcher and the customer are reading one
+                     figure rather than two spellings of it. -->
+                <span class="dispatch__muted">
+                  {{ candidate.vehicle }} · {{ capacityDisplayText(candidate.capacityTons) }}
+                </span>
+                <!-- Only when true. Several vehicle types are never asked (see
+                     `asksWheelSkates`), so a «Ռոլիկներ՝ ոչ» line would be
+                     answering a question nobody put to that driver. -->
+                <span v-if="candidate.wheelSkates" class="dispatch__skates">
+                  <AppIcon name="check" :size="13" /> Անիվային ռոլիկներ
+                </span>
               </div>
 
               <p class="dispatch__meta">
                 <span v-if="candidate.rating">⭐ {{ candidate.rating }}</span>
+                <!-- Demand, beside supply: how often customers rang this driver
+                     over the last 30 days, next to how often we handed them a
+                     job this month. The first is the market's answer, the
+                     second is ours. -->
+                <span>{{ candidate.callsRecent }} զանգ · 30 օր</span>
                 <span>{{ candidate.dispatchesThisMonth }} այս ամիս</span>
                 <span>{{ lastDispatchedLabel(candidate) }}</span>
               </p>
@@ -1013,6 +1033,24 @@ useSeoMetaData({
   &__muted {
     color: var(--color-text-secondary);
     font-size: 0.9rem;
+  }
+
+  /* An accent chip rather than another muted line: it is the one capability
+     on this card that decides whether a driver can take THIS car at all. */
+  &__skates {
+    display: inline-flex;
+    align-items: center;
+    /* `__who` is a stretching column, so without this the chip spans the card
+       and stops reading as a chip. */
+    align-self: flex-start;
+    gap: 4px;
+    margin-top: var(--space-1);
+    padding: 2px var(--space-2);
+    border-radius: var(--radius-full);
+    background: rgba(20, 48, 79, 0.08);
+    color: var(--color-primary);
+    font-size: 0.78rem;
+    font-weight: 600;
   }
 
   &__base {

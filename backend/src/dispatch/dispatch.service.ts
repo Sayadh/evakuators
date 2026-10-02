@@ -4,7 +4,11 @@ import { ReviewsRepository } from '../reviews/reviews.repository'
 import { isFeaturedNow } from '../tow-trucks/featured'
 import { derivePaymentStatus } from '../subscriptions/subscription-status'
 import { SubscriptionsRepository } from '../subscriptions/subscriptions.repository'
-import { DISPATCH_COORDINATES_LIMIT, DISPATCH_COORDINATES_RADIUS_METERS } from './dispatch.constants'
+import {
+  dispatchCallsWindowStart,
+  DISPATCH_COORDINATES_LIMIT,
+  DISPATCH_COORDINATES_RADIUS_METERS,
+} from './dispatch.constants'
 import {
   compareCandidates,
   dispatchTier,
@@ -42,6 +46,8 @@ function readServiceAreas(value: unknown): Array<{ slug: string; type: string }>
 interface CandidateLookups {
   stats: Map<number, { total: number; lastDispatchedAt: Date }>
   monthCounts: Map<number, number>
+  /** Phone-button presses over the last DISPATCH_CALLS_WINDOW_DAYS days */
+  callCounts: Map<number, number>
   ratingById: Map<number, number>
   coverage: Map<number, { coveredUntil: Date | null }>
   /** One instant for the whole list, so two rows cannot disagree about it */
@@ -164,9 +170,12 @@ export class DispatchService {
    */
   private async gatherLookups(ids: number[]): Promise<CandidateLookups> {
     const now = new Date()
-    const [stats, monthCounts, ratings, coverage] = await Promise.all([
+    const callsSince = dispatchCallsWindowStart(now)
+
+    const [stats, monthCounts, callCounts, ratings, coverage] = await Promise.all([
       this.dispatchRepository.statsFor(ids),
       this.dispatchRepository.countsSince(ids, startOfMonth(now)),
+      this.dispatchRepository.phoneClicksSince(ids, callsSince),
       this.reviewsRepository.groupApprovedByTowTruckIds(ids),
       this.subscriptionsRepository.findCoverage(ids),
     ])
@@ -174,6 +183,7 @@ export class DispatchService {
     return {
       stats,
       monthCounts,
+      callCounts,
       ratingById: new Map(ratings.map((row) => [row.towTruckId, row.averageRating])),
       coverage,
       now,
@@ -242,6 +252,8 @@ export class DispatchService {
       companyName: truck.companyName ?? undefined,
       phone: truck.phone,
       vehicle: [truck.vehicleBrand, truck.vehicleModel].filter(Boolean).join(' '),
+      capacityTons: truck.capacityTons,
+      wheelSkates: truck.wheelSkates,
       baseName: truck.locationName,
       // Through the window, not the raw flag: an expired placement must not
       // keep a driver at the top of the dispatcher's list, and it must not keep
@@ -252,6 +264,7 @@ export class DispatchService {
       isPartner: truck.isPartner,
       rating: rating === undefined ? undefined : Number(rating.toFixed(1)),
       subscriptionStatus: derivePaymentStatus(lookups.coverage.get(truck.id)?.coveredUntil ?? null),
+      callsRecent: lookups.callCounts.get(truck.id) ?? 0,
       dispatchesThisMonth: lookups.monthCounts.get(truck.id) ?? 0,
       dispatchesTotal: stats?.total ?? 0,
       lastDispatchedAt: stats?.lastDispatchedAt.toISOString(),

@@ -10,6 +10,18 @@ export interface DispatchCandidateApi {
   /** The number the dispatcher dials — the driver's own login phone */
   phone: string
   vehicle: string
+  /**
+   * Rated platform tonnage, as the band the driver registered under — the
+   * frontend prints it through `capacityDisplayText`, the same function the
+   * public profile uses, so a dispatcher and a customer read one figure.
+   */
+  capacityTons: number
+  /**
+   * Skates for a car whose wheels will not roll. Only some vehicle types are
+   * ever asked (see `asksWheelSkates`), so `false` means "not this truck",
+   * never "we did not ask" — which is why the card shows it only when true.
+   */
+  wheelSkates: boolean
   /** Where they are based, in words, for the "comes from elsewhere" rows */
   baseName: string
   tier: DispatchTier
@@ -21,6 +33,15 @@ export interface DispatchCandidateApi {
   /** Whether their subscription is currently clear — shown, never filtered on (see DispatchService) */
   subscriptionStatus: 'unpaid' | 'paid' | 'due-soon' | 'overdue'
 
+  /**
+   * Phone-button presses on their public profile over the last
+   * `DISPATCH_CALLS_WINDOW_DAYS` days.
+   *
+   * A rolling window rather than the calendar month on purpose: on the 2nd of
+   * a month a calendar figure is near zero for everybody and ranks nobody,
+   * while this one means the same thing on every day it is read.
+   */
+  callsRecent: number
   /** Jobs handed to them in the current calendar month */
   dispatchesThisMonth: number
   /** Jobs handed to them ever */

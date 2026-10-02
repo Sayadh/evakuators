@@ -22,6 +22,17 @@ describe('the header carries the language switcher on a phone', () => {
     expect(header).toContain('<LanguageSwitcher variant="inline" class="header__lang" />')
   })
 
+  it('sits in the bar itself, which is what centres it', () => {
+    // With the nav hidden, `space-between` has three things to distribute —
+    // logo, codes, actions — so the codes land in the middle on their own.
+    // Inside `header__actions` they would be pinned to the icons instead, and
+    // no width would be left to centre them with.
+    const switcher = header.indexOf('<LanguageSwitcher variant="inline"')
+    const actions = header.indexOf('<div class="header__actions">')
+    expect(switcher).toBeGreaterThan(-1)
+    expect(switcher).toBeLessThan(actions)
+  })
+
   it('hides it at the burger\'s own breakpoint, not at a width of its own', () => {
     // One variable, so "mobile" cannot come to mean two different widths
     // inside one component.

@@ -28,15 +28,20 @@ watch(
         </NuxtLinkLocale>
       </nav>
 
+      <!-- Phone only, and only while the nav is a burger. Until now the
+           single place on the site to change language was the footer, which on
+           a phone means reading to the bottom of a page you cannot read — the
+           one visitor who needs this is the one who cannot follow the page they
+           are on. Three codes in the bar is the whole feature; a dropdown would
+           add a tap and a surface to the one screen that has room for neither.
+
+           A child of the bar rather than of `header__actions`, and that is what
+           centres it: with the nav hidden, `space-between` has three things to
+           distribute — logo, this, actions — so the codes land in the middle
+           on their own, at any width, with no magic number to keep right. -->
+      <LanguageSwitcher variant="inline" class="header__lang" />
+
       <div class="header__actions">
-        <!-- Phone only, and only while the nav is a burger. Until now the
-             single place on the site to change language was the footer, which
-             on a phone means reading to the bottom of a page you cannot read —
-             the one visitor who needs this is the one who cannot follow the
-             page they are on. Three codes in the bar is the whole feature; a
-             dropdown would add a tap and a surface to the one screen that has
-             room for neither. -->
-        <LanguageSwitcher variant="inline" class="header__lang" />
         <!-- Before «Գրանցվել», and deliberately quieter than it: this is the
              one thing on the site a stranded customer needs from every page,
              but the header already has an accent button and a second one would
@@ -166,12 +171,14 @@ $nav-breakpoint: 1425px;
       display: none;
     }
 
-    /* Tighter than the footer's copy of the same component: that one sits in a
-       column with room, this one shares a 390px bar with a logo, a phone and a
-       burger. */
+    /* Bigger than the footer's copy of the same component, not smaller. It
+       sits alone in the middle of the bar with the whole gap between the logo
+       and the icons to itself, and it is a tap target held between a thumb and
+       a steering wheel. Measured at 360px: logo, codes, phone and burger still
+       fit with room left. */
     :deep(.lang__item) {
-      padding: var(--space-1);
-      font-size: 0.78rem;
+      padding: var(--space-2) var(--space-3);
+      font-size: 0.95rem;
     }
 
     /* The component unhides the full language name at 1024px — which is inside

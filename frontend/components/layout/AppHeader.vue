@@ -29,6 +29,14 @@ watch(
       </nav>
 
       <div class="header__actions">
+        <!-- Phone only, and only while the nav is a burger. Until now the
+             single place on the site to change language was the footer, which
+             on a phone means reading to the bottom of a page you cannot read —
+             the one visitor who needs this is the one who cannot follow the
+             page they are on. Three codes in the bar is the whole feature; a
+             dropdown would add a tap and a surface to the one screen that has
+             room for neither. -->
+        <LanguageSwitcher variant="inline" class="header__lang" />
         <!-- Before «Գրանցվել», and deliberately quieter than it: this is the
              one thing on the site a stranded customer needs from every page,
              but the header already has an accent button and a second one would
@@ -144,6 +152,34 @@ $nav-breakpoint: 1425px;
     display: flex;
     align-items: center;
     gap: var(--space-3);
+  }
+
+  &__lang {
+    /**
+     * Tied to the burger's own breakpoint rather than to a width of its own.
+     * Below it the nav is a burger and the footer is a scroll away; above it
+     * the full nav is back, the bar has no room to spare, and the footer is
+     * one screen down. One variable, so "mobile" cannot come to mean two
+     * different widths inside one component.
+     */
+    @media (min-width: $nav-breakpoint) {
+      display: none;
+    }
+
+    /* Tighter than the footer's copy of the same component: that one sits in a
+       column with room, this one shares a 390px bar with a logo, a phone and a
+       burger. */
+    :deep(.lang__item) {
+      padding: var(--space-1);
+      font-size: 0.78rem;
+    }
+
+    /* The component unhides the full language name at 1024px — which is inside
+       the range this is visible in. «HY Հայերեն RU Русский EN English» does not
+       belong in a header bar at any width. */
+    :deep(.lang__full) {
+      display: none;
+    }
   }
 
   &__login {

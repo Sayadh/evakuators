@@ -59,6 +59,19 @@ describe('/links', () => {
     expect(page).not.toMatch(/import .*CONTACT_PHONE/)
   })
 
+  it('positions the button from a wrapper this page owns, never a class on the component', () => {
+    // `DispatchCallCta` is multi-root — its `bar` branch renders a button AND
+    // a modal — so there is no single root for a class or a scoped-style
+    // attribute to fall through to. A production build strips the template
+    // comments and the `v-if` chain collapses to one node, so a class on the
+    // component DOES land there; dev keeps the comments, and the same markup
+    // arrives with neither the class nor this page's `data-v`. The button
+    // then stretches to the full column, and dev and prod disagree about the
+    // layout — which is how this was found.
+    expect(page).toMatch(/<div class="links__call">\s*<DispatchCallCta variant="links" \/>/)
+    expect(page).not.toMatch(/<DispatchCallCta[^>]*class=/)
+  })
+
   it('orders the page call, site, free routes, nearest, profiles', () => {
     // Source order is the order on the page, and this order is a product
     // decision rather than an accident of how the template was assembled —

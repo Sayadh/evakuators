@@ -93,8 +93,26 @@ const siteHost = SITE_NAME.toLowerCase()
            `dispatch-cta__call` class the Meta Pixel buckets on, the
            `dispatch_call_click` count that says whether this placement earns
            its space, and the one `CONTACT_PHONE` all arrive with it instead of
-           having to be remembered. -->
-      <DispatchCallCta variant="links" class="links__call" />
+           having to be remembered.
+
+           ## Why the wrapper
+
+           `DispatchCallCta` is a multi-root component — its `bar` branch
+           renders a button AND a modal — so Vue has no single root to fall a
+           class or a scoped-style attribute through to. In a production build
+           the template comments are stripped and the `v-if` chain happens to
+           collapse to one node, so `class="links__call"` on the component
+           lands and the rule applies; in dev the comments are kept, the
+           component is a fragment, and the SAME markup silently arrives with
+           neither the class nor this page's `data-v`. The button then
+           stretches to the full column, because that is what a flex item does
+           when nothing says otherwise.
+
+           Dev and prod disagreeing about layout is worse than either being
+           wrong, so the page styles an element it owns. -->
+      <div class="links__call">
+        <DispatchCallCta variant="links" />
+      </div>
 
       <!-- The site, given the whole card rather than a row: it is the one
            destination we own, and the picture is what makes "this is the
@@ -273,9 +291,12 @@ $navy: #14304f;
   /* Centred rather than stretched — the column is a stack of full-width
      cards, and the one element that is NOT a card is the one that should not
      look like a short one. A little more air under it than between the cards
-     below: it is the action, and the five rows after it are the menu. */
+     below: it is the action, and the five rows after it are the menu.
+
+     On a wrapper the page owns, not on the component: see the template. */
   &__call {
-    align-self: center;
+    display: flex;
+    justify-content: center;
     margin-bottom: var(--space-2);
   }
 

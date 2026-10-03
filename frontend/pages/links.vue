@@ -24,8 +24,8 @@ import { SITE_NAME, SOCIAL_LINKS } from '~/constants/site'
  *
  * ## `noindex`
  *
- * Six links and one line of explanation is thin by construction, and every
- * destination is already reachable: the homepage from the whole site,
+ * Five links, a phone number and one line of explanation is thin by
+ * construction, and every destination is already reachable: the homepage from the whole site,
  * `/evakuator` and `/free-routes` from the nav, the profiles from the footer
  * and from schema.org `sameAs`. This page exists for people who
  * were handed its URL, not for search.
@@ -77,6 +77,21 @@ const siteHost = SITE_NAME.toLowerCase()
            a page nobody can outline, so the heading stays and the styling
            does not. -->
       <h1 class="visually-hidden">{{ t('links.title') }}</h1>
+
+      <!-- The number, first and filled.
+
+           Everything below this is a destination to pick between; this is the
+           one thing on the page that needs no picking, and someone who opened
+           an Instagram bio because their car has stopped should not have to
+           choose a page before they can reach a person.
+
+           A variant of `DispatchCallCta` rather than a `tel:` anchor written
+           here, which is the whole reason that component exists: the
+           `dispatch-cta__call` class the Meta Pixel buckets on, the
+           `dispatch_call_click` count that says whether this placement earns
+           its space, and the one `CONTACT_PHONE` all arrive with it instead of
+           having to be remembered. -->
+      <DispatchCallCta variant="links" class="links__call" />
 
       <!-- The site, given the whole card rather than a row: it is the one
            destination we own, and the picture is what makes "this is the
@@ -250,6 +265,12 @@ $navy: #14304f;
     gap: var(--space-3);
     width: 100%;
     max-width: 420px;
+  }
+
+  /* A little more air under the call than between the cards below it: it is
+     the action, and the five rows after it are the menu. */
+  &__call {
+    margin-bottom: var(--space-2);
   }
 
   &__foot {

@@ -59,8 +59,11 @@ interface Props {
    * - `empty`  — the bare dial link, for an `EmptyState`'s actions slot: the
    *              card around it is the empty state's own, so this variant
    *              brings no chrome of its own, only the button.
+   * - `links`  — the top of `/links`, the link-in-bio page. The one placement
+   *              that is deliberately filled and first (see its rule in the
+   *              stylesheet for why that does not contradict the hero's).
    */
-  variant: 'header' | 'hero' | 'banner' | 'bar' | 'empty'
+  variant: 'header' | 'hero' | 'banner' | 'bar' | 'empty' | 'links'
 }
 
 const props = defineProps<Props>()
@@ -156,6 +159,36 @@ function onClick(): void {
     <AppIcon name="phone" :size="20" />
     <span class="dispatch-cta__number">{{ CONTACT_PHONE }}</span>
   </a>
+
+  <!-- `/links` — an Instagram or TikTok bio's one URL. Everything else on
+       that page is a destination to choose between; this is the one thing
+       that needs no choosing, so it is first and it is filled.
+
+       That is the opposite of the hero's treatment, and for the opposite
+       reason: on the homepage a filled button here would outweigh the search
+       box the drivers pay to be found through. `/links` has no listing to
+       outweigh — every card under this one leads to drivers, none of them is
+       a driver — so the loudest element can be the one with a broken car at
+       the other end of it.
+
+       No heading above it. The number is the label, the line under it says
+       what the call gets you, and a «Զանգահարել մեզ» title would be the
+       third way of saying the same thing in one card. -->
+  <div v-else-if="variant === 'links'" class="dispatch-cta dispatch-cta--links">
+    <a
+      :href="phoneHref"
+      class="dispatch-cta__call dispatch-cta__call--links"
+      :aria-label="t('dispatch.callUsWithNumber', { phone: CONTACT_PHONE })"
+      @click="onClick"
+    >
+      <AppIcon name="phone" :size="22" />
+      <span class="dispatch-cta__number">{{ CONTACT_PHONE }}</span>
+    </a>
+    <!-- The dialog's own sentence, by key. It is already what this number
+         promises beside the floating button; a second wording of the same
+         promise is a second wording to keep true. -->
+    <span class="dispatch-cta__subtitle">{{ t('dispatch.modalText') }}</span>
+  </div>
 
   <div v-else class="dispatch-cta" :class="`dispatch-cta--${variant}`">
     <!-- Not on the hero. There the block sits directly under the page's own
@@ -336,6 +369,64 @@ function onClick(): void {
   &:hover {
     background: #178a49;
     color: #fff;
+  }
+}
+
+/**
+ * `/links`, at the top of the page.
+ *
+ * The same green as every other placement — it is the site's one "this places
+ * a call" colour, and on a page built from navy and the brand yellow it is
+ * also the only element wearing a third colour, which is what makes it read
+ * as the action rather than as a fourth card.
+ *
+ * Full width and centred, with the number at the size it is actually read at
+ * one-handed: this is the page someone opens from a social profile with a car
+ * that will not start, and the tap target is the whole card rather than a pill
+ * inside it.
+ */
+.dispatch-cta--links {
+  align-items: center;
+  text-align: center;
+  gap: var(--space-2);
+
+  .dispatch-cta__call {
+    width: 100%;
+    padding: var(--space-4) var(--space-5);
+    border-radius: var(--radius-lg, var(--radius-md));
+    background: var(--color-success);
+    color: #fff;
+    font-size: 1.35rem;
+    /* Lit from the button's own colour rather than a neutral drop shadow, so
+       it sits above the dark field the way the cards below it do not. */
+    box-shadow: 0 10px 26px rgba(29, 158, 85, 0.32);
+
+    &:hover {
+      background: #178a49;
+      color: #fff;
+    }
+
+    &:active {
+      transform: scale(0.985);
+    }
+
+    &:focus-visible {
+      outline: 2px solid #fff;
+      outline-offset: 3px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      &:active {
+        transform: none;
+      }
+    }
+  }
+
+  .dispatch-cta__subtitle {
+    /* Readable, not loud: the number above it is what gets pressed. */
+    color: rgba(255, 255, 255, 0.68);
+    font-size: 0.82rem;
+    line-height: 1.45;
   }
 }
 

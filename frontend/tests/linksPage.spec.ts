@@ -46,7 +46,20 @@ describe('/links', () => {
     expect(page).not.toContain('Գտնել')
   })
 
-  it('orders the page site, free routes, nearest, profiles', () => {
+  it('offers the number before anything there is a choice to make about', () => {
+    // `bare` drops the header and the floating button, so this variant is the
+    // only way to reach a person from the page an Instagram bio points at —
+    // and someone whose car has stopped should not have to pick a destination
+    // first. A variant rather than a `tel:` anchor written here: the class the
+    // Pixel buckets on and the placement count come with it.
+    expect(page).toContain('<DispatchCallCta variant="links"')
+    // The comment above it is allowed to NAME the hand-rolled anchor it is
+    // not; what must stay absent is the anchor and the number itself.
+    expect(page).not.toMatch(/href=".?tel:/)
+    expect(page).not.toMatch(/import .*CONTACT_PHONE/)
+  })
+
+  it('orders the page call, site, free routes, nearest, profiles', () => {
     // Source order is the order on the page, and this order is a product
     // decision rather than an accident of how the template was assembled —
     // which is exactly the kind of thing the next edit to this file reverses
@@ -56,6 +69,7 @@ describe('/links', () => {
       expect(index, `${needle} is not on the page`).toBeGreaterThan(-1)
       return index
     }
+    expect(at('<DispatchCallCta variant="links"')).toBeLessThan(at('class="site"'))
     expect(at('class="site"')).toBeLessThan(at('to="/free-routes"'))
     expect(at('to="/free-routes"')).toBeLessThan(at('to="/evakuator"'))
     expect(at('to="/evakuator"')).toBeLessThan(at('v-for="social in socials"'))

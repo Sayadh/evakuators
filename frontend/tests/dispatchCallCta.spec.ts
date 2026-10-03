@@ -32,14 +32,14 @@ const layout = readFileSync(`${ROOT}layouts/default.vue`, 'utf8')
 
 describe('DispatchCallCta wiring', () => {
   it('keeps the class the Pixel buckets on, in every variant', () => {
-    // All four anchors carry it — the header link, the dialog's dial link, the
-    // shared card one and the empty-state one. If any loses it, those clicks
-    // silently become `site_contact`. The count is pinned so that ADDING an
-    // anchor is a deliberate edit here rather than something that slips in
-    // unclassed.
+    // All five anchors carry it — the header link, the dialog's dial link, the
+    // shared card one, the empty-state one and `/links`. If any loses it,
+    // those clicks silently become `site_contact`. The count is pinned so that
+    // ADDING an anchor is a deliberate edit here rather than something that
+    // slips in unclassed.
     const anchors = component.match(/:href="phoneHref"/g) ?? []
     const classed = component.match(/class="dispatch-cta__call/g) ?? []
-    expect(anchors.length).toBe(4)
+    expect(anchors.length).toBe(5)
     expect(classed.length).toBe(anchors.length)
   })
 
@@ -123,6 +123,23 @@ describe('DispatchCallCta placements', () => {
     const heroRule = component.slice(component.indexOf('&--hero {'), component.indexOf('&--banner {'))
     expect(heroRule).toContain('border: 2px solid')
     expect(heroRule).not.toContain('background: var(--color-accent)')
+  })
+
+  it('fills the `/links` button, which is the one place that does not undercut a listing', () => {
+    // The hero's rule and this one are the same decision read on two pages: a
+    // filled button is the loudest thing in its viewport, so it is allowed
+    // only where the viewport holds nothing drivers pay to be found through.
+    // `/links` has no listing — every card under this one LEADS to drivers —
+    // and `bare` means no header number and no floating button either, so
+    // without this there is no way to reach a person from that page at all.
+    const linksRule = component.slice(component.indexOf('.dispatch-cta--links {'))
+    expect(linksRule).toContain('background: var(--color-success)')
+  })
+
+  it('says what the `/links` call gets you in the words the dialog already uses', () => {
+    // Two wordings of one promise is two wordings to keep true, and the one
+    // that goes stale is the one nobody is looking at.
+    expect(component).toMatch(/dispatch-cta--links[\s\S]{0,900}t\('dispatch\.modalText'\)/)
   })
 
   it('renders the floating button once, in the layout, behind the route rule', () => {

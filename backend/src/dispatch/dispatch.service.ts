@@ -252,6 +252,7 @@ export class DispatchService {
       companyName: truck.companyName ?? undefined,
       phone: truck.phone,
       vehicle: [truck.vehicleBrand, truck.vehicleModel].filter(Boolean).join(' '),
+      vehicleType: truck.vehicleType,
       capacityTons: truck.capacityTons,
       wheelSkates: truck.wheelSkates,
       baseName: truck.locationName,

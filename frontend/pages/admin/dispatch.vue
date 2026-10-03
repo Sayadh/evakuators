@@ -8,7 +8,7 @@ import type {
   DispatchFilter,
   DispatchTier,
 } from '~/types/dispatch'
-import { capacityDisplayText } from '~/constants/vehicles'
+import { capacityDisplayText, vehicleTypeShortLabel } from '~/constants/vehicles'
 import { formatCoordinates, parseCoordinates } from '~/utils/coordinates'
 import {
   rememberDispatchPlace,
@@ -591,8 +591,15 @@ useSeoMetaData({
                      through the same `capacityDisplayText` the public profile
                      uses, so the dispatcher and the customer are reading one
                      figure rather than two spellings of it. -->
+                <!-- Type between the model and the tonnage: «Mercedes
+                     Sprinter» says who made it, «Սահող հարթակով» says what it
+                     can do, and the second is the one the customer's problem
+                     is phrased in. Short labels — every row here is an
+                     evacuator, so four repetitions of the word «էվակուատոր»
+                     would cost a line of a card read in twenty seconds. -->
                 <span class="dispatch__muted">
-                  {{ candidate.vehicle }} · {{ capacityDisplayText(candidate.capacityTons) }}
+                  {{ candidate.vehicle }} · {{ vehicleTypeShortLabel(candidate.vehicleType) }} ·
+                  {{ capacityDisplayText(candidate.capacityTons) }}
                 </span>
                 <!-- Only when true. Several vehicle types are never asked (see
                      `asksWheelSkates`), so a «Ռոլիկներ՝ ոչ» line would be

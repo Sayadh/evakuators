@@ -15,6 +15,8 @@ export interface DispatchCandidate {
   companyName?: string
   phone: string
   vehicle: string
+  /** Taxonomy slug — labelled on the frontend, where the site's own names live */
+  vehicleType: string
   /** Rated tonnage — printed through `capacityDisplayText`, as everywhere else */
   capacityTons: number
   /** Skates for a car whose wheels will not roll; false also means "not asked of this type" */

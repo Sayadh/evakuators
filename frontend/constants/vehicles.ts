@@ -9,6 +9,38 @@ export const VEHICLE_TYPE_LABELS: Record<VehicleType, string> = {
   [VehicleType.HeavyDuty]: 'Ծանր տեխնիկայի էվակուատոր',
 }
 
+/**
+ * The same four types, without «էվակուատոր» on the end.
+ *
+ * For lists where every row is already an evacuator — the dispatcher's
+ * candidate cards — so the word is four repetitions of a fact the screen has
+ * established. Not a second naming of the types: `vehicleTypeShortLabel`
+ * falls back to the full label, and a test asserts each short label is a
+ * prefix of its long one, so the two can be trimmed but never disagree.
+ */
+export const VEHICLE_TYPE_SHORT_LABELS: Record<VehicleType, string> = {
+  [VehicleType.Flatbed]: 'Հարթակով',
+  [VehicleType.SlidingPlatform]: 'Սահող հարթակով',
+  [VehicleType.Manipulator]: 'Մանիպուլյատորով',
+  [VehicleType.HeavyDuty]: 'Ծանր տեխնիկայի',
+}
+
+/**
+ * A stored slug to its Armenian name, falling back to the slug itself.
+ *
+ * `TowTruck.vehicleType` is a free-text column holding a taxonomy slug, so a
+ * row written before a type existed — or after one is renamed — must still
+ * render as something a human can read rather than as `undefined`.
+ */
+export function vehicleTypeLabel(slug: string): string {
+  return VEHICLE_TYPE_LABELS[slug as VehicleType] ?? slug
+}
+
+/** Same, in the short form. Falls back through the long label to the slug. */
+export function vehicleTypeShortLabel(slug: string): string {
+  return VEHICLE_TYPE_SHORT_LABELS[slug as VehicleType] ?? vehicleTypeLabel(slug)
+}
+
 export const VEHICLE_TYPE_DESCRIPTIONS: Record<VehicleType, string> = {
   [VehicleType.Flatbed]: 'Սովորական մարդատար մեքենաների տեղափոխման համար',
   [VehicleType.SlidingPlatform]:

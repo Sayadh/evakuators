@@ -8,7 +8,7 @@ import {
 } from '~/constants/featured'
 import { SERVICE_LABELS } from '~/constants/services'
 import { SITE_NAME } from '~/constants/site'
-import { VEHICLE_TYPE_LABELS } from '~/constants/vehicles'
+import { VEHICLE_TYPE_LABELS, vehicleTypeLabel } from '~/constants/vehicles'
 import {
   adminAuthRepository,
   adminRepository,
@@ -389,10 +389,6 @@ function openLightbox(images: string[], index: number): void {
 
 function serviceLabel(slug: string): string {
   return SERVICE_LABELS[slug as ServiceType] ?? slug
-}
-
-function vehicleTypeLabel(slug: string): string {
-  return VEHICLE_TYPE_LABELS[slug as VehicleType] ?? slug
 }
 
 const formatDate = formatDateNumeric

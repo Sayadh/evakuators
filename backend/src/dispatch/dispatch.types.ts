@@ -11,6 +11,14 @@ export interface DispatchCandidateApi {
   phone: string
   vehicle: string
   /**
+   * The taxonomy slug — `flatbed`, `sliding-platform`, `manipulator`,
+   * `heavy-duty`. Sent raw rather than as a label: the labels live in the
+   * frontend's `constants/vehicles.ts` and are the same strings the public
+   * site, the filters and the registration form use. A second set of Armenian
+   * names written on the backend is a second set to keep in step.
+   */
+  vehicleType: string
+  /**
    * Rated platform tonnage, as the band the driver registered under — the
    * frontend prints it through `capacityDisplayText`, the same function the
    * public profile uses, so a dispatcher and a customer read one figure.

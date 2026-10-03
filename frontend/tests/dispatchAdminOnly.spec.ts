@@ -73,8 +73,11 @@ describe('dispatch page, admin only', () => {
  */
 describe('dispatch page, confirming a referral', () => {
   it('opens a dialog instead of recording on the first press', () => {
-    expect(source()).toContain('@click="askReferred(candidate)"')
-    expect(source()).not.toContain('@click="markReferred(candidate)"')
+    // The card emits; the page decides. Both lists wire the emit to
+    // `askReferred`, which opens the dialog — never to `markReferred`, which
+    // writes.
+    expect(source()).toContain('@refer="askReferred(candidate)"')
+    expect(source()).not.toContain('@refer="markReferred(candidate)"')
   })
 
   it('records only from inside the dialog', () => {

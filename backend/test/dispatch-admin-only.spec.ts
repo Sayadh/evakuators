@@ -72,6 +72,11 @@ describe('dispatch controller access', () => {
   })
 
   it('has routes at all, so the loop above cannot pass by being empty', () => {
-    expect(handlerNames().sort()).toEqual(['listCandidates', 'listCandidatesByCoordinates', 'record'])
+    expect(handlerNames().sort()).toEqual([
+      'listCandidates',
+      'listCandidatesByCoordinates',
+      'listCandidatesBySearch',
+      'record',
+    ])
   })
 })

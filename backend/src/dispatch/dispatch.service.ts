@@ -8,6 +8,8 @@ import {
   dispatchCallsWindowStart,
   DISPATCH_COORDINATES_LIMIT,
   DISPATCH_COORDINATES_RADIUS_METERS,
+  DISPATCH_SEARCH_LIMIT,
+  DISPATCH_SEARCH_MIN_LENGTH,
 } from './dispatch.constants'
 import {
   compareCandidates,
@@ -21,6 +23,7 @@ import type {
   DispatchCandidateApi,
   DispatchCandidateByDistanceApi,
   DispatchCandidatesApi,
+  DispatchCandidatesBySearchApi,
   DispatchCandidatesByCoordinatesApi,
   DispatchReferralApi,
 } from './dispatch.types'
@@ -163,6 +166,35 @@ export class DispatchService {
   }
 
   /**
+   * Candidates for a driver's name, company name or phone.
+   *
+   * Deliberately the same pipeline as the other two searches — the same
+   * `CANDIDATE_SELECT` rows, the same `gatherLookups`, the same
+   * `candidateFields` — so a card found by name carries every fact a card
+   * found by place does. The alternative, reusing the admin panel's own
+   * driver list, was what this replaced: it answered with a different shape,
+   * so the third tab quietly showed a thinner card than the first two.
+   *
+   * No tier and no distance: neither question has an answer without a place
+   * or a point to ask it about.
+   *
+   * A term under `DISPATCH_SEARCH_MIN_LENGTH` returns nothing rather than
+   * everything — one letter matches most of the table, and the cost of a card
+   * is four grouped lookups.
+   */
+  async listCandidatesBySearch(search: string): Promise<DispatchCandidatesBySearchApi> {
+    const term = search.trim()
+    if (term.length < DISPATCH_SEARCH_MIN_LENGTH) return { items: [] }
+
+    const trucks = await this.dispatchRepository.findCandidatesBySearch(term, DISPATCH_SEARCH_LIMIT)
+    if (trucks.length === 0) return { items: [] }
+
+    const lookups = await this.gatherLookups(trucks.map((truck) => truck.id))
+
+    return { items: trucks.map((truck) => this.candidateFields(truck, lookups)) }
+  }
+
+  /**
    * Four reads, all grouped and all in parallel — this list is built while
    * somebody is on the phone, so the shape that matters is "one round trip
    * per FACT", never one per driver. Shared by both search modes so neither
@@ -263,6 +295,7 @@ export class DispatchService {
       isFeatured: isFeaturedNow(truck, lookups.now),
       // No window to apply — see schema.prisma's own note on the column.
       isPartner: truck.isPartner,
+      isActive: truck.isActive,
       rating: rating === undefined ? undefined : Number(rating.toFixed(1)),
       subscriptionStatus: derivePaymentStatus(lookups.coverage.get(truck.id)?.coveredUntil ?? null),
       callsRecent: lookups.callCounts.get(truck.id) ?? 0,

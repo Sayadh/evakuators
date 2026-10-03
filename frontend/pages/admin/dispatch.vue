@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { adminRepository, isApiEnabled, type AdminTowTruck } from '~/repositories'
+import { adminRepository, isApiEnabled } from '~/repositories'
 import { useAdminAuthStore } from '~/stores/adminAuth'
 import type {
   DispatchCandidate,
+  DispatchCandidateBasic,
   DispatchCandidateByDistance,
   DispatchFilter,
   DispatchTier,
 } from '~/types/dispatch'
-import { capacityDisplayText, vehicleTypeShortLabel } from '~/constants/vehicles'
 import { formatCoordinates, parseCoordinates } from '~/utils/coordinates'
 import {
   rememberDispatchPlace,
@@ -17,9 +17,6 @@ import {
   type DispatchPlace,
 } from '~/utils/dispatchPlaces'
 import { extractErrorMessage } from '~/utils/errors'
-import { formatDistanceLine } from '~/utils/formatDistance'
-import { getPhoneHref } from '~/utils/formatPhone'
-import { getTowTruckRoute } from '~/utils/routeHelpers'
 
 /**
  * The dispatcher's screen: somebody is on the phone saying where they are, and
@@ -255,44 +252,39 @@ function searchByCoordinates(): void {
  * read. Call, and open the profile. The two searches that know where the job
  * is are where a referral gets recorded.
  *
- * ## Why it reuses the admin list endpoint
+ * ## Its own endpoint, and why the panel's was not enough
  *
- * `GET /admin/tow-trucks?search=` already matches driver name, company name
- * and phone server-side — the same query the panel's own search box sends. A
- * dispatch-specific endpoint would be a second definition of "matches a
- * driver", and the day they disagreed, the panel and this screen would
- * disagree about who exists.
+ * This first shipped reading `GET /admin/tow-trucks?search=`, on the reasoning
+ * that the panel already knew how to match a driver and a second definition of
+ * "matches" would be one too many. The matching was fine; the SHAPE was not.
+ * That endpoint answers with the panel's own row — no rating, no referral
+ * counts, no call figure, no subscription status — so the same driver looked
+ * thinner here than on the other two tabs, and which facts a dispatcher saw
+ * depended on how they had gone looking.
  *
- * The cost is a thinner card: `AdminTowTruck` carries no tier, no dispatch
- * counts and no subscription status. All three are answers to "should this
- * driver get the job", which is the question this search is not asking.
+ * `GET /admin/dispatch/candidates-by-driver` runs the same three-arm match
+ * through the dispatch pipeline instead: the same rows, the same lookups, the
+ * same card. The duplicated definition that was worth avoiding turned out to
+ * be the cheaper of the two.
  */
 const DRIVER_SEARCH_MIN_LENGTH = 2
 /** Long enough that typing a seven-digit number is one request, not seven */
 const DRIVER_SEARCH_DEBOUNCE_MS = 300
-const DRIVER_SEARCH_LIMIT = 20
 
 const driverQuery = ref('')
-const driverResults = ref<AdminTowTruck[]>([])
+const driverResults = ref<DispatchCandidateBasic[]>([])
 const driverLoading = ref(false)
 const driverError = ref('')
 /** False until a request has come back, so "nothing found" cannot show before one has */
 const driverSearched = ref(false)
 let driverTimer: ReturnType<typeof setTimeout> | null = null
 
-/** The same string the dispatch cards show, composed the same way the backend composes it */
-function driverVehicle(driver: AdminTowTruck): string {
-  return [driver.vehicleBrand, driver.vehicleModel].filter(Boolean).join(' ')
-}
-
 async function fetchDrivers(search: string): Promise<void> {
   driverLoading.value = true
   driverError.value = ''
   try {
-    driverResults.value = await adminRepository.listTowTrucks({
-      search,
-      limit: DRIVER_SEARCH_LIMIT,
-    })
+    const answer = await adminRepository.listDispatchCandidatesBySearch(search)
+    driverResults.value = answer.items
   } catch (error) {
     driverError.value = extractErrorMessage(error, 'Վարորդներին բեռնել չհաջողվեց։')
     driverResults.value = []
@@ -432,14 +424,6 @@ async function markReferred(candidate: DispatchCandidate | DispatchCandidateByDi
   }
 }
 
-function lastDispatchedLabel(candidate: { lastDispatchedAt?: string }): string {
-  if (!candidate.lastDispatchedAt) return 'դեռ չի ստացել'
-  const days = Math.floor((Date.now() - new Date(candidate.lastDispatchedAt).getTime()) / 86_400_000)
-  if (days <= 0) return 'վերջինը՝ այսօր'
-  if (days === 1) return 'վերջինը՝ երեկ'
-  return `վերջինը՝ ${days} օր առաջ`
-}
-
 useSeoMetaData({
   title: 'Ուղղորդում',
   description: 'Դիսպետչերի էկրան',
@@ -566,82 +550,14 @@ useSeoMetaData({
               {{ TIER_LABELS[group.tier] }} · {{ group.items.length }}
             </h2>
 
-            <article
+            <DispatchCandidateCard
               v-for="candidate in group.items"
               :key="candidate.id"
-              class="dispatch__card"
-              :class="{ 'dispatch__card--referred': referredIds.has(candidate.id) }"
-            >
-              <div class="dispatch__who">
-                <!-- A link, and a new tab on purpose: this screen is read with
-                     somebody on the phone, and navigating away would throw away
-                     the search that produced the list. -->
-                <NuxtLink
-                  :to="getTowTruckRoute(candidate.slug)"
-                  target="_blank"
-                  class="dispatch__name"
-                >
-                  {{ candidate.driverName }}
-                  <span v-if="candidate.isFeatured" title="Լավագույններից">★</span>
-                  <AppBadge v-if="candidate.isPartner" variant="primary">Մեր վարորդ</AppBadge>
-                </NuxtLink>
-                <!-- The truck, then the two specs a dispatcher decides on while
-                     the customer is still describing the car: will it fit, and
-                     will it load if the wheels do not turn. Capacity goes
-                     through the same `capacityDisplayText` the public profile
-                     uses, so the dispatcher and the customer are reading one
-                     figure rather than two spellings of it. -->
-                <!-- Type between the model and the tonnage: «Mercedes
-                     Sprinter» says who made it, «Սահող հարթակով» says what it
-                     can do, and the second is the one the customer's problem
-                     is phrased in. Short labels — every row here is an
-                     evacuator, so four repetitions of the word «էվակուատոր»
-                     would cost a line of a card read in twenty seconds. -->
-                <span class="dispatch__muted">
-                  {{ candidate.vehicle }} · {{ vehicleTypeShortLabel(candidate.vehicleType) }} ·
-                  {{ capacityDisplayText(candidate.capacityTons) }}
-                </span>
-                <!-- Only when true. Several vehicle types are never asked (see
-                     `asksWheelSkates`), so a «Ռոլիկներ՝ ոչ» line would be
-                     answering a question nobody put to that driver. -->
-                <span v-if="candidate.wheelSkates" class="dispatch__skates">
-                  <AppIcon name="check" :size="13" /> Անիվային ռոլիկներ
-                </span>
-              </div>
-
-              <p class="dispatch__meta">
-                <span v-if="candidate.rating">⭐ {{ candidate.rating }}</span>
-                <!-- Demand, beside supply: how often customers rang this driver
-                     over the last 30 days, next to how often we handed them a
-                     job this month. The first is the market's answer, the
-                     second is ours. -->
-                <span>{{ candidate.callsRecent }} զանգ · 30 օր</span>
-                <span>{{ candidate.dispatchesThisMonth }} այս ամիս</span>
-                <span>{{ lastDispatchedLabel(candidate) }}</span>
-              </p>
-
-              <p class="dispatch__base">
-                <AppIcon name="map" :size="14" />
-                Հիմնական գտնվելու վայրը՝ {{ candidate.baseName }}
-              </p>
-              <p v-if="candidate.subscriptionStatus === 'overdue'" class="dispatch__warn">
-                բաժանորդագրությունը սպառվել է
-              </p>
-
-              <div class="dispatch__actions">
-                <a :href="getPhoneHref(candidate.phone)" class="dispatch__call">
-                  Զանգել · {{ candidate.phone }}
-                </a>
-                <AppButton
-                  size="sm"
-                  :variant="referredIds.has(candidate.id) ? 'success' : 'outline'"
-                  :disabled="referringId === candidate.id || referredIds.has(candidate.id)"
-                  @click="askReferred(candidate)"
-                >
-                  {{ referredIds.has(candidate.id) ? 'Ուղղորդված է ✓' : 'Ուղղորդված է' }}
-                </AppButton>
-              </div>
-            </article>
+              :candidate="candidate"
+              :referred="referredIds.has(candidate.id)"
+              :referring="referringId === candidate.id"
+              @refer="askReferred(candidate)"
+            />
           </section>
         </template>
       </template>
@@ -692,57 +608,14 @@ useSeoMetaData({
             <section v-else class="dispatch__group">
               <h2 class="dispatch__group-title">Ամենամոտները · {{ distanceCandidates.length }}</h2>
 
-              <article
+              <DispatchCandidateCard
                 v-for="candidate in distanceCandidates"
                 :key="candidate.id"
-                class="dispatch__card"
-                :class="{ 'dispatch__card--referred': referredIds.has(candidate.id) }"
-              >
-                <div class="dispatch__who">
-                  <!-- A link, and a new tab on purpose: this screen is read with
-                       somebody on the phone, and navigating away would throw away
-                       the search that produced the list. -->
-                  <NuxtLink
-                    :to="getTowTruckRoute(candidate.slug)"
-                    target="_blank"
-                    class="dispatch__name"
-                  >
-                    {{ candidate.driverName }}
-                    <span v-if="candidate.isFeatured" title="Լավագույններից">★</span>
-                    <AppBadge v-if="candidate.isPartner" variant="primary">Մեր վարորդ</AppBadge>
-                  </NuxtLink>
-                  <span class="dispatch__muted">{{ candidate.vehicle }}</span>
-                </div>
-
-                <p class="dispatch__meta">
-                  <span>{{ formatDistanceLine(candidate.distanceMeters, false) }}</span>
-                  <span v-if="candidate.rating">⭐ {{ candidate.rating }}</span>
-                  <span>{{ candidate.dispatchesThisMonth }} այս ամիս</span>
-                  <span>{{ lastDispatchedLabel(candidate) }}</span>
-                </p>
-
-                <p class="dispatch__base">
-                  <AppIcon name="map" :size="14" />
-                  Հիմնական գտնվելու վայրը՝ {{ candidate.baseName }}
-                </p>
-                <p v-if="candidate.subscriptionStatus === 'overdue'" class="dispatch__warn">
-                  բաժանորդագրությունը սպառվել է
-                </p>
-
-                <div class="dispatch__actions">
-                  <a :href="getPhoneHref(candidate.phone)" class="dispatch__call">
-                    Զանգել · {{ candidate.phone }}
-                  </a>
-                  <AppButton
-                    size="sm"
-                    :variant="referredIds.has(candidate.id) ? 'success' : 'outline'"
-                    :disabled="referringId === candidate.id || referredIds.has(candidate.id)"
-                    @click="askReferred(candidate)"
-                  >
-                    {{ referredIds.has(candidate.id) ? 'Ուղղորդված է ✓' : 'Ուղղորդված է' }}
-                  </AppButton>
-                </div>
-              </article>
+                :candidate="candidate"
+                :referred="referredIds.has(candidate.id)"
+                :referring="referringId === candidate.id"
+                @refer="askReferred(candidate)"
+              />
             </section>
           </template>
         </div>
@@ -779,37 +652,15 @@ useSeoMetaData({
             Այդպիսի վարորդ չգտնվեց։
           </p>
 
-          <article v-for="driver in driverResults" :key="driver.id" class="dispatch__card">
-            <div class="dispatch__who">
-              <NuxtLink
-                :to="getTowTruckRoute(driver.slug)"
-                target="_blank"
-                class="dispatch__name"
-              >
-                {{ driver.driverName }}
-                <span v-if="driver.isFeatured" title="Լավագույններից">★</span>
-                <AppBadge v-if="driver.isPartner" variant="primary">Մեր վարորդ</AppBadge>
-              </NuxtLink>
-              <span class="dispatch__muted">{{ driverVehicle(driver) }}</span>
-            </div>
-
-            <!-- Shown here and not on the other two lists because they only
-                 ever contain active drivers. This search finds anyone by name,
-                 and a deactivated driver is exactly who an operator might be
-                 calling about. -->
-            <p v-if="!driver.isActive" class="dispatch__warn">էջը ապաակտիվացված է</p>
-
-            <p class="dispatch__base">
-              <AppIcon name="map" :size="14" />
-              Հիմնական գտնվելու վայրը՝ {{ driver.locationName }}
-            </p>
-
-            <div class="dispatch__actions">
-              <a :href="getPhoneHref(driver.phone)" class="dispatch__call">
-                Զանգել · {{ driver.phone }}
-              </a>
-            </div>
-          </article>
+          <!-- `can-refer` off: a referral is stored against a place, and a
+               name typed into a box is not one. Everything the card SAYS is the
+               same as on the other two searches — see the component. -->
+          <DispatchCandidateCard
+            v-for="driver in driverResults"
+            :key="driver.id"
+            :candidate="driver"
+            :can-refer="false"
+          />
         </div>
       </template>
     </template>
@@ -990,112 +841,9 @@ useSeoMetaData({
     color: var(--color-text-secondary);
   }
 
-  &__card {
-    padding: var(--space-4);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    background: var(--color-surface);
-    margin-bottom: var(--space-3);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-
-    &--referred {
-      border-color: var(--color-success, #2f855a);
-      background: rgba(47, 133, 90, 0.06);
-    }
-  }
-
-  &__who {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  &__name {
-    display: inline-flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-    font-weight: 600;
-    font-size: 1.05rem;
-    color: var(--color-text);
-
-    // Underlined on hover only: a dozen underlined names reads as a wall of
-    // links, and this is a name first and a link second.
-    &:hover {
-      color: var(--color-primary);
-      text-decoration: underline;
-    }
-  }
-
-  &__meta {
-    margin: 0;
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-3);
-    font-size: 0.9rem;
-  }
-
   &__muted {
     color: var(--color-text-secondary);
     font-size: 0.9rem;
-  }
-
-  /* An accent chip rather than another muted line: it is the one capability
-     on this card that decides whether a driver can take THIS car at all. */
-  &__skates {
-    display: inline-flex;
-    align-items: center;
-    /* `__who` is a stretching column, so without this the chip spans the card
-       and stops reading as a chip. */
-    align-self: flex-start;
-    gap: 4px;
-    margin-top: var(--space-1);
-    padding: 2px var(--space-2);
-    border-radius: var(--radius-full);
-    background: rgba(20, 48, 79, 0.08);
-    color: var(--color-primary);
-    font-size: 0.78rem;
-    font-weight: 600;
-  }
-
-  &__base {
-    margin: 0;
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    font-size: 0.9rem;
-    color: var(--color-text-secondary);
-
-    svg {
-      flex-shrink: 0;
-      color: var(--color-text-muted);
-    }
-  }
-
-  &__warn {
-    color: var(--color-danger, #c53030);
-    font-size: 0.9rem;
-  }
-
-  &__actions {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    margin-top: var(--space-2);
-  }
-
-  /* The primary action on the screen, sized like it. */
-  &__call {
-    flex: 1;
-    padding: var(--space-3);
-    border-radius: var(--radius-md);
-    background: var(--color-primary);
-    color: #fff;
-    text-align: center;
-    font-weight: 600;
-    text-decoration: none;
   }
 
   &__error {

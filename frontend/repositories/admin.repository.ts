@@ -6,7 +6,12 @@ import type {
   SubscriptionPlan,
   SubscriptionPlanCode,
 } from '~/types/subscription'
-import type { DispatchCandidates, DispatchCandidatesByCoordinates, DispatchFilter } from '~/types/dispatch'
+import type {
+  DispatchCandidates,
+  DispatchCandidatesByCoordinates,
+  DispatchCandidatesBySearch,
+  DispatchFilter,
+} from '~/types/dispatch'
 import type { RegistrationPayload } from './registration.repository'
 import { useAdminAuthStore } from '~/stores/adminAuth'
 
@@ -710,6 +715,23 @@ export const adminRepository = {
           : {}),
         ...(place.regionZoneSlugs?.length ? { regionZones: place.regionZoneSlugs.join(',') } : {}),
       },
+      headers: authHeader(),
+    })
+  },
+
+  /**
+   * Candidates for a driver's name, company name or phone — the screen's third
+   * search.
+   *
+   * A dispatch endpoint rather than `listTowTrucks`, which is what this
+   * replaced. That one answers with the admin panel's own shape: no rating, no
+   * referral counts, no call figure, no subscription status — so the third tab
+   * showed a visibly thinner card than the other two for the same driver. One
+   * endpoint family, one card.
+   */
+  listDispatchCandidatesBySearch(search: string): Promise<DispatchCandidatesBySearch> {
+    return apiFetch<DispatchCandidatesBySearch>('/admin/dispatch/candidates-by-driver', {
+      query: { search },
       headers: authHeader(),
     })
   },

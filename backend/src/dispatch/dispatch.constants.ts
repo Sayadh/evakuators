@@ -36,6 +36,20 @@ export const DISPATCH_COORDINATES_RADIUS_METERS = 150_000
  * from a quiet one, and a calendar month answers that differently on the 2nd
  * than on the 28th. Thirty days answers it the same way every day.
  */
+/** Shortest term the driver search will run on — one letter matches most of the table */
+export const DISPATCH_SEARCH_MIN_LENGTH = 2
+
+/**
+ * How many drivers a name search returns.
+ *
+ * A dispatcher searching by name is looking for ONE driver they already have
+ * in mind, not browsing. Twenty is enough that a common first name still shows
+ * the right person, and small enough that the lookups behind each card
+ * (referrals, calls, ratings, coverage) stay four grouped queries over a short
+ * list.
+ */
+export const DISPATCH_SEARCH_LIMIT = 20
+
 export const DISPATCH_CALLS_WINDOW_DAYS = 30
 
 /**

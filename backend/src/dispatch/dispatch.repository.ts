@@ -54,6 +54,9 @@ const CANDIDATE_SELECT = {
   isFeatured: true,
   featuredUntil: true,
   isPartner: true,
+  // Only ever false on a row the driver search returned — see
+  // `DispatchCandidateApi.isActive`.
+  isActive: true,
 } as const satisfies Prisma.TowTruckSelect
 
 /** Just enough of a truck to rank it and dial it */
@@ -92,6 +95,38 @@ export class DispatchRepository {
         ],
       },
       select: CANDIDATE_SELECT,
+    })
+  }
+
+  /**
+   * Candidates by driver name, company name or phone — the screen's third
+   * search, for a dispatcher who already knows which driver they want.
+   *
+   * The same three arms, the same `mode: 'insensitive'` and the same reason
+   * phone is left out of it as `TowTrucksRepository.findAllForPayments`: a
+   * stored number is always canonical `+374XXXXXXXX`, so a plain substring
+   * already matches whether the prefix was typed or not.
+   *
+   * No `isActive` filter, unlike the other two searches. They answer "who
+   * should take this job", where an unpublished driver is not an answer; this
+   * one answers "where is this driver", and the driver somebody is ringing
+   * about is quite often the one who was deactivated last week. `isActive`
+   * rides along on the row so the card can say so.
+   */
+  findCandidatesBySearch(search: string, take: number): Promise<DispatchCandidateRow[]> {
+    return this.prisma.towTruck.findMany({
+      where: {
+        OR: [
+          { driverName: { contains: search, mode: 'insensitive' } },
+          { companyName: { contains: search, mode: 'insensitive' } },
+          { phone: { contains: search } },
+        ],
+      },
+      select: CANDIDATE_SELECT,
+      // Alphabetical, so a search that returns a handful reads the same way
+      // twice and the eye can scan it rather than re-read it.
+      orderBy: { driverName: 'asc' },
+      take,
     })
   }
 

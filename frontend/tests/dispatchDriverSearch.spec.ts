@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest'
  */
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const page = readFileSync(`${ROOT}pages/admin/dispatch.vue`, 'utf8')
+const card = readFileSync(`${ROOT}components/dispatch/DispatchCandidateCard.vue`, 'utf8')
 
 /** Everything from the third tab's branch to the end of the template */
 const driverBranch = page.slice(
@@ -31,12 +32,14 @@ describe('the dispatch screen can find a driver by name or phone', () => {
     expect(page).toContain(`v-else-if="mode === 'coordinates'"`)
   })
 
-  it('asks the endpoint the admin panel already asks', () => {
-    // `GET /admin/tow-trucks?search=` matches driver name, company name and
-    // phone server-side. A dispatch-specific endpoint would be a second
-    // definition of "matches a driver", and the day the two disagreed, the
-    // panel and this screen would disagree about who exists.
-    expect(page).toContain('adminRepository.listTowTrucks({')
+  it('asks the dispatch endpoint, so the card can be the same card', () => {
+    // It read `GET /admin/tow-trucks?search=` first, on the reasoning that the
+    // panel already knew how to match a driver. The matching was fine; the
+    // shape was not — that endpoint answers with the panel's own row, with no
+    // rating, referral counts, call figure or subscription status, so the same
+    // driver looked thinner here than on the other two tabs.
+    expect(page).toContain('adminRepository.listDispatchCandidatesBySearch(search)')
+    expect(page).not.toContain('adminRepository.listTowTrucks({')
     expect(driverBranch).toContain('driverResults')
   })
 
@@ -45,12 +48,13 @@ describe('the dispatch screen can find a driver by name or phone', () => {
     // and `locationType` are all required by the endpoint — and a name typed
     // into a box is not one. A placeholder location would put rows in the
     // referral log that no report can read.
-    expect(driverBranch).toContain('getPhoneHref(driver.phone)')
-    expect(driverBranch).toContain('getTowTruckRoute(driver.slug)')
+    expect(driverBranch).toContain(':can-refer="false"')
     expect(driverBranch).not.toContain('askReferred')
-    // The button itself, not the words: the comment above the branch says
-    // «Ուղղորդված է» while explaining why the button is absent.
-    expect(driverBranch).not.toContain('<AppButton')
+    // The card still dials and still links: the facts and the phone are the
+    // same everywhere, only the write is missing.
+    expect(card).toContain('getPhoneHref(candidate.phone)')
+    expect(card).toContain('getTowTruckRoute(candidate.slug)')
+    expect(card).toContain('v-if="canRefer"')
   })
 
   it('debounces the request, and does not leave one armed behind it', () => {
@@ -63,9 +67,10 @@ describe('the dispatch screen can find a driver by name or phone', () => {
   })
 
   it('says a driver is deactivated rather than letting the card look normal', () => {
-    // The other two lists only ever contain active drivers. This one finds
-    // anyone by name, and a deactivated driver is exactly who an operator
-    // might be calling about.
-    expect(driverBranch).toContain('v-if="!driver.isActive"')
+    // The other two searches only ever return active drivers, so the line is
+    // dead weight there and the one thing that matters here: somebody ringing
+    // about a job they were referred last week is quite often the driver who
+    // was deactivated since.
+    expect(card).toContain('v-if="!candidate.isActive"')
   })
 })

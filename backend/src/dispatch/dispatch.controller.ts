@@ -8,6 +8,7 @@ import { FindDispatchByCoordinatesDto } from './dto/find-dispatch-by-coordinates
 import type {
   DispatchCandidatesApi,
   DispatchCandidatesByCoordinatesApi,
+  DispatchCandidatesBySearchApi,
   DispatchReferralApi,
 } from './dispatch.types'
 
@@ -61,6 +62,19 @@ export class DispatchController {
       },
       chosen,
     )
+  }
+
+  /**
+   * The third search: a driver's name, company name or phone.
+   *
+   * A GET with the term in the query, unlike the coordinate search below —
+   * what is sent here is a name an admin typed about somebody else's
+   * business, not a customer's own position, so the reason that one keeps its
+   * payload out of nginx's `access.log` does not apply.
+   */
+  @Get('candidates-by-driver')
+  listCandidatesBySearch(@Query('search') search?: string): Promise<DispatchCandidatesBySearchApi> {
+    return this.dispatch.listCandidatesBySearch(search ?? '')
   }
 
   /**

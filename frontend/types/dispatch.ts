@@ -22,6 +22,12 @@ export interface DispatchCandidate {
   /** Skates for a car whose wheels will not roll; false also means "not asked of this type" */
   wheelSkates: boolean
   baseName: string
+  /**
+   * Whether their listing is still published. Always true from the place and
+   * coordinate searches; the driver search is the one that can answer false —
+   * see the backend's own note on the field.
+   */
+  isActive: boolean
   tier: DispatchTier
   isFeatured: boolean
   /** "Our driver" — ranked above the rest of their tier, below a live placement */
@@ -42,14 +48,24 @@ export interface DispatchCandidates {
 }
 
 /**
- * Mirrors backend `DispatchCandidateByDistanceApi` — everything
- * `DispatchCandidate` has except `tier`, which has no meaning without a named
- * place to be local to, visiting, or nationwide relative to. Replaced with a
- * straight-line distance from the searched point.
+ * Mirrors backend `DispatchCandidateBasicApi` — a candidate with no `tier`.
+ *
+ * `tier` answers "local, visiting or nationwide — relative to WHERE", and two
+ * of the three searches have no where: coordinates have a point rather than a
+ * named place, and a name search has neither. Everything else is identical,
+ * which is what lets one card render all three.
  */
-export interface DispatchCandidateByDistance extends Omit<DispatchCandidate, 'tier'> {
+export type DispatchCandidateBasic = Omit<DispatchCandidate, 'tier'>
+
+/** Mirrors backend `DispatchCandidateByDistanceApi` */
+export interface DispatchCandidateByDistance extends DispatchCandidateBasic {
   /** Straight-line distance from the searched point, in whole metres */
   distanceMeters: number
+}
+
+/** Mirrors backend `DispatchCandidatesBySearchApi` */
+export interface DispatchCandidatesBySearch {
+  items: DispatchCandidateBasic[]
 }
 
 /** Mirrors backend `DispatchCandidatesByCoordinatesApi` — nearest first */

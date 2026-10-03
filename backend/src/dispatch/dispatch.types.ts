@@ -32,6 +32,17 @@ export interface DispatchCandidateApi {
   wheelSkates: boolean
   /** Where they are based, in words, for the "comes from elsewhere" rows */
   baseName: string
+  /**
+   * Whether their listing is still published.
+   *
+   * Always `true` from the place and coordinate searches, which only ever look
+   * at published drivers. The driver search is the one that can return `false`:
+   * it finds anybody by name, and somebody ringing to ask about a job they were
+   * referred last week is exactly the driver who may have been deactivated
+   * since. A card that looked ordinary there would be the screen hiding the
+   * reason the call is happening.
+   */
+  isActive: boolean
   tier: DispatchTier
   isFeatured: boolean
   /** "Our driver" — ranked above the rest of their tier, below a live placement */
@@ -58,6 +69,21 @@ export interface DispatchCandidateApi {
   lastDispatchedAt?: string
 }
 
+/**
+ * A candidate with no `tier`.
+ *
+ * `tier` answers "local, visiting, or nationwide — relative to WHERE", and two
+ * of the three searches have no where: coordinates have a point rather than a
+ * named place, and a name search has neither. Everything else a card shows is
+ * identical, which is the point — one card, three ways in.
+ */
+export type DispatchCandidateBasicApi = Omit<DispatchCandidateApi, 'tier'>
+
+/** The screen's answer for a name, company name or phone */
+export interface DispatchCandidatesBySearchApi {
+  items: DispatchCandidateBasicApi[]
+}
+
 /** The screen's answer for one searched place */
 export interface DispatchCandidatesApi {
   place: { slug: string; name: string; type: DispatchLocationType }
@@ -70,7 +96,7 @@ export interface DispatchCandidatesApi {
  * named place to be local to, visiting, or nationwide relative to; a straight
  * distance replaces it instead.
  */
-export interface DispatchCandidateByDistanceApi extends Omit<DispatchCandidateApi, 'tier'> {
+export interface DispatchCandidateByDistanceApi extends DispatchCandidateBasicApi {
   /** Straight-line distance from the searched point, in whole metres */
   distanceMeters: number
 }

@@ -270,9 +270,12 @@ $navy: #14304f;
     max-width: 420px;
   }
 
-  /* A little more air under the call than between the cards below it: it is
-     the action, and the five rows after it are the menu. */
+  /* Centred rather than stretched — the column is a stack of full-width
+     cards, and the one element that is NOT a card is the one that should not
+     look like a short one. A little more air under it than between the cards
+     below: it is the action, and the five rows after it are the menu. */
   &__call {
+    align-self: center;
     margin-bottom: var(--space-2);
   }
 

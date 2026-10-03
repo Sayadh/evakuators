@@ -182,7 +182,7 @@ function onClick(): void {
     :aria-label="t('dispatch.callUsWithNumber', { phone: CONTACT_PHONE })"
     @click="onClick"
   >
-    <AppIcon name="phone" :size="18" />
+    <AppIcon name="phone" :size="16" />
     <span class="dispatch-cta__number">{{ CONTACT_PHONE }}</span>
   </a>
 
@@ -382,24 +382,28 @@ function onClick(): void {
  * inside it.
  */
 .dispatch-cta__call--links {
-  /* Full width, like every card under it — the whole row is the tap target,
-     not a pill inside one. Everything else is deliberately modest: body-size
-     type, the cards' own radius, less padding than they carry. It is already
-     the only green element on a navy-and-yellow page, which is what makes it
-     read as the action; size is not what it needs to do that, and the height
-     it does keep is a thumb target rather than emphasis. */
-  display: flex;
-  width: 100%;
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
+  /* A pill the width of its own content, not a full-width bar.
+     It stopped being full width once it stopped being big: a bar that spans
+     the column reads as a card, and a card the size of a line of text reads
+     as a card that failed to fill. As a pill it is a BUTTON that happens to
+     be small, which is what it is.
+
+     Still a 40px-tall target with the number legible at arm's length — past
+     this the only honest way to make it smaller is to stop giving it the top
+     of the page. It does not need size to read as the action; it is the only
+     green element on a navy-and-yellow page. */
+  display: inline-flex;
+  width: auto;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-full);
   background: var(--color-success);
   color: #fff;
-  font-size: 1rem;
+  font-size: 0.95rem;
   /* Lit from the button's own colour rather than a neutral drop shadow, so it
-     sits above the dark field the way the cards below it do not. Softened as
-     the button came down in size — a glow sized for a bigger element is what
-     makes a small one look like it shrank rather than like it was drawn. */
-  box-shadow: 0 6px 16px rgba(29, 158, 85, 0.26);
+     sits above the dark field the way the cards below it do not. Tightened
+     with the button — a glow sized for a bigger element is what makes a small
+     one look shrunken rather than drawn. */
+  box-shadow: 0 4px 14px rgba(29, 158, 85, 0.3);
 
   &:hover {
     background: #178a49;

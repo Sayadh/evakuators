@@ -182,7 +182,7 @@ function onClick(): void {
     :aria-label="t('dispatch.callUsWithNumber', { phone: CONTACT_PHONE })"
     @click="onClick"
   >
-    <AppIcon name="phone" :size="20" />
+    <AppIcon name="phone" :size="18" />
     <span class="dispatch-cta__number">{{ CONTACT_PHONE }}</span>
   </a>
 
@@ -383,20 +383,23 @@ function onClick(): void {
  */
 .dispatch-cta__call--links {
   /* Full width, like every card under it — the whole row is the tap target,
-     not a pill inside one. Narrower than the cards' own padding and a step
-     down in type from the number's first draft: it is already the only green
-     element on a navy-and-yellow page, which is what makes it read as the
-     action. Size is not what it needs to do that. */
+     not a pill inside one. Everything else is deliberately modest: body-size
+     type, the cards' own radius, less padding than they carry. It is already
+     the only green element on a navy-and-yellow page, which is what makes it
+     read as the action; size is not what it needs to do that, and the height
+     it does keep is a thumb target rather than emphasis. */
   display: flex;
   width: 100%;
-  padding: var(--space-3) var(--space-5);
-  border-radius: var(--radius-lg, var(--radius-md));
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
   background: var(--color-success);
   color: #fff;
-  font-size: 1.15rem;
+  font-size: 1rem;
   /* Lit from the button's own colour rather than a neutral drop shadow, so it
-     sits above the dark field the way the cards below it do not. */
-  box-shadow: 0 8px 22px rgba(29, 158, 85, 0.3);
+     sits above the dark field the way the cards below it do not. Softened as
+     the button came down in size — a glow sized for a bigger element is what
+     makes a small one look like it shrank rather than like it was drawn. */
+  box-shadow: 0 6px 16px rgba(29, 158, 85, 0.26);
 
   &:hover {
     background: #178a49;

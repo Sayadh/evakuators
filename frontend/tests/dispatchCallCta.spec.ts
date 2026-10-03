@@ -132,14 +132,22 @@ describe('DispatchCallCta placements', () => {
     // `/links` has no listing — every card under this one LEADS to drivers —
     // and `bare` means no header number and no floating button either, so
     // without this there is no way to reach a person from that page at all.
-    const linksRule = component.slice(component.indexOf('.dispatch-cta--links {'))
+    const linksRule = component.slice(component.indexOf('.dispatch-cta__call--links {'))
     expect(linksRule).toContain('background: var(--color-success)')
   })
 
-  it('says what the `/links` call gets you in the words the dialog already uses', () => {
-    // Two wordings of one promise is two wordings to keep true, and the one
-    // that goes stale is the one nobody is looking at.
-    expect(component).toMatch(/dispatch-cta--links[\s\S]{0,900}t\('dispatch\.modalText'\)/)
+  it('gives the `/links` button the number and nothing else', () => {
+    // A page scanned with a thumb. The number is the label; a sentence under
+    // it only delays the press. What it does is still SPOKEN — the aria-label
+    // says «Զանգահարել մեզ՝ +374…» — so dropping the copy costs a screen
+    // reader nothing.
+    const branch = component.slice(
+      component.indexOf("v-else-if=\"variant === 'links'\""),
+      component.indexOf('<div v-else class="dispatch-cta"'),
+    )
+    expect(branch).toContain('t(\'dispatch.callUsWithNumber\'')
+    expect(branch).not.toContain('dispatch-cta__subtitle')
+    expect(branch).not.toContain('dispatch-cta__title')
   })
 
   it('renders the floating button once, in the layout, behind the route rule', () => {

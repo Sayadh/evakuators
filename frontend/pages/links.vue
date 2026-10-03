@@ -83,7 +83,10 @@ const siteHost = SITE_NAME.toLowerCase()
            Everything below this is a destination to pick between; this is the
            one thing on the page that needs no picking, and someone who opened
            an Instagram bio because their car has stopped should not have to
-           choose a page before they can reach a person.
+           choose a page before they can reach a person. The number is the
+           whole of it — no heading, no line explaining the offer: on a page
+           read with a thumb, copy above the brand is what the brand has to
+           wait behind.
 
            A variant of `DispatchCallCta` rather than a `tel:` anchor written
            here, which is the whole reason that component exists: the

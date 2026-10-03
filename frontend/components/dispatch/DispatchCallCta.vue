@@ -171,24 +171,20 @@ function onClick(): void {
        a driver — so the loudest element can be the one with a broken car at
        the other end of it.
 
-       No heading above it. The number is the label, the line under it says
-       what the call gets you, and a «Զանգահարել մեզ» title would be the
-       third way of saying the same thing in one card. -->
-  <div v-else-if="variant === 'links'" class="dispatch-cta dispatch-cta--links">
-    <a
-      :href="phoneHref"
-      class="dispatch-cta__call dispatch-cta__call--links"
-      :aria-label="t('dispatch.callUsWithNumber', { phone: CONTACT_PHONE })"
-      @click="onClick"
-    >
-      <AppIcon name="phone" :size="22" />
-      <span class="dispatch-cta__number">{{ CONTACT_PHONE }}</span>
-    </a>
-    <!-- The dialog's own sentence, by key. It is already what this number
-         promises beside the floating button; a second wording of the same
-         promise is a second wording to keep true. -->
-    <span class="dispatch-cta__subtitle">{{ t('dispatch.modalText') }}</span>
-  </div>
+       Nothing but the number. No heading, no sentence explaining the offer:
+       this is a page someone scans with a thumb, and a line of copy under
+       the one green thing on it only delays the press. The `aria-label`
+       still says «Զանգահարել մեզ՝ +374…», so what it does is spoken. -->
+  <a
+    v-else-if="variant === 'links'"
+    :href="phoneHref"
+    class="dispatch-cta__call dispatch-cta__call--links"
+    :aria-label="t('dispatch.callUsWithNumber', { phone: CONTACT_PHONE })"
+    @click="onClick"
+  >
+    <AppIcon name="phone" :size="20" />
+    <span class="dispatch-cta__number">{{ CONTACT_PHONE }}</span>
+  </a>
 
   <div v-else class="dispatch-cta" :class="`dispatch-cta--${variant}`">
     <!-- Not on the hero. There the block sits directly under the page's own
@@ -385,48 +381,41 @@ function onClick(): void {
  * that will not start, and the tap target is the whole card rather than a pill
  * inside it.
  */
-.dispatch-cta--links {
-  align-items: center;
-  text-align: center;
-  gap: var(--space-2);
+.dispatch-cta__call--links {
+  /* Full width, like every card under it — the whole row is the tap target,
+     not a pill inside one. Narrower than the cards' own padding and a step
+     down in type from the number's first draft: it is already the only green
+     element on a navy-and-yellow page, which is what makes it read as the
+     action. Size is not what it needs to do that. */
+  display: flex;
+  width: 100%;
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-lg, var(--radius-md));
+  background: var(--color-success);
+  color: #fff;
+  font-size: 1.15rem;
+  /* Lit from the button's own colour rather than a neutral drop shadow, so it
+     sits above the dark field the way the cards below it do not. */
+  box-shadow: 0 8px 22px rgba(29, 158, 85, 0.3);
 
-  .dispatch-cta__call {
-    width: 100%;
-    padding: var(--space-4) var(--space-5);
-    border-radius: var(--radius-lg, var(--radius-md));
-    background: var(--color-success);
+  &:hover {
+    background: #178a49;
     color: #fff;
-    font-size: 1.35rem;
-    /* Lit from the button's own colour rather than a neutral drop shadow, so
-       it sits above the dark field the way the cards below it do not. */
-    box-shadow: 0 10px 26px rgba(29, 158, 85, 0.32);
-
-    &:hover {
-      background: #178a49;
-      color: #fff;
-    }
-
-    &:active {
-      transform: scale(0.985);
-    }
-
-    &:focus-visible {
-      outline: 2px solid #fff;
-      outline-offset: 3px;
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      &:active {
-        transform: none;
-      }
-    }
   }
 
-  .dispatch-cta__subtitle {
-    /* Readable, not loud: the number above it is what gets pressed. */
-    color: rgba(255, 255, 255, 0.68);
-    font-size: 0.82rem;
-    line-height: 1.45;
+  &:active {
+    transform: scale(0.985);
+  }
+
+  &:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 3px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    &:active {
+      transform: none;
+    }
   }
 }
 

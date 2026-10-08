@@ -641,10 +641,23 @@ export class TowTrucksRepository {
    * throw it away would be the wide read `findByCard`'s comment warns
    * against, at the scale of the whole table.
    *
-   * Every truck, active or not — a driver deactivated mid-billing-dispute is
-   * exactly the one an admin still needs to find here. Sorted by name so the
-   * list reads the same on every load and a driver typed into the search box
-   * lands where alphabetic scanning expects them.
+   * Active drivers when the page is being BROWSED; everyone when it is being
+   * SEARCHED.
+   *
+   * The two halves answer different questions. An admin scrolling this list is
+   * asking "who do I need to chase", and a deactivated driver is not that —
+   * they are off the site, nobody is billing them, and their row is noise in
+   * the middle of the overdue ones. An admin TYPING a name or a number is
+   * asking about one person they already have in mind, and that person is very
+   * often exactly the driver deactivated mid-billing-dispute — the case this
+   * list used to stay unfiltered for. Hiding them from a search would answer
+   * "no such driver" about someone who owes money.
+   *
+   * So the filter keys off `search` rather than off a flag the page has to
+   * remember to send: browsing is narrow, looking someone up is not.
+   *
+   * Sorted by name so the list reads the same on every load and a driver typed
+   * into the search box lands where alphabetic scanning expects them.
    *
    * `search`, when given, matches driver name, company name or phone —
    * server-side, so the admin panel's search box works over every row, not
@@ -663,7 +676,7 @@ export class TowTrucksRepository {
       isActive: boolean
     }[]
   > {
-    const where: Prisma.TowTruckWhereInput | undefined = search
+    const where: Prisma.TowTruckWhereInput = search
       ? {
           OR: [
             { driverName: { contains: search, mode: 'insensitive' } },
@@ -671,7 +684,7 @@ export class TowTrucksRepository {
             { phone: { contains: search } },
           ],
         }
-      : undefined
+      : { isActive: true }
 
     return this.prisma.towTruck.findMany({
       where,
@@ -680,6 +693,10 @@ export class TowTrucksRepository {
         driverName: true,
         companyName: true,
         phone: true,
+        // Still selected, and still rendered as a badge: a search can return a
+        // deactivated driver, and the row an admin has just deactivated stays
+        // on screen until the next load so the button they pressed has an
+        // answer.
         isActive: true,
       },
       orderBy: { driverName: 'asc' },

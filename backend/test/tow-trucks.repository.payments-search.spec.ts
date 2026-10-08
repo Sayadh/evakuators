@@ -15,12 +15,27 @@ function fakePrisma() {
 }
 
 describe('TowTrucksRepository.findAllForPayments', () => {
-  it('sends no where clause when no search is given', async () => {
+  it('shows only active drivers when the page is browsed', async () => {
+    // Scrolling this list is asking "who do I need to chase". A deactivated
+    // driver is not that — they are off the site and nobody is billing them —
+    // so their row is noise sitting among the overdue ones.
     const { prisma, findMany } = fakePrisma()
 
     await new TowTrucksRepository(prisma).findAllForPayments()
 
-    expect(findMany.mock.calls[0]![0]).toMatchObject({ where: undefined })
+    expect(findMany.mock.calls[0]![0]).toMatchObject({ where: { isActive: true } })
+  })
+
+  it('drops that filter for a search, so a deactivated driver can still be looked up', async () => {
+    // The other half of the same decision, and the one that is easy to lose:
+    // someone typing a name has a person in mind, and that person is very
+    // often the driver deactivated mid-billing-dispute. Answering "no such
+    // driver" about someone who owes money is the bug this prevents.
+    const { prisma, findMany } = fakePrisma()
+
+    await new TowTrucksRepository(prisma).findAllForPayments('vardan')
+
+    expect(findMany.mock.calls[0]![0].where.isActive).toBeUndefined()
   })
 
   it('matches driver name, company name and phone, name fields case-insensitive', async () => {

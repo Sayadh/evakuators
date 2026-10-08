@@ -224,8 +224,9 @@ export class AdminController {
   }
 
   /**
-   * Every driver's payment status, for the dedicated `/admin/payments` page —
-   * not the vehicle listing. Deliberately its own lean shape (AdminPaymentSummary)
+   * Driver payment status, for the dedicated `/admin/payments` page — not the
+   * vehicle listing. Active drivers while the page is browsed, everyone once
+   * `?search=` is given; `findAllForPayments` explains why the two differ. Deliberately its own lean shape (AdminPaymentSummary)
    * rather than fields bolted onto AdminTowTruckSummary, same reasoning as
    * `count` above: unpaginated and one purpose. `?search=` matches name or
    * phone server-side (see `AdminPaymentsQuery`), so the search box on that

@@ -22,6 +22,16 @@ import { formatPrice } from '~/utils/formatPrice'
  * This page shows exactly three things — who, their phone, and whether
  * they're settled — so scanning fifty rows for the unpaid ones stays fast.
  *
+ * ## Who is on it
+ *
+ * Active drivers while the list is being browsed; everyone once something is
+ * typed into the search box. A deactivated driver is off the site and nobody
+ * is billing them, so their row is noise among the overdue ones — but an
+ * admin searching a name has one person in mind, and that person is often
+ * exactly the driver deactivated mid-billing-dispute. The split lives in
+ * `TowTrucksRepository.findAllForPayments`, keyed off `search` itself, so
+ * this page sends no extra flag and cannot forget to.
+ *
  * Two ways money gets recorded, both landing in the same table:
  * - a driver pressed «Վճարել» on their dashboard, and their request waits in
  *   the queue at the top of this page until an admin confirms it;
@@ -316,6 +326,10 @@ const deactivateError = ref('')
  * deactivates a driver on its own. Only offered on a row that is both
  * `overdue` and still `isActive`; disappears the moment either stops being
  * true, so there is never a button promising to do something already done.
+ *
+ * The row itself stays put after the press, wearing the «Ապաակտիվացված»
+ * badge, even though a reload would no longer list it: a row that vanished
+ * the instant the button was pressed would take the answer with it.
  *
  * Asks WHY first, through the same dialog `/admin` uses: the answer decides
  * whether the driver can sign in and pay their own way back, or has to call

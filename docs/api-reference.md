@@ -84,6 +84,32 @@ shape, the rating join and the row cap to drift.
 
 `backend/test/vehicle-type-filter.spec.ts` covers all four.
 
+### `?seed=` and `?avoid=` on `GET /tow-trucks`
+
+The listing's ORDER, for the two pages that are about one place — a town
+(`?city=`) or a Yerevan district (`?district=`). Full reasoning in
+`docs/architecture.md` § "The listing order is random"; the contract:
+
+- **`seed`** is a 32-bit integer and is also the switch. Without it the
+  response comes back in the database's own order, which is what the marz
+  pages, the vehicle-type pages and the sitemap want. With it, the response is
+  ranked (paid placement → ours → based here → everyone else) and shuffled
+  inside each rank.
+- **The place is not a parameter.** It is the `city` or `district` already
+  being asked for. `?zone=` carries no base place — nobody is based on a road —
+  so a corridor's list is one flat shuffle.
+- **`avoid`** is a comma-separated list of ids, capped at 30
+  (`TOW_TRUCK_LISTING_AVOID_LIMIT`): the order the caller was shown last time.
+  The response is then guaranteed to put nobody who COULD have moved back where
+  they were. Ids beyond the cap, and anything that is not an integer, are
+  dropped rather than rejected — this travels in a URL a browser wrote.
+- **Ordering happens after the row cap**, not in SQL. Correct while one
+  geography's drivers fit in one response; it moves with pagination the day
+  that stops being true.
+
+`backend/test/listing-order.spec.ts` covers the ranks, the shuffle's uniformity
+and the avoidance.
+
 ### General discovery hides two vehicle types
 
 Applies to `GET /tow-trucks` with no `vehicleType`, `GET

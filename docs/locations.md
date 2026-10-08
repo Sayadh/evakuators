@@ -551,11 +551,17 @@ all of them and rank nothing). Unlike the rating band on every other listing,
 there is no third tier: within "based here" and within "covers it" the order is
 a flat, seeded shuffle, not a rating sort — a badly-rated local driver still
 outranks a well-rated visiting one, because "based here" is what a search for
-one town is actually asking for. See `sortTowTrucks`'s `tiered: false` mode
-with its `basePlace` argument, and `applyTowTruckFilters`, its only caller.
+one town is actually asking for.
 
-A road corridor page passes no `basePlace` at all (a truck cannot be "based on"
-a road), so on those pages every driver is in one shuffled group.
+That ordering is the **backend's**: `backend/src/tow-trucks/listing-order.ts`,
+applied when a request carries `?seed=`. The place it ranks against is the
+`city` or `district` the request already names, so the page does not send it
+twice. See `docs/architecture.md` § "The listing order is random" for the four
+ranks and for what `?avoid=` buys.
+
+A road corridor page asks with `zone` and no city, which the backend reads as
+"no base place" (a truck cannot be "based on" a road), so on those pages every
+driver is in one shuffled group.
 
 Every other listing (marz pages, the Yerevan overview, the vehicle-type pages,
 the homepage's featured section, "similar trucks") is unaffected and still

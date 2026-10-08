@@ -273,27 +273,78 @@ listing had one fixed queue — the same two or three profiles on top of it ever
 time, and everyone below never called, so never reviewed, so never moved. See
 `sortTowTrucks` for the full argument.
 
-Most listings still keep one coarse group on top of the shuffle — a half-point
-rating band (`tiered: true`, the default). The city and district search pages
-(`/regions/[region]/[city]`, `/yerevan/[district]`) are the exception: they
-call `applyTowTruckFilters`, which passes `tiered: false`, so the rating band is
-skipped and rating plays no part in the order. Those two pages keep a different
-tier instead: `basePlace` (see `isBasedAt`) puts drivers actually based in the
-town/district being searched ahead of everyone who merely also covers it — a
-search for one town means that town's own drivers first — and only within each
-of those two groups is the order the shuffle itself.
+Where that shuffle happens depends on the page, and the split is the point.
 
-The part that matters architecturally is how the randomness survives hydration.
-`Math.random()` at render time produces one order on the server and another in
-the browser, which is the same class of bug as runtime-localised dates above,
-with the same symptom: Vue force-patches the DOM, or the list visibly reshuffles
-a moment after the page appears.
+### The two search pages: the backend orders them
+
+`/regions/[region]/[city]` and `/yerevan/[district]` are the listings that are
+ABOUT one place, and their order is decided in
+`backend/src/tow-trucks/listing-order.ts` — not in the browser. The response IS
+the listing: the first server-rendered paint is already in its final order.
+
+Four ranks, lower first. Ranks 1–3 shuffled, rank 0 a queue:
+
+0. a live paid placement **and** based here — newest purchase first, never
+   shuffled. Somebody bought that position; "sometimes the top" is not what
+   they bought. It deliberately does not travel to pages the driver merely
+   covers, so it cannot be bought once and cashed in on forty of them.
+1. our own drivers (`isPartner`) whose base is this place;
+2. everyone else based here;
+3. everyone else — the drivers who cover this place without being based in it.
+
+Being based here is the OUTER split; being ours sorts inside it. Someone
+searching a town is choosing among that town's drivers, and a driver an hour
+away is an hour away whoever they are. Rating plays no part at all on these two
+pages.
+
+The page still owns two numbers, and sends them with the request:
+
+- **`seed`** — one random number per visit (`useListingShuffleSeed`), so
+  walking from a town to a driver's profile and back does not reshuffle the
+  list under somebody who was reading it. It is also the switch: a request
+  without a seed gets the database's own order, which is what every listing
+  that is not about a place wants.
+- **`avoid`** — the ids this visitor was shown last time, kept in a
+  path-keyed cookie (`utils/listingOrder.ts`) and capped at 30. It is what
+  makes the next load *guaranteed* different rather than usually different: a
+  shuffle repeats a position about a third of the time, and the driver it
+  repeats for reads that as "the order never changes". The backend tries up to
+  60 derived seeds until nobody who COULD have moved is where they were — and
+  only positions whose rank group holds more than one driver count, because a
+  town's single local driver cannot move out of slot 0 and demanding it would
+  spend all 60 attempts and return the last one tried.
+
+This used to live in the browser: the list arrived in database order and a Vue
+computed rearranged it. It produced the right picture, but it meant the API's
+answer was not the listing — anything reading `/tow-trucks?city=…` directly, a
+cache, or a future query that can only `LIMIT` what the database already
+sorted, got something else. The ordering is a property of the listing, so it is
+computed where the listing is. `frontend/services/towTrucks.service.ts` keeps
+one copy of it for the mock fleet, which stands in for the server when no API
+is configured.
+
+Ordering runs after the row cap, not in SQL. That is correct while a
+geography's drivers fit in one response — the assumption the endpoint is
+already built on — and it has to move with pagination the day that changes.
+
+### Every other listing: a rating band, shuffled in the browser
+
+Marz pages, the Yerevan overview, the vehicle-type pages, the homepage strip
+and "similar trucks" keep one coarse group on top of the shuffle — a half-point
+rating band (`tiered: true`, the default in `sortTowTrucks`). They are not
+about one place, so "based here first" has nothing to mean.
+
+The part that matters architecturally is how that randomness survives
+hydration. `Math.random()` at render time produces one order on the server and
+another in the browser, which is the same class of bug as runtime-localised
+dates above, with the same symptom: Vue force-patches the DOM, or the list
+visibly reshuffles a moment after the page appears.
 
 So there is exactly one random number per page load, `useListingShuffleSeed()`,
 and it is a `useState` — created on the server and serialised into the Nuxt
-payload, so the browser reads the same value instead of inventing its own. Every
-listing derives its order from it, and `seededShuffle` is deterministic given a
-seed.
+payload, so the browser reads the same value instead of inventing its own. (The
+two search pages above use the same number, but send it to the API rather than
+shuffling with it.) `seededShuffle` is deterministic given a seed.
 
 Four rules follow, and each is guarded by
 `frontend/tests/listingShuffle.spec.ts`:
@@ -305,26 +356,22 @@ Four rules follow, and each is guarded by
   comparator; the sort contract requires consistency. `Array.prototype.sort` is
   stable, so sorting the already-shuffled array by the grouping keys leaves the
   shuffled order intact within a group.
-- **The price sort is never shuffled.** The customer asked for cheapest first.
+- **The price sort is never shuffled.** The customer asked for cheapest first,
+  and it is the one thing allowed to reorder what the backend sent.
 - **Shuffle exactly once on the way to the screen.** `SortOption.Recommended`
   is a shuffle, not a key, so applying it twice is not the no-op that sorting
-  twice by a key would be. Both layers read the same
-  `useListingShuffleSeed()`, so the same Fisher–Yates draws produce the same
-  positional permutation P twice and the list arrives as P² — and squares are
-  not uniform. Every 2-cycle squares to the identity, so the identity is wildly
-  over-represented and the order is dragged back toward whatever the API sent.
+  twice by a key would be: the same seed draws the same permutation P twice and
+  the list arrives as P², and squares are not uniform. Every 2-cycle squares to
+  the identity, so the identity is wildly over-represented and the order is
+  dragged back toward whatever the API sent.
 
-  This shipped: the three composables feeding the two pages with a filter
-  sidebar carried `transform: recommendedWith(seed)` while those pages shuffled
-  again in `useTowTruckFilters`. On a ten-driver town the API's first driver led
-  20% of loads instead of 10%; on a four-driver one, 50%, and the list came back
-  completely unshuffled 42% of the time. A refresh looked fine only because the
-  cookie-backed `pickListingSeed` then forced a different order and hid it.
-
-  So `useTowTrucksByCity`, `useTowTrucksByDistrict` and `useTowTrucksByZone`
-  hand over the API's own order. Every other listing keeps its transform,
-  because nothing downstream reorders it — `featuredStripOrder.spec.ts` names
-  both sets so neither can drift.
+  This shipped: the three composables feeding the two search pages carried
+  `transform: recommendedWith(seed)` while those pages shuffled again in
+  `useTowTruckFilters`. On a ten-driver town the API's first driver led 20% of
+  loads instead of 10%; on a four-driver one, 50%, and the list came back
+  completely unshuffled 42% of the time. Moving the order to the backend
+  removes the second shuffle by construction — `useTowTruckFilters` filters and
+  nothing else — but the rule stands for every listing that still shuffles here.
 
 ## A CSS grid with a viewport-conditional child is an SSR bug waiting to happen
 

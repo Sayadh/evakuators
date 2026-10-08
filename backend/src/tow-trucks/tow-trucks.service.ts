@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { ReviewsRepository } from '../reviews/reviews.repository'
 import type { ListTowTrucksQuery } from './dto/list-tow-trucks.query'
+import { pickListingOrder, type ListingPlace } from './listing-order'
 import { toTowTruckApi, toTowTruckCardApi, toTowTruckCoverageApi } from './tow-truck.mapper'
 import type { TowTruckApi, TowTruckCardApi, TowTruckCoverageApi } from './tow-truck.types'
 import { TOW_TRUCK_LIST_DEFAULT_LIMIT } from './tow-trucks.constants'
@@ -44,7 +45,40 @@ export class TowTrucksService {
       )
     }
 
-    return this.attachRatings(trucks)
+    const cards = await this.attachRatings(trucks)
+
+    return this.ordered(cards, query)
+  }
+
+  /**
+   * The listing in the order it should be read — but only when the caller
+   * asked for one.
+   *
+   * `?seed=` is what asks. Only the two search pages (a town, a Yerevan
+   * district) send it, because they are the only listings that are ABOUT a
+   * place: "based here first" needs a here. A marz page, a vehicle-type page
+   * and the sitemap get the database's own order, exactly as before.
+   *
+   * A road corridor sends a seed and no place of its own — `zone` is matched
+   * against `serviceAreas`, and nobody is "based in" a corridor. It still
+   * shuffles: with an empty place every driver is rank 3, so the whole list is
+   * one group and the order is a flat shuffle, which is the right answer there.
+   *
+   * Ordering runs AFTER the row cap, not in SQL. That is correct while a
+   * geography's drivers fit in one response — the assumption this endpoint is
+   * already built on, and the one the cap warning above exists to retire. The
+   * day pagination moves to the database, this has to move with it, or page 2
+   * will be a shuffle of a set the database chose by `createdAt`.
+   */
+  private ordered(cards: TowTruckCardApi[], query: ListTowTrucksQuery): TowTruckCardApi[] {
+    if (query.seed === undefined) return cards
+
+    const place: ListingPlace = {
+      citySlug: query.city,
+      districtSlug: query.district,
+    }
+
+    return pickListingOrder(cards, place, query.seed, query.avoid)
   }
 
   /**

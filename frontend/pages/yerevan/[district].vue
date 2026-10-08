@@ -14,12 +14,19 @@ if (!district.value) {
   throw createError({ statusCode: 404, statusMessage: t('page.districtNotFound'), fatal: true })
 }
 
-const { data: towTrucks, pending } = await useTowTrucksByDistrict(districtSlug)
+// Asked for before the fetch, because the ORDER is part of the answer now —
+// the backend ranks and shuffles this list (`listing-order.ts`), so the
+// server-rendered first paint is already final. The base place is the
+// `district` the request already names; it is not passed a second time.
+const listingOrder = useListingOrder()
+
+const { data: towTrucks, pending } = await useTowTrucksByDistrict(districtSlug, listingOrder)
 const { data: nearbyDistricts } = useNearbyDistricts(districtSlug)
 
-const { filteredTowTrucks, activeFiltersCount } = useTowTruckFilters(towTrucks, {
-  districtSlug,
-})
+const { filteredTowTrucks, activeFiltersCount } = useTowTruckFilters(
+  towTrucks,
+  listingOrder.remember,
+)
 const { visibleItems, hasMore, loadMore } = usePagination(filteredTowTrucks, 9)
 const { isDesktop, isDrawerOpen, openDrawer } = useResponsiveFilters()
 

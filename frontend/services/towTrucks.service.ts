@@ -2,7 +2,7 @@ import { mockRequest } from './apiClient'
 import { mockTowTrucks } from '~/mocks/towTrucks'
 import { hasManipulator, isSpecialistVehicleType, publicVehicleTypeCategory } from '~/constants/vehicles'
 import { isApiEnabled, towTruckRepository } from '~/repositories'
-import { LocationType, VehicleType } from '~/types/enums'
+import { LocationType, VehicleType, SortOption  } from '~/types/enums'
 import type {
   TowTruck,
   TowTruckCard,
@@ -10,6 +10,29 @@ import type {
   TowTruckGeography,
 } from '~/types/towTruck'
 import { getRegionCitySlugs, getRegionServiceZoneSlugs } from '~/utils/geography'
+import type { ListingOrderRequest } from '~/utils/listingOrder'
+import { sortTowTrucks, type BasePlace } from '~/utils/towTruckFilters'
+
+/**
+ * The mock fleet, put in the order the BACKEND would have put it in.
+ *
+ * With no API configured the mocks stand in for the server, so they have to
+ * answer the same question it does — otherwise the demo fleet arrives in
+ * fixture order and the one page whose order is the product looks broken in
+ * exactly the mode someone uses to look at it.
+ *
+ * This is the only place the old client-side ordering survives, and only in
+ * `tiered: false` mode: the real listing's ranks and shuffle live in the
+ * backend's `listing-order.ts`.
+ */
+function orderMock(
+  trucks: TowTruckCard[],
+  order: ListingOrderRequest | undefined,
+  basePlace?: BasePlace,
+): TowTruckCard[] {
+  if (!order) return trucks
+  return sortTowTrucks(trucks, SortOption.Recommended, order.seed, false, basePlace)
+}
 
 /* ── Pure matchers ────────────────────────────────────────────────────────
  *
@@ -187,17 +210,33 @@ export const towTrucksService = {
     return mockRequest(() => mockTowTrucks.find((truck) => truck.slug === slug) ?? null)
   },
 
-  getByCitySlug(citySlug: string, vehicleType?: VehicleType): Promise<TowTruckCard[]> {
-    if (isApiEnabled()) return towTruckRepository.getByCity(citySlug, vehicleType)
+  getByCitySlug(
+    citySlug: string,
+    vehicleType?: VehicleType,
+    order?: ListingOrderRequest,
+  ): Promise<TowTruckCard[]> {
+    if (isApiEnabled()) return towTruckRepository.getByCity(citySlug, vehicleType, order)
     return mockRequest(() =>
-      mockFleetFor(vehicleType).filter((truck) => servesCity(truck, citySlug)),
+      orderMock(
+        mockFleetFor(vehicleType).filter((truck) => servesCity(truck, citySlug)),
+        order,
+        { citySlug },
+      ),
     )
   },
 
-  getByDistrictSlug(districtSlug: string, vehicleType?: VehicleType): Promise<TowTruckCard[]> {
-    if (isApiEnabled()) return towTruckRepository.getByDistrict(districtSlug, vehicleType)
+  getByDistrictSlug(
+    districtSlug: string,
+    vehicleType?: VehicleType,
+    order?: ListingOrderRequest,
+  ): Promise<TowTruckCard[]> {
+    if (isApiEnabled()) return towTruckRepository.getByDistrict(districtSlug, vehicleType, order)
     return mockRequest(() =>
-      mockFleetFor(vehicleType).filter((truck) => servesDistrict(truck, districtSlug)),
+      orderMock(
+        mockFleetFor(vehicleType).filter((truck) => servesDistrict(truck, districtSlug)),
+        order,
+        { districtSlug },
+      ),
     )
   },
 
@@ -237,9 +276,16 @@ export const towTrucksService = {
   /**
    * Drivers on one road corridor. Exact match, no fallback — see `servesZone`.
    */
-  getByZoneSlug(zoneSlug: string): Promise<TowTruckCard[]> {
-    if (isApiEnabled()) return towTruckRepository.getByZone(zoneSlug)
-    return mockRequest(() => generalMockTowTrucks.filter((truck) => servesZone(truck, zoneSlug)))
+  getByZoneSlug(zoneSlug: string, order?: ListingOrderRequest): Promise<TowTruckCard[]> {
+    if (isApiEnabled()) return towTruckRepository.getByZone(zoneSlug, order)
+    return mockRequest(() =>
+      // No base place: nobody is "based in" a road corridor, so every driver is
+      // in one group and the order is a flat shuffle.
+      orderMock(
+        generalMockTowTrucks.filter((truck) => servesZone(truck, zoneSlug)),
+        order,
+      ),
+    )
   },
 
   async getByRegionSlug(regionSlug: string, vehicleType?: VehicleType): Promise<TowTruckCard[]> {

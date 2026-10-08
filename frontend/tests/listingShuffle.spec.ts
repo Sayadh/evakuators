@@ -277,11 +277,6 @@ describe('the seed reaches both runtimes', () => {
     // notice, because the other five still pass.
     expect(lists).toContain('recommendedWith(useListingShuffleSeed())')
 
-    // And EVERY listing takes it. There are half a dozen of these composables
-    // and they are added to over time; a new one wired with a constant would
-    // silently give that page a fixed order forever — and a `toContain` alone
-    // would not notice, because the other five still match.
-    //
     // Scanned on the `transform:` lines, which are the call sites; the
     // function's own declaration mentions the name too.
     const transforms = lists.split('\n').filter((line) => line.includes('transform:'))
@@ -289,75 +284,102 @@ describe('the seed reaches both runtimes', () => {
     for (const line of transforms) {
       expect(line).toContain('recommendedWith(useListingShuffleSeed())')
     }
+  })
+})
 
-    // Same rule here, one indirection later: the payload seed is read in setup
-    // as `rawSeed`, then `pickListingSeed` picks the nearby seed whose order
-    // leaves nobody in their previous slot (see utils/listingOrder.ts). Both
-    // runtimes run that with the same list and the same cookie, so they still
-    // agree — what must not happen is either call moving inside a computed.
-    const filters = read('composables/useTowTruckFilters.ts')
-    expect(filters).toContain('const rawSeed = useListingShuffleSeed()')
-    expect(filters).toContain('pickListingSeed(')
-    expect(filters).toContain('rawSeed,')
-    // The computed renders the CHOSEN seed, not the raw one — otherwise the
-    // derangement is worked out and then thrown away.
-    expect(filters).toContain('computed(() => orderWith(seed))')
+/**
+ * The two search pages do not order anything. The backend does.
+ *
+ * This is the half of the old design that moved: the ranks (paid placement,
+ * ours, based here, everyone else) and the shuffle inside them are
+ * `backend/src/tow-trucks/listing-order.ts` now, and its own spec covers what
+ * they produce. What these tests pin is the WIRING — the part that is easy to
+ * undo by accident while editing a page, and whose failure is silent: the list
+ * still renders, just in whatever order the database returned, with the same
+ * driver on top of every town forever.
+ */
+describe('the city and district listings ask the API for their order', () => {
+  const ROOT = fileURLToPath(new URL('..', import.meta.url))
+  const read = (path: string): string => readFileSync(`${ROOT}${path}`, 'utf8')
+
+  const PAGES = ['pages/regions/[region]/[city].vue', 'pages/yerevan/[district].vue']
+
+  it.each(PAGES)('%s asks for the order BEFORE it fetches the drivers', (page) => {
+    // The point of the whole change. The seed has to be in the request, or the
+    // server renders a list it then has to rearrange — which is what made a
+    // first visit open on the same driver every time.
+    const source = read(page)
+
+    expect(source.indexOf('useListingOrder()')).toBeGreaterThan(-1)
+    expect(source.indexOf('useListingOrder()')).toBeLessThan(source.indexOf('useTowTrucks'))
+    expect(source).toMatch(/useTowTrucksBy\w+\([^)]*listingOrder\)/)
   })
 
-  /**
-   * The decision travels; it is not repeated.
-   *
-   * A real regression, worth describing so nobody re-introduces it while
-   * "simplifying". Reading the cookie, picking a seed from it and writing the
-   * cookie back is correct on the server and wrong the second time it runs:
-   * the browser hydrates AFTER the response's Set-Cookie has been applied, so
-   * it reads the order the server just wrote, avoids a different set of
-   * positions, picks a different seed — and the list visibly re-renders a
-   * moment after it appears. `useState` is what fixes it: the initialiser runs
-   * once, server-side, and the browser reads the number out of the payload.
-   */
-  it('decides the seed once, in useState, so the browser never re-derives it', () => {
-    const filters = read('composables/useTowTruckFilters.ts')
-
-    expect(filters).toContain('useState<number>(`listing-seed:')
-
-    const initialiser = filters.slice(
-      filters.indexOf('useState<number>(`listing-seed:'),
-      filters.indexOf('}).value'),
-    )
-    expect(initialiser).toContain('pickListingSeed(')
+  it.each(PAGES)('%s hands the filters the memory, not a seed', (page) => {
+    // `useTowTruckFilters` no longer orders. All it still owes the next request
+    // is what this one showed.
+    expect(read(page)).toContain('listingOrder.remember')
   })
 
-  /**
-   * The cookie records what was SHOWN, not a second opinion about it.
-   *
-   * The other half of the same regression. While the order written to the
-   * cookie was computed separately from the order rendered, the two could
-   * disagree — and they did: the next load then avoided an arrangement nobody
-   * had seen, and happily repeated the one they had. Reading it back off the
-   * rendered computed is what makes "what you saw last time" true by
-   * construction.
-   */
+  it('sends the seed and the previous order to the endpoint', () => {
+    const repository = read('repositories/towTruck.repository.ts')
+
+    expect(repository).toContain('seed: order.seed')
+    // Comma-joined, the shape the query DTO parses — same as `regionCities`.
+    expect(repository).toContain("order.avoid.join(',')")
+  })
+
+  it('leaves the request out entirely when a page has no order to ask for', () => {
+    // `seed` is also the switch: without it the backend returns the database's
+    // own order, which is what the marz pages, the vehicle-type pages and the
+    // sitemap want. Sending a seed from there would quietly reorder them.
+    expect(read('repositories/towTruck.repository.ts')).toContain('if (!order) return {}')
+  })
+
+  it('no longer shuffles in the filter composable', () => {
+    // Two opinions about one order is how the double shuffle shipped (see the
+    // describe below). There is now exactly one, and it is not here.
+    const filters = read('composables/useTowTruckFilters.ts')
+
+    expect(filters).not.toContain('seededShuffle')
+    expect(filters).not.toContain('pickListingSeed')
+    expect(filters).not.toContain('useListingShuffleSeed')
+    expect(filters).toContain('applyTowTruckFilters(towTrucks.value, store.$state)')
+  })
+
   it('records the rendered order, not a separately computed one', () => {
-    const filters = read('composables/useTowTruckFilters.ts')
-
-    expect(filters).toContain('previousOrder.value = filteredTowTrucks.value')
-
-    // And one ordering expression feeds both the chooser and the render, so
-    // there is nothing left for them to disagree about.
-    expect(filters).toContain('const orderWith = ')
+    // While the order written to the cookie was computed separately from the
+    // order rendered, the two could disagree — and did: the next load then
+    // avoided an arrangement nobody had seen, and happily repeated the one they
+    // had.
+    expect(read('composables/useTowTruckFilters.ts')).toContain(
+      'remember?.(filteredTowTrucks.value.map((truck) => truck.id))',
+    )
   })
 
-  /**
-   * A cookie name is an RFC 6265 token. `/` and `:` are not in it, and a name
-   * containing them is stored by the browser and then not found by the server
-   * — the avoidance silently does nothing, which is how it behaved.
-   */
-  it('builds a cookie name the server can read back', () => {
-    const filters = read('composables/useTowTruckFilters.ts')
+  it('keeps the filters order-preserving, so the ranks survive every checkbox', () => {
+    // `Array.prototype.filter` preserves order, and `SortOption.Price` is the
+    // one thing allowed to reorder — the customer asked for it in so many
+    // words.
+    const utils = read('utils/towTruckFilters.ts')
 
-    expect(filters).toContain("route.path.replace(/[^a-z0-9]+/gi, '-')")
-    expect(filters).not.toContain('`listing-order:${route.path}`')
+    expect(utils).toContain(
+      'return filters.sort === SortOption.Price ? sortTowTrucks(matching, SortOption.Price) : matching',
+    )
+  })
+
+  it('builds a cookie name the server can read back', () => {
+    // A cookie name is an RFC 6265 token. `/` and `:` are not in it, and a name
+    // containing them is stored by the browser and then not found by the
+    // server — the avoidance silently does nothing, which is how it behaved.
+    const order = read('utils/listingOrder.ts')
+
+    expect(order).toContain("path.replace(/[^a-z0-9]+/gi, '-')")
+    expect(order).not.toContain('`listing-order:${path}`')
+  })
+
+  it('caps what travels back, and caps it to the same number the backend does', () => {
+    expect(read('utils/listingOrder.ts')).toContain('LISTING_ORDER_AVOID_LIMIT = 30')
   })
 })
 

@@ -50,11 +50,17 @@ if (!isZone && !isLanding && !city.value) {
 // servesZone); a landing settlement deliberately reuses its target CITY's
 // drivers — there is no settlement-level coverage field and none is being
 // invented, so the honest answer is "the drivers who work the nearest town".
+// The order is the backend's, so it has to be asked for BEFORE the drivers
+// are fetched — that is what makes the server-rendered first paint already the
+// final order, instead of a database order the browser then rearranged. See
+// `useListingOrder`.
+const listingOrder = useListingOrder()
+
 const { data: towTrucks, pending } = isZone
-  ? await useTowTrucksByZone(citySlug)
+  ? await useTowTrucksByZone(citySlug, listingOrder)
   : isLanding
-    ? await useTowTrucksByCity(landingCity!.slug)
-    : await useTowTrucksByCity(citySlug)
+    ? await useTowTrucksByCity(landingCity!.slug, listingOrder)
+    : await useTowTrucksByCity(citySlug, listingOrder)
 const { data: nearbyCities } = useNearbyCities(regionSlug, citySlug)
 
 const plural = usePlural()
@@ -97,18 +103,19 @@ const seoSectionTitle = computed(() =>
       : t('districtPage.seoTitle', { place: areaName.value }),
 )
 
-/**
- * The place THIS listing's drivers are for, so `useTowTruckFilters` can boost
- * whoever is actually based there. A corridor has no base-place concept (see
- * `BasePlace`) — nobody is "based on" a road — so it gets no boost, exactly as
- * before. A landing settlement reuses its target city's drivers (see above),
- * so its base place is that city's slug, not the settlement's own.
- */
-const basePlace = computed(() =>
-  isZone ? undefined : { citySlug: isLanding ? landingCity!.slug : citySlug },
-)
+/* The place this listing's drivers are for — "based here first" — is no longer
+   worked out on this page. It is the `city` the API was already asked for, so
+   the backend derives it from the request rather than being told twice (see
+   `TowTrucksService.ordered`). A landing settlement is covered by the same
+   fact: the fetch above asks for its TARGET city's slug, which is the place
+   its drivers are based in. A corridor asks with `zone` and no city, and the
+   backend reads that as "no base place", which is right — nobody is based on
+   a road. */
 
-const { filteredTowTrucks, activeFiltersCount } = useTowTruckFilters(towTrucks, basePlace)
+const { filteredTowTrucks, activeFiltersCount } = useTowTruckFilters(
+  towTrucks,
+  listingOrder.remember,
+)
 const { visibleItems, hasMore, loadMore } = usePagination(filteredTowTrucks, 9)
 const { isDesktop, isDrawerOpen, openDrawer } = useResponsiveFilters()
 

@@ -1,5 +1,26 @@
 import type { TowTruck, TowTruckCard, TowTruckCoverage } from '~/types/towTruck'
+import type { ListingOrderRequest } from '~/utils/listingOrder'
 import { apiFetch, isNotFoundError } from './apiClient'
+
+/**
+ * The two parameters that ask the backend to order a listing — see
+ * `listing-order.ts` there and `utils/listingOrder.ts` here.
+ *
+ * Omitted entirely when the page has no order to ask for, because `seed` is
+ * also the switch: a request without it gets the database's own order, which
+ * is what every listing that is not about one place wants.
+ *
+ * `avoid` is sent as a comma-joined list — the same shape `regionCities`
+ * already uses on this endpoint, and the one the query DTO parses.
+ */
+function orderQuery(order?: ListingOrderRequest): Record<string, string | number> {
+  if (!order) return {}
+
+  return {
+    seed: order.seed,
+    ...(order.avoid?.length ? { avoid: order.avoid.join(',') } : {}),
+  }
+}
 
 /**
  * All tow truck reads from the backend API.
@@ -11,15 +32,27 @@ import { apiFetch, isNotFoundError } from './apiClient'
  * driver's contact details. Only `getBySlug` returns a full profile.
  */
 export const towTruckRepository = {
-  getByCity(citySlug: string, vehicleType?: string): Promise<TowTruckCard[]> {
+  getByCity(
+    citySlug: string,
+    vehicleType?: string,
+    order?: ListingOrderRequest,
+  ): Promise<TowTruckCard[]> {
     return apiFetch<TowTruckCard[]>('/tow-trucks', {
-      query: { city: citySlug, ...(vehicleType ? { vehicleType } : {}) },
+      query: { city: citySlug, ...(vehicleType ? { vehicleType } : {}), ...orderQuery(order) },
     })
   },
 
-  getByDistrict(districtSlug: string, vehicleType?: string): Promise<TowTruckCard[]> {
+  getByDistrict(
+    districtSlug: string,
+    vehicleType?: string,
+    order?: ListingOrderRequest,
+  ): Promise<TowTruckCard[]> {
     return apiFetch<TowTruckCard[]>('/tow-trucks', {
-      query: { district: districtSlug, ...(vehicleType ? { vehicleType } : {}) },
+      query: {
+        district: districtSlug,
+        ...(vehicleType ? { vehicleType } : {}),
+        ...orderQuery(order),
+      },
     })
   },
 
@@ -42,8 +75,10 @@ export const towTruckRepository = {
   },
 
   /** Exact corridor match — the backend adds no city fallback for this one */
-  getByZone(zoneSlug: string): Promise<TowTruckCard[]> {
-    return apiFetch<TowTruckCard[]>('/tow-trucks', { query: { zone: zoneSlug } })
+  getByZone(zoneSlug: string, order?: ListingOrderRequest): Promise<TowTruckCard[]> {
+    return apiFetch<TowTruckCard[]>('/tow-trucks', {
+      query: { zone: zoneSlug, ...orderQuery(order) },
+    })
   },
 
   /**

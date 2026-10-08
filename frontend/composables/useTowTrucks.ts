@@ -2,6 +2,7 @@ import type { VehicleTypeGeo } from '~/constants/vehicleTypePages'
 import { servesYerevan, towTrucksService } from '~/services'
 import { SortOption, type VehicleType } from '~/types/enums'
 import type { TowTruck, TowTruckCard } from '~/types/towTruck'
+import type { ListingOrderRequest } from '~/utils/listingOrder'
 import { sortTowTrucks } from '~/utils/towTruckFilters'
 
 /**
@@ -76,17 +77,32 @@ function recommendedWith(seed: number) {
  * No `transform` — `/regions/[region]/[city]` runs `useTowTruckFilters`, which
  * shuffles. See the § above for what the second shuffle did to the first.
  */
-export function useTowTrucksByCity(citySlug: string) {
-  return useAsyncData(`tow-trucks-city-${citySlug}`, () => towTrucksService.getByCitySlug(citySlug), {
-    default: () => [],
-  })
+/**
+ * A town's drivers, in the order they should be read.
+ *
+ * `order` is why there is no `transform` here: the ordering is the backend's
+ * (`listing-order.ts`), so the response arrives in its final order and the
+ * server-rendered first paint is already right. A transform would be a second
+ * opinion about the same question, applied after the fact.
+ *
+ * The cache key deliberately does NOT include the seed. The key is what makes
+ * two visits to one town the same data; folding a per-visit number into it
+ * would refetch and reorder the list every time somebody came back to a page
+ * they had already read.
+ */
+export function useTowTrucksByCity(citySlug: string, order?: ListingOrderRequest) {
+  return useAsyncData(
+    `tow-trucks-city-${citySlug}`,
+    () => towTrucksService.getByCitySlug(citySlug, undefined, order),
+    { default: () => [] },
+  )
 }
 
-/** No `transform` — `/yerevan/[district]` shuffles in `useTowTruckFilters`. */
-export function useTowTrucksByDistrict(districtSlug: string) {
+/** Same as `useTowTrucksByCity`, for `/yerevan/[district]` — see there. */
+export function useTowTrucksByDistrict(districtSlug: string, order?: ListingOrderRequest) {
   return useAsyncData(
     `tow-trucks-district-${districtSlug}`,
-    () => towTrucksService.getByDistrictSlug(districtSlug),
+    () => towTrucksService.getByDistrictSlug(districtSlug, undefined, order),
     { default: () => [] },
   )
 }
@@ -148,13 +164,14 @@ export function useYerevanTowTruckCount() {
  * composable rather than a flag on `useTowTrucksByCity`, because it is a
  * different endpoint answering a different question.
  *
- * No `transform`, for the same reason as the two above: it is served by
- * `/regions/[region]/[city]`, which shuffles in `useTowTruckFilters`.
+ * No `transform`, for the same reason as the two above: the backend orders it.
+ * A corridor sends a seed and no place of its own — nobody is "based in" one —
+ * so the whole list is one group and the order is a flat shuffle.
  */
-export function useTowTrucksByZone(zoneSlug: string) {
+export function useTowTrucksByZone(zoneSlug: string, order?: ListingOrderRequest) {
   return useAsyncData(
     `tow-trucks-zone-${zoneSlug}`,
-    () => towTrucksService.getByZoneSlug(zoneSlug),
+    () => towTrucksService.getByZoneSlug(zoneSlug, order),
     { default: () => [] },
   )
 }

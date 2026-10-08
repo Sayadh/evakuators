@@ -1,6 +1,6 @@
 import { Transform } from 'class-transformer'
 import { IsBoolean, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator'
-import { TOW_TRUCK_LIST_MAX_LIMIT } from '../tow-trucks.constants'
+import { TOW_TRUCK_LIST_MAX_LIMIT, TOW_TRUCK_LISTING_AVOID_LIMIT } from '../tow-trucks.constants'
 
 export class ListTowTrucksQuery {
   @IsOptional()
@@ -101,4 +101,44 @@ export class ListTowTrucksQuery {
   @IsInt()
   @Min(0)
   offset?: number
+
+  /**
+   * The random number this listing's order is built from — see
+   * `listing-order.ts`.
+   *
+   * Supplied by the caller rather than rolled here, and that is the whole
+   * design: the page that asks mints ONE number per visit and reuses it, so
+   * walking from a town to a driver and back does not reshuffle the list under
+   * somebody who was reading it. A seed invented per request would make the
+   * order unstable in exactly the way a visitor notices.
+   *
+   * Omitted means no ordering at all: every other consumer of this endpoint —
+   * the marz pages, the vehicle-type pages, the sitemap — gets the database's
+   * own order, untouched. The two search pages are the only ones that ask.
+   */
+  @IsOptional()
+  @Transform(({ value }: { value: string }) => Number(value))
+  @IsInt()
+  seed?: number
+
+  /**
+   * The ids, in order, this visitor was shown last time on this same listing.
+   *
+   * The guarantee it buys: nobody who COULD have moved stands where they stood
+   * before. Without it a shuffle repeats a position about a third of the time,
+   * and the driver it repeats for reads that as "the order never changes".
+   *
+   * Capped, because this travels in a URL. The first screenful is the part
+   * anybody notices repeating — see `TOW_TRUCK_LISTING_AVOID_LIMIT`.
+   */
+  @IsOptional()
+  @Transform(({ value }: { value: string }) =>
+    value
+      .split(',')
+      .map((id) => Number(id.trim()))
+      .filter((id) => Number.isInteger(id))
+      .slice(0, TOW_TRUCK_LISTING_AVOID_LIMIT),
+  )
+  @IsInt({ each: true })
+  avoid?: number[]
 }

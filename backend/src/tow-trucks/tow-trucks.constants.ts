@@ -20,6 +20,18 @@
 export const TOW_TRUCK_LIST_DEFAULT_LIMIT = 200
 export const TOW_TRUCK_LIST_MAX_LIMIT = 200
 
+/**
+ * How many ids a listing request may carry in `?avoid=` — the order the
+ * visitor was shown last time, which the next order is required to differ
+ * from.
+ *
+ * Thirty, because that is roughly a first screenful plus what a thumb reaches
+ * without deciding to scroll, and because this travels in a URL that is also a
+ * cache key: the whole previous listing would make every request unique for no
+ * gain, since nobody notices position 80 repeating.
+ */
+export const TOW_TRUCK_LISTING_AVOID_LIMIT = 30
+
 /** Page size for admin listings, which DO grow without bound (see AdminController) */
 export const ADMIN_LIST_DEFAULT_LIMIT = 50
 export const ADMIN_LIST_MAX_LIMIT = 200

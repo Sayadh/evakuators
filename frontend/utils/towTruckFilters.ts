@@ -326,19 +326,30 @@ export function sortTowTrucks(
  * listing goes through `useTowTrucks.ts`'s `recommendedWith` instead, which
  * keeps the rating band and has no concept of a page "being about" one place.
  */
+/**
+ * The city and district search pages' list: filtered, and otherwise left in
+ * the order it arrived in.
+ *
+ * It used to shuffle here. The ordering — paid placement, ours, based here,
+ * everyone else, shuffled inside each group — now happens in the backend
+ * (`listing-order.ts`), so the response IS the listing and the first paint is
+ * already in its final order. What is left on this side is the part that
+ * cannot be anywhere else: a filter is a question about a card, and the sort
+ * the CUSTOMER picked.
+ *
+ * Filtering never reorders — `Array.prototype.filter` preserves order — so the
+ * server's ranks survive every combination of checkboxes.
+ *
+ * `SortOption.Price` is the one case that reorders, because the customer asked
+ * for it in so many words. Everything else keeps the server's answer.
+ */
 export function applyTowTruckFilters(
   trucks: TowTruckCard[],
   filters: TowTruckFilterState,
-  seed?: number,
-  basePlace?: BasePlace,
 ): TowTruckCard[] {
-  return sortTowTrucks(
-    trucks.filter((truck) => matchesFilters(truck, filters)),
-    filters.sort,
-    seed,
-    false,
-    basePlace,
-  )
+  const matching = trucks.filter((truck) => matchesFilters(truck, filters))
+
+  return filters.sort === SortOption.Price ? sortTowTrucks(matching, SortOption.Price) : matching
 }
 
 export function countActiveFilters(filters: TowTruckFilterState): number {

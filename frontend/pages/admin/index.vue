@@ -268,10 +268,47 @@ const selectedForBroadcast = ref<Set<number>>(new Set())
 const sendingBroadcast = ref(false)
 const broadcastResult = ref('')
 
+/**
+ * The name/phone box above the list.
+ *
+ * Ninety-odd rows is past the point where scrolling finds somebody. The match
+ * is a plain substring over the two fields the row already shows, done in
+ * memory — the whole list is in hand, so there is nothing to ask the server.
+ *
+ * Normalised to lower case on both sides for the Latin names in there; Armenian
+ * has no case, so this costs nothing and fixes «Artush» vs «artush».
+ */
+const broadcastQuery = ref('')
+
+const visibleBroadcastCandidates = computed(() => {
+  const needle = broadcastQuery.value.trim().toLowerCase()
+  if (!needle) return broadcastCandidates.value
+
+  return broadcastCandidates.value.filter(
+    (candidate) =>
+      candidate.driverName.toLowerCase().includes(needle) || candidate.phone.includes(needle),
+  )
+})
+
+/**
+ * «Նշել բոլորը» means the rows ON SCREEN, not the ninety-eight behind the
+ * search box.
+ *
+ * A search narrows what the admin is looking at, so a box that then ticked
+ * everyone would be the single most expensive misclick on this page — this is
+ * the one action here whose effect leaves the system. Ticking what is visible
+ * is also what the count beside it promises.
+ *
+ * Selection itself survives the filter: a driver ticked before the search stays
+ * ticked when they scroll out of view, which is why the send button counts
+ * `selectedForBroadcast` and not this list.
+ */
 const allBroadcastCandidatesSelected = computed(
   () =>
-    broadcastCandidates.value.length > 0 &&
-    selectedForBroadcast.value.size === broadcastCandidates.value.length,
+    visibleBroadcastCandidates.value.length > 0 &&
+    visibleBroadcastCandidates.value.every((candidate) =>
+      selectedForBroadcast.value.has(candidate.id),
+    ),
 )
 
 const broadcastMessageTooLong = computed(
@@ -287,6 +324,9 @@ async function openBroadcastModal(): Promise<void> {
   // be "send to nobody" — a pre-filled list turns one stray click into dozens
   // of real messages.
   selectedForBroadcast.value = new Set()
+  // Same reasoning as the message and the ticks: the dialog opens as it did the
+  // first time, not where the last broadcast left it.
+  broadcastQuery.value = ''
   loadingBroadcastCandidates.value = true
   try {
     broadcastCandidates.value = await adminRepository.listBroadcastCandidates()
@@ -308,9 +348,15 @@ function toggleBroadcastCandidate(id: number, checked: boolean): void {
 }
 
 function toggleAllBroadcastCandidates(checked: boolean): void {
-  selectedForBroadcast.value = checked
-    ? new Set(broadcastCandidates.value.map((candidate) => candidate.id))
-    : new Set()
+  const next = new Set(selectedForBroadcast.value)
+  for (const candidate of visibleBroadcastCandidates.value) {
+    if (checked) next.add(candidate.id)
+    // Unticking clears only what is shown, for the same reason ticking adds
+    // only what is shown — and so that clearing a search's results does not
+    // silently drop somebody chosen under a previous one.
+    else next.delete(candidate.id)
+  }
+  selectedForBroadcast.value = next
 }
 
 /**
@@ -2163,7 +2209,7 @@ async function rejectReview(review: AdminReview): Promise<void> {
       </AppButton>
     </AppModal>
 
-    <AppModal v-model="broadcastModalOpen" title="Ուղարկել հաղորդագրություն">
+    <AppModal v-model="broadcastModalOpen" size="lg" title="Ուղարկել հաղորդագրություն">
       <p class="driver-picker__intro">
         Տեքստն ուղարկվում է Telegram-ով, ինչպես գրված է, առանց փոփոխության։ Ցուցակում են
         միայն ակտիվ և Telegram կապակցված վարորդները — նշիր, ում ուղարկել։
@@ -2199,16 +2245,35 @@ async function rejectReview(review: AdminReview): Promise<void> {
       />
 
       <template v-else>
+        <!-- Ninety-odd rows is past the point where scrolling finds somebody.
+             No label: the placeholder says what it does, and a label here would
+             push the list another line down inside a dialog that is already
+             tall. -->
+        <AppInput
+          v-model="broadcastQuery"
+          placeholder="Փնտրել անունով կամ հեռախոսով…"
+          autocomplete="off"
+          class="broadcast-picker__search"
+        />
+
         <div class="driver-picker__all">
+          <!-- The count is what is SHOWN, and so is what the box ticks — see
+               `allBroadcastCandidatesSelected`. -->
           <AppCheckbox
             :model-value="allBroadcastCandidatesSelected"
-            :label="`Նշել բոլորը (${broadcastCandidates.length})`"
+            :label="`Նշել բոլորը (${visibleBroadcastCandidates.length})`"
             @update:model-value="toggleAllBroadcastCandidates"
           />
         </div>
 
-        <ul class="driver-picker__list">
-          <li v-for="candidate in broadcastCandidates" :key="candidate.id">
+        <!-- Not an EmptyState: that one answers "there is nobody to send to at
+             all", which is a different fact and is already rendered above. -->
+        <p v-if="visibleBroadcastCandidates.length === 0" class="admin-card__muted">
+          Այդպիսի վարորդ չգտնվեց։
+        </p>
+
+        <ul v-else class="driver-picker__list">
+          <li v-for="candidate in visibleBroadcastCandidates" :key="candidate.id">
             <AppCheckbox
               :model-value="selectedForBroadcast.has(candidate.id)"
               :label="candidate.driverName"
@@ -2218,25 +2283,32 @@ async function rejectReview(review: AdminReview): Promise<void> {
           </li>
         </ul>
 
-        <AppButton
-          variant="success"
-          block
-          :disabled="
-            sendingBroadcast ||
-            selectedForBroadcast.size === 0 ||
-            !broadcastMessage.trim() ||
-            broadcastMessageTooLong
-          "
-          @click="sendBroadcast"
-        >
-          {{
-            sendingBroadcast
-              ? 'Ուղարկվում է…'
-              : selectedForBroadcast.size === 0
-                ? 'Նշիր առնվազն մեկ վարորդ'
-                : `Ուղարկել ${selectedForBroadcast.size} վարորդի`
-          }}
-        </AppButton>
+        <!-- Pinned to the bottom of the dialog rather than sitting under the
+             list. With a search box above it the list is scrolled, not read to
+             the end, and a send button that has to be scrolled to is one the
+             admin loses track of — along with the count on it, which is the
+             only place that says how many people this is about to message. -->
+        <div class="broadcast-picker__actions">
+          <AppButton
+            variant="success"
+            block
+            :disabled="
+              sendingBroadcast ||
+              selectedForBroadcast.size === 0 ||
+              !broadcastMessage.trim() ||
+              broadcastMessageTooLong
+            "
+            @click="sendBroadcast"
+          >
+            {{
+              sendingBroadcast
+                ? 'Ուղարկվում է…'
+                : selectedForBroadcast.size === 0
+                  ? 'Նշիր առնվազն մեկ վարորդ'
+                  : `Ուղարկել ${selectedForBroadcast.size} վարորդի`
+            }}
+          </AppButton>
+        </div>
       </template>
 
       <p v-if="broadcastResult" class="admin-hint driver-picker__result">
@@ -2547,13 +2619,13 @@ async function rejectReview(review: AdminReview): Promise<void> {
 
   &__list {
     list-style: none;
-    margin: 0 0 var(--space-4);
+    margin: 0;
     padding: 0;
-    /* Scrolls inside the modal rather than growing it: the list is as long as
-       the migration backlog, and the send button has to stay reachable without
-       scrolling past every driver on the platform. */
-    max-height: 45vh;
-    overflow-y: auto;
+    /* No scroller of its own any more. It had one so the send button stayed
+       reachable without scrolling past every driver on the platform; the
+       button is pinned to the bottom of the dialog now, which answers that
+       better — one scrollbar instead of two nested ones, and the list can use
+       the whole panel. */
 
     li {
       display: flex;
@@ -2577,6 +2649,39 @@ async function rejectReview(review: AdminReview): Promise<void> {
 .broadcast-picker {
   &__field {
     margin-bottom: var(--space-4);
+  }
+
+  &__search {
+    margin-bottom: var(--space-3);
+  }
+
+  /**
+   * The send button, pinned to the bottom of the dialog.
+   *
+   * Sticky inside the panel's own scroller rather than fixed to the viewport:
+   * `position: fixed` would leave the dialog behind on a phone, where the
+   * on-screen keyboard shrinks the visual viewport while the message box is
+   * focused.
+   *
+   * The negative margins bleed it to the panel's edges so the list scrolls
+   * UNDER it rather than beside it, and the background is what makes that
+   * readable — a transparent sticky bar over scrolling text is worse than no
+   * bar at all. All three offsets must match the panel's own padding
+   * (`AppModal`'s `--space-6`).
+   *
+   * `bottom` is NEGATIVE by that same padding, and that is the part worth
+   * knowing: a sticky element pins to its containing block's CONTENT box, so
+   * `bottom: 0` parks it one bottom-padding above the panel's edge and leaves a
+   * strip of list visible under it. Measured, not guessed — at `bottom: 0` the
+   * bar sat 32px up with a row showing through.
+   */
+  &__actions {
+    position: sticky;
+    bottom: calc(-1 * var(--space-6));
+    margin: var(--space-4) calc(-1 * var(--space-6)) calc(-1 * var(--space-6));
+    padding: var(--space-4) var(--space-6);
+    background: var(--color-surface);
+    border-top: 1px solid var(--color-border);
   }
 
   &__textarea {

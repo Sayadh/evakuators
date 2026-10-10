@@ -2,9 +2,22 @@
 interface Props {
   modelValue: boolean
   title?: string
+  /**
+   * How wide the panel is allowed to get.
+   *
+   * `md` (480px) is the default and what every confirmation on the site uses —
+   * a sentence and a button. `lg` adds 20px, for the one dialog that is a
+   * working surface rather than a question: the broadcast picker, which holds
+   * a message box, a search and a list of names with phone numbers beside
+   * them.
+   *
+   * A prop rather than a class passed in from the page: this component's root
+   * is a `Teleport`, so a class on the tag has nothing to land on.
+   */
+  size?: 'md' | 'lg'
 }
 
-const props = withDefaults(defineProps<Props>(), { title: undefined })
+const props = withDefaults(defineProps<Props>(), { title: undefined, size: 'md' })
 
 const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
 
@@ -45,7 +58,13 @@ onUnmounted(() => {
   <Teleport to="body">
     <Transition name="modal-fade">
       <div v-if="modelValue" class="modal__overlay" @click.self="close">
-        <div class="modal__panel" role="dialog" aria-modal="true" :aria-label="title">
+        <div
+          class="modal__panel"
+          :class="`modal__panel--${size}`"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="title"
+        >
           <button type="button" class="modal__close" :aria-label="t('a11y.close')" @click="close">
             <AppIcon name="close" :size="22" />
           </button>
@@ -76,10 +95,17 @@ onUnmounted(() => {
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
     padding: var(--space-6);
-    max-width: 480px;
     width: 100%;
     max-height: 85dvh;
     overflow-y: auto;
+
+    &--md {
+      max-width: 480px;
+    }
+
+    &--lg {
+      max-width: 500px;
+    }
   }
 
   &__close {

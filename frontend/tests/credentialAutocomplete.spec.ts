@@ -78,8 +78,20 @@ describe('the credential forms name their fields', () => {
   it('never marks a password field `off`', () => {
     // Browsers increasingly ignore `off` on password fields anyway, so it buys
     // nothing and reads as an intent we are not actually able to enforce.
+    //
+    // Scoped to the tags that ARE password fields, not to the whole file: `off`
+    // is the right answer for an ordinary filter box, and the admin panel has
+    // one (the broadcast picker's driver search). A file-wide `not.toContain`
+    // made this test fail the day an unrelated input was added, which is a test
+    // reporting on something other than its subject.
     for (const form of [adminPage, loginPage, changePassword]) {
-      expect(form).not.toContain('autocomplete="off"')
+      const passwordTags = (form.match(/<[A-Za-z][^>]*>/gs) ?? []).filter((tag) =>
+        tag.includes('type="password"'),
+      )
+      expect(passwordTags.length).toBeGreaterThan(0)
+      for (const tag of passwordTags) {
+        expect(tag).not.toContain('autocomplete="off"')
+      }
     }
   })
 })

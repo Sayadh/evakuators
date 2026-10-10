@@ -89,7 +89,10 @@ describe('dispatch page, confirming a referral', () => {
     // `confirmLocation`, not `selected` directly — it also covers the
     // coordinate-search case, which has no `selected` place to name.
     expect(source()).toContain('{{ confirmTarget.driverName }}')
-    expect(source()).toContain('{{ confirmLocation?.name }}')
+    // Inside the branch that only renders once a place IS known, which is why
+    // it reads `confirmLocation.name` and not `confirmLocation?.name`: the
+    // driver search has no place until the dialog asks for one.
+    expect(source()).toContain('{{ confirmLocation.name }}')
   })
 
   it('says the record cannot be taken back', () => {

@@ -43,18 +43,39 @@ describe('the dispatch screen can find a driver by name or phone', () => {
     expect(driverBranch).toContain('driverResults')
   })
 
-  it('offers a call and a profile, and no referral', () => {
-    // A referral is stored against a place — `locationSlug`, `locationName`
-    // and `locationType` are all required by the endpoint — and a name typed
-    // into a box is not one. A placeholder location would put rows in the
-    // referral log that no report can read.
-    expect(driverBranch).toContain(':can-refer="false"')
-    expect(driverBranch).not.toContain('askReferred')
-    // The card still dials and still links: the facts and the phone are the
-    // same everywhere, only the write is missing.
+  it('offers the same call, profile and referral as the other two tabs', () => {
+    expect(driverBranch).toContain('@refer="askReferred(driver)"')
+    expect(driverBranch).not.toContain(':can-refer="false"')
     expect(card).toContain('getPhoneHref(candidate.phone)')
     expect(card).toContain('getTowTruckRoute(candidate.slug)')
     expect(card).toContain('v-if="canRefer"')
+  })
+
+  it('asks where the job is before it will record one', () => {
+    // A referral is stored against a place — `locationSlug`, `locationName`
+    // and `locationType` are all required by the endpoint — and a name typed
+    // into a box is not one. This search can never know it, so the dialog
+    // asks: `confirmLocation` is null until a place is picked, and the confirm
+    // button lives in the branch that only renders once it is not.
+    expect(page).toContain("if (mode.value === 'driver') {\n    return confirmPlace.value\n  }")
+    expect(page).toContain('<template v-if="confirmLocation === null">')
+    expect(page).toMatch(/<template v-else>[\s\S]*markReferred\(confirmTarget\)/)
+  })
+
+  it('never guesses the place from the driver', () => {
+    // The two shortcuts, both worse than one question. The driver's own base
+    // is where the DRIVER is, so filing a Gyumri call under «Կենտրոն» would put
+    // a WRONG answer in the log rather than a missing one — and a placeholder
+    // would put rows in the referral history that no report can read.
+    expect(page).not.toMatch(/locationSlug:\s*['"`]unknown/)
+    expect(page).not.toMatch(/confirmPlace\.value\s*=\s*\{[^}]*candidate\./)
+    expect(page).not.toContain('confirmTarget.value.base')
+  })
+
+  it('clears the asked-for place every time the dialog opens', () => {
+    // The place belongs to THIS job. A leftover answer from the previous call
+    // is the one mistake this dialog could make silently.
+    expect(page).toMatch(/function askReferred\([\s\S]{0,400}confirmPlace\.value = null/)
   })
 
   it('debounces the request, and does not leave one armed behind it', () => {

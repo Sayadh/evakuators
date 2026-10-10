@@ -242,15 +242,20 @@ function searchByCoordinates(): void {
  * hour ago and now needs them on the phone, and the alternative was leaving
  * this screen for the admin panel mid-call.
  *
- * ## No «Ուղղորդված է» on these cards
+ * ## «Ուղղորդված է» works here too, and the dialog asks where
  *
- * Not an omission. A referral is stored against a place — `locationSlug`,
- * `locationName`, `locationType` are all required by the endpoint — and a name
- * typed into a box is not one. The place and coordinate searches can both
- * answer that question; this one cannot, and inventing a placeholder location
- * to make the button fit would put rows in the referral log that no report can
- * read. Call, and open the profile. The two searches that know where the job
- * is are where a referral gets recorded.
+ * A referral is stored against a place — `locationSlug`, `locationName`,
+ * `locationType` are all required by the endpoint — and a name typed into a
+ * box is not one. The other two searches already hold the answer; this one
+ * never can, so the confirmation asks for it before it will save.
+ *
+ * Asked, not guessed. The driver's own base is where the DRIVER is, not where
+ * the job was, so filing a Gyumri call under «Կենտրոն» would put a wrong
+ * answer in the log rather than a missing one — and a placeholder «անհայտ»
+ * would put rows in the referral history that no report can read. The operator
+ * is on the phone with the customer when they press this, so the place is the
+ * one thing they certainly know, and the recent chips usually make it one tap.
+ * See `confirmPlace`.
  *
  * ## Its own endpoint, and why the panel's was not enough
  *
@@ -364,7 +369,9 @@ watch(filter, () => {
  * question that was actually at stake ("this driver, this job") rather than
  * asking "are you sure" about something the operator can no longer see.
  */
-const confirmTarget = ref<DispatchCandidate | DispatchCandidateByDistance | null>(null)
+const confirmTarget = ref<
+  DispatchCandidate | DispatchCandidateByDistance | DispatchCandidateBasic | null
+>(null)
 /**
  * Its own error, not `loadError`: that one belongs to the list behind the
  * dialog, and showing a stale "could not load" inside a confirmation the
@@ -380,9 +387,56 @@ const referError = ref('')
  * `'coordinates'` rather than borrowed from the four real place kinds (see
  * `DispatchReferralLocationType` on the backend).
  */
+/**
+ * The place the driver search's referral is attributed to — asked for in the
+ * dialog, because that search is the one that cannot know it.
+ *
+ * ## Why it is asked rather than derived
+ *
+ * A referral is stored against a place. The other two searches already have
+ * one: «Ըստ վայրի» has what the operator typed, and a coordinate pair is a
+ * location in its own right. A NAME is not — and the two plausible shortcuts
+ * are both worse than one question. The driver's own base is where the DRIVER
+ * is, not where the job was, so attributing a Gyumri job to «Կենտրոն» would
+ * put a wrong answer in the log rather than a missing one. A placeholder
+ * «անհայտ» would put rows in the referral history that no report can read.
+ *
+ * The operator is on the phone with the customer when they press this, so the
+ * place is the one thing they certainly know. It costs one tap from the recent
+ * chips most of the time.
+ */
+const confirmQuery = ref('')
+const confirmPlace = ref<DispatchPlace | null>(null)
+
+const confirmSuggestions = computed(() =>
+  confirmPlace.value === null ? searchDispatchPlaces(confirmQuery.value) : [],
+)
+
+function pickConfirmPlace(place: DispatchPlace): void {
+  confirmPlace.value = place
+  confirmQuery.value = place.name
+  // Remembered like any other answer to "where is the customer" — it is the
+  // same question, asked from a different screen.
+  recent.value = rememberDispatchPlace(recent.value, place)
+  writeRecent(recent.value)
+}
+
+/**
+ * The place to attribute the open confirmation's referral to, for whichever
+ * search produced the candidate in it. Place mode has `selected`; coordinate
+ * mode has no named place, so the pair itself becomes the record — formatted
+ * the same way the toolbar above the list already shows it, and tagged
+ * `'coordinates'` rather than borrowed from the four real place kinds (see
+ * `DispatchReferralLocationType` on the backend). Driver mode has whatever was
+ * just chosen in the dialog, and `null` until it is — which is what keeps the
+ * confirm button from being pressable with nowhere to file the result.
+ */
 const confirmLocation = computed<{ slug: string; name: string; type: string } | null>(() => {
   if (mode.value === 'place') {
     return selected.value
+  }
+  if (mode.value === 'driver') {
+    return confirmPlace.value
   }
   if (!lastCoordinates.value) return null
   const { latitude, longitude } = lastCoordinates.value
@@ -393,13 +447,22 @@ const confirmLocation = computed<{ slug: string; name: string; type: string } | 
   }
 })
 
-function askReferred(candidate: DispatchCandidate | DispatchCandidateByDistance): void {
+function askReferred(
+  candidate: DispatchCandidate | DispatchCandidateByDistance | DispatchCandidateBasic,
+): void {
   if (referringId.value !== null || referredIds.value.has(candidate.id)) return
   referError.value = ''
+  // Cleared on every open: the place belongs to THIS job, and a leftover
+  // answer from the previous call is the one mistake this dialog can make
+  // silently.
+  confirmQuery.value = ''
+  confirmPlace.value = null
   confirmTarget.value = candidate
 }
 
-async function markReferred(candidate: DispatchCandidate | DispatchCandidateByDistance): Promise<void> {
+async function markReferred(
+  candidate: DispatchCandidate | DispatchCandidateByDistance | DispatchCandidateBasic,
+): Promise<void> {
   const place = confirmLocation.value
   if (!place || referringId.value !== null) return
 
@@ -652,14 +715,16 @@ useSeoMetaData({
             Այդպիսի վարորդ չգտնվեց։
           </p>
 
-          <!-- `can-refer` off: a referral is stored against a place, and a
-               name typed into a box is not one. Everything the card SAYS is the
-               same as on the other two searches — see the component. -->
+          <!-- Same card, same button as the other two searches. The place a
+               referral is filed against is the one thing this search cannot
+               know, so the dialog asks for it — see `confirmPlace`. -->
           <DispatchCandidateCard
             v-for="driver in driverResults"
             :key="driver.id"
             :candidate="driver"
-            :can-refer="false"
+            :referred="referredIds.has(driver.id)"
+            :referring="referringId === driver.id"
+            @refer="askReferred(driver)"
           />
         </div>
       </template>
@@ -677,19 +742,68 @@ useSeoMetaData({
         <p>
           <strong>{{ confirmTarget.driverName }}</strong> — {{ confirmTarget.phone }}
         </p>
-        <p class="dispatch__muted">
-          Հաստատում եք, որ այս վարորդը վերցրե՞լ է պատվերը՝ {{ confirmLocation?.name }}։
-          Գրառումը կավելանա իր ամսվա հաշվին և հետ չի վերցվում։
-        </p>
-        <p v-if="referError" class="dispatch__error" role="alert">{{ referError }}</p>
-        <AppButton
-          variant="success"
-          block
-          :disabled="referringId === confirmTarget.id"
-          @click="markReferred(confirmTarget)"
-        >
-          {{ referringId === confirmTarget.id ? 'Պահպանվում է…' : 'Այո, վերցրել է' }}
-        </AppButton>
+
+        <!-- The driver search found this person by name, so nothing here knows
+             where the job is. Asked rather than guessed: the driver's own base
+             is where the DRIVER is, and a placeholder would put rows in the
+             referral log that no report can read. -->
+        <template v-if="confirmLocation === null">
+          <p class="dispatch__muted">Ո՞ւր է ուղղորդվում պատվերը։</p>
+          <AppInput
+            v-model="confirmQuery"
+            label="Որտեղ է հաճախորդը"
+            placeholder="Աբովյան, Արաբկիր…"
+            autocomplete="off"
+          />
+          <ul v-if="confirmSuggestions.length" class="dispatch__suggestions">
+            <li v-for="place in confirmSuggestions" :key="`confirm-${place.type}-${place.slug}`">
+              <button type="button" class="dispatch__suggestion" @click="pickConfirmPlace(place)">
+                <span class="dispatch__suggestion-name">{{ place.name }}</span>
+                <span v-if="place.context" class="dispatch__muted">{{ place.context }}</span>
+              </button>
+            </li>
+          </ul>
+          <!-- The same chips the place search keeps. On a night of calls from
+               one district this is the whole interaction. -->
+          <div v-if="recent.length" class="dispatch__recent">
+            <span class="dispatch__muted">Վերջինները՝</span>
+            <button
+              v-for="place in recent"
+              :key="`confirm-recent-${place.type}-${place.slug}`"
+              type="button"
+              class="dispatch__chip"
+              @click="pickConfirmPlace(place)"
+            >
+              {{ place.name }}
+            </button>
+          </div>
+        </template>
+
+        <template v-else>
+          <p class="dispatch__muted">
+            Հաստատում եք, որ այս վարորդը վերցրե՞լ է պատվերը՝ {{ confirmLocation.name }}։
+            Գրառումը կավելանա իր ամսվա հաշվին և հետ չի վերցվում։
+          </p>
+          <!-- Only where the place was typed INTO this dialog. Elsewhere it is
+               the search itself, and changing it means changing the search. -->
+          <button
+            v-if="mode === 'driver'"
+            type="button"
+            class="dispatch__back"
+            @click="confirmPlace = null"
+          >
+            Փոխել տեղանքը
+          </button>
+          <p v-if="referError" class="dispatch__error" role="alert">{{ referError }}</p>
+          <AppButton
+            variant="success"
+            block
+            :disabled="referringId === confirmTarget.id"
+            @click="markReferred(confirmTarget)"
+          >
+            {{ referringId === confirmTarget.id ? 'Պահպանվում է…' : 'Այո, վերցրել է' }}
+          </AppButton>
+        </template>
       </div>
     </AppModal>
   </div>

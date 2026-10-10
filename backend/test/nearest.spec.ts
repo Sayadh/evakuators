@@ -11,7 +11,7 @@ import {
   NEAREST_RESULT_LIMIT,
 } from '../src/nearest/nearest.constants'
 import { NearestController } from '../src/nearest/nearest.controller'
-import { RouteMatrixService } from '../src/nearest/route-matrix.service'
+import { RouteMatrixService } from '../src/routing/route-matrix.service'
 import type { NearestSearchApi } from '../src/nearest/nearest.types'
 
 /**

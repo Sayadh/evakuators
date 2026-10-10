@@ -4,16 +4,16 @@ import { armeniaDateKey, ARMENIA_TIMEZONE } from '../src/common/armenia-day'
 import { toAnalyticsDateKey } from '../src/analytics/analytics.utils'
 import { ANALYTICS_TIMEZONE } from '../src/analytics/analytics.constants'
 import { NearestCacheService } from '../src/nearest/nearest-cache.service'
-import { NearestQuotaService } from '../src/nearest/nearest-quota.service'
+import { RouteQuotaService } from '../src/routing/route-quota.service'
 import { NearestService } from '../src/nearest/nearest.service'
 import {
-  NEAREST_ORS_DAILY_CALL_LIMIT,
-  NEAREST_ORS_DAILY_QUOTA,
-  NEAREST_ORS_DAILY_SAFETY_MARGIN,
-} from '../src/nearest/nearest.constants'
+  ROUTE_ORS_DAILY_CALL_LIMIT,
+  ROUTE_ORS_DAILY_QUOTA,
+  ROUTE_ORS_DAILY_SAFETY_MARGIN,
+} from '../src/routing/routing.constants'
 
 /**
- * The global daily ORS-call budget behind the nearest-evacuator search.
+ * The global daily ORS-call budget, shared by every feature that routes.
  *
  * This replaced a per-IP daily ceiling — see docs/nearest-search.md § "The ORS
  * budget is global" for why a per-IP number could not actually bound the
@@ -49,16 +49,16 @@ describe('the day boundary', () => {
 
 describe('the numbers', () => {
   it('leaves a safety margin under the real ORS quota rather than spending it exactly', () => {
-    expect(NEAREST_ORS_DAILY_CALL_LIMIT).toBe(NEAREST_ORS_DAILY_QUOTA - NEAREST_ORS_DAILY_SAFETY_MARGIN)
-    expect(NEAREST_ORS_DAILY_SAFETY_MARGIN).toBeGreaterThan(0)
+    expect(ROUTE_ORS_DAILY_CALL_LIMIT).toBe(ROUTE_ORS_DAILY_QUOTA - ROUTE_ORS_DAILY_SAFETY_MARGIN)
+    expect(ROUTE_ORS_DAILY_SAFETY_MARGIN).toBeGreaterThan(0)
   })
 })
 
 describe('counting calls', () => {
   it('allows exactly the daily limit, then refuses budget (not the visitor)', () => {
-    const quota = new NearestQuotaService()
+    const quota = new RouteQuotaService()
 
-    for (let i = 0; i < NEAREST_ORS_DAILY_CALL_LIMIT; i += 1) {
+    for (let i = 0; i < ROUTE_ORS_DAILY_CALL_LIMIT; i += 1) {
       expect(quota.hasRemaining(), `call ${i + 1}`).toBe(true)
       quota.consume()
     }
@@ -69,17 +69,17 @@ describe('counting calls', () => {
   it('is one counter for the whole platform, not one per caller', () => {
     // There is no address or identity parameter any more — every caller draws
     // from the same budget, which is the entire point of the change.
-    const quota = new NearestQuotaService()
+    const quota = new RouteQuotaService()
 
-    for (let i = 0; i < NEAREST_ORS_DAILY_CALL_LIMIT; i += 1) quota.consume()
+    for (let i = 0; i < ROUTE_ORS_DAILY_CALL_LIMIT; i += 1) quota.consume()
 
     expect(quota.hasRemaining()).toBe(false)
   })
 
   it('discards yesterday\'s count rather than carrying it forward', () => {
-    const quota = new NearestQuotaService()
+    const quota = new RouteQuotaService()
 
-    for (let i = 0; i < NEAREST_ORS_DAILY_CALL_LIMIT; i += 1) quota.consume(EARLIER_UTC)
+    for (let i = 0; i < ROUTE_ORS_DAILY_CALL_LIMIT; i += 1) quota.consume(EARLIER_UTC)
     expect(quota.hasRemaining(EARLIER_UTC)).toBe(false)
 
     // Two hours later on the clock, but a new calendar day in Yerevan.
@@ -87,7 +87,7 @@ describe('counting calls', () => {
   })
 
   it('resets the counter to zero when the day rolls over', () => {
-    const quota = new NearestQuotaService()
+    const quota = new RouteQuotaService()
 
     quota.consume(EARLIER_UTC)
     quota.consume(EARLIER_UTC)
@@ -127,7 +127,7 @@ describe('what the search charges for, and what happens at the cap', () => {
     )
     const routeMatrix = { matrix: matrixFn }
     const cache = new NearestCacheService()
-    const quota = new NearestQuotaService()
+    const quota = new RouteQuotaService()
 
     const service = new NearestService(
       repository as never,
@@ -167,7 +167,7 @@ describe('what the search charges for, and what happens at the cap', () => {
 
   it('skips the matrix call once the budget is spent, and still answers with a list', async () => {
     const { service, quota, matrixFn } = buildService()
-    for (let i = 0; i < NEAREST_ORS_DAILY_CALL_LIMIT; i += 1) quota.consume()
+    for (let i = 0; i < ROUTE_ORS_DAILY_CALL_LIMIT; i += 1) quota.consume()
 
     // A position far enough away to miss the earlier cache entry.
     const result = await service.findNearest(40.79, 43.84)
@@ -183,7 +183,7 @@ describe('what the search charges for, and what happens at the cap', () => {
 
   it('never throws once the budget is spent — there is no 429 path any more', async () => {
     const { service, quota } = buildService()
-    for (let i = 0; i < NEAREST_ORS_DAILY_CALL_LIMIT; i += 1) quota.consume()
+    for (let i = 0; i < ROUTE_ORS_DAILY_CALL_LIMIT; i += 1) quota.consume()
 
     await expect(service.findNearest(40.79, 43.84)).resolves.toBeDefined()
   })
@@ -227,7 +227,7 @@ describe('skipRouting — the answer a visitor gets past their daily allowance',
     }
     const matrixFn = vi.fn(() => Promise.resolve([{ meters: 1000, seconds: 120 }]))
     const cache = new NearestCacheService()
-    const quota = new NearestQuotaService()
+    const quota = new RouteQuotaService()
 
     const service = new NearestService(
       { findNearestCandidates } as never,

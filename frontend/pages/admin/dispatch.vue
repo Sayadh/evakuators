@@ -192,6 +192,16 @@ const coordinatesText = ref('')
 const coordinatesError = ref('')
 const lastCoordinates = ref<{ latitude: number; longitude: number } | null>(null)
 const distanceCandidates = ref<DispatchCandidateByDistance[]>([])
+/**
+ * Whether the distances on screen are road distances.
+ *
+ * `true` for every normal search. It goes false only when the routing provider
+ * could not be reached or the shared daily budget is spent — and then the list
+ * is ordered by straight line, which in a country of gorges can put the wrong
+ * driver first. The dispatcher is about to tell somebody how long to wait, so
+ * they are told rather than left to assume.
+ */
+const distanceRouted = ref(true)
 const distanceLoading = ref(false)
 const distanceLoadError = ref('')
 
@@ -214,9 +224,11 @@ async function fetchByCoordinates(latitude: number, longitude: number): Promise<
       filter.value,
     )
     distanceCandidates.value = answer.items
+    distanceRouted.value = answer.routed
   } catch (error) {
     distanceLoadError.value = extractErrorMessage(error, 'Վարորդներին բեռնել չհաջողվեց։')
     distanceCandidates.value = []
+    distanceRouted.value = true
   } finally {
     distanceLoading.value = false
   }
@@ -662,6 +674,17 @@ useSeoMetaData({
 
             <p v-if="distanceLoadError" class="dispatch__error" role="alert">{{ distanceLoadError }}</p>
             <p v-if="distanceLoading" class="dispatch__muted">Բեռնվում է…</p>
+
+            <!-- Only when the road ranking did not happen. Normally silent:
+                 a line explaining that the distances are correct would be one
+                 more thing to read on every call. -->
+            <p
+              v-else-if="!distanceRouted && distanceCandidates.length > 0"
+              class="dispatch__muted"
+            >
+              Հեռավորությունը ուղիղ գծով է, ոչ թե ճանապարհով — երթուղիների
+              ծառայությունը հասանելի չէ։ Հերթականությունը կարող է ճշգրիտ չլինել։
+            </p>
 
             <p v-else-if="distanceCandidates.length === 0" class="dispatch__empty">
               Այս կետի շուրջ վարորդ չի գտնվել։

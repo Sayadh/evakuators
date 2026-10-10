@@ -1,11 +1,10 @@
 import { Module } from '@nestjs/common'
+import { RoutingModule } from '../routing/routing.module'
 import { TowTrucksModule } from '../tow-trucks/tow-trucks.module'
 import { NearestCacheService } from './nearest-cache.service'
-import { NearestQuotaService } from './nearest-quota.service'
 import { NearestController } from './nearest.controller'
 import { NearestRepository } from './nearest.repository'
 import { NearestService } from './nearest.service'
-import { RouteMatrixService } from './route-matrix.service'
 
 /**
  * The "nearest evacuator" search.
@@ -17,14 +16,8 @@ import { RouteMatrixService } from './route-matrix.service'
  * folder and one line in `app.module.ts` (the same property `analytics` has).
  */
 @Module({
-  imports: [TowTrucksModule],
+  imports: [TowTrucksModule, RoutingModule],
   controllers: [NearestController],
-  providers: [
-    NearestService,
-    NearestRepository,
-    RouteMatrixService,
-    NearestCacheService,
-    NearestQuotaService,
-  ],
+  providers: [NearestService, NearestRepository, NearestCacheService],
 })
 export class NearestModule {}

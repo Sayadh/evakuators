@@ -1,6 +1,8 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { assertWithinArmenia } from '../common/coordinates'
 import { ReviewsRepository } from '../reviews/reviews.repository'
+import { RouteMatrixService, type RouteMatrixEntry } from '../routing/route-matrix.service'
+import { RouteQuotaService } from '../routing/route-quota.service'
 import { isFeaturedNow } from '../tow-trucks/featured'
 import { derivePaymentStatus } from '../subscriptions/subscription-status'
 import { SubscriptionsRepository } from '../subscriptions/subscriptions.repository'
@@ -83,6 +85,8 @@ export class DispatchService {
     private readonly dispatchRepository: DispatchRepository,
     private readonly reviewsRepository: ReviewsRepository,
     private readonly subscriptionsRepository: SubscriptionsRepository,
+    private readonly routeMatrix: RouteMatrixService,
+    private readonly routeQuota: RouteQuotaService,
   ) {}
 
   async listCandidates(
@@ -123,12 +127,27 @@ export class DispatchService {
    * Who is closest to a point the dispatcher typed or read off a map —
    * "search by coordinates", alongside `listCandidates`'s "search by place".
    *
-   * Straight-line distance only, deliberately: this is the dispatcher's own
-   * screen, not the customer-facing `nearest-tow-trucks` search, and it does
-   * not draw on that search's OpenRouteService quota — a road-accurate ranking
-   * here would mean two features racing for one shared daily budget for a
-   * screen where the operator already applies their own judgement on top of
-   * the number.
+   * Ranked by ROAD distance, in two steps — the same shape `/evakuator` uses,
+   * and for the same reason:
+   *
+   * 1. **PostGIS picks the candidates.** One indexed query, free, and a good
+   *    enough filter: a driver 90 km away in a straight line is never the
+   *    road-nearest.
+   * 2. **One matrix request ranks them.** Straight-line distance is a bad
+   *    ranking — a driver 3 km away across a gorge is further by road than one
+   *    6 km away on the highway, and in a country of gorges that is not a
+   *    corner case. The dispatcher is about to tell somebody how long to wait.
+   *
+   * This screen used to stop at step 1, on the reasoning that it should not
+   * compete with the visitor-facing search for one shared ORS budget. The
+   * ranking it produced was wrong often enough that the saving was not worth
+   * it; the budget is one count for both (`RouteQuotaService`), and a
+   * dispatcher's handful of searches a day sits inside it comfortably.
+   *
+   * Degrades rather than fails: no budget left, a timeout, or a provider error
+   * all leave the straight-line order standing and set `routed: false`, which
+   * the screen says out loud. An unreachable routing service must never be the
+   * reason a dispatcher cannot find a driver.
    */
   async listCandidatesByCoordinates(
     latitude: number,
@@ -145,9 +164,32 @@ export class DispatchService {
       DISPATCH_COORDINATES_RADIUS_METERS,
       DISPATCH_COORDINATES_LIMIT,
     )
-    if (distances.length === 0) return { latitude, longitude, items: [] }
+    if (distances.length === 0) return { latitude, longitude, items: [], routed: false }
 
-    const distanceById = new Map(distances.map((row) => [row.id, row.distanceMeters]))
+    // Checked and consumed before the call goes out, not after: a request that
+    // times out or returns a 5xx has still spent a slot against ORS's own
+    // counter, so waiting to see whether it worked would let this keep trying
+    // past the point ORS has already cut it off.
+    let matrix: (RouteMatrixEntry | null)[] | null = null
+    if (this.routeQuota.hasRemaining()) {
+      this.routeQuota.consume()
+      matrix = await this.routeMatrix.matrix(
+        { latitude, longitude },
+        distances.map((row) => ({ latitude: row.latitude, longitude: row.longitude })),
+      )
+    }
+
+    // Per driver, not per response: ORS can answer for most destinations and
+    // return null for one it cannot reach by road. That driver keeps their
+    // straight-line number rather than being dropped — they are still somebody
+    // the dispatcher can ring.
+    const distanceById = new Map(
+      distances.map((row, index) => [
+        row.id,
+        matrix?.[index]?.meters ?? row.straightLineMeters,
+      ]),
+    )
+
     const ids = distances.map((row) => row.id)
     const [trucks, lookups] = await Promise.all([
       this.dispatchRepository.findCandidatesByIds(ids),
@@ -160,9 +202,11 @@ export class DispatchService {
       // Re-sorted explicitly: `findCandidatesByIds` does not preserve the
       // order `findCandidatesByDistance` returned (Prisma's `id: { in }`
       // does not), and "nearest first" is the entire point of this search.
+      // After the matrix step that order is the ROAD order, which is a
+      // different order — this sort is what applies it.
       .sort((a, b) => a.distanceMeters - b.distanceMeters)
 
-    return { latitude, longitude, items }
+    return { latitude, longitude, items, routed: matrix !== null }
   }
 
   /**

@@ -73,4 +73,13 @@ export interface DispatchCandidatesByCoordinates {
   latitude: number
   longitude: number
   items: DispatchCandidateByDistance[]
+  /**
+   * Whether `distanceMeters` is a road distance or a straight line.
+   *
+   * The backend ranks these by road — a driver 3 km away across a gorge is
+   * further than one 6 km away on the highway — but the routing call can fail,
+   * time out, or find the shared daily budget spent. The order still stands,
+   * the number is just measured differently, and the screen says which.
+   */
+  routed: boolean
 }

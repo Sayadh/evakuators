@@ -106,6 +106,17 @@ export interface DispatchCandidatesByCoordinatesApi {
   latitude: number
   longitude: number
   items: DispatchCandidateByDistanceApi[]
+  /**
+   * Whether `distanceMeters` is a ROAD distance or a straight line.
+   *
+   * The search asks the routing provider to rank these candidates by road —
+   * a driver 3 km away across a gorge is further than one 6 km away on the
+   * highway — but that call can fail, time out, or find the shared daily
+   * budget already spent. When it does, the straight-line order stands and
+   * this says so, because a dispatcher reading «4 կմ» is about to tell a
+   * stranded customer how long to wait.
+   */
+  routed: boolean
 }
 
 /** What a recorded referral answers back with */

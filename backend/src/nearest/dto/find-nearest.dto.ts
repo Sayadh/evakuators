@@ -52,7 +52,7 @@ export class FindNearestDto {
    *
    * The inverse is *not* true and must never be added — a client flag meaning
    * "route this one for me anyway" would let anyone spend the shared budget at
-   * will, which is exactly what `NearestQuotaService` exists to bound.
+   * will, which is exactly what `RouteQuotaService` exists to bound.
    */
   @IsOptional()
   @IsBoolean({ message: 'skipRouting-ը պետք է լինի boolean' })

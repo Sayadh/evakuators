@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import type { AppConfig } from '../config/configuration'
-import { ROUTE_MATRIX_TIMEOUT_MS } from './nearest.constants'
+import { ROUTE_MATRIX_TIMEOUT_MS } from './routing.constants'
 
 /**
  * One origin, many destinations, one request.
@@ -21,9 +21,9 @@ import { ROUTE_MATRIX_TIMEOUT_MS } from './nearest.constants'
  * little of it. The key configured for this deployment is provisioned for
  * **500 requests/day** (not the larger figure sometimes advertised for the
  * free tier in general — tiers and keys vary, and 500 is the number that is
- * real for this platform). `NearestQuotaService` tracks calls against that
+ * real for this platform). `RouteQuotaService` tracks calls against that
  * real number and degrades the search to straight-line distances before it
- * could ever be exceeded — see `NEAREST_ORS_DAILY_QUOTA`.
+ * could ever be exceeded — see `ROUTE_ORS_DAILY_QUOTA`.
  *
  * The alternative that keeps getting suggested is OSRM's public demo server,
  * which is free and needs no key. Its own usage policy rules it out here: it is
@@ -45,7 +45,7 @@ import { ROUTE_MATRIX_TIMEOUT_MS } from './nearest.constants'
  * Every failure path returns `null` rather than throwing: an unreachable routing
  * service must degrade the page to straight-line distances, never break it. The
  * caller treats `null` as "no road data" and says so on screen (see
- * NearestService and docs/nearest-search.md § Fallback).
+ * NearestService, DispatchService and docs/nearest-search.md § Fallback).
  */
 
 /** Metres and seconds for one destination, positionally aligned with the input */

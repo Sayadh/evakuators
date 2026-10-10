@@ -13,10 +13,20 @@ export interface ReferralStatsRow {
   lastDispatchedAt: Date
 }
 
-/** A distance-ranked id, as PostGIS hands it back — nothing else, see findCandidatesByDistance */
+/**
+ * A distance-ranked id and the driver's own parking spot, as PostGIS hands them
+ * back — see findCandidatesByDistance.
+ *
+ * The coordinates ride along because the straight-line distance is only the
+ * PREFILTER now: the service routes these same points to rank them by road
+ * (see `DispatchService.listCandidatesByCoordinates`), and fetching them in
+ * this query is free where a second read would not be.
+ */
 export interface DispatchDistanceRow {
   id: number
-  distanceMeters: number
+  straightLineMeters: number
+  latitude: number
+  longitude: number
 }
 
 /**
@@ -173,10 +183,14 @@ export class DispatchRepository {
    * general evacuator, the same case `NearestRepository` reasons about for the
    * public page. Confirmed with the product owner rather than assumed.
    *
-   * ids and distances only, same reasoning as `NearestRepository`: selecting
-   * the card columns here would mean a second copy of `CANDIDATE_SELECT` in
-   * raw SQL. `DispatchService` fetches the actual rows through
-   * `findCandidatesByIds`.
+   * ids, distances and coordinates only, same reasoning as `NearestRepository`:
+   * selecting the card columns here would mean a second copy of
+   * `CANDIDATE_SELECT` in raw SQL. `DispatchService` fetches the actual rows
+   * through `findCandidatesByIds`.
+   *
+   * What this answers is "who is PLAUSIBLY near", not "who is nearest" —
+   * straight-line order is a good filter and a bad ranking, so the service
+   * routes these candidates before showing them. Hence the coordinates.
    */
   async findCandidatesByDistance(
     latitude: number,
@@ -186,13 +200,17 @@ export class DispatchRepository {
   ): Promise<DispatchDistanceRow[]> {
     // ST_MakePoint takes X then Y — longitude first, same order as the
     // generated column in the migration and the same bug if reversed.
-    const rows = await this.prisma.$queryRaw<{ id: number; distanceMeters: number }[]>`
+    const rows = await this.prisma.$queryRaw<
+      { id: number; straightLineMeters: number; latitude: Prisma.Decimal; longitude: Prisma.Decimal }[]
+    >`
       WITH origin AS (
         SELECT ST_SetSRID(ST_MakePoint(${longitude}::double precision, ${latitude}::double precision), 4326)::geography AS point
       )
       SELECT
         t."id",
-        ST_Distance(t."location", o.point) AS "distanceMeters"
+        ST_Distance(t."location", o.point) AS "straightLineMeters",
+        t."latitude",
+        t."longitude"
       FROM "TowTruck" t, origin o
       WHERE t."isActive" = true
         AND t."vehicleType" NOT IN (${Prisma.join([...SPECIALIST_VEHICLE_TYPES])})
@@ -202,11 +220,17 @@ export class DispatchRepository {
       LIMIT ${limit}::int
     `
 
-    // $queryRaw hands back whatever the driver produced: distanceMeters comes
-    // from ST_Distance on a double precision expression, which Prisma already
-    // surfaces as a JS number — nothing to normalise, unlike the DECIMAL
-    // latitude/longitude columns NearestRepository has to unwrap.
-    return rows.map((row) => ({ id: row.id, distanceMeters: Number(row.distanceMeters) }))
+    // `straightLineMeters` comes from ST_Distance on a double precision
+    // expression, which Prisma already surfaces as a JS number. The two
+    // coordinate columns are DECIMAL and arrive as `Prisma.Decimal`, so they go
+    // through `Number` for real — same unwrapping NearestRepository does, and
+    // the same reasoning as `decimalToNumber()` in common/coordinates.ts.
+    return rows.map((row) => ({
+      id: row.id,
+      straightLineMeters: Number(row.straightLineMeters),
+      latitude: Number(row.latitude),
+      longitude: Number(row.longitude),
+    }))
   }
 
   /**

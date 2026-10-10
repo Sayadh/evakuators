@@ -13,7 +13,7 @@ import type { NearestSearchApi } from './nearest.types'
  * is far above what a person retrying a permission prompt produces, and far
  * below what would matter to the budget. This is the only per-caller limit on
  * this endpoint — the daily ORS budget itself is tracked globally, not per IP,
- * by `NearestQuotaService`, and running out of it degrades the search rather
+ * by `RouteQuotaService`, and running out of it degrades the search rather
  * than refusing it, so there is nothing here for `req.ip` to key.
  *
  * `200`, not `201`: `@Post` defaults to 201 in Nest, and nothing is created —

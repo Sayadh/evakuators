@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { armeniaDateKey } from '../common/armenia-day'
-import { NEAREST_ORS_DAILY_CALL_LIMIT } from './nearest.constants'
+import { ROUTE_ORS_DAILY_CALL_LIMIT } from './routing.constants'
 
 /**
  * How many OpenRouteService matrix calls this app has made today, against the
@@ -14,7 +14,7 @@ import { NEAREST_ORS_DAILY_CALL_LIMIT } from './nearest.constants'
  * modest number of distinct addresses collectively blow through that shared
  * budget, while a per-IP cap set high enough not to bite protected nothing.
  * This counts the quantity that actually needs protecting: total matrix
- * calls made today, platform-wide. See `NEAREST_ORS_DAILY_QUOTA` and
+ * calls made today, platform-wide. See `ROUTE_ORS_DAILY_QUOTA` and
  * docs/nearest-search.md.
  *
  * ## What happens at the cap: nothing is refused
@@ -42,8 +42,8 @@ import { NEAREST_ORS_DAILY_CALL_LIMIT } from './nearest.constants'
  * claims, never more.
  */
 @Injectable()
-export class NearestQuotaService {
-  private readonly logger = new Logger(NearestQuotaService.name)
+export class RouteQuotaService {
+  private readonly logger = new Logger(RouteQuotaService.name)
   private currentDateKey = ''
   private callsToday = 0
 
@@ -55,7 +55,7 @@ export class NearestQuotaService {
    */
   hasRemaining(now: Date = new Date()): boolean {
     this.rolloverIfNewDay(now)
-    return this.callsToday < NEAREST_ORS_DAILY_CALL_LIMIT
+    return this.callsToday < ROUTE_ORS_DAILY_CALL_LIMIT
   }
 
   /** Records one matrix call attempt against today's budget. */
@@ -63,9 +63,9 @@ export class NearestQuotaService {
     this.rolloverIfNewDay(now)
     this.callsToday += 1
 
-    if (this.callsToday === NEAREST_ORS_DAILY_CALL_LIMIT) {
+    if (this.callsToday === ROUTE_ORS_DAILY_CALL_LIMIT) {
       this.logger.warn(
-        `Nearest-search ORS budget reached (${NEAREST_ORS_DAILY_CALL_LIMIT}/day) — ` +
+        `ORS routing budget reached (${ROUTE_ORS_DAILY_CALL_LIMIT}/day) — ` +
           'remaining searches today will fall back to straight-line distances.',
       )
     }

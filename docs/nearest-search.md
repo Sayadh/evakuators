@@ -127,7 +127,7 @@ half-answered page.
 
 | | Verdict |
 | --- | --- |
-| **OpenRouteService** | Free key, 3,500 locations per matrix, one visitor search is one request, cached 5 minutes. This deployment's key is capped at **500 req/day** — `NearestQuotaService` tracks calls against that real number, not an advertised one. **Chosen.** |
+| **OpenRouteService** | Free key, 3,500 locations per matrix, one visitor search is one request, cached 5 minutes. This deployment's key is capped at **500 req/day** — `RouteQuotaService` tracks calls against that real number, not an advertised one. **Chosen.** |
 | OSRM public demo | Free, no key, but its own usage policy is non-commercial, ≤1 req/s, no uptime guarantee, withdrawable without notice. Fine for a local experiment. |
 | Self-hosted OSRM | Removes those problems, adds an OSM extract, a preprocessing pipeline and ~1 GB RAM to the VPS that already runs everything else. |
 
@@ -246,10 +246,18 @@ the per-IP number small enough to actually bound that risk (closer to
 Armenian mobile carriers share one public address across many phones, so a
 low per-IP number refuses real people, not abusers.
 
-`NEAREST_ORS_DAILY_QUOTA = 500` and `NEAREST_ORS_DAILY_SAFETY_MARGIN = 20`
+`ROUTE_ORS_DAILY_QUOTA = 500` and `ROUTE_ORS_DAILY_SAFETY_MARGIN = 20`
+
+That budget is **shared**. `/admin/dispatch`'s coordinate search routes its
+candidates too (`docs/api-reference.md` § the dispatch endpoints), against the
+same key and the same counter — one allowance, first come first served. The
+dispatcher's volume is a handful of searches a day beside the visitor
+traffic, and both degrade to straight-line the same way when it is gone; the
+services behind it live in `backend/src/routing/` rather than inside this
+feature for exactly that reason.
 (`backend/src/nearest/nearest.constants.ts`) now cap the thing that actually
 runs out — total matrix calls made today, counted once, platform-wide — with
-20 calls of headroom against a burst. `NearestQuotaService` tracks this single
+20 calls of headroom against a burst. `RouteQuotaService` tracks this single
 counter; there is no per-caller table to size or evict.
 
 ### Running out degrades the search — it does not refuse it

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common'
 import { assertWithinArmenia } from '../common/coordinates'
 import { TowTrucksService } from '../tow-trucks/tow-trucks.service'
 import { NearestCacheService } from './nearest-cache.service'
-import { NearestQuotaService } from './nearest-quota.service'
+import { RouteQuotaService } from '../routing/route-quota.service'
 import {
   NEAREST_CANDIDATE_LIMIT,
   NEAREST_RADIUS_METERS,
@@ -10,7 +10,7 @@ import {
 } from './nearest.constants'
 import { NearestRepository } from './nearest.repository'
 import type { NearestSearchApi, NearestTowTruckApi } from './nearest.types'
-import { RouteMatrixService, type RouteMatrixEntry } from './route-matrix.service'
+import { RouteMatrixService, type RouteMatrixEntry } from '../routing/route-matrix.service'
 
 /**
  * "Which drivers can reach me, and how far away are they."
@@ -37,7 +37,7 @@ export class NearestService {
     private readonly towTrucksService: TowTrucksService,
     private readonly routeMatrix: RouteMatrixService,
     private readonly cache: NearestCacheService,
-    private readonly quota: NearestQuotaService,
+    private readonly quota: RouteQuotaService,
   ) {}
 
   /**
@@ -115,7 +115,7 @@ export class NearestService {
     //   `allowRouting` false  — the visitor asked for the cheap answer, having
     //                           spent today's 2 detailed searches.
     //   no budget remaining   — the platform's shared daily ORS budget is gone
-    //                           (see NearestQuotaService for why that is one
+    //                           (see RouteQuotaService for why that is one
     //                           global count and not a per-visitor one).
     let matrix: (RouteMatrixEntry | null)[] | null = null
     if (allowRouting && this.quota.hasRemaining()) {

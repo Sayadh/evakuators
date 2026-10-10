@@ -302,87 +302,111 @@ async function withdrawProfileChange(): Promise<void> {
   }
 }
 
-const existingImages = ref<{ id: number; url: string }[]>([])
-const newImageFiles = shallowRef<File[]>([])
-const newImagePreviews = ref<string[]>([])
-
 /**
- * Ids of the newly picked files already uploaded, in `newImageFiles` order.
+ * The gallery, as ONE ordered list whose first slot is the main photo.
  *
- * Same reason as register.vue: uploads are one throttled request per photo
- * (10/60s per IP) and the save itself can still be rejected afterwards
- * (description too short, and so on). Without this, every retry re-uploads
- * every photo, so the second attempt can hit a 429 the driver can't act on —
- * and each abandoned attempt leaves orphans in Storage. Cleared whenever the
- * selection changes, since an id points at one specific uploaded file.
+ * ## Why one list and not "existing" + "new"
+ *
+ * `applyGallery` on the backend rewrites every `position` from the array index
+ * it is sent, so **index 0 IS the main photo** — the one the listing card and
+ * every search result show. While this screen held two separate arrays
+ * (uploaded-already and picked-just-now) that fact was true by accident: the
+ * main photo was whatever happened to sort first after the two were
+ * concatenated, and a driver who wanted to change it had no way to say so.
+ *
+ * As one list the order is the answer, the form can show the main photo on its
+ * own — the way registration already asks for it — and replacing it is writing
+ * slot 0.
+ *
+ * A `shallowRef` deliberately: `File` objects have no business going through
+ * Vue's `reactive()` proxy, so every change REASSIGNS `.value` rather than
+ * mutating in place. An in-place `push`/`splice` would not notify anything.
  */
-const uploadedNewImageIds = ref<number[]>([])
-
-function resetUploadedNewImages(): void {
-  uploadedNewImageIds.value = []
+interface ExistingPhoto {
+  id: number
+  url: string
 }
+
+interface PickedPhoto {
+  file: File
+  preview: string
+  /**
+   * Set once this file has been uploaded, so a retry does not upload it again.
+   *
+   * Uploads are one throttled request per photo (10/60s per IP) and the save
+   * itself can still be rejected afterwards (description too short, and so
+   * on). Without this, every retry re-uploads every photo — so the second
+   * attempt can hit a 429 the driver cannot act on, and each abandoned attempt
+   * leaves orphans in Storage. It lives on the slot rather than in a parallel
+   * array of indexes, which is what it was before: an id that travels WITH its
+   * file cannot be shifted onto a different photo by a removal.
+   */
+  uploadedId?: number
+}
+
+type GallerySlot = ExistingPhoto | PickedPhoto
+
+const gallery = shallowRef<GallerySlot[]>([])
+
+function isExistingPhoto(slot: GallerySlot): slot is ExistingPhoto {
+  return 'id' in slot
+}
+
+function photoSrc(slot: GallerySlot): string {
+  return isExistingPhoto(slot) ? slot.url : slot.preview
+}
+
+const mainPhoto = computed<GallerySlot | null>(() => gallery.value[0] ?? null)
+const extraPhotos = computed<GallerySlot[]>(() => gallery.value.slice(1))
+
+const MAX_GALLERY_PHOTOS = 6
 
 /**
- * A published listing must always keep at least one photo — the backend
- * rejects an empty imageIds array (UpdateMyTowTruckDto), so blocking the last
- * removal here turns a confusing save-time rejection into an obvious disabled
- * button. Newly picked (not yet uploaded) files count toward the total, so a
- * driver can still swap their only photo: add the new one first, then drop
- * the old one.
+ * Replaces the main photo — the whole reason this slot is separate.
+ *
+ * Replace, not "add": a listing must always keep at least one photo (the
+ * backend rejects an empty `imageIds`), and the main slot is what guarantees
+ * it. There is no × on it for the same reason; the way to change the first
+ * thing customers see is to put a different picture there.
  */
-const totalImageCount = computed(() => existingImages.value.length + newImageFiles.value.length)
-const canRemoveImage = computed(() => totalImageCount.value > 1)
-
-function removeExistingImage(index: number): void {
-  if (!canRemoveImage.value) return
-  existingImages.value.splice(index, 1)
-}
-
-function onNewImagesChange(event: Event): void {
+function onMainImageChange(event: Event): void {
   const input = event.target as HTMLInputElement
-  let files = Array.from(input.files ?? [])
-  
-  const currentTotal = existingImages.value.length + newImageFiles.value.length
-  const allowed = 6 - currentTotal
-  
-  if (allowed <= 0) {
-    if (input) input.value = ''
-    return
-  }
-  
-  if (files.length > allowed) {
-    files = files.slice(0, allowed)
-  }
-
-  // Reassigning `.value` rather than mutating in place — `newImageFiles` is a
-  // `shallowRef` (deliberately: File objects should not go through Vue's
-  // reactive() proxy), so an in-place `.push()` never notifies. `canRemoveImage`
-  // read `newImageFiles.value.length` and stayed stuck at its last computed
-  // value, leaving the remove buttons disabled even after more photos were
-  // added right after hitting the 1-photo floor.
-  newImageFiles.value = [...newImageFiles.value, ...files]
-  // Appending is safe for already-uploaded ids (they keep their indexes), but
-  // resetting keeps the invariant trivially true rather than subtly true.
-  resetUploadedNewImages()
-
-  const previews = files.map((file) => URL.createObjectURL(file))
-  newImagePreviews.value.push(...previews)
-
+  const file = input.files?.[0]
   if (input) input.value = ''
+  if (!file) return
+
+  const previous = gallery.value[0]
+  if (previous && !isExistingPhoto(previous)) URL.revokeObjectURL(previous.preview)
+
+  const next = { file, preview: URL.createObjectURL(file) }
+  gallery.value = gallery.value.length > 0 ? [next, ...gallery.value.slice(1)] : [next]
 }
 
-function removeNewImage(index: number): void {
-  if (!canRemoveImage.value) return
-  URL.revokeObjectURL(newImagePreviews.value[index])
-  // Same reassignment reason as onNewImagesChange above — .splice() on a
-  // shallowRef's array would not notify canRemoveImage's dependents either.
-  newImageFiles.value = newImageFiles.value.filter((_, i) => i !== index)
-  newImagePreviews.value.splice(index, 1)
-  resetUploadedNewImages()
+function onExtraImagesChange(event: Event): void {
+  const input = event.target as HTMLInputElement
+  const allowed = MAX_GALLERY_PHOTOS - gallery.value.length
+  const files = Array.from(input.files ?? []).slice(0, Math.max(allowed, 0))
+  if (input) input.value = ''
+  if (files.length === 0) return
+
+  gallery.value = [
+    ...gallery.value,
+    ...files.map((file) => ({ file, preview: URL.createObjectURL(file) })),
+  ]
+}
+
+/** `index` counts within the EXTRAS, so slot 0 — the main photo — is unreachable */
+function removeExtraImage(index: number): void {
+  const slot = gallery.value[index + 1]
+  if (!slot) return
+  if (!isExistingPhoto(slot)) URL.revokeObjectURL(slot.preview)
+  gallery.value = gallery.value.filter((_, i) => i !== index + 1)
 }
 
 onBeforeUnmount(() => {
-  newImagePreviews.value.forEach((url) => URL.revokeObjectURL(url))
+  for (const slot of gallery.value) {
+    if (!isExistingPhoto(slot)) URL.revokeObjectURL(slot.preview)
+  }
 })
 
 function fillFormFromTruck(data: TowTruck): void {
@@ -472,19 +496,20 @@ function fillFormFromTruck(data: TowTruck): void {
   form.priceWaitingPerHour = numberFieldText(data.pricing?.waitingPerHour)
   form.priceNightSurchargePercent = numberFieldText(data.pricing?.nightSurchargePercent)
   form.priceExtraLoading = numberFieldText(data.pricing?.extraLoading)
-  existingImages.value = data.imageDetails ? [...data.imageDetails] : []
-
-  // The picked-but-not-yet-published photos, cleared here and only here.
+  // The gallery is rebuilt from the server's copy, picked-but-unpublished
+  // photos and all — cleared here and only here.
   //
-  // A queued save keeps them, so that saving twice does not drop the photo out
-  // of the pending edit (see onSubmit). This runs when the profile is loaded
-  // fresh, which is the one moment the server's copy is authoritative: whatever
-  // was approved is now in `existingImages`, and whatever was not is a choice
-  // the driver can make again.
-  newImageFiles.value = []
-  resetUploadedNewImages()
-  newImagePreviews.value.forEach((url) => URL.revokeObjectURL(url))
-  newImagePreviews.value = []
+  // A queued save keeps them, so that saving twice does not drop a photo out of
+  // the pending edit (see onSubmit). This runs when the profile is loaded
+  // fresh, which is the one moment the server's copy is authoritative:
+  // whatever was approved is in `imageDetails` now, and whatever was not is a
+  // choice the driver can make again.
+  for (const slot of gallery.value) {
+    if (!isExistingPhoto(slot)) URL.revokeObjectURL(slot.preview)
+  }
+  // `imageDetails` arrives in IMAGE_ORDER — position, then id — so its first
+  // entry is the main photo, which is what this screen's first slot means.
+  gallery.value = data.imageDetails ? [...data.imageDetails] : []
 }
 
 /**
@@ -891,19 +916,28 @@ async function submit(): Promise<void> {
       priceExtraLoading: toOptionalInt(form.priceExtraLoading),
     }
 
-    // Resumes from where a previous attempt stopped — see uploadedNewImageIds
-    for (const file of newImageFiles.value.slice(uploadedNewImageIds.value.length)) {
-      const image = await imageRepository.upload(file)
-      uploadedNewImageIds.value = [...uploadedNewImageIds.value, image.id]
+    // Only the slots that have not been uploaded yet — a retry resumes rather
+    // than starting over. See `PickedPhoto.uploadedId`.
+    for (const slot of gallery.value) {
+      if (!isExistingPhoto(slot) && slot.uploadedId === undefined) {
+        const image = await imageRepository.upload(slot.file)
+        slot.uploadedId = image.id
+      }
     }
-    // Deduplicated, because a newly uploaded id can legitimately appear on both
-    // sides: once an edit is approved the photo joins `existingImages`, while
-    // `uploadedNewImageIds` still remembers uploading it (see below for why
-    // that memory is kept). Sending it twice would put the same photo in the
-    // gallery twice and make the diff look like a change on a save that
+    // In gallery order, so the FIRST id is the main photo — `applyGallery`
+    // rewrites every position from this array's index.
+    //
+    // Deduplicated, because one id can legitimately appear twice: once an edit
+    // is approved the photo joins `imageDetails`, while the slot that uploaded
+    // it may still be in hand. Sending it twice would put the same photo in
+    // the gallery twice and make the diff look like a change on a save that
     // changed nothing.
     payload.imageIds = [
-      ...new Set([...existingImages.value.map((i) => i.id), ...uploadedNewImageIds.value]),
+      ...new Set(
+        gallery.value
+          .map((slot) => (isExistingPhoto(slot) ? slot.id : slot.uploadedId))
+          .filter((id): id is number => id !== undefined),
+      ),
     ]
 
     // The response is the queue status, not a profile: nothing was published,
@@ -933,8 +967,9 @@ async function submit(): Promise<void> {
     // nothing on screen would have said so.
     //
     // Keeping them means the next save resubmits the same edit, which is what
-    // the driver expects, and `uploadedNewImageIds` still prevents re-uploading
-    // the same file. `load()` clears the lot once the page is opened again.
+    // the driver expects, and each slot's own `uploadedId` still prevents
+    // re-uploading the same file. `load()` rebuilds the gallery from the
+    // server's copy once the page is opened again.
   } catch (error) {
     saveError.value = extractErrorMessage(error, 'Պահպանել չհաջողվեց, ստուգիր դաշտերը։')
   } finally {
@@ -1492,57 +1527,69 @@ async function logout(): Promise<void> {
         <details class="dashboard-section">
           <summary class="dashboard-summary">Նկարներ</summary>
           <div class="dashboard-details-content">
-          <div class="dashboard-images">
-            <!-- Existing images -->
-            <div
-              v-for="(image, index) in existingImages"
-              :key="'existing-' + image.id"
-              class="dashboard-image-wrap"
-            >
-              <img :src="image.url" alt="" class="dashboard-image" >
-              <button
-                type="button"
-                class="dashboard-image-remove"
-                aria-label="Հեռացնել նկարը"
-                :disabled="!canRemoveImage"
-                @click="removeExistingImage(index)"
-              >
-                <AppIcon name="close" :size="14" />
-              </button>
+          <!-- The main photo, on its own — the same split registration asks
+               for, and for the same reason: this is the one customers see on
+               the listing card and in every search result, and while it was
+               just "whichever of the six sorted first" a driver had no way to
+               choose it. Slot 0 of the gallery IS this photo (see `gallery`). -->
+          <div class="dashboard-photos">
+            <h4 class="dashboard-photos__title">Գլխավոր նկար</h4>
+            <p class="dashboard-photos__hint">
+              Այս նկարն է երևում որոնման արդյունքներում և Ձեր քարտի վրա։
+            </p>
+
+            <div class="dashboard-images">
+              <!-- No × here. A listing must keep at least one photo, and this
+                   slot is what guarantees it — the way to change the first
+                   thing customers see is to put a different picture in it. -->
+              <div v-if="mainPhoto" class="dashboard-image-wrap">
+                <img :src="photoSrc(mainPhoto)" alt="" class="dashboard-image" >
+              </div>
             </div>
-            
-            <!-- New images previews -->
-            <div
-              v-for="(preview, index) in newImagePreviews"
-              :key="'new-' + index"
-              class="dashboard-image-wrap"
-            >
-              <img :src="preview" alt="" class="dashboard-image" >
-              <button
-                type="button"
-                class="dashboard-image-remove"
-                aria-label="Հեռացնել նկարը"
-                :disabled="!canRemoveImage"
-                @click="removeNewImage(index)"
-              >
-                <AppIcon name="close" :size="14" />
-              </button>
+
+            <div class="dashboard-file-input">
+              <label for="main-image">{{ mainPhoto ? 'Փոխարինել գլխավոր նկարը' : 'Ընտրել գլխավոր նկարը' }}</label>
+              <input id="main-image" type="file" accept="image/*" @change="onMainImageChange" >
             </div>
           </div>
-          
-            <div v-if="existingImages.length + newImageFiles.length < 6" class="dashboard-file-input">
-              <label for="new-images">Ավելացնել նկարներ (մինչև 6 նկար)</label>
+
+          <div class="dashboard-photos">
+            <h4 class="dashboard-photos__title">Մնացած նկարները</h4>
+
+            <div v-if="extraPhotos.length" class="dashboard-images">
+              <div
+                v-for="(photo, index) in extraPhotos"
+                :key="isExistingPhoto(photo) ? 'existing-' + photo.id : 'picked-' + photo.preview"
+                class="dashboard-image-wrap"
+              >
+                <img :src="photoSrc(photo)" alt="" class="dashboard-image" >
+                <button
+                  type="button"
+                  class="dashboard-image-remove"
+                  aria-label="Հեռացնել նկարը"
+                  @click="removeExtraImage(index)"
+                >
+                  <AppIcon name="close" :size="14" />
+                </button>
+              </div>
+            </div>
+
+            <div v-if="gallery.length < MAX_GALLERY_PHOTOS" class="dashboard-file-input">
+              <label for="new-images">
+                Ավելացնել նկարներ (ևս {{ MAX_GALLERY_PHOTOS - gallery.length }})
+              </label>
               <input
                 id="new-images"
                 type="file"
                 accept="image/*"
                 multiple
-                @change="onNewImagesChange"
+                @change="onExtraImagesChange"
               >
             </div>
             <div v-else class="dashboard-file-input">
-              <label>Նկարների առավելագույն քանակը (6) լրացված է։</label>
+              <label>Նկարների առավելագույն քանակը ({{ MAX_GALLERY_PHOTOS }}) լրացված է։</label>
             </div>
+          </div>
           </div>
         </details>
 
@@ -2082,6 +2129,29 @@ details[open] .dashboard-summary::after {
   color: var(--color-success);
 }
 
+/* The two halves of the gallery — the main photo, then the rest. Separated by
+   a rule rather than by a card each: they are one question asked twice, and a
+   second border inside an already-open accordion would read as two sections of
+   the form. */
+.dashboard-photos {
+  & + & {
+    margin-top: var(--space-4);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--color-border);
+  }
+
+  &__title {
+    margin: 0 0 var(--space-1);
+    font-size: 0.95rem;
+  }
+
+  &__hint {
+    margin: 0 0 var(--space-3);
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+  }
+}
+
 .dashboard-images {
   display: flex;
   flex-wrap: wrap;
@@ -2120,14 +2190,8 @@ details[open] .dashboard-summary::after {
   box-shadow: var(--shadow-sm);
   transition: background var(--transition);
 
-  &:hover:not(:disabled) {
+  &:hover {
     background: #c0392b;
-  }
-
-  // Last remaining photo — a listing can never drop to zero images
-  &:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
   }
 }
 

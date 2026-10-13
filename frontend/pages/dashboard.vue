@@ -1211,6 +1211,20 @@ async function logout(): Promise<void> {
             :status="subscription?.status"
             :paid-until="subscription?.paidUntil"
           />
+
+          <!-- The placement, under the subscription and inside the same
+               section, because it is the same question — what a driver pays
+               for — and because the thing it depends on is directly above it:
+               no live subscription, nothing to sell, and the sentence that says
+               so points up at these very plans.
+
+               It renders nothing at all for a deactivated listing; the block
+               decides that from its own status call rather than from anything
+               this page knows, so the rule holds wherever it is placed. -->
+          <div class="dashboard-promotion">
+            <h4 class="dashboard-promotion__title">Առաջխաղացում</h4>
+            <PromotionBlock />
+          </div>
         </div>
       </details>
 
@@ -2133,6 +2147,19 @@ details[open] .dashboard-summary::after {
    a rule rather than by a card each: they are one question asked twice, and a
    second border inside an already-open accordion would read as two sections of
    the form. */
+/* Divided from the plans above it by a rule, not by a card: one section, two
+   things to buy. */
+.dashboard-promotion {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+
+  &__title {
+    margin: 0 0 var(--space-3);
+    font-size: 1rem;
+  }
+}
+
 .dashboard-photos {
   & + & {
     margin-top: var(--space-4);

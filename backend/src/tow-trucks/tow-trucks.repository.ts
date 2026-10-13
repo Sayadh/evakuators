@@ -169,41 +169,6 @@ export class TowTrucksRepository {
     })
   }
 
-  /**
-   * Card columns for the admin-curated homepage picks.
-   *
-   * An admin ticking `isFeatured` on a specialist truck does not put it on the
-   * homepage: the homepage is the most general listing there is. The flag is
-   * left alone rather than refused at the write, because it is also what
-   * `/admin` reads back — and a truck that stops being `heavy-duty` should
-   * simply reappear here, the same way `derivesHeavyEquipment` is applied on
-   * read rather than baked in.
-   */
-  findFeaturedCards(now: Date): Promise<TowTruckCardRow[]> {
-    return this.prisma.towTruck.findMany({
-      where: {
-        isActive: true,
-        isFeatured: true,
-        // The window, applied in SQL rather than trusting the flag: the sweep
-        // runs hourly, so between two runs `isFeatured` alone would keep an
-        // expired placement on the homepage. Legacy grants (`featuredUntil`
-        // null) have no end and stay. Mirrors `isFeaturedNow`.
-        OR: [{ featuredUntil: null }, { featuredUntil: { gt: now } }],
-        vehicleType: GENERAL_DISCOVERY_VEHICLE_TYPE,
-      },
-      select: CARD_SELECT,
-      // Newest placement first, the same order the city pages use. `createdAt`
-      // as the tiebreak keeps the legacy picks (no `featuredAt`) in the order
-      // they had before this feature existed.
-      //
-      // `nulls: 'last'` is not decoration: Postgres sorts NULLs FIRST on a
-      // DESC, so a plain `featuredAt: 'desc'` would have put every legacy
-      // open-ended pick — the ones with no date at all — above every driver who
-      // actually paid. Exactly backwards, and silent.
-      orderBy: [{ featuredAt: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }],
-    })
-  }
-
   findBySlug(slug: string): Promise<TowTruckWithImages | null> {
     return this.prisma.towTruck.findFirst({
       where: { slug, isActive: true },

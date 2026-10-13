@@ -14,7 +14,6 @@ from the server itself (Nuxt SSR over loopback) skip throttling entirely — see
 | --- | --- | --- | --- |
 | `GET` | `/health` | — | `{ status, database: 'up'|'down', timestamp }` — checks DB with `SELECT 1` |
 | `GET` | `/tow-trucks` | — | Returns the **card shape**, not full profiles — see "List vs detail" below. Query: `city`, `district`, `region` (+`regionCities`), `yerevan`, `limit` (default & max 200), `offset` |
-| `GET` | `/tow-trucks/featured` | — | Card shape. Admin-curated pick, `isFeatured: true` only — empty array if the admin hasn't marked any (homepage section then hides itself) |
 | `GET` | `/tow-trucks/coverage` | — | One tiny record per active truck (`location`, `serviceAreas` slugs, `works24Hours`) — the input for every region/city/district `towTruckCount`. No contact details at all. See "List vs detail" |
 | `GET` | `/tow-trucks/:slug` | — | The **only** endpoint that returns a full profile. 404 if not found or `isActive: false` |
 | `GET` | `/tow-trucks/:towTruckId/reviews` | — | Approved reviews only |
@@ -84,6 +83,36 @@ shape, the rating join and the row cap to drift.
 
 `backend/test/vehicle-type-filter.spec.ts` covers all four.
 
+### The driver's own placement — `/my/promotion`
+
+A driver buys their own place at the top of their town page, and refreshes it
+to climb back up. Three routes, all behind `DriverJwtGuard`, all acting on the
+caller's own truck — the id comes from the session, never from a body.
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| `GET` | `/my/promotion` | `{ visible, blockedReason?, activeUntil?, lastRefreshedAt?, refreshesLeft, refreshesPerDay, maxDays, brackets, currency }`. `visible: false` only for a deactivated listing, and the dashboard renders nothing at all then. `blockedReason: 'no-subscription'` shows the block and sells nothing. `brackets` is the price ladder, sent so the page can price a day count without a second copy of the numbers |
+| `POST` | `/my/promotion/payments` | Body `{ days }` — **never an amount**; the price is `promotionPrice(days)` on the server (`promotion-pricing.ts`). Refused when the listing is deactivated, when there is no live subscription, or when `days > maxDays`. Answers with the row plus the Idram form |
+| `POST` | `/my/promotion/refresh` | «Թարմացնել» — sets `featuredAt = now`, which is what the promoted block on a town page is ordered by. Six per Armenia calendar day; the check and the spend are one UPDATE. Answers with the fresh status |
+
+**`maxDays` is bounded by the subscription.** A placement may not outlive the
+access it decorates, so it is the distance from where the placement would start
+— the end of a running one, or now — to the day the subscription runs out,
+capped at `FEATURED_MAX_DAYS`. "Subscription" here means `paidThrough`, real
+money: `coveredUntil` also counts the deadline an admin gives a driver who has
+NOT paid, and that is a request for money rather than money.
+
+**The payment is what grants days**, through Idram's callback — not the driver
+returning to the site, which they may never do. The confirmation marks the row
+PAID and extends the window in one transaction, and `providerTransactionId`'s
+uniqueness is what makes a retried callback add nothing.
+
+The money lives in `SubscriptionPayment` with `kind: PROMOTION` — one ledger,
+two products, because Idram's `EDP_BILL_NO` is our payment id and two tables
+would collide. Every subscription-coverage query filters on `kind`, and a
+promotion row leaves `periodStart`/`periodEnd` null so that even one that did
+not would read it as granting nothing.
+
 ### `?seed=` and `?avoid=` on `GET /tow-trucks`
 
 The listing's ORDER, for the two pages that are about one place — a town
@@ -113,7 +142,7 @@ and the avoidance.
 ### General discovery hides two vehicle types
 
 Applies to `GET /tow-trucks` with no `vehicleType`, `GET
-/tow-trucks/coverage`, `GET /tow-trucks/featured` and `POST /nearest`: none of
+/tow-trucks/coverage` and `POST /nearest`: none of
 them return «Մանիպուլյատոր» or «Ծանր տեխնիկա» trucks. `GET /tow-trucks/:slug`
 does — a specialist profile is a real page, linked from its landing page — and
 so does every `/admin` endpoint.
@@ -514,7 +543,7 @@ Other things worth knowing:
 | `GET` | `/admin/tow-trucks` | Every truck, active or not (unlike the public `/tow-trucks` list). Query: `limit` (default 50, max 200), `offset` |
 | `GET` | `/admin/tow-trucks/count` | `{ total, active, inactive }` — totals across the **whole table**, independent of the pagination above. `inactive` is `total - active`, never a third `count()`, so the three numbers can't disagree with each other. Declared before every `tow-trucks/:id` route in `admin.controller.ts` so the literal segment `count` can never be swallowed by an `:id` param — see `backend/test/admin.controller.count-route.spec.ts`, which asserts that ordering as a general rule, not just for today's route list. Powers the total shown next to "Էվակուատորներ" in the admin panel (`pages/admin/index.vue`) |
 | `PATCH` | `/admin/tow-trucks/:id/active` | Body: `{ isActive: boolean }` — reversible |
-| `PATCH` | `/admin/tow-trucks/:id/featured` | Body: `SetTowTruckFeaturedDto` — `{ isFeatured: boolean, days?: number }`, where `days` is **required when granting** (1-30, `FEATURED_MIN_DAYS`/`FEATURED_MAX_DAYS`) and ignored when revoking. Sets the `featuredAt`/`featuredUntil` window as well as the boolean — see `docs/data-model.md`. Drives the public `GET /tow-trucks/featured` list and the homepage "featured" section, both of which apply the window on read (`isFeaturedNow`) rather than trusting the boolean alone |
+| `PATCH` | `/admin/tow-trucks/:id/featured` | Body: `SetTowTruckFeaturedDto` — `{ isFeatured: boolean, days?: number }`, where `days` is **required when granting** (1-30, `FEATURED_MIN_DAYS`/`FEATURED_MAX_DAYS`) and ignored when revoking. Sets the `featuredAt`/`featuredUntil` window as well as the boolean — see `docs/data-model.md`. Puts the driver at the top of their OWN town or district page and nowhere else (`isPromotedAt`), with the window applied on read (`isFeaturedNow`) rather than the boolean trusted alone. A driver can buy this themselves too — see the `/my/promotion` routes |
 | `PATCH` | `/admin/tow-trucks/:id/heavy-equipment` | Body: `{ heavyEquipment: boolean }` — whether this truck appears on `/tsanr-tehnika` (`?vehicleType=heavy-duty` ORs the type with this flag). Unlike `/featured` it changes public listing results. **Admin-only with no driver counterpart** — see `docs/taxonomies.md` § «Ծանր տեխնիկա». The response echoes the **derived** value: a truck whose `vehicleType` is already `heavy-duty` answers `true` whatever was sent, and nothing is written — so the panel must assign what came back, not what it sent |
 | `PATCH` | `/admin/tow-trucks/:id/phone` | Body: `{ phone: string }` (`+374` + 8 digits). Corrects the main login phone — the driver's own dashboard can't touch this field. Rejected with 400 if another **active** truck already uses it (same uniqueness rule as approval) |
 | `PATCH` | `/admin/tow-trucks/:id/coordinates` | Body `{ latitude, longitude }` — same `SetCoordinatesDto`, same rule and same messages as the driver's route above, deliberately shared so the two audiences can never validate one value differently. Unlike `/phone` this is **not** an admin-only field: it exists so support can fix a pair pasted in the wrong order without asking the driver to log in. Works on deactivated trucks too |
@@ -711,7 +740,7 @@ There are now three shapes, and which one you get depends on the endpoint:
 | Shape | Endpoints | Contains | Size |
 | --- | --- | --- | --- |
 | **Coverage** | `/tow-trucks/coverage` | base location, service-area slugs, `works24Hours` | ~230 B/truck, **no personal data** |
-| **Card** | `/tow-trucks`, `/tow-trucks/featured` | what a listing card renders: main phone, vehicle summary, services, service areas, one thumbnail | ~1.1 KB/truck |
+| **Card** | `/tow-trucks` | what a listing card renders: main phone, vehicle summary, services, service areas, one thumbnail | ~1.1 KB/truck |
 | **Full** | `/tow-trucks/:slug`, `/my/tow-truck` | everything | ~2.0 KB/truck |
 
 Measured on a representative fixture: the card is 54% of the old list row and

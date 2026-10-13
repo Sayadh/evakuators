@@ -122,10 +122,12 @@ describe('the backend applies it to every general read path', () => {
     expect(repository).toContain('notIn: [...SPECIALIST_VEHICLE_TYPES]')
   })
 
-  it('applies it to the listing, the counters, the featured picks and the card fetch', () => {
-    // Four call sites plus the declaration.
+  it('applies it to the listing, the counters and the card fetch', () => {
+    // Three call sites plus the declaration. It was four until the homepage's
+    // featured strip was removed — `isFeatured` buys the top of the driver's
+    // own town page now, and nothing else.
     const uses = repository.split('GENERAL_DISCOVERY_VEHICLE_TYPE').length - 1
-    expect(uses).toBeGreaterThanOrEqual(5)
+    expect(uses).toBeGreaterThanOrEqual(4)
   })
 
   it('filters the nearest search inside the PostGIS query, before LIMIT', () => {

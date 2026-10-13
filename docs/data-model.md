@@ -135,10 +135,12 @@ Notable fields beyond the obvious:
   `docs/analytics.md` § "Side effect: driver contact notices".
 - `isFeatured: Boolean` — admin-only toggle (`PATCH
   /admin/tow-trucks/:id/featured`), unrelated to `works24Hours` or approval
-  status. Drives `GET /tow-trucks/featured` (public) and the homepage
-  "featured trucks" section; nothing sets it automatically, an admin has to
-  flip it in `/admin`. Defaults `false`, no cap on how many can be featured
-  at once.
+  status. Puts the driver at the top of their OWN town or district page
+  (`isPromotedAt`) and nowhere else — the homepage strip this also drove is
+  gone. Set by an admin, or by the driver themselves through `/my/promotion`.
+  Defaults `false`, no cap on how many can hold one at once: the promoted
+  block is ordered by who refreshed last, so a crowded town rotates rather
+  than rationing.
 - `featuredAt` / `featuredUntil: DateTime?` — **the window `isFeatured` is
   true for**, added once the placement became something drivers pay for. The
   boolean deliberately kept its meaning, so no caller that asks "is this

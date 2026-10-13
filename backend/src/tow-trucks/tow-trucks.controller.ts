@@ -13,13 +13,8 @@ export class TowTrucksController {
     return this.towTrucksService.list(query)
   }
 
-  // Both static paths must come before ':slug' — otherwise Nest would match
-  // "featured" / "coverage" as a slug.
-  @Get('featured')
-  getFeatured(): Promise<TowTruckCardApi[]> {
-    return this.towTrucksService.getFeatured()
-  }
-
+  // The static path must come before ':slug' — otherwise Nest would match
+  // "coverage" as a slug.
   /**
    * Minimal per-truck geography footprint, for the region/city/district
    * counters on the browse pages. Exists so those pages stop downloading the

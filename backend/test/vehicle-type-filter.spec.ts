@@ -237,14 +237,6 @@ describe('the specialist types are landing-page-only', () => {
     expect(where.vehicleType).toEqual(HIDDEN)
   })
 
-  it('hides them from the homepage featured picks', () => {
-    // An admin ticking `isFeatured` on a crane truck does not put it on the
-    // homepage — the homepage is the most general listing there is.
-    const where = capturedWhere((repository) => repository.findFeaturedCards())
-    expect(where.isFeatured).toBe(true)
-    expect(where.vehicleType).toEqual(HIDDEN)
-  })
-
   it('hides them from the nearest-driver card fetch', () => {
     // Belt and braces: the PostGIS query already filters them before LIMIT (see
     // NearestRepository), and this states the rule again the way `isActive`

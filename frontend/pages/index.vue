@@ -35,7 +35,6 @@ const seoParagraphs = computed(() => buildHomeParagraphs(locale.value))
     <RegionsSection />
     <HowItWorksSection />
     <BenefitsSection />
-    <FeaturedTowTrucksSection />
 
     <div class="container">
       <FaqSection :items="faqItems" class="home-page__section" />

@@ -117,17 +117,6 @@ export class TowTrucksService {
     return this.attachRatings(trucks)
   }
 
-  /**
-   * The homepage picks — empty when nobody currently holds a placement.
-   *
-   * One `now` for the whole request, taken here: the repository filters the
-   * window in SQL and the mapper decides `promotedAt` from the same instant, so
-   * a placement cannot be live for one and over for the other.
-   */
-  async getFeatured(): Promise<TowTruckCardApi[]> {
-    const trucks = await this.repository.findFeaturedCards(new Date())
-    return this.attachRatings(trucks)
-  }
 
   /**
    * Adds each truck's approved-review aggregate to its card.

@@ -564,7 +564,7 @@ A road corridor page asks with `zone` and no city, which the backend reads as
 driver is in one shuffled group.
 
 Every other listing (marz pages, the Yerevan overview, the vehicle-type pages,
-the homepage's featured section, "similar trucks") is unaffected and still
+"similar trucks") is unaffected and still
 keeps the half-point rating band described in `docs/architecture.md` § "The
 listing order is random" — the `basePlace` tier is scoped to the two search
 pages with a filter sidebar, nowhere else.

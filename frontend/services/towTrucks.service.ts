@@ -169,9 +169,6 @@ function mockFleetFor(vehicleType?: VehicleType) {
   return mockTowTrucks.filter((truck) => mockMatchesVehicleType(truck, vehicleType))
 }
 
-const by24Hours = (a: TowTruckCard, b: TowTruckCard): number =>
-  Number(b.works24Hours) - Number(a.works24Hours)
-
 /** Mock-mode stand-in for `GET /tow-trucks/coverage` */
 function toMockCoverage(truck: TowTruck): TowTruckCoverage {
   return {
@@ -302,24 +299,6 @@ export const towTrucksService = {
     return [...trucks].sort(
       (a, b) => Number(isBasedInRegion(b, regionSlug)) - Number(isBasedInRegion(a, regionSlug)),
     )
-  },
-
-  /**
-   * Admin-curated "best tow trucks" pick (see /admin panel). Real backend:
-   * only trucks explicitly marked `isFeatured`, empty when the admin hasn't
-   * marked any — the homepage section then hides itself entirely. Mock mode
-   * has no such flag to read, so it falls back to a small illustrative
-   * sample for local/design preview only.
-   */
-  async getFeatured(limit = 6): Promise<TowTruckCard[]> {
-    // `limit` used to apply only in mock mode, which was harmless while a
-    // handful of drivers were marked by hand and became a problem the moment
-    // placements were sold: the homepage would render every driver holding one,
-    // however many that grows to. Sliced rather than sent as a query parameter
-    // so the endpoint stays "who currently holds a placement" — the admin panel
-    // and any later report want all of them, and only this section wants six.
-    if (isApiEnabled()) return (await towTruckRepository.getFeatured()).slice(0, limit)
-    return mockRequest(() => [...generalMockTowTrucks].sort(by24Hours).slice(0, limit))
   },
 
   /**

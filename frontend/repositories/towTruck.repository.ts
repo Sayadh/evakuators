@@ -116,11 +116,6 @@ export const towTruckRepository = {
     })
   },
 
-  /** Admin-curated "best tow trucks" — empty array when the admin hasn't marked any */
-  getFeatured(): Promise<TowTruckCard[]> {
-    return apiFetch<TowTruckCard[]>('/tow-trucks/featured')
-  },
-
   /**
    * Geography footprint of every active truck — the input for every
    * `towTruckCount` on the browse pages. A fraction of the size of the listing

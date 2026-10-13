@@ -588,6 +588,77 @@ export class TowTrucksRepository {
   }
 
   /**
+   * Extends a driver's own paid placement by `days`, or starts one.
+   *
+   * Extends rather than restarts, and the `GREATEST` is what does it: a driver
+   * with eight days left who buys seven more has fifteen, not seven. They paid
+   * for seven days of placement and seven days is what they get, whenever they
+   * chose to buy them.
+   *
+   * `featuredAt` is set to now, which puts them at the top of their town's
+   * promoted block — the same thing a refresh does. Paying is the first
+   * refresh; nobody should have to press a button to get what they just bought.
+   *
+   * Raw SQL because the new value depends on the stored one. Read-then-write in
+   * JavaScript would be two round trips with a window in between, and this runs
+   * from a payment callback that can arrive twice.
+   */
+  async extendPromotion(id: number, now: Date, days: number): Promise<void> {
+    await this.prisma.$executeRaw`
+      UPDATE "TowTruck"
+      SET "isFeatured" = true,
+          "featuredAt" = ${now},
+          "featuredUntil" = GREATEST(COALESCE("featuredUntil", ${now}), ${now})
+                            + (${days}::int * INTERVAL '1 day')
+      WHERE "id" = ${id}::int
+    `
+  }
+
+  /**
+   * «Թարմացնել» — puts the driver back at the top of their town's promoted
+   * block, if they have a refresh left today.
+   *
+   * ## Why one statement
+   *
+   * The allowance is per Armenia calendar day, and the count lives beside the
+   * day it belongs to — so "is there one left" and "spend it" have to happen
+   * together or a double-tap spends one refresh twice, or none. Postgres
+   * decides both in a single UPDATE: the WHERE is the check, the CASE is the
+   * roll into a new day, and the row count is the answer.
+   *
+   * Returns false when nothing was updated, which can mean the listing is
+   * deactivated, the placement is not running, or today's refreshes are spent.
+   * The caller reads the status afterwards to say which — this method's job is
+   * to be atomic, not to explain.
+   */
+  async refreshPromotion(
+    id: number,
+    now: Date,
+    dayKey: string,
+    maxPerDay: number,
+  ): Promise<boolean> {
+    const updated = await this.prisma.$executeRaw`
+      UPDATE "TowTruck"
+      SET "featuredAt" = ${now},
+          "promotionBumpDay" = ${dayKey},
+          "promotionBumpCount" = CASE
+            WHEN "promotionBumpDay" = ${dayKey} THEN "promotionBumpCount" + 1
+            ELSE 1
+          END
+      WHERE "id" = ${id}::int
+        AND "isActive" = true
+        AND "isFeatured" = true
+        AND "featuredUntil" IS NOT NULL
+        AND "featuredUntil" > ${now}
+        AND CASE
+              WHEN "promotionBumpDay" = ${dayKey} THEN "promotionBumpCount"
+              ELSE 0
+            END < ${maxPerDay}::int
+    `
+    return updated > 0
+  }
+
+  /**
    * Take down every placement whose window has closed.
    *
    * Cleanup, not correctness: reads already apply the window themselves

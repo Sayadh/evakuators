@@ -17,6 +17,7 @@ import { IdramModule } from './idram/idram.module'
 import { ImagesModule } from './images/images.module'
 import { MyTowTruckModule } from './my-tow-truck/my-tow-truck.module'
 import { NearestModule } from './nearest/nearest.module'
+import { PromotionsModule } from './promotions/promotions.module'
 import { PrivacyConsentModule } from './privacy-consent/privacy-consent.module'
 import { ProfileChangesModule } from './profile-changes/profile-changes.module'
 import { PrismaModule } from './prisma/prisma.module'
@@ -58,6 +59,7 @@ import { TowTrucksModule } from './tow-trucks/tow-trucks.module'
     FreeRoutesModule,
     AnalyticsModule,
     NearestModule,
+    PromotionsModule,
     ProfileChangesModule,
     PrivacyConsentModule,
     DispatchModule,

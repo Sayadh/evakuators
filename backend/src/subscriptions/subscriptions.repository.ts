@@ -144,6 +144,86 @@ export class SubscriptionsRepository {
   }
 
   /**
+   * Records that a driver wants `days` of placement. PENDING — no money has
+   * moved, and nothing is granted until the provider says so.
+   *
+   * In this file, and in this table, because the table is one ledger with two
+   * products (see PaymentKind). A placements repository would be a second
+   * place that knows how to write a payment row, and the bill number a driver
+   * is handed is this table's primary key.
+   *
+   * `periodStart`/`periodEnd` are left null deliberately — see the migration:
+   * it is what makes a placement unreadable as coverage even by a query that
+   * forgot its `kind` filter.
+   */
+  createPromotion(
+    towTruckId: number,
+    data: { days: number; amount: number; currency: string },
+  ): Promise<SubscriptionPayment> {
+    return this.prisma.subscriptionPayment.create({
+      data: {
+        towTruckId,
+        kind: PaymentKind.PROMOTION,
+        promotionDays: data.days,
+        amount: data.amount,
+        currency: data.currency,
+      },
+    })
+  }
+
+  /**
+   * Marks a placement payment PAID and extends the driver's placement, in one
+   * transaction.
+   *
+   * The two halves cannot be separated. A payment marked PAID whose days never
+   * landed is a driver charged for nothing; days granted against a payment that
+   * stayed PENDING is a placement nobody paid for, which the abandoned-payment
+   * sweep would then cancel underneath. Both tables, one transaction.
+   *
+   * `status: { not: PAID }` is the idempotency: a gateway retries a callback it
+   * did not hear OK from, and the second attempt must find nothing to do rather
+   * than add the days again. Returns null when it did — the caller treats that
+   * as "already done".
+   *
+   * Touching `TowTruck` from this file follows the same precedent as
+   * `findCoverage` reading `paymentDueAt`: the alternative is two transactions
+   * and the window between them.
+   */
+  async confirmPromotion(
+    id: number,
+    towTruckId: number,
+    days: number,
+    now: Date,
+    source?: { provider: string; transactionId: string },
+  ): Promise<SubscriptionPayment | null> {
+    return this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.subscriptionPayment.updateMany({
+        where: { id, kind: PaymentKind.PROMOTION, status: { not: SubscriptionPaymentStatus.PAID } },
+        data: {
+          status: SubscriptionPaymentStatus.PAID,
+          provider: source?.provider,
+          providerTransactionId: source?.transactionId,
+        },
+      })
+      if (count === 0) return null
+
+      // Mirrors TowTrucksRepository.extendPromotion. Written here rather than
+      // called from there because it has to run inside THIS transaction, and a
+      // repository method takes its own connection.
+      await tx.$executeRaw`
+        UPDATE "TowTruck"
+        SET "isFeatured" = true,
+            "featuredAt" = ${now},
+            "featuredUntil" = GREATEST(COALESCE("featuredUntil", ${now}), ${now})
+                              + (${days}::int * INTERVAL '1 day')
+        WHERE "id" = ${towTruckId}::int
+      `
+
+      return tx.subscriptionPayment.findUnique({ where: { id } })
+    })
+  }
+
+  /**
    * The caller's own SUBSCRIPTION payments, newest first.
    *
    * Placements are deliberately not in this list: it renders as "until when am

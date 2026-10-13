@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common'
+import { Inject, Injectable, Logger, forwardRef } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
-import { SubscriptionPaymentStatus, type SubscriptionPayment } from '@prisma/client'
+import { PromotionsService } from '../promotions/promotions.service'
+import { PaymentKind, SubscriptionPaymentStatus, type SubscriptionPayment } from '@prisma/client'
 import type { AppConfig } from '../config/configuration'
 import { SubscriptionsRepository } from '../subscriptions/subscriptions.repository'
 import { SubscriptionsService } from '../subscriptions/subscriptions.service'
@@ -30,6 +31,8 @@ export class IdramService {
     config: ConfigService,
     private readonly subscriptions: SubscriptionsService,
     private readonly subscriptionsRepository: SubscriptionsRepository,
+    @Inject(forwardRef(() => PromotionsService))
+    private readonly promotions: PromotionsService,
   ) {
     const idram = config.getOrThrow<AppConfig['idram']>('idram')
     this.recAccount = idram.recAccount
@@ -230,10 +233,15 @@ export class IdramService {
       return false
     }
 
-    const confirmed = await this.subscriptions.confirmPayment(payment.id, {
-      provider: IDRAM_PROVIDER,
-      transactionId: callback.transId,
-    })
+    // Which product this bill was for. The table is one ledger with two of
+    // them (see PaymentKind), and they grant completely different things: one
+    // extends access to the platform, the other adds days at the top of a town
+    // page. The bill number says nothing about which — the row does.
+    const source = { provider: IDRAM_PROVIDER, transactionId: callback.transId }
+    const confirmed =
+      payment.kind === PaymentKind.PROMOTION
+        ? await this.promotions.confirmPayment(payment.id, source)
+        : await this.subscriptions.confirmPayment(payment.id, source)
 
     if (!confirmed) {
       // Lost a race with another confirmation of the same bill. The money is

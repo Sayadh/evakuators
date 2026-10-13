@@ -83,6 +83,20 @@ enum DeactivationReason {
 /// wired up yet. The other three exist because they are the states that
 /// provider will report back, and adding them now keeps the column's meaning
 /// stable rather than redefining it in the next migration.
+/// What a payment bought.
+///
+/// One ledger, two products. The alternative — a table per product — is ruled
+/// out by Idram: `EDP_BILL_NO` is our payment id, so two tables would mean two
+/// id spaces and colliding bill numbers.
+enum PaymentKind {
+  /// Access to the platform, for a number of months. The only kind that counts
+  /// toward `coveredUntil`.
+  SUBSCRIPTION
+  /// A placement at the top of the driver's own town page, for a number of
+  /// days. Grants no access and must never reach a coverage query.
+  PROMOTION
+}
+
 enum SubscriptionPaymentStatus {
   /// Driver asked to buy a plan. Nothing has been charged, nothing is granted.
   PENDING
@@ -375,6 +389,23 @@ model TowTruck {
   /// before durations existed; expiring those on deploy would have removed
   /// editorial picks nobody asked to remove. New grants always carry a date.
   featuredUntil DateTime?
+
+  /// The Armenia calendar day the refresh count below belongs to (`YYYY-MM-DD`,
+  /// see `common/armenia-day.ts`).
+  ///
+  /// A date KEY, not a timestamp, for the same reason the analytics tables
+  /// store one: "today" has to mean the same day to a server in Yerevan and a
+  /// server in UTC, or the allowance would reset at a different hour depending
+  /// on where the process runs.
+  promotionBumpDay String?
+
+  /// How many times the driver has refreshed their placement on that day.
+  ///
+  /// Two columns rather than a table of refreshes: nothing reads a refresh's
+  /// history, only "how many today". Read together with the day they belong
+  /// to, so a day that is not today reads as zero — there is no reset to
+  /// schedule and no cron to be late.
+  promotionBumpCount Int       @default(0)
   /// LEGACY — no longer read or written by anything. Kept only because it is
   /// the record of what the manual bookkeeping said before subscriptions
   /// existed.
@@ -390,9 +421,9 @@ model TowTruck {
   /// table is now the only thing the status is computed from. The column is
   /// left in place rather than dropped in the same change that replaced it:
   /// dropping data is irreversible, and nothing costs anything by keeping it.
-  lastPaymentAt DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  lastPaymentAt      DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   images     TowTruckImage[]
   reviews    Review[]
@@ -1034,24 +1065,55 @@ model SubscriptionPayment {
   towTruckId Int
   towTruck   TowTruck @relation(fields: [towTruckId], references: [id], onDelete: Cascade)
 
+  /// What this payment bought.
+  ///
+  /// The table is the ledger of money received from drivers; the product is a
+  /// property of the payment. One table because Idram's `EDP_BILL_NO` IS our
+  /// payment id (`parseIdramBillNo` accepts only a positive INT4), so a second
+  /// table would be a second id space and colliding bill numbers.
+  ///
+  /// EVERY query that means "subscription coverage" must filter on this. They
+  /// all live in `subscriptions.repository.ts`, and a test asserts none of them
+  /// reads this table without a `kind`. See the migration for the second line
+  /// of defence.
+  kind PaymentKind @default(SUBSCRIPTION)
+
   /// SubscriptionPlanCode — `'ONE_MONTH' | 'FOUR_MONTHS'`. A plain string, not
   /// an enum: the plan list is a backend constant, and a code that no longer
   /// exists must still read back on an old row rather than break the query.
-  planCode String
+  ///
+  /// Null on a PROMOTION row — a placement has no plan. A database CHECK keeps
+  /// the two shapes from mixing.
+  planCode String?
 
   /// Whole drams. AMD has no minor unit in use here, and every price in this
   /// project is already an Int (see TowTruck's price* columns).
   amount         Int
   currency       String
   /// Copied from the plan, so `periodEnd` stays explainable from the row alone.
-  durationMonths Int
+  /// Null on a PROMOTION row.
+  durationMonths Int?
+
+  /// How many days of placement this payment bought. Null on a SUBSCRIPTION row.
+  ///
+  /// The price is NOT per day — see `promotion-pricing.ts`, where the first
+  /// five days cost 400 ֏ each and the last ten cost 100 ֏ each — so the day
+  /// count is stored and `amount` is stored, and neither can be derived from
+  /// the other on an old row after the ladder changes.
+  promotionDays Int?
 
   /// The access window this payment is FOR. Computed when the row is created,
   /// from that instant — see `subscription-period.ts`. It is what the driver
   /// was quoted, not proof of access: nothing grants access until the status
   /// is PAID.
-  periodStart DateTime
-  periodEnd   DateTime
+  ///
+  /// Deliberately NULL on a PROMOTION row, and that is a safety property rather
+  /// than an omission: coverage is a MAX over `periodEnd`, and SQL's MAX
+  /// ignores NULLs — so a promotion read by a query that forgot its `kind`
+  /// filter grants nothing. Filling these with the placement's own window would
+  /// have been informative and unsafe.
+  periodStart DateTime?
+  periodEnd   DateTime?
 
   /// Which system the money came through — `'IDRAM'`, or null for a payment an
   /// admin recorded by hand (cash, transfer). A plain string rather than an

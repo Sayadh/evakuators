@@ -2,6 +2,7 @@ import 'reflect-metadata'
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common'
 import { SubscriptionPaymentStatus } from '@prisma/client'
 import { describe, expect, it, vi } from 'vitest'
+import { armeniaDateKey } from '../src/common/armenia-day'
 import { AdminSubscriptionsService } from '../src/subscriptions/admin-subscriptions.service'
 import { PAYMENT_DUE_SOON_WITHIN_DAYS } from '../src/subscriptions/subscription-status'
 import type { SubscriptionsRepository } from '../src/subscriptions/subscriptions.repository'
@@ -40,6 +41,7 @@ function build(options: {
   const fullPayment = () => ({
     id: options.payment?.id ?? 5,
     towTruckId: options.payment?.towTruckId ?? 7,
+    kind: 'SUBSCRIPTION',
     planCode: 'ONE_MONTH',
     planTitle: '1 ամսվա բաժանորդագրություն',
     amount: 3000,
@@ -83,6 +85,7 @@ function build(options: {
       return {
         id,
         towTruckId: options.payment?.towTruckId ?? 1,
+        kind: 'SUBSCRIPTION',
         planCode: 'ONE_MONTH',
         amount: 3000,
         currency: 'AMD',
@@ -133,6 +136,8 @@ describe('AdminSubscriptionsService.grant', () => {
     const { service, created } = build()
     await service.grant(7, 'FOUR_MONTHS')
 
+    // No `kind` here on purpose: the repository stamps it (see its `create`),
+    // so asserting it on the service's own data would pin the wrong layer.
     expect(created[0]!.data).toMatchObject({
       planCode: 'FOUR_MONTHS',
       amount: 10000,
@@ -188,13 +193,17 @@ describe('AdminSubscriptionsService.grant', () => {
     // Compared by Armenia's calendar DAY, not by instant: `new Date('...')` at
     // midnight UTC is 04:00 in Yerevan, so an instant comparison would reject
     // today for the first four hours of every Armenian day.
+    //
+    // The day comes from `armeniaDateKey`, not from the UTC clock. Built from
+    // the UTC date, this test failed every evening between 20:00 and 24:00 UTC
+    // — Armenia is already tomorrow by then, so "today midnight UTC" really was
+    // yesterday there and the service was right to refuse it. A test that is
+    // red for four hours a day teaches everyone to re-run the suite instead of
+    // reading it.
     const { service, created } = build()
-    const now = new Date()
-    const todayMidnightUtc = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-    ).toISOString()
+    const todayInArmenia = `${armeniaDateKey(new Date())}T00:00:00.000Z`
 
-    await service.grant(7, 'ONE_MONTH', todayMidnightUtc)
+    await service.grant(7, 'ONE_MONTH', todayInArmenia)
     expect(created).toHaveLength(1)
   })
 

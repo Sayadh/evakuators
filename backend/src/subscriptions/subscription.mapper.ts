@@ -1,5 +1,5 @@
-import type { SubscriptionPayment } from '@prisma/client'
 import { findSubscriptionPlan, type SubscriptionPlan } from './subscription-plans'
+import type { SubscriptionPaymentRow } from './subscriptions.repository'
 import type {
   AdminPendingPaymentApi,
   SubscriptionPaymentApi,
@@ -33,7 +33,7 @@ export function toSubscriptionPlanApi(plan: SubscriptionPlan): SubscriptionPlanA
  * Only the human title is looked up live, and it falls back to the raw code so
  * a retired plan still renders instead of blanking a driver's history.
  */
-export function toSubscriptionPaymentApi(payment: SubscriptionPayment): SubscriptionPaymentApi {
+export function toSubscriptionPaymentApi(payment: SubscriptionPaymentRow): SubscriptionPaymentApi {
   return {
     id: payment.id,
     towTruckId: payment.towTruckId,
@@ -51,7 +51,7 @@ export function toSubscriptionPaymentApi(payment: SubscriptionPayment): Subscrip
 
 /** Stored row + its driver → the admin queue's shape */
 export function toAdminPendingPaymentApi(
-  payment: SubscriptionPayment & {
+  payment: SubscriptionPaymentRow & {
     towTruck: { id: number; driverName: string; companyName: string | null; phone: string }
   },
 ): AdminPendingPaymentApi {

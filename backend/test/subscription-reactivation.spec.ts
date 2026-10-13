@@ -58,6 +58,7 @@ function buildService(truck: TruckRow, conflict: TruckRow | null = null) {
     findById: async () => ({
       id: 1,
       towTruckId: truck.id,
+      kind: 'SUBSCRIPTION',
       planCode: 'ONE_MONTH',
       amount: 3000,
       currency: 'AMD',
@@ -84,6 +85,7 @@ function buildService(truck: TruckRow, conflict: TruckRow | null = null) {
     ) => ({
       id: 1,
       towTruckId: truck.id,
+      kind: 'SUBSCRIPTION',
       planCode: 'ONE_MONTH',
       planTitle: '1 ամսվա բաժանորդագրություն',
       amount: 3000,

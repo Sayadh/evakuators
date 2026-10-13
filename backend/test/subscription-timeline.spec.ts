@@ -31,6 +31,8 @@ const label = (date: Date): string => armeniaDateLabel(date)
 interface Row {
   id: number
   towTruckId: number
+  /** The table holds placement purchases too — see PaymentKind. This stand-in only ever makes subscriptions. */
+  kind: 'SUBSCRIPTION'
   planCode: string
   amount: number
   currency: string
@@ -59,6 +61,7 @@ function timelineRepository(): { repository: SubscriptionsRepository; rows: Row[
       const row: Row = {
         id: nextId++,
         towTruckId,
+        kind: 'SUBSCRIPTION',
         ...data,
         status: 'PENDING',
         createdAt: new Date(),

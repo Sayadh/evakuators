@@ -10,7 +10,7 @@ import { PAYMENT_DUE_SOON_WITHIN_DAYS } from './subscription-status'
 import { toAdminPendingPaymentApi, toSubscriptionPaymentApi } from './subscription.mapper'
 import type { AdminPendingPaymentApi, SubscriptionPaymentApi } from './subscription.types'
 import { ListingRestorationService } from './listing-restoration.service'
-import { SubscriptionsRepository } from './subscriptions.repository'
+import { SubscriptionsRepository, isSubscriptionPayment } from './subscriptions.repository'
 
 /**
  * The admin half of subscriptions: reviewing payments that completed, and
@@ -62,7 +62,12 @@ export class AdminSubscriptionsService {
    */
   async review(id: number): Promise<SubscriptionPaymentApi> {
     const payment = await this.subscriptionsRepository.findById(id)
-    if (!payment) throw new NotFoundException(`Վճարումը #${id} չի գտնվել`)
+    // A placement purchase never reaches this list (`findForReview` filters it
+    // out), so an id that resolves to one came from somewhere else and is not
+    // this screen's row to tick.
+    if (!payment || !isSubscriptionPayment(payment)) {
+      throw new NotFoundException(`Վճարումը #${id} չի գտնվել`)
+    }
     if (payment.status !== SubscriptionPaymentStatus.PAID) {
       throw new ConflictException('Միայն կատարված վճարումը կարելի է հաստատել')
     }

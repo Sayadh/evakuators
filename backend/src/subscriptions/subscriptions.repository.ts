@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common'
-import { SubscriptionPaymentStatus, type SubscriptionPayment } from '@prisma/client'
+import { PaymentKind, SubscriptionPaymentStatus, type SubscriptionPayment } from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 import type { SubscriptionPeriod } from './subscription-period'
 import { resolveCoveredUntil } from './subscription-status'
@@ -12,6 +12,41 @@ import { resolveCoveredUntil } from './subscription-status'
  * the rows anyone cares about at the top.
  */
 const OWN_PAYMENTS_LIMIT = 50
+
+/**
+ * A payment row that IS a subscription.
+ *
+ * Four columns on `SubscriptionPayment` are nullable because a placement
+ * purchase leaves them empty, and on a subscription row they are never empty —
+ * a database CHECK says so (see the migration). This type is where that
+ * guarantee enters the type system, so the mapper does not have to assert it
+ * value by value.
+ *
+ * It is only ever produced by a read that filters `kind: SUBSCRIPTION`. A cast
+ * without that filter would be a lie the compiler cannot catch, which is why
+ * the two always appear together below.
+ */
+export type SubscriptionPaymentRow = SubscriptionPayment & {
+  planCode: string
+  durationMonths: number
+  periodStart: Date
+  periodEnd: Date
+}
+
+/**
+ * Is this row a subscription?
+ *
+ * Needed wherever a payment is fetched BY ID — `findById`, the Idram callback,
+ * the admin's «Հաստատել» — because an id alone says nothing about what was
+ * bought. Every such caller now has to decide what to do with a placement
+ * instead of quietly treating it as a month of access, which is the whole
+ * value of the compiler complaining here.
+ */
+export function isSubscriptionPayment(
+  payment: SubscriptionPayment,
+): payment is SubscriptionPaymentRow {
+  return payment.kind === PaymentKind.SUBSCRIPTION
+}
 
 /**
  * Upper bound on the admin's review list, for the same reason
@@ -70,7 +105,7 @@ export interface PaymentCoverageRow {
 }
 
 /** A pending request with just enough of its driver to render the admin's queue */
-export type PendingPaymentWithDriver = SubscriptionPayment & {
+export type PendingPaymentWithDriver = SubscriptionPaymentRow & {
   towTruck: { id: number; driverName: string; companyName: string | null; phone: string }
 }
 
@@ -99,17 +134,29 @@ export class SubscriptionsRepository {
    * there is no caller that may choose it, and the default is where that rule
    * belongs — see SubscriptionPaymentStatus in schema.prisma.
    */
-  create(towTruckId: number, data: SubscriptionPaymentCreateData): Promise<SubscriptionPayment> {
-    return this.prisma.subscriptionPayment.create({ data: { towTruckId, ...data } })
+  create(towTruckId: number, data: SubscriptionPaymentCreateData): Promise<SubscriptionPaymentRow> {
+    // `kind` written explicitly rather than left to the column default: the
+    // default exists to backfill rows that predate placements, and a write that
+    // says what it is cannot be misread when a second product is in the table.
+    return this.prisma.subscriptionPayment.create({
+      data: { towTruckId, kind: PaymentKind.SUBSCRIPTION, ...data },
+    }) as Promise<SubscriptionPaymentRow>
   }
 
-  /** The caller's own payments, newest first */
-  findOwn(towTruckId: number): Promise<SubscriptionPayment[]> {
+  /**
+   * The caller's own SUBSCRIPTION payments, newest first.
+   *
+   * Placements are deliberately not in this list: it renders as "until when am
+   * I covered", and a 400 ֏ one-day placement among the months would read as a
+   * very short subscription. The driver's placement history belongs to the
+   * promotion block, which knows what to call it.
+   */
+  findOwn(towTruckId: number): Promise<SubscriptionPaymentRow[]> {
     return this.prisma.subscriptionPayment.findMany({
-      where: { towTruckId },
+      where: { towTruckId, kind: PaymentKind.SUBSCRIPTION },
       orderBy: { createdAt: 'desc' },
       take: OWN_PAYMENTS_LIMIT,
-    })
+    }) as Promise<SubscriptionPaymentRow[]>
   }
 
   /**
@@ -124,14 +171,26 @@ export class SubscriptionsRepository {
     if (towTruckIds.length === 0) return new Map()
 
     const [confirmed, pending, due] = await Promise.all([
+      // `kind` is not decoration on these two. This table also holds placement
+      // purchases, and a placement grants no access — without the filter a
+      // driver who bought one day at the top of their town page would read as
+      // covered. See PaymentKind in schema.prisma.
       this.prisma.subscriptionPayment.groupBy({
         by: ['towTruckId'],
-        where: { towTruckId: { in: towTruckIds }, status: SubscriptionPaymentStatus.PAID },
+        where: {
+          towTruckId: { in: towTruckIds },
+          kind: PaymentKind.SUBSCRIPTION,
+          status: SubscriptionPaymentStatus.PAID,
+        },
         _max: { periodEnd: true, periodStart: true },
       }),
       this.prisma.subscriptionPayment.groupBy({
         by: ['towTruckId'],
-        where: { towTruckId: { in: towTruckIds }, status: SubscriptionPaymentStatus.PENDING },
+        where: {
+          towTruckId: { in: towTruckIds },
+          kind: PaymentKind.SUBSCRIPTION,
+          status: SubscriptionPaymentStatus.PENDING,
+        },
         _count: { _all: true },
       }),
       // The admin-set deadlines, read here rather than left to each caller:
@@ -181,7 +240,15 @@ export class SubscriptionsRepository {
    */
   findForReview(): Promise<PendingPaymentWithDriver[]> {
     return this.prisma.subscriptionPayment.findMany({
-      where: { status: SubscriptionPaymentStatus.PAID, reviewedAt: null },
+      // Subscription payments only. This queue asks "money arrived, is this
+      // driver's access sorted" — a placement grants no access, so a promotion
+      // row has nothing for an admin to do here. (A general money view that
+      // shows both is worth having; it is not this screen.)
+      where: {
+        kind: PaymentKind.SUBSCRIPTION,
+        status: SubscriptionPaymentStatus.PAID,
+        reviewedAt: null,
+      },
       include: {
         towTruck: { select: { id: true, driverName: true, companyName: true, phone: true } },
       },
@@ -189,19 +256,21 @@ export class SubscriptionsRepository {
       // one to look at next.
       orderBy: { createdAt: 'asc' },
       take: REVIEW_LIST_LIMIT,
-    })
+    }) as Promise<PendingPaymentWithDriver[]>
   }
 
   /**
    * Ticks a payment off the review list. Idempotent by the `reviewedAt: null`
    * guard, so two admins pressing at once produce one review, not an error.
    */
-  async markReviewed(id: number): Promise<SubscriptionPayment | null> {
+  async markReviewed(id: number): Promise<SubscriptionPaymentRow | null> {
     const { count } = await this.prisma.subscriptionPayment.updateMany({
       where: { id, status: SubscriptionPaymentStatus.PAID, reviewedAt: null },
       data: { reviewedAt: new Date() },
     })
-    return count === 0 ? null : this.findById(id)
+    // The caller proved the kind before it got here (see
+    // `AdminSubscriptionsService.review`), which is what this cast stands on.
+    return count === 0 ? null : (this.findById(id) as Promise<SubscriptionPaymentRow | null>)
   }
 
   /**
@@ -212,6 +281,9 @@ export class SubscriptionsRepository {
    * call to ask why.
    */
   async cancelAbandonedPending(now: Date = new Date()): Promise<number> {
+    // No `kind` filter, and that is deliberate: an abandoned PENDING row is
+    // abandoned whatever it was going to buy. This is the one sweep that
+    // should see both.
     const { count } = await this.prisma.subscriptionPayment.updateMany({
       where: {
         status: SubscriptionPaymentStatus.PENDING,
@@ -295,12 +367,18 @@ export class SubscriptionsRepository {
     durationMonths: number,
     computePeriod: (paidUntil: Date | null, now: Date, months: number) => SubscriptionPeriod,
     source?: { provider: string; transactionId: string },
-  ): Promise<SubscriptionPayment | null> {
+  ): Promise<SubscriptionPaymentRow | null> {
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(${towTruckId}::bigint)`
 
+      // Subscriptions only — a placement is not coverage, and this MAX is what
+      // the next period is measured from.
       const coverage = await tx.subscriptionPayment.aggregate({
-        where: { towTruckId, status: SubscriptionPaymentStatus.PAID },
+        where: {
+          towTruckId,
+          kind: PaymentKind.SUBSCRIPTION,
+          status: SubscriptionPaymentStatus.PAID,
+        },
         _max: { periodEnd: true },
       })
       const period = computePeriod(coverage._max.periodEnd ?? null, new Date(), durationMonths)
@@ -316,7 +394,12 @@ export class SubscriptionsRepository {
         },
       })
       if (count === 0) return null
-      return tx.subscriptionPayment.findUnique({ where: { id } })
+      // Subscription by construction: this method only ever runs for a row the
+      // caller has already proven is one, and it has just written the four
+      // columns the narrowed type promises.
+      return tx.subscriptionPayment.findUnique({
+        where: { id },
+      }) as Promise<SubscriptionPaymentRow | null>
     })
   }
 

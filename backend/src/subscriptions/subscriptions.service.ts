@@ -18,7 +18,7 @@ import type {
 import { IdramService } from '../idram/idram.service'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
 import { ListingRestorationService } from './listing-restoration.service'
-import { SubscriptionsRepository } from './subscriptions.repository'
+import { SubscriptionsRepository, isSubscriptionPayment } from './subscriptions.repository'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -178,6 +178,11 @@ export class SubscriptionsService {
   ): Promise<SubscriptionPaymentApi | null> {
     const payment = await this.subscriptionsRepository.findById(paymentId)
     if (!payment) return null
+    // A bill number alone says nothing about what was bought. A placement is
+    // confirmed by `PromotionsService`, which grants days at the top of a page
+    // rather than months of access — reaching this method with one would mean
+    // the caller routed it wrong, so it is refused rather than guessed at.
+    if (!isSubscriptionPayment(payment)) return null
 
     // The coverage read, the date arithmetic and the write all happen inside
     // one transaction, serialised per driver — see the comment on

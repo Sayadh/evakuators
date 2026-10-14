@@ -24,6 +24,19 @@ export interface PromotionProduct {
   brackets: PromotionPriceBracket[]
 }
 
+/** Mirrors backend `PromotionPlaceApi` — named from static data by slug */
+export interface PromotionPlace {
+  type: 'city' | 'district'
+  slug: string
+  name: string
+}
+
+/** Mirrors backend `PromotionPlacesApi` — which pages each product acts on */
+export interface PromotionPlaces {
+  home?: PromotionPlace
+  area: PromotionPlace[]
+}
+
 /**
  * Mirrors backend `PromotionStatusApi`. The top-level `activeUntil` /
  * `maxDays` / `brackets` are the HOME product; `area` is the AREA one.
@@ -55,6 +68,8 @@ export interface PromotionStatus {
   currency: string
   /** «Ամբողջ սպասարկման տարածքում» */
   area: PromotionProduct
+  /** Optional only so a status from before the field existed still renders */
+  places?: PromotionPlaces
 }
 
 /** Mirrors backend `CreatedPromotionPaymentApi` */

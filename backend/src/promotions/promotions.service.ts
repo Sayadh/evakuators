@@ -22,6 +22,7 @@ import {
   promotionPrice,
 } from './promotion-pricing'
 import { promotionPaymentTitle } from './promotion-labels'
+import { promotionPlaces } from './promotion-places'
 import type {
   CreatedPromotionPaymentApi,
   PromotionPaymentApi,
@@ -79,6 +80,7 @@ export class PromotionsService {
       refreshesLeft: 0,
       maxDays: 0,
       area: { maxDays: 0, brackets: AREA_PROMOTION_PRICE_BRACKETS },
+      places: { area: [] },
     })
 
     if (!truck.isActive) return closed('inactive')
@@ -126,6 +128,7 @@ export class PromotionsService {
           ? { activeUntil: truck.areaFeaturedUntil.toISOString() }
           : {}),
       },
+      places: promotionPlaces(truck),
     }
 
     if (!subscribed) status.blockedReason = 'no-subscription'

@@ -2,6 +2,7 @@
 import { myPromotionRepository } from '~/repositories/myPromotion.repository'
 import type {
   PromotionPayment,
+  PromotionPlace,
   PromotionProduct,
   PromotionScope,
   PromotionStatus,
@@ -70,22 +71,69 @@ let redirectTimer: number | undefined
 interface ProductOption {
   scope: PromotionScope
   title: string
-  description: string
 }
 
 const PRODUCTS: readonly ProductOption[] = [
-  {
-    scope: 'HOME',
-    title: 'Իմ քաղաքում վերևում',
-    description: 'Ձեր քաղաքի (շրջանի) էջում՝ բոլորից առաջ։',
-  },
-  {
-    scope: 'AREA',
-    title: 'Ամբողջ սպասարկման տարածքում',
-    description:
-      'Ձեր քաղաքում՝ բոլորից առաջ, իսկ մնացած սպասարկման քաղաքներում՝ տեղի վարորդներից հետո առաջինը։',
-  },
+  { scope: 'HOME', title: 'Իմ քաղաքում վերևում' },
+  { scope: 'AREA', title: 'Ամբողջ սպասարկման տարածքում' },
 ]
+
+const placeName = usePlaceName()
+
+/** «Նոր Նորք», in the language being rendered — named from static data by slug */
+function nameOf(place: PromotionPlace): string {
+  return placeName(place.type, place.slug, place.name)
+}
+
+interface ProductExplanation {
+  lead: string
+  points: string[]
+}
+
+/**
+ * What each product does for THIS driver, by name: their own page, and the
+ * exact other pages the area product reaches. Built from `status.places`,
+ * which the server derives with the same rule the listing ranks by — so the
+ * block never promises a page the placement does nothing on.
+ *
+ * Place names go in «» rather than being declined («Նոր Նորքի»): the names
+ * come from data, and a quoted name reads correctly in every case.
+ */
+const explanations = computed<Record<PromotionScope, ProductExplanation>>(() => {
+  const home = status.value?.places?.home
+  const others = (status.value?.places?.area ?? []).map(nameOf)
+  const homeName = home ? `«${nameOf(home)}»` : 'Ձեր քաղաքի (շրջանի)'
+  const othersList = others.join(', ')
+  const perDay = status.value?.refreshesPerDay ?? 0
+
+  const homePoints = [
+    `Եթե այդ էջում ուրիշներ էլ են վճարել, առաջինը նա է, ով վերջինն է սեղմել «Թարմացնել» (օրական ${perDay} անգամ)։`,
+  ]
+  if (others.length > 0) {
+    homePoints.push(`Մյուս սպասարկման տարածքներում (${othersList}) Ձեր դիրքը չի փոխվի։`)
+  }
+
+  const areaPoints: string[] = []
+  if (home) areaPoints.push(`${homeName} էջում՝ բոլորից առաջ։`)
+  if (others.length > 0) {
+    areaPoints.push(
+      `Այս էջերում (${othersList})՝ տեղի վարորդներից անմիջապես հետո, ուրիշ վայրերից եկած բոլոր վարորդներից առաջ։`,
+    )
+    areaPoints.push('Տեղի վարորդներից վեր չեք բարձրանա։ Հերթը՝ ըստ վերջին թարմացման։')
+  } else {
+    areaPoints.push(
+      'Ուշադրություն. Ձեր սպասարկման տարածքում այլ քաղաք կամ շրջան նշված չէ, դրա համար այս տարբերակը կտա նույնը, ինչ «Իմ քաղաքում վերևում»-ը։',
+    )
+  }
+
+  return {
+    HOME: { lead: `${homeName} էջում կլինեք բոլոր վարորդներից առաջ։`, points: homePoints },
+    AREA: {
+      lead: home ? 'Ներառում է «Իմ քաղաքում վերևում»-ը, և ավելին՝' : 'Ձեր սպասարկման տարածքում՝',
+      points: areaPoints,
+    },
+  }
+})
 
 /** The HOME product lives at the top level of the status — see the type */
 function productOf(current: PromotionStatus, which: PromotionScope): PromotionProduct {
@@ -291,10 +339,19 @@ function formatMoment(iso: string): string {
             >
               <input v-model="scope" type="radio" name="promotion-scope" :value="option.scope">
               <span class="promotion__product-body">
-                <span class="promotion__product-title">{{ option.title }}</span>
-                <span class="promotion__product-text">{{ option.description }}</span>
-                <span v-if="firstDayPrice[option.scope] !== undefined" class="promotion__product-text">
-                  1 օրը՝ {{ formatPrice(firstDayPrice[option.scope]!) }}
+                <span class="promotion__product-head">
+                  <span class="promotion__product-title">{{ option.title }}</span>
+                  <span v-if="firstDayPrice[option.scope] !== undefined" class="promotion__product-price">
+                    1 օրը՝ {{ formatPrice(firstDayPrice[option.scope]!) }}
+                  </span>
+                </span>
+                <span class="promotion__product-text">{{ explanations[option.scope].lead }}</span>
+                <span
+                  v-for="point in explanations[option.scope].points"
+                  :key="point"
+                  class="promotion__product-point"
+                >
+                  {{ point }}
                 </span>
               </span>
             </label>
@@ -439,8 +496,37 @@ function formatMoment(iso: string): string {
     gap: 2px;
   }
 
+  &__product-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-1) var(--space-3);
+  }
+
   &__product-title {
     font-weight: 600;
+  }
+
+  &__product-price {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--color-success);
+    white-space: nowrap;
+  }
+
+  &__product-point {
+    position: relative;
+    padding-left: 14px;
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+    line-height: 1.45;
+
+    &::before {
+      content: '•';
+      position: absolute;
+      left: 2px;
+    }
   }
 
   &__product-text {

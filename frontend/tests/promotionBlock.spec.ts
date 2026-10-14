@@ -151,3 +151,24 @@ describe('who the block sells to', () => {
     expect(block).not.toContain('զուգահեռ')
   })
 })
+
+describe('the explanation inside each product card', () => {
+  it('names the driver’s own page and the exact other pages, from the server’s list', () => {
+    expect(block).toContain('status.value?.places?.home')
+    expect(block).toContain('status.value?.places?.area')
+    expect(block).toContain('placeName(place.type, place.slug, place.name)')
+  })
+
+  it('says the area product never climbs above local drivers', () => {
+    expect(block).toContain('Տեղի վարորդներից վեր չեք բարձրանա')
+    expect(block).toContain('տեղի վարորդներից անմիջապես հետո')
+  })
+
+  it('warns when the area product would add nothing', () => {
+    expect(block).toContain('այլ քաղաք կամ շրջան նշված չէ')
+  })
+
+  it('is always open — rendered in the card, not behind a toggle', () => {
+    expect(block).toContain('v-for="point in explanations[option.scope].points"')
+  })
+})

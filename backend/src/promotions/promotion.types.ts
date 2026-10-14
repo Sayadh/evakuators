@@ -1,4 +1,5 @@
 import type { PromotionScope, SubscriptionPaymentStatus } from '@prisma/client'
+import type { PromotionPlacesApi } from './promotion-places'
 import type { PromotionPriceBracket } from './promotion-pricing'
 
 /**
@@ -75,6 +76,9 @@ export interface PromotionStatusApi {
 
   /** «Ամբողջ սպասարկման տարածքում» */
   area: PromotionProductApi
+
+  /** Which pages each product acts on, so the block can say it by name */
+  places: PromotionPlacesApi
 }
 
 /** What `POST /my/promotion/payments` answers with — the row, plus the form that pays it */

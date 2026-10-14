@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common'
 import { Throttle } from '@nestjs/throttler'
+import { PromotionScope } from '@prisma/client'
 import { AuthenticatedDriverRequest, DriverJwtGuard } from '../driver-auth/driver-jwt.guard'
 import { CreatePromotionPaymentDto } from './dto/create-promotion-payment.dto'
 import type { CreatedPromotionPaymentApi, PromotionStatusApi } from './promotion.types'
@@ -33,7 +34,7 @@ export class MyPromotionController {
     @Req() request: AuthenticatedDriverRequest,
     @Body() dto: CreatePromotionPaymentDto,
   ): Promise<CreatedPromotionPaymentApi> {
-    return this.promotions.createPayment(request.towTruckId, dto.days)
+    return this.promotions.createPayment(request.towTruckId, dto.days, dto.scope ?? PromotionScope.HOME)
   }
 
   /**

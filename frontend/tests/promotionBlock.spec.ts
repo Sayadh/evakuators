@@ -46,7 +46,9 @@ describe('pricing a day count from the server’s ladder', () => {
     // goes stale is the one on the screen.
     expect(block).not.toMatch(/\b400\b/)
     expect(block).not.toMatch(/\b6000\b/)
-    expect(block).toContain('promotionPriceFrom(status.value.brackets, days.value)')
+    expect(block).not.toMatch(/\b1000\b/)
+    expect(block).not.toMatch(/\b15000\b/)
+    expect(block).toContain('promotionPriceFrom(product.value.brackets, days.value)')
   })
 })
 
@@ -64,8 +66,8 @@ describe('the block’s three rules', () => {
   })
 
   it('never offers more days than the server says are on sale', () => {
-    expect(block).toContain(':max="status.maxDays"')
-    expect(block).toMatch(/days\.value <= \(status\.value\?\.maxDays \?\? 0\)/)
+    expect(block).toContain(':max="product.maxDays"')
+    expect(block).toMatch(/days\.value <= \(product\.value\?\.maxDays \?\? 0\)/)
   })
 })
 
@@ -74,7 +76,7 @@ describe('the request', () => {
     // The backend's ValidationPipe runs with `forbidNonWhitelisted`, so an
     // amount would be rejected rather than ignored — but the reason it is not
     // sent is that the price is not this screen's to decide.
-    expect(repository).toContain('body: { days }')
+    expect(repository).toContain('body: { days, scope }')
     // The comment above it is allowed to NAME the field it does not send.
     expect(repository).not.toMatch(/body: \{[^}]*amount/)
   })
@@ -83,5 +85,26 @@ describe('the request', () => {
     // One round trip, and no window where the screen and the server disagree
     // about how many refreshes are left.
     expect(block).toContain('status.value = await myPromotionRepository.refresh()')
+  })
+})
+
+describe('the two products', () => {
+  it('offers both, by the names agreed with the operator', () => {
+    expect(block).toContain('Իմ քաղաքում վերևում')
+    expect(block).toContain('Ամբողջ սպասարկման տարածքում')
+  })
+
+  it('reads the AREA product from `area` and HOME from the top level', () => {
+    expect(block).toContain("if (which === 'AREA') return current.area")
+    expect(block).toContain('maxDays: current.maxDays, brackets: current.brackets')
+  })
+
+  it('sends the chosen product with the order', () => {
+    expect(block).toContain('createPayment(days.value, scope.value)')
+  })
+
+  it('keeps the refresh button for a driver holding only the AREA product', () => {
+    expect(block).toContain('status.value?.activeUntil || status.value?.area.activeUntil')
+    expect(block).toContain('v-if="anyActive"')
   })
 })

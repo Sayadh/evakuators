@@ -59,16 +59,88 @@ describe('listingRank', () => {
     const elsewhere = visitor(2, { promotedAt: '2026-02-01T00:00:00.000Z' })
 
     expect(listingRank(promoted, ABOVYAN)).toBe(0)
-    expect(listingRank(elsewhere, ABOVYAN)).toBe(3)
+    expect(listingRank(elsewhere, ABOVYAN)).toBe(4)
   })
 
   it('sorts “ours” INSIDE “based here”, never ahead of it', () => {
     // Someone searching a town is choosing among that town's drivers, and a
     // driver an hour away is an hour away whoever they are. So a partner who
-    // merely covers the town stays in rank 3 with everyone else who covers it.
+    // merely covers the town stays in rank 4 with everyone else who covers it.
     expect(listingRank(truck(1, { isPartner: true }), ABOVYAN)).toBe(1)
     expect(listingRank(truck(2), ABOVYAN)).toBe(2)
-    expect(listingRank(visitor(3, { isPartner: true }), ABOVYAN)).toBe(3)
+    expect(listingRank(visitor(3, { isPartner: true }), ABOVYAN)).toBe(4)
+  })
+})
+
+describe('the «Ամբողջ սպասարկման տարածքում» placement', () => {
+  const COVERS_ABOVYAN = [{ name: 'Աբովյան', slug: 'abovyan', type: 'city' as const }]
+  const area = (id: number, at: string, overrides: Partial<TowTruckCardApi> = {}) =>
+    visitor(id, {
+      promotedAt: at,
+      promotedInArea: true,
+      serviceAreas: COVERS_ABOVYAN,
+      ...overrides,
+    })
+
+  it('comes right after the local drivers on a page the driver covers', () => {
+    expect(listingRank(area(1, '2026-02-01T00:00:00.000Z'), ABOVYAN)).toBe(3)
+  })
+
+  it('is still the top of the driver’s own town — it includes the home product', () => {
+    const atHome = truck(1, {
+      promotedAt: '2026-02-01T00:00:00.000Z',
+      promotedInArea: true,
+      serviceAreas: COVERS_ABOVYAN,
+    })
+    expect(listingRank(atHome, ABOVYAN)).toBe(0)
+  })
+
+  it('never climbs above a driver based here, paid or not', () => {
+    const ordered = orderListing(
+      [area(1, '2026-03-01T00:00:00.000Z'), truck(2), truck(3, { isPartner: true })],
+      ABOVYAN,
+      42,
+    )
+    expect(ordered.map((row) => row.id)).toEqual([3, 2, 1])
+  })
+
+  it('needs the place in the driver’s OWN coverage list, not just on the page', () => {
+    // A corridor or a nationwide specialist can reach a page without naming
+    // it — one purchase must not become the second slot of every town.
+    const viaCorridor = area(1, '2026-02-01T00:00:00.000Z', {
+      serviceAreas: [{ name: 'Գառնի–Գեղարդ', slug: 'garni-geghard', type: 'route' }],
+    })
+    expect(listingRank(viaCorridor, ABOVYAN)).toBe(4)
+  })
+
+  it('matches a Yerevan district by its district slug', () => {
+    const avan = { districtSlug: 'avan' }
+    const driver = visitor(1, {
+      location: { districtSlug: 'kentron', name: 'Կենտրոն' },
+      promotedAt: '2026-02-01T00:00:00.000Z',
+      promotedInArea: true,
+      serviceAreas: [{ name: 'Ավան', slug: 'avan', type: 'district' }],
+    })
+    expect(listingRank(driver, avan)).toBe(3)
+  })
+
+  it('is a queue by last refresh, and not shuffled', () => {
+    const older = area(1, '2026-02-01T00:00:00.000Z')
+    const newer = area(2, '2026-02-02T00:00:00.000Z')
+    for (let seed = 0; seed < 50; seed += 1) {
+      const ids = orderListing([older, visitor(3), newer], ABOVYAN, seed).map((row) => row.id)
+      expect(ids).toEqual([2, 1, 3])
+    }
+  })
+
+  it('is excluded from the “avoid the last order” check, like the home queue', () => {
+    // Two queued drivers cannot be moved by a reseed; demanding it would burn
+    // every attempt and hand back an arbitrary order.
+    const first = area(1, '2026-02-02T00:00:00.000Z')
+    const second = area(2, '2026-02-01T00:00:00.000Z')
+    const ordered = pickListingOrder([first, second, visitor(3), visitor(4)], ABOVYAN, 7, [1, 2, 3, 4])
+    expect(ordered.slice(0, 2).map((row) => row.id)).toEqual([1, 2])
+    expect(ordered.slice(2).map((row) => row.id)).toEqual([4, 3])
   })
 })
 

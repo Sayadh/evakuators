@@ -7,13 +7,14 @@ import {
   NotFoundException,
   forwardRef,
 } from '@nestjs/common'
-import { PaymentKind } from '@prisma/client'
+import { PaymentKind, PromotionScope } from '@prisma/client'
 import { armeniaDateKey } from '../common/armenia-day'
 import { IdramService } from '../idram/idram.service'
 import { SubscriptionsRepository } from '../subscriptions/subscriptions.repository'
-import { FEATURED_MAX_DAYS, isFeaturedNow } from '../tow-trucks/featured'
+import { FEATURED_MAX_DAYS, isAreaFeaturedNow, isFeaturedNow } from '../tow-trucks/featured'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
 import {
+  AREA_PROMOTION_PRICE_BRACKETS,
   PROMOTION_BUMPS_PER_DAY,
   PROMOTION_CURRENCY,
   PROMOTION_PRICE_BRACKETS,
@@ -22,6 +23,12 @@ import {
 import type { CreatedPromotionPaymentApi, PromotionStatusApi } from './promotion.types'
 
 const DAY_MS = 24 * 60 * 60 * 1000
+
+/** What the driver sees on the Idram page and the receipt */
+const SCOPE_LABEL: Record<PromotionScope, string> = {
+  [PromotionScope.HOME]: 'Իմ քաղաքում վերևում',
+  [PromotionScope.AREA]: 'Ամբողջ սպասարկման տարածքում',
+}
 
 /**
  * A driver buying their own place at the top of their town's page.
@@ -65,10 +72,19 @@ export class PromotionsService {
     }
 
     if (!truck.isActive) {
-      return { ...base, visible: false, blockedReason: 'inactive', refreshesLeft: 0, maxDays: 0 }
+      return {
+        ...base,
+        visible: false,
+        blockedReason: 'inactive',
+        refreshesLeft: 0,
+        maxDays: 0,
+        area: { maxDays: 0, brackets: AREA_PROMOTION_PRICE_BRACKETS },
+      }
     }
 
     const live = isFeaturedNow(truck, now)
+    const areaLive = isAreaFeaturedNow(truck, now)
+    const anyLive = live || areaLive
     const coverage = await this.subscriptionsRepository.findCoverage([towTruckId])
     // `paidThrough`, not `coveredUntil`: coverage also counts the deadline an
     // admin gives a driver who has NOT paid, and "you have until Friday to pay"
@@ -79,10 +95,28 @@ export class PromotionsService {
     const status: PromotionStatusApi = {
       ...base,
       visible: true,
-      refreshesLeft: live ? this.refreshesLeft(truck, now) : 0,
-      maxDays: subscribed ? this.maxDays(truck.featuredUntil, paidThrough, now, live) : 0,
+      refreshesLeft: anyLive ? this.refreshesLeft(truck, now) : 0,
+      // HOME starts where a live AREA window ends — the area product already
+      // holds the home top, and the grant (`confirmPromotion`) counts the same
+      // way, so this is the number the driver can actually receive.
+      maxDays: subscribed
+        ? this.maxDays(
+            [live ? truck.featuredUntil : null, areaLive ? truck.areaFeaturedUntil : null],
+            paidThrough,
+            now,
+          )
+        : 0,
       ...(live && truck.featuredUntil ? { activeUntil: truck.featuredUntil.toISOString() } : {}),
-      ...(live && truck.featuredAt ? { lastRefreshedAt: truck.featuredAt.toISOString() } : {}),
+      ...(anyLive && truck.featuredAt ? { lastRefreshedAt: truck.featuredAt.toISOString() } : {}),
+      area: {
+        maxDays: subscribed
+          ? this.maxDays([areaLive ? truck.areaFeaturedUntil : null], paidThrough, now)
+          : 0,
+        brackets: AREA_PROMOTION_PRICE_BRACKETS,
+        ...(areaLive && truck.areaFeaturedUntil
+          ? { activeUntil: truck.areaFeaturedUntil.toISOString() }
+          : {}),
+      },
     }
 
     if (!subscribed) status.blockedReason = 'no-subscription'
@@ -99,9 +133,11 @@ export class PromotionsService {
   async createPayment(
     towTruckId: number,
     days: number,
+    scope: PromotionScope = PromotionScope.HOME,
     now: Date = new Date(),
   ): Promise<CreatedPromotionPaymentApi> {
     const status = await this.getStatus(towTruckId, now)
+    const maxDays = scope === PromotionScope.AREA ? status.area.maxDays : status.maxDays
     if (!status.visible) {
       throw new ConflictException('Ձեր էջը ապաակտիվացված է')
     }
@@ -110,40 +146,42 @@ export class PromotionsService {
         'Առաջխաղացում գնելու համար նախ պետք է ակտիվ բաժանորդագրություն ունենաք',
       )
     }
-    if (status.maxDays === 0) {
+    if (maxDays === 0) {
       throw new ConflictException(
         'Առաջխաղացումն արդեն հասնում է բաժանորդագրության վերջին օրվան',
       )
     }
-    if (days > status.maxDays) {
+    if (days > maxDays) {
       // Named rather than clamped: a driver who asked for thirty days and was
       // quietly sold nine would find out from their receipt.
       throw new BadRequestException(
-        `Այս պահին կարող եք գնել առավելագույնը ${status.maxDays} օր — ` +
+        `Այս պահին կարող եք գնել առավելագույնը ${maxDays} օր — ` +
           'առաջխաղացումը չի կարող գերազանցել բաժանորդագրության ժամկետը',
       )
     }
 
-    const amount = promotionPrice(days)
+    const amount = promotionPrice(days, scope)
     // Unreachable through the DTO, which bounds 1–30. Checked because this is
     // the number the driver will be charged.
     if (amount === null) throw new BadRequestException(`Օրերի քանակը պետք է լինի 1–${FEATURED_MAX_DAYS}`)
 
     const payment = await this.subscriptionsRepository.createPromotion(towTruckId, {
       days,
+      scope,
       amount,
       currency: PROMOTION_CURRENCY,
     })
 
     this.logger.log(
       `Promotion payment #${payment.id} requested by TowTruck #${towTruckId}: ` +
-        `${days} days, ${amount} ${PROMOTION_CURRENCY} (PENDING)`,
+        `${scope}, ${days} days, ${amount} ${PROMOTION_CURRENCY} (PENDING)`,
     )
 
     return {
       id: payment.id,
       towTruckId: payment.towTruckId,
       days,
+      scope,
       amount,
       currency: PROMOTION_CURRENCY,
       status: payment.status,
@@ -151,7 +189,11 @@ export class PromotionsService {
       // The row exists BEFORE the driver is handed over, for the same reason it
       // does on a subscription: the provider's first callback asks whether this
       // bill is a real order, and there would be nothing to answer with.
-      gateway: this.idram.paymentForm(payment.id, amount, `Առաջխաղացում ${days} օր`),
+      gateway: this.idram.paymentForm(
+        payment.id,
+        amount,
+        `Առաջխաղացում · ${SCOPE_LABEL[scope]} · ${days} օր`,
+      ),
     }
   }
 
@@ -173,14 +215,19 @@ export class PromotionsService {
     // A row that satisfies one and not the other cannot exist (the CHECK
     // constraint says so) — which is exactly why reaching here with one means
     // something upstream is wrong and guessing would be the wrong answer.
-    if (!payment || payment.kind !== PaymentKind.PROMOTION || !payment.promotionDays) {
+    if (
+      !payment ||
+      payment.kind !== PaymentKind.PROMOTION ||
+      !payment.promotionDays ||
+      !payment.promotionScope
+    ) {
       return false
     }
 
     const confirmed = await this.subscriptionsRepository.confirmPromotion(
       paymentId,
       payment.towTruckId,
-      payment.promotionDays,
+      { days: payment.promotionDays, scope: payment.promotionScope },
       now,
       source,
     )
@@ -188,7 +235,7 @@ export class PromotionsService {
 
     this.logger.warn(
       `Promotion confirmed: payment #${paymentId}, TowTruck #${payment.towTruckId}, ` +
-        `${payment.promotionDays} days, ${payment.amount} ${payment.currency}` +
+        `${payment.promotionScope}, ${payment.promotionDays} days, ${payment.amount} ${payment.currency}` +
         `${source ? ` (${source.provider} ${source.transactionId})` : ''}`,
     )
     return true
@@ -214,7 +261,9 @@ export class PromotionsService {
     if (refreshed) return status
 
     if (!status.visible) throw new ConflictException('Ձեր էջը ապաակտիվացված է')
-    if (!status.activeUntil) throw new ConflictException('Ակտիվ առաջխաղացում չունեք')
+    if (!status.activeUntil && !status.area.activeUntil) {
+      throw new ConflictException('Ակտիվ առաջխաղացում չունեք')
+    }
     throw new ConflictException(
       `Այսօրվա թարմացումներն սպառված են (օրական ${PROMOTION_BUMPS_PER_DAY})`,
     )
@@ -232,18 +281,19 @@ export class PromotionsService {
   /**
    * How many days are still on sale, bounded by the subscription.
    *
-   * Measured from where the placement WOULD start — the end of a running one,
-   * or now — because that is the day the driver is buying from. A driver with a
-   * week of placement left and a month of subscription can buy the three weeks
-   * in between, and not an hour more.
+   * Measured from where the placement WOULD start — the latest end of the live
+   * windows it queues behind, or now — because that is the day the driver is
+   * buying from. A driver with a week of placement left and a month of
+   * subscription can buy the three weeks in between, and not an hour more.
+   *
+   * `queuedBehind` holds only LIVE windows' ends (null for anything not
+   * running), so an expired date can never push the start into the past.
    */
-  private maxDays(
-    featuredUntil: Date | null,
-    paidThrough: Date,
-    now: Date,
-    live: boolean,
-  ): number {
-    const start = live && featuredUntil ? featuredUntil : now
+  private maxDays(queuedBehind: readonly (Date | null)[], paidThrough: Date, now: Date): number {
+    const start = queuedBehind.reduce<Date>(
+      (latest, end) => (end && end.getTime() > latest.getTime() ? end : latest),
+      now,
+    )
     const whole = Math.floor((paidThrough.getTime() - start.getTime()) / DAY_MS)
     return Math.max(0, Math.min(whole, FEATURED_MAX_DAYS))
   }

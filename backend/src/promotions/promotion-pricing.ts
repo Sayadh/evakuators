@@ -1,3 +1,4 @@
+import { PromotionScope } from '@prisma/client'
 import { FEATURED_MAX_DAYS, FEATURED_MIN_DAYS } from '../tow-trucks/featured'
 
 /**
@@ -46,6 +47,29 @@ export const PROMOTION_PRICE_BRACKETS: readonly PromotionPriceBracket[] = Object
   Object.freeze({ fromDay: 21, toDay: 30, pricePerDay: 100 }),
 ] as PromotionPriceBracket[])
 
+/**
+ * «Ամբողջ սպասարկման տարածքում» — the same ladder at 2.5×: 1,000 ֏ on day one,
+ * 15,000 ֏ for thirty.
+ *
+ * One multiplier on the home ladder rather than a second shape, so the two
+ * products keep the same reading — a burst is dearer per day than a standing
+ * position — and only the reach differs. The reach is what is dearer: the home
+ * product sells one page, this one sells every page the driver covers (up to
+ * five towns or Yerevan districts beside their own), placed after the local
+ * drivers on each.
+ */
+export const AREA_PROMOTION_PRICE_BRACKETS: readonly PromotionPriceBracket[] = Object.freeze([
+  Object.freeze({ fromDay: 1, toDay: 5, pricePerDay: 1000 }),
+  Object.freeze({ fromDay: 6, toDay: 10, pricePerDay: 750 }),
+  Object.freeze({ fromDay: 11, toDay: 20, pricePerDay: 375 }),
+  Object.freeze({ fromDay: 21, toDay: 30, pricePerDay: 250 }),
+] as PromotionPriceBracket[])
+
+/** The ladder for one product */
+export function promotionBrackets(scope: PromotionScope): readonly PromotionPriceBracket[] {
+  return scope === PromotionScope.AREA ? AREA_PROMOTION_PRICE_BRACKETS : PROMOTION_PRICE_BRACKETS
+}
+
 /** AMD, like every other price in this project. See `SubscriptionPlan.price`. */
 export const PROMOTION_CURRENCY = 'AMD'
 
@@ -72,13 +96,16 @@ export const PROMOTION_BUMPS_PER_DAY = 6
  * reach this from a DTO that has already bounded the value, and from a price
  * preview where "no price" is a renderable answer and an exception is not.
  */
-export function promotionPrice(days: number): number | null {
+export function promotionPrice(
+  days: number,
+  scope: PromotionScope = PromotionScope.HOME,
+): number | null {
   if (!Number.isInteger(days) || days < FEATURED_MIN_DAYS || days > FEATURED_MAX_DAYS) {
     return null
   }
 
   let total = 0
-  for (const bracket of PROMOTION_PRICE_BRACKETS) {
+  for (const bracket of promotionBrackets(scope)) {
     if (days < bracket.fromDay) break
     // The part of this band the order actually reaches. `Math.min` is what
     // makes the last band partial — 17 days takes all of 1–5 and 6–10, and

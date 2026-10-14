@@ -197,6 +197,11 @@ export interface TowTruckCard {
    */
   promotedAt?: string
   /**
+   * Holds the «Ամբողջ սպասարկման տարածքում» placement — present only while
+   * live. Mirrors `TowTruckCardApi.promotedInArea`.
+   */
+  promotedInArea?: true
+  /**
    * "Our driver" — a standing relationship with the operator, mirrored from
    * `TowTruckCardApi.isPartner`.
    *

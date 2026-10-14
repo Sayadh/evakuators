@@ -8,7 +8,26 @@ export interface PromotionPriceBracket {
 /** Why the block cannot sell anything right now. Mirrors backend `PromotionBlockedReason`. */
 export type PromotionBlockedReason = 'inactive' | 'no-subscription'
 
-/** Mirrors backend `PromotionStatusApi` */
+/**
+ * The two placement products. Mirrors the backend's `PromotionScope` enum.
+ *
+ * - `HOME` — «Իմ քաղաքում վերևում»: the top of the driver's own town page;
+ * - `AREA` — «Ամբողջ սպասարկման տարածքում»: HOME, plus first after the local
+ *   drivers on every page the driver covers.
+ */
+export type PromotionScope = 'HOME' | 'AREA'
+
+/** Mirrors backend `PromotionProductApi` */
+export interface PromotionProduct {
+  activeUntil?: string
+  maxDays: number
+  brackets: PromotionPriceBracket[]
+}
+
+/**
+ * Mirrors backend `PromotionStatusApi`. The top-level `activeUntil` /
+ * `maxDays` / `brackets` are the HOME product; `area` is the AREA one.
+ */
 export interface PromotionStatus {
   /** False only for a deactivated listing, and then the block is not rendered at all */
   visible: boolean
@@ -29,6 +48,8 @@ export interface PromotionStatus {
    */
   brackets: PromotionPriceBracket[]
   currency: string
+  /** «Ամբողջ սպասարկման տարածքում» */
+  area: PromotionProduct
 }
 
 /** Mirrors backend `CreatedPromotionPaymentApi` */
@@ -36,6 +57,7 @@ export interface CreatedPromotionPayment {
   id: number
   towTruckId: number
   days: number
+  scope: PromotionScope
   amount: number
   currency: string
   status: string

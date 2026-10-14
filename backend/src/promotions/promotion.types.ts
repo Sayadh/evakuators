@@ -1,3 +1,4 @@
+import type { PromotionScope } from '@prisma/client'
 import type { PromotionPriceBracket } from './promotion-pricing'
 
 /**
@@ -13,6 +14,27 @@ export type PromotionBlockedReason =
   /** No live subscription. Shown, explained, and nothing is for sale. */
   | 'no-subscription'
 
+/**
+ * One of the two products, as the block needs it: is it running, how much of
+ * it is on sale, and at what ladder.
+ */
+export interface PromotionProductApi {
+  /** Set while this product's placement is running */
+  activeUntil?: string
+  /** Same rule as the top-level `maxDays`, for this product */
+  maxDays: number
+  brackets: readonly PromotionPriceBracket[]
+}
+
+/**
+ * The status of both placement products.
+ *
+ * The top-level `activeUntil` / `maxDays` / `brackets` are «Իմ քաղաքում
+ * վերևում» — they were the whole contract before the second product existed,
+ * and are kept where they were so a page loaded before a deploy still reads
+ * them right. «Ամբողջ սպասարկման տարածքում» is `area`. The refresh allowance
+ * and `lastRefreshedAt` are shared: both products queue on the same key.
+ */
 export interface PromotionStatusApi {
   /** Whether the block may be rendered at all. False only for a deactivated listing. */
   visible: boolean
@@ -38,6 +60,9 @@ export interface PromotionStatusApi {
   /** The ladder, so the page can price a day count without a second copy of it */
   brackets: readonly PromotionPriceBracket[]
   currency: string
+
+  /** «Ամբողջ սպասարկման տարածքում» */
+  area: PromotionProductApi
 }
 
 /** What `POST /my/promotion/payments` answers with — the row, plus the form that pays it */
@@ -45,6 +70,7 @@ export interface CreatedPromotionPaymentApi {
   id: number
   towTruckId: number
   days: number
+  scope: PromotionScope
   amount: number
   currency: string
   status: string

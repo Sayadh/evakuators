@@ -556,8 +556,9 @@ one town is actually asking for.
 That ordering is the **backend's**: `backend/src/tow-trucks/listing-order.ts`,
 applied when a request carries `?seed=`. The place it ranks against is the
 `city` or `district` the request already names, so the page does not send it
-twice. See `docs/architecture.md` § "The listing order is random" for the four
-ranks and for what `?avoid=` buys.
+twice. See `docs/architecture.md` § "The listing order is random" for the five
+ranks (including the paid «Ամբողջ սպասարկման տարածքում» rank) and for what
+`?avoid=` buys.
 
 A road corridor page asks with `zone` and no city, which the backend reads as
 "no base place" (a truck cannot be "based on" a road), so on those pages every

@@ -16,14 +16,16 @@ import type { TowTruckCardApi } from './tow-truck.types'
  *
  * ## The ranks
  *
- * Lower first. Ranks 1–3 are shuffled; rank 0 is a queue.
+ * Lower first. Ranks 1, 2 and 4 are shuffled; ranks 0 and 3 are queues.
  *
- * 0. a live paid placement AND based here — newest purchase first, NOT
- *    shuffled. Somebody bought that position; "sometimes the top" is not what
- *    they bought.
+ * 0. a live paid placement — either product — AND based here. Last refresh
+ *    first, NOT shuffled. Somebody bought that position; "sometimes the top"
+ *    is not what they bought.
  * 1. our own drivers (`isPartner`) whose BASE is this place;
  * 2. everyone else based here;
- * 3. everyone else — the drivers who cover this place without being based in it.
+ * 3. a live «Ամբողջ սպասարկման տարածքում» placement on a page the driver
+ *    explicitly covers without being based in it — a queue, like rank 0;
+ * 4. everyone else — the drivers who cover this place without being based in it.
  *
  * Being based here is the OUTER split; being ours sorts inside it. Someone
  * searching a town is choosing among that town's drivers, and a driver an hour
@@ -43,8 +45,16 @@ export interface ListingPlace {
   districtSlug?: string
 }
 
-/** Drivers holding a paid placement — rank 0, and never shuffled */
+/** Drivers holding a paid placement in their own town — never shuffled */
 const PAID_RANK = 0
+
+/** Drivers holding the area placement on a page they cover — never shuffled */
+const AREA_PAID_RANK = 3
+
+/** Ranks ordered by last refresh instead of by the shuffle */
+function isQueueRank(rank: number): boolean {
+  return rank === PAID_RANK || rank === AREA_PAID_RANK
+}
 
 /**
  * How many seeds to try before taking the last one.
@@ -111,16 +121,49 @@ function isBasedAt(truck: TowTruckCardApi, place: ListingPlace): boolean {
 /**
  * Is this driver holding a paid top placement **on this page**?
  *
- * The `&& isBasedAt` is the entire product decision, not a guard. What is sold
- * is the top of the driver's OWN town — the page where somebody standing next
- * to a broken car in that town is choosing. It deliberately does not travel: a
- * driver who merely covers this town cannot buy their way above the drivers
- * based in it, and a placement bought once cannot be cashed in on forty pages.
+ * The `&& isBasedAt` is the entire product decision, not a guard. The top of a
+ * page is sold only to the drivers based on it — the page where somebody
+ * standing next to a broken car in that town is choosing. A driver who merely
+ * covers this town cannot buy their way above the drivers based in it, by
+ * either product; the area product buys rank 3, after them.
  *
- * `promotedAt` is present only while the placement is live — see the mapper.
+ * `promotedAt` is present only while a placement is live, and is set by both
+ * products — see the mapper.
  */
 function isPromotedAt(truck: TowTruckCardApi, place: ListingPlace): boolean {
   return truck.promotedAt !== undefined && isBasedAt(truck, place)
+}
+
+/**
+ * Does this driver's own coverage list name the place being listed?
+ *
+ * Explicitly, by slug — not "appears on this page". A page also carries drivers
+ * who reach it some other way (a corridor, a nationwide specialist), and the
+ * area product sells the towns the driver CHOSE, which the coverage cap keeps
+ * to a handful. Reading presence instead would let `servesAllArmenia` turn one
+ * purchase into the second slot of every town in the country.
+ */
+function coversExplicitly(truck: TowTruckCardApi, place: ListingPlace): boolean {
+  if (place.citySlug) {
+    return truck.serviceAreas.some((area) => area.type === 'city' && area.slug === place.citySlug)
+  }
+  if (place.districtSlug) {
+    return truck.serviceAreas.some(
+      (area) => area.type === 'district' && area.slug === place.districtSlug,
+    )
+  }
+  return false
+}
+
+/**
+ * Is this driver holding the area placement on this page, as a visitor?
+ *
+ * After the local drivers, never above them: someone standing in this town is
+ * choosing among this town's drivers first, and that promise is not for sale.
+ * What is sold is the first place among everyone who comes from elsewhere.
+ */
+function isAreaPromotedAt(truck: TowTruckCardApi, place: ListingPlace): boolean {
+  return truck.promotedInArea === true && !isBasedAt(truck, place) && coversExplicitly(truck, place)
 }
 
 /** Which group this driver falls in, on a listing about `place`. Lower first. */
@@ -130,7 +173,8 @@ export function listingRank(truck: TowTruckCardApi, place: ListingPlace): number
   if (isPromotedAt(truck, place)) return PAID_RANK
   if (basedHere && truck.isPartner) return 1
   if (basedHere) return 2
-  return 3
+  if (isAreaPromotedAt(truck, place)) return AREA_PAID_RANK
+  return 4
 }
 
 /**
@@ -150,12 +194,12 @@ export function orderListing(
     const byRank = listingRank(a, place) - listingRank(b, place)
     if (byRank !== 0) return byRank
 
-    // Everyone below the paid rank keeps the shuffle's own order.
-    if (listingRank(a, place) !== PAID_RANK) return 0
+    // Everyone outside the two paid ranks keeps the shuffle's own order.
+    if (!isQueueRank(listingRank(a, place))) return 0
 
-    // The paid queue: newest purchase first, so a driver who pays today is
-    // visibly first tomorrow and the one who paid last week moves down by one
-    // rather than being displaced. Plain string comparison, not
+    // The paid queues: last refresh (or purchase) first, so the driver who
+    // pressed «Թարմացնել» most recently is on top and the others move down by
+    // one rather than being displaced. Plain string comparison, not
     // `localeCompare` — these are ISO timestamps, where lexical order IS
     // chronological order.
     const left = a.promotedAt ?? ''
@@ -176,8 +220,8 @@ export function orderListing(
  * is the last one tried rather than a chosen one — which is how "always
  * different" quietly becomes "arbitrary, and often the same".
  *
- * Paid placements are excluded even when several hold one: that block is
- * ordered by purchase date, not by the shuffle.
+ * Paid placements are excluded even when several hold one: those blocks are
+ * ordered by last refresh, not by the shuffle.
  */
 function movableAt(
   ordered: readonly TowTruckCardApi[],
@@ -193,7 +237,7 @@ function movableAt(
     const truck = ordered[index]
     if (!truck) return false
     const rank = listingRank(truck, place)
-    if (rank === PAID_RANK) return false
+    if (isQueueRank(rank)) return false
     return (groupSize.get(rank) ?? 0) > 1
   }
 }

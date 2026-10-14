@@ -25,12 +25,14 @@ const DAY = 24 * 60 * 60 * 1000
 function build(options: {
   isActive?: boolean
   featuredUntil?: Date | null
+  areaFeaturedUntil?: Date | null
   featuredAt?: Date | null
   isFeatured?: boolean
   paidThrough?: Date | null
   bumpDay?: string | null
   bumpCount?: number
   refreshed?: boolean
+  scope?: 'HOME' | 'AREA'
 } = {}) {
   const truck = {
     id: 7,
@@ -38,6 +40,7 @@ function build(options: {
     isFeatured: options.isFeatured ?? options.featuredUntil !== undefined,
     featuredAt: options.featuredAt ?? null,
     featuredUntil: options.featuredUntil ?? null,
+    areaFeaturedUntil: options.areaFeaturedUntil ?? null,
     promotionBumpDay: options.bumpDay ?? null,
     promotionBumpCount: options.bumpCount ?? 0,
   }
@@ -71,6 +74,7 @@ function build(options: {
         towTruckId: 7,
         kind: 'PROMOTION',
         promotionDays: 5,
+        promotionScope: options.scope ?? 'HOME',
         amount: 2000,
         currency: 'AMD',
       })),
@@ -150,27 +154,28 @@ describe('buying a placement', () => {
     // quietly sold nine would find out from their receipt.
     const { service, createPromotion } = build({ paidThrough: inDays(9) })
 
-    await expect(service.createPayment(7, 30, NOW)).rejects.toThrow(/9 օր/)
+    await expect(service.createPayment(7, 30, 'HOME', NOW)).rejects.toThrow(/9 օր/)
     expect(createPromotion).not.toHaveBeenCalled()
   })
 
   it('refuses a deactivated listing and an unsubscribed one', async () => {
     const off = build({ isActive: false, paidThrough: inDays(30) })
-    await expect(off.service.createPayment(7, 1, NOW)).rejects.toThrow()
+    await expect(off.service.createPayment(7, 1, 'HOME', NOW)).rejects.toThrow()
 
     const unpaid = build({ paidThrough: null })
-    await expect(unpaid.service.createPayment(7, 1, NOW)).rejects.toThrow()
+    await expect(unpaid.service.createPayment(7, 1, 'HOME', NOW)).rejects.toThrow()
     expect(unpaid.createPromotion).not.toHaveBeenCalled()
   })
 
   it('prices the order from the ladder, never from the request', async () => {
     const { service, createPromotion } = build({ paidThrough: inDays(30) })
 
-    const created = await service.createPayment(7, 17, NOW)
+    const created = await service.createPayment(7, 17, 'HOME', NOW)
 
     expect(created.amount).toBe(4_550)
     expect(createPromotion).toHaveBeenCalledWith(7, {
       days: 17,
+      scope: 'HOME',
       amount: 4_550,
       currency: 'AMD',
     })
@@ -180,7 +185,7 @@ describe('buying a placement', () => {
     // The provider's first callback asks whether this bill is a real order.
     // Without the row there would be nothing to answer with.
     const { service } = build({ paidThrough: inDays(30) })
-    const created = await service.createPayment(7, 3, NOW)
+    const created = await service.createPayment(7, 3, 'HOME', NOW)
 
     expect(created.id).toBe(99)
     expect(created.gateway).toBeDefined()
@@ -195,7 +200,7 @@ describe('confirming a placement payment', () => {
       service.confirmPayment(99, { provider: 'IDRAM', transactionId: 't1' }, NOW),
     ).resolves.toBe(true)
 
-    expect(confirmPromotion).toHaveBeenCalledWith(99, 7, 5, NOW, {
+    expect(confirmPromotion).toHaveBeenCalledWith(99, 7, { days: 5, scope: 'HOME' }, NOW, {
       provider: 'IDRAM',
       transactionId: 't1',
     })
@@ -255,5 +260,66 @@ describe('refreshing', () => {
   it('offers no refreshes at all when no placement is running', async () => {
     const { service } = build({ paidThrough: inDays(30) })
     expect((await service.getStatus(7, NOW)).refreshesLeft).toBe(0)
+  })
+})
+
+describe('the «Ամբողջ սպասարկման տարածքում» product', () => {
+  it('prices from its own, dearer ladder', async () => {
+    const { service, createPromotion } = build({ paidThrough: inDays(30) })
+
+    const created = await service.createPayment(7, 30, 'AREA', NOW)
+
+    expect(created.amount).toBe(15_000)
+    expect(created.scope).toBe('AREA')
+    expect(createPromotion).toHaveBeenCalledWith(7, {
+      days: 30,
+      scope: 'AREA',
+      amount: 15_000,
+      currency: 'AMD',
+    })
+  })
+
+  it('is bounded by the subscription like the home product', async () => {
+    const { service, createPromotion } = build({ paidThrough: inDays(9) })
+    await expect(service.createPayment(7, 10, 'AREA', NOW)).rejects.toThrow(/9 օր/)
+    expect(createPromotion).not.toHaveBeenCalled()
+  })
+
+  it('measures from the end of its own running window', async () => {
+    const { service } = build({ paidThrough: inDays(30), areaFeaturedUntil: inDays(12) })
+    const status = await service.getStatus(7, NOW)
+    expect(status.area.maxDays).toBe(18)
+    expect(status.area.activeUntil).toBe(inDays(12).toISOString())
+  })
+
+  it('makes home days start after it — the area product already holds the home top', async () => {
+    const { service } = build({ paidThrough: inDays(30), areaFeaturedUntil: inDays(12) })
+    expect((await service.getStatus(7, NOW)).maxDays).toBe(18)
+  })
+
+  it('does not shrink because a home placement is running', async () => {
+    const { service } = build({ paidThrough: inDays(30), featuredUntil: inDays(20) })
+    const status = await service.getStatus(7, NOW)
+    expect(status.maxDays).toBe(10)
+    expect(status.area.maxDays).toBe(30)
+  })
+
+  it('ignores an expired window', async () => {
+    const { service } = build({ paidThrough: inDays(30), areaFeaturedUntil: inDays(-3) })
+    const status = await service.getStatus(7, NOW)
+    expect(status.area.activeUntil).toBeUndefined()
+    expect(status.area.maxDays).toBe(30)
+    expect(status.refreshesLeft).toBe(0)
+  })
+
+  it('opens the refresh allowance on its own', async () => {
+    const { service } = build({ paidThrough: inDays(30), areaFeaturedUntil: inDays(5) })
+    expect((await service.getStatus(7, NOW)).refreshesLeft).toBe(PROMOTION_BUMPS_PER_DAY)
+  })
+
+  it('grants the scope the row says', async () => {
+    const { service, confirmPromotion } = build({ scope: 'AREA' })
+    await service.confirmPayment(99, undefined, NOW)
+    expect(confirmPromotion).toHaveBeenCalledWith(99, 7, { days: 5, scope: 'AREA' }, NOW, undefined)
   })
 })

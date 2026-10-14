@@ -54,6 +54,9 @@ const CARD_SELECT = {
   isFeatured: true,
   featuredAt: true,
   featuredUntil: true,
+  // The «Ամբողջ սպասարկման տարածքում» window — rank 3 on the pages this
+  // driver covers, and the home top too. See `listing-order.ts`.
+  areaFeaturedUntil: true,
   // "Our driver", also for the card ordering — a standing relationship rather
   // than a bought placement, so it has no window to read alongside it.
   isPartner: true,
@@ -543,13 +546,31 @@ export class TowTrucksRepository {
    * and it would come back to life the moment someone re-granted the flag
    * alone.
    */
-  setFeatured(id: number, window: { until: Date; at: Date } | null): Promise<TowTruck> {
-    return this.prisma.towTruck.update({
-      where: { id },
-      data: window
-        ? { isFeatured: true, featuredAt: window.at, featuredUntil: window.until }
-        : { isFeatured: false, featuredAt: null, featuredUntil: null },
-    })
+  async setFeatured(id: number, window: { until: Date; at: Date } | null): Promise<TowTruck> {
+    if (window) {
+      return this.prisma.towTruck.update({
+        where: { id },
+        data: { isFeatured: true, featuredAt: window.at, featuredUntil: window.until },
+      })
+    }
+
+    // A revoke takes down the HOME window only. `featuredAt` is also the queue
+    // key of a still-running «Ամբողջ սպասարկման տարածքում» placement the driver
+    // paid for separately, so it is kept while that one is live — clearing it
+    // would drop a paying driver out of the queue without ending what they
+    // bought.
+    const now = new Date()
+    await this.prisma.$executeRaw`
+      UPDATE "TowTruck"
+      SET "isFeatured" = false,
+          "featuredUntil" = NULL,
+          "featuredAt" = CASE
+            WHEN "areaFeaturedUntil" > ${now} THEN "featuredAt"
+            ELSE NULL
+          END
+      WHERE "id" = ${id}::int
+    `
+    return this.prisma.towTruck.findUniqueOrThrow({ where: { id } })
   }
 
   /**
@@ -585,9 +606,10 @@ export class TowTrucksRepository {
           END
       WHERE "id" = ${id}::int
         AND "isActive" = true
-        AND "isFeatured" = true
-        AND "featuredUntil" IS NOT NULL
-        AND "featuredUntil" > ${now}
+        AND (
+          ("isFeatured" = true AND "featuredUntil" IS NOT NULL AND "featuredUntil" > ${now})
+          OR "areaFeaturedUntil" > ${now}
+        )
         AND CASE
               WHEN "promotionBumpDay" = ${dayKey} THEN "promotionBumpCount"
               ELSE 0
@@ -607,10 +629,20 @@ export class TowTrucksRepository {
    * Returns the count so the job can say whether it did anything.
    */
   async expireFeatured(now: Date): Promise<number> {
-    const { count } = await this.prisma.towTruck.updateMany({
-      where: { isFeatured: true, featuredUntil: { not: null, lte: now } },
-      data: { isFeatured: false, featuredAt: null, featuredUntil: null },
-    })
+    // `featuredAt` survives while an area placement is still running — it is
+    // that placement's queue key too. See `setFeatured`.
+    const count = await this.prisma.$executeRaw`
+      UPDATE "TowTruck"
+      SET "isFeatured" = false,
+          "featuredUntil" = NULL,
+          "featuredAt" = CASE
+            WHEN "areaFeaturedUntil" > ${now} THEN "featuredAt"
+            ELSE NULL
+          END
+      WHERE "isFeatured" = true
+        AND "featuredUntil" IS NOT NULL
+        AND "featuredUntil" <= ${now}
+    `
     return count
   }
 

@@ -198,3 +198,44 @@ describe('the price sort stays a valid comparator', () => {
     expect(second).toEqual(first)
   })
 })
+
+describe('the «Ամբողջ սպասարկման տարածքում» placement (mock-mode mirror)', () => {
+  const visitingArea = (id: number, promotedAt: string): TowTruckCard =>
+    card({
+      id,
+      location: { name: 'Հրազդան', citySlug: 'hrazdan' },
+      promotedAt,
+      promotedInArea: true,
+      serviceAreas: [{ name: 'Աբովյան', slug: 'abovyan', type: 'city' }],
+    } as Partial<TowTruckCard> & { id: number })
+
+  it('sits after every local driver and before the other visitors, by last refresh', () => {
+    const plainVisitor = card({ id: 9, location: { name: 'Հրազդան', citySlug: 'hrazdan' } })
+    const ids = order([
+      plainVisitor,
+      visitingArea(5, '2026-02-01T00:00:00.000Z'),
+      card({ id: 2 }),
+      visitingArea(6, '2026-02-02T00:00:00.000Z'),
+      card({ id: 1, promotedAt: '2026-01-01T00:00:00.000Z' }),
+    ])
+    expect(ids).toEqual([1, 2, 6, 5, 9])
+  })
+
+  it('does nothing on a page the driver does not name in their coverage', () => {
+    const driver = card({
+      id: 5,
+      location: { name: 'Հրազդան', citySlug: 'hrazdan' },
+      promotedAt: '2026-02-01T00:00:00.000Z',
+      promotedInArea: true,
+      serviceAreas: [],
+    } as Partial<TowTruckCard> & { id: number })
+    const other = card({ id: 9, location: { name: 'Հրազդան', citySlug: 'hrazdan' } })
+    const seen = new Set<number>()
+    for (let seed = 0; seed < 40; seed += 1) {
+      const ids = sortTowTrucks([driver, other], SortOption.Recommended, seed, false, ABOVYAN)
+      seen.add(ids[0]!.id)
+    }
+    // Shuffled together with the other visitor, not pinned above them.
+    expect(seen).toEqual(new Set([5, 9]))
+  })
+})

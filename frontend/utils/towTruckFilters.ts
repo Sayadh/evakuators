@@ -165,7 +165,27 @@ export function isPromotedAt(truck: TowTruckCard, place: BasePlace | undefined):
 }
 
 /**
- * Which of the three groups this driver falls in, on a page about `place`.
+ * Holds the «Ամբողջ սպասարկման տարածքում» placement on this page as a visitor:
+ * not based here, and the place is named in the driver's OWN coverage list.
+ * Mirrors the backend's `isAreaPromotedAt` in `listing-order.ts`.
+ */
+export function isAreaPromotedAt(truck: TowTruckCard, place: BasePlace | undefined): boolean {
+  if (!place || truck.promotedInArea !== true || isBasedAt(truck, place)) return false
+  if (place.citySlug) {
+    return truck.serviceAreas.some((area) => area.type === 'city' && area.slug === place.citySlug)
+  }
+  if (place.districtSlug) {
+    return truck.serviceAreas.some(
+      (area) => area.type === 'district' && area.slug === place.districtSlug,
+    )
+  }
+  return false
+}
+
+/**
+ * Which group this driver falls in, on a page about `place`. Mirrors the
+ * backend's `listingRank` — the server decides the real listing; this copy is
+ * for mock mode only.
  *
  * Lower sorts first. Returned as a number rather than compared pairwise so the
  * comparator stays total — see the note on `seed` in `sortTowTrucks`.
@@ -176,7 +196,13 @@ export function localRank(truck: TowTruckCard, place: BasePlace): number {
   if (isPromotedAt(truck, place)) return 0
   if (basedHere && truck.isPartner) return 1
   if (basedHere) return 2
-  return 3
+  if (isAreaPromotedAt(truck, place)) return 3
+  return 4
+}
+
+/** Ranks 0 and 3 are queues by last refresh; the rest keep the shuffle */
+function isQueueRank(rank: number): boolean {
+  return rank === 0 || rank === 3
 }
 
 /**
@@ -203,7 +229,9 @@ export function localRank(truck: TowTruckCard, place: BasePlace): number {
  *    purchase first and NOT shuffled — see the comparator;
  * 1. our own drivers (`isPartner`) whose BASE is this town or district;
  * 2. everyone else based here (`isBasedAt`);
- * 3. everyone else — the drivers who cover this place but are not based in it.
+ * 3. a live «Ամբողջ սպասարկման տարածքում» placement, not based here, on a
+ *    page the driver explicitly covers — a queue like rank 0;
+ * 4. everyone else — the drivers who cover this place but are not based in it.
  *
  * Being based here is the OUTER split; being ours sorts inside it. Someone
  * searching «Ավան» is choosing among Ավան drivers, and a driver an hour away
@@ -219,7 +247,7 @@ export function localRank(truck: TowTruckCard, place: BasePlace): number {
  * `isBasedAt` too — what was sold is the top of the driver's OWN town, never
  * a way to appear in towns they are not in.
  *
- * Only rank 0 is ordered inside itself (by purchase date). Ranks 1, 2 and 3
+ * Only ranks 0 and 3 are ordered inside themselves (by last refresh). Ranks 1, 2 and 4
  * compare equal within themselves, so the shuffle that ran before this sort
  * survives — they are re-randomised on every page load, which is the point:
  * a fixed queue would quietly decide which of several equally-good drivers
@@ -286,11 +314,10 @@ export function sortTowTrucks(
           // "sometimes the top", which is not what "the top spot" means to
           // somebody who just paid for it.
           //
-          // `promotedAt` is only set on rank 0, so this line is unreachable for
-          // anyone else — and the `?? ''` keeps it total for the legacy
-          // open-ended grants, which have no date and sort last among the
-          // promoted.
-          if (localRank(a, basePlace) !== 0) return 0
+          // Only the two paid ranks get here, and the `?? ''` keeps it total
+          // for the legacy open-ended grants, which have no date and sort last
+          // among the promoted.
+          if (!isQueueRank(localRank(a, basePlace))) return 0
 
           // Plain string comparison, not `localeCompare`: these are ISO
           // timestamps, where lexical order IS chronological order, and a

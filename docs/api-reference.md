@@ -85,20 +85,29 @@ shape, the rating join and the row cap to drift.
 
 ### The driver's own placement — `/my/promotion`
 
-A driver buys their own place at the top of their town page, and refreshes it
-to climb back up. Three routes, all behind `DriverJwtGuard`, all acting on the
+A driver buys a placement — one of two products, `scope` — and refreshes it to
+climb back up:
+
+- `HOME` — «Իմ քաղաքում վերևում»: the top of their own town page. Ladder
+  400/300/150/100 ֏ per day (marginal), 30 days = 6,000 ֏.
+- `AREA` — «Ամբողջ սպասարկման տարածքում»: HOME, plus rank 3 (first after the
+  local drivers) on every city/district page they name in their coverage. The
+  same ladder at 2.5× — 1,000/750/375/250 ֏, 30 days = 15,000 ֏.
+ Three routes, all behind `DriverJwtGuard`, all acting on the
 caller's own truck — the id comes from the session, never from a body.
 
 | Method | Path | Notes |
 | --- | --- | --- |
-| `GET` | `/my/promotion` | `{ visible, blockedReason?, activeUntil?, lastRefreshedAt?, refreshesLeft, refreshesPerDay, maxDays, brackets, currency }`. `visible: false` only for a deactivated listing, and the dashboard renders nothing at all then. `blockedReason: 'no-subscription'` shows the block and sells nothing. `brackets` is the price ladder, sent so the page can price a day count without a second copy of the numbers |
-| `POST` | `/my/promotion/payments` | Body `{ days }` — **never an amount**; the price is `promotionPrice(days)` on the server (`promotion-pricing.ts`). Refused when the listing is deactivated, when there is no live subscription, or when `days > maxDays`. Answers with the row plus the Idram form |
+| `GET` | `/my/promotion` | `{ visible, blockedReason?, activeUntil?, lastRefreshedAt?, refreshesLeft, refreshesPerDay, maxDays, brackets, currency, area: { activeUntil?, maxDays, brackets } }`. The top-level `activeUntil`/`maxDays`/`brackets` are the HOME product (where they were before AREA existed); `area` is the AREA one. The refresh allowance is shared. `visible: false` only for a deactivated listing, and the dashboard renders nothing at all then. `blockedReason: 'no-subscription'` shows the block and sells nothing. `brackets` is the price ladder, sent so the page can price a day count without a second copy of the numbers |
+| `POST` | `/my/promotion/payments` | Body `{ days, scope? }` (`scope` defaults to `HOME`) — **never an amount**; the price is `promotionPrice(days, scope)` on the server (`promotion-pricing.ts`). Refused when the listing is deactivated, when there is no live subscription, or when `days > maxDays`. Answers with the row plus the Idram form |
 | `POST` | `/my/promotion/refresh` | «Թարմացնել» — sets `featuredAt = now`, which is what the promoted block on a town page is ordered by. Six per Armenia calendar day; the check and the spend are one UPDATE. Answers with the fresh status |
 
 **`maxDays` is bounded by the subscription.** A placement may not outlive the
 access it decorates, so it is the distance from where the placement would start
 — the end of a running one, or now — to the day the subscription runs out,
-capped at `FEATURED_MAX_DAYS`. "Subscription" here means `paidThrough`, real
+capped at `FEATURED_MAX_DAYS`. HOME days queue behind a live AREA window too
+(AREA already holds the home top, and the grant counts the same way); AREA days
+queue only behind their own window. "Subscription" here means `paidThrough`, real
 money: `coveredUntil` also counts the deadline an admin gives a driver who has
 NOT paid, and that is a request for money rather than money.
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { FEATURED_MAX_DAYS, FEATURED_MIN_DAYS } from '../src/tow-trucks/featured'
 import {
+  AREA_PROMOTION_PRICE_BRACKETS,
   promotionPrice,
   PROMOTION_PRICE_BRACKETS,
 } from '../src/promotions/promotion-pricing'
@@ -88,5 +89,36 @@ describe('the placement price ladder', () => {
       const previous = PROMOTION_PRICE_BRACKETS[index - 1]
       if (previous) expect(bracket.fromDay).toBe(previous.toDay + 1)
     }
+  })
+})
+
+describe('the «Ամբողջ սպասարկման տարածքում» ladder', () => {
+  it('prices the two ends at 2.5× the home product', () => {
+    expect(promotionPrice(1, 'AREA')).toBe(1_000)
+    expect(promotionPrice(30, 'AREA')).toBe(15_000)
+  })
+
+  it('is dearer than the home product for every day count', () => {
+    for (const days of ALL_DAYS) {
+      expect(promotionPrice(days, 'AREA')!, `${days} days`).toBeGreaterThan(promotionPrice(days)!)
+    }
+  })
+
+  it('keeps both invariants across the whole range', () => {
+    for (let days = 2; days <= FEATURED_MAX_DAYS; days += 1) {
+      const total = promotionPrice(days, 'AREA')!
+      const previous = promotionPrice(days - 1, 'AREA')!
+      expect(total).toBeGreaterThan(previous)
+      expect(total / days).toBeLessThanOrEqual(previous / (days - 1))
+    }
+  })
+
+  it('covers 1–30 with no gap or overlap', () => {
+    let next = FEATURED_MIN_DAYS
+    for (const bracket of AREA_PROMOTION_PRICE_BRACKETS) {
+      expect(bracket.fromDay).toBe(next)
+      next = bracket.toDay + 1
+    }
+    expect(next - 1).toBe(FEATURED_MAX_DAYS)
   })
 })

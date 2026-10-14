@@ -1,5 +1,5 @@
 import { decimalToNumber } from '../common/coordinates'
-import { isFeaturedNow } from './featured'
+import { isAreaFeaturedNow, isPromotedHomeNow } from './featured'
 import type { TowTruckCardRow, TowTruckCoverageRow } from './tow-trucks.repository'
 import type {
   ServiceAreaJson,
@@ -202,9 +202,13 @@ export function toTowTruckCardApi(
     // that decides whether a placement is live. `featuredAt` can be null on a
     // legacy open-ended grant — that driver is still promoted, just with no
     // position in the queue, so they sort after everyone who has a date.
-    ...(isFeaturedNow(truck, now) && truck.featuredAt
+    ...(isPromotedHomeNow(truck, now) && truck.featuredAt
       ? { promotedAt: truck.featuredAt.toISOString() }
       : {}),
+    // The area product, as a bare `true` — present only while live, for the
+    // same reason `promotedAt` is: absence is "not promoted", and when it ends
+    // is a commercial term nobody reading the JSON needs.
+    ...(isAreaFeaturedNow(truck, now) && truck.featuredAt ? { promotedInArea: true as const } : {}),
     // No window to apply, unlike the placement above: this one is on until an
     // admin turns it off, so the column IS the answer.
     isPartner: truck.isPartner,

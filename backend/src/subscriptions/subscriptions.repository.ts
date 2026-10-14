@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common'
-import { PaymentKind, SubscriptionPaymentStatus, type SubscriptionPayment } from '@prisma/client'
+import {
+  PaymentKind,
+  PromotionScope,
+  SubscriptionPaymentStatus,
+  type SubscriptionPayment,
+} from '@prisma/client'
 import { PrismaService } from '../prisma/prisma.service'
 import type { SubscriptionPeriod } from './subscription-period'
 import { resolveCoveredUntil } from './subscription-status'
@@ -158,13 +163,14 @@ export class SubscriptionsRepository {
    */
   createPromotion(
     towTruckId: number,
-    data: { days: number; amount: number; currency: string },
+    data: { days: number; scope: PromotionScope; amount: number; currency: string },
   ): Promise<SubscriptionPayment> {
     return this.prisma.subscriptionPayment.create({
       data: {
         towTruckId,
         kind: PaymentKind.PROMOTION,
         promotionDays: data.days,
+        promotionScope: data.scope,
         amount: data.amount,
         currency: data.currency,
       },
@@ -192,10 +198,11 @@ export class SubscriptionsRepository {
   async confirmPromotion(
     id: number,
     towTruckId: number,
-    days: number,
+    grant: { days: number; scope: PromotionScope },
     now: Date,
     source?: { provider: string; transactionId: string },
   ): Promise<SubscriptionPayment | null> {
+    const { days, scope } = grant
     return this.prisma.$transaction(async (tx) => {
       const { count } = await tx.subscriptionPayment.updateMany({
         where: { id, kind: PaymentKind.PROMOTION, status: { not: SubscriptionPaymentStatus.PAID } },
@@ -207,17 +214,33 @@ export class SubscriptionsRepository {
       })
       if (count === 0) return null
 
-      // Mirrors TowTrucksRepository.extendPromotion. Written here rather than
-      // called from there because it has to run inside THIS transaction, and a
-      // repository method takes its own connection.
-      await tx.$executeRaw`
-        UPDATE "TowTruck"
-        SET "isFeatured" = true,
-            "featuredAt" = ${now},
-            "featuredUntil" = GREATEST(COALESCE("featuredUntil", ${now}), ${now})
-                              + (${days}::int * INTERVAL '1 day')
-        WHERE "id" = ${towTruckId}::int
-      `
+      // Raw SQL rather than a TowTrucksRepository call because it has to run
+      // inside THIS transaction. `featuredAt = now` either way: a purchase is a
+      // refresh, and it is the one queue key both products share.
+      if (scope === PromotionScope.AREA) {
+        await tx.$executeRaw`
+          UPDATE "TowTruck"
+          SET "featuredAt" = ${now},
+              "areaFeaturedUntil" = GREATEST(COALESCE("areaFeaturedUntil", ${now}), ${now})
+                                    + (${days}::int * INTERVAL '1 day')
+          WHERE "id" = ${towTruckId}::int
+        `
+      } else {
+        // HOME days start where a live AREA window ends, not alongside it: the
+        // area product already holds the home top, so running both at once
+        // would sell the same position twice. Matches `PromotionsService.maxDays`.
+        await tx.$executeRaw`
+          UPDATE "TowTruck"
+          SET "isFeatured" = true,
+              "featuredAt" = ${now},
+              "featuredUntil" = GREATEST(
+                                  COALESCE("featuredUntil", ${now}),
+                                  COALESCE("areaFeaturedUntil", ${now}),
+                                  ${now}
+                                ) + (${days}::int * INTERVAL '1 day')
+          WHERE "id" = ${towTruckId}::int
+        `
+      }
 
       return tx.subscriptionPayment.findUnique({ where: { id } })
     })

@@ -97,6 +97,17 @@ enum PaymentKind {
   PROMOTION
 }
 
+/// Where a PROMOTION payment puts the driver. Two products on one payment path.
+enum PromotionScope {
+  /// «Իմ քաղաքում վերևում» — the top of the driver's OWN city/district page.
+  /// Writes `TowTruck.featuredUntil`.
+  HOME
+  /// «Ամբողջ սպասարկման տարածքում» — HOME, plus first after the local drivers
+  /// on every city/district page the driver explicitly covers. Writes
+  /// `TowTruck.areaFeaturedUntil`. See `listing-order.ts`.
+  AREA
+}
+
 enum SubscriptionPaymentStatus {
   /// Driver asked to buy a plan. Nothing has been charged, nothing is granted.
   PENDING
@@ -389,6 +400,14 @@ model TowTruck {
   /// before durations existed; expiring those on deploy would have removed
   /// editorial picks nobody asked to remove. New grants always carry a date.
   featuredUntil DateTime?
+  /// When the «Ամբողջ սպասարկման տարածքում» placement stops. NULL or past means
+  /// none — there is no flag beside it to go stale, so no sweep is needed.
+  ///
+  /// Its own window rather than a scope on `featuredUntil`: the two products
+  /// are bought separately and run out separately. A live AREA window also
+  /// counts as the HOME placement (see `isPromotedHomeNow`), so the queue key
+  /// stays the one `featuredAt` above.
+  areaFeaturedUntil DateTime?
 
   /// The Armenia calendar day the refresh count below belongs to (`YYYY-MM-DD`,
   /// see `common/armenia-day.ts`).
@@ -1101,6 +1120,11 @@ model SubscriptionPayment {
   /// count is stored and `amount` is stored, and neither can be derived from
   /// the other on an old row after the ladder changes.
   promotionDays Int?
+  /// Which of the two placement products this payment bought. Required on a
+  /// PROMOTION row and null on a SUBSCRIPTION row — the same CHECK constraint
+  /// as `promotionDays`. Stored, like the day count, because the price and the
+  /// grant both depend on it and neither can be recovered from `amount`.
+  promotionScope PromotionScope?
 
   /// The access window this payment is FOR. Computed when the row is created,
   /// from that instant — see `subscription-period.ts`. It is what the driver

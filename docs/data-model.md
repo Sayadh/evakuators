@@ -164,6 +164,12 @@ Notable fields beyond the obvious:
   applies the window itself (`isFeaturedNow`, `tow-trucks/featured.ts`) and the
   job only makes the stored row agree with what is already being shown. A
   partial index on `featuredUntil WHERE isFeatured = true` serves the sweep.
+- `areaFeaturedUntil: DateTime?` — the «Ամբողջ սպասարկման տարածքում» window
+  (`PromotionScope.AREA`). Just a date, no flag: `NULL` or past means none, so
+  nothing to sweep (`isAreaFeaturedNow`). A live one also counts as the HOME
+  placement (`isPromotedHomeNow`) and shares `featuredAt` as its queue key,
+  which is why the HOME sweep and an admin revoke keep `featuredAt` while this
+  window is still running.
 - `workingHoursText: String?` — free-text working hours (e.g. `"09:00 – 21:00"`),
   entirely optional. `null`/unset means "not specified" and the frontend
   hides the hours line completely rather than showing a placeholder or a

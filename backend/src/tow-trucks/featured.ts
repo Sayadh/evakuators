@@ -66,3 +66,29 @@ export function featuredUntilFrom(now: Date, days: number): Date {
 export function isValidFeaturedDays(days: number): boolean {
   return Number.isInteger(days) && days >= FEATURED_MIN_DAYS && days <= FEATURED_MAX_DAYS
 }
+
+/** Everything the «Ամբողջ սպասարկման տարածքում» window needs from a truck */
+export interface AreaFeaturedWindow {
+  areaFeaturedUntil: Date | null
+}
+
+/**
+ * Is the «Ամբողջ սպասարկման տարածքում» placement live at `now`?
+ *
+ * Only a date, no flag beside it — so unlike `isFeaturedNow` there is no stale
+ * state to guard against, and `null` simply means "never bought". This window
+ * was born with durations, so there are no open-ended legacy grants to honour.
+ */
+export function isAreaFeaturedNow(truck: AreaFeaturedWindow, now: Date): boolean {
+  return !!truck.areaFeaturedUntil && truck.areaFeaturedUntil.getTime() > now.getTime()
+}
+
+/**
+ * Does this driver hold the top of their OWN town right now — by either product?
+ *
+ * The area product includes the home one: a driver who paid for every town
+ * they cover is not below the drivers who paid for one of them in their own.
+ */
+export function isPromotedHomeNow(truck: FeaturedWindow & AreaFeaturedWindow, now: Date): boolean {
+  return isFeaturedNow(truck, now) || isAreaFeaturedNow(truck, now)
+}

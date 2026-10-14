@@ -105,6 +105,12 @@ export interface TowTruckCardApi {
    */
   promotedAt?: string
   /**
+   * Holds the «Ամբողջ սպասարկման տարածքում» placement — **present only while it
+   * is live**. Such a driver also carries `promotedAt` (the area product
+   * includes the home one), and that date is the queue key on every page.
+   */
+  promotedInArea?: true
+  /**
    * "Our driver" — a standing relationship with the operator, shown on the
    * card as «Մեր վարորդ» and ranked above everyone except a live placement.
    *

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { myPromotionRepository } from '~/repositories/myPromotion.repository'
-import type { PromotionStatus } from '~/types/promotion'
+import type { PromotionProduct, PromotionScope, PromotionStatus } from '~/types/promotion'
 import { extractErrorMessage } from '~/utils/errors'
 import { formatDateLong } from '~/utils/formatters'
 import { formatPrice } from '~/utils/formatPrice'
@@ -29,14 +29,22 @@ import { submitPaymentForm } from '~/utils/submitPaymentForm'
  * Without a live subscription the block is shown and says so, because the fix
  * is one screen up on the same page.
  *
- * Otherwise it sells `maxDays` days — which the server caps at the
- * subscription's own end date, so a placement can never outlive the listing it
- * decorates.
+ * Otherwise it sells `maxDays` days of the chosen product — which the server
+ * caps at the subscription's own end date, so a placement can never outlive
+ * the listing it decorates.
+ *
+ * ## Two products
+ *
+ * «Իմ քաղաքում վերևում» (HOME) and «Ամբողջ սպասարկման տարածքում» (AREA). The
+ * second includes the first, so HOME days bought while AREA is running start
+ * when it ends — the server counts it that way, and `maxDays` already says so.
+ * They share one refresh allowance: both queue on the same "last refreshed".
  */
 const status = ref<PromotionStatus | null>(null)
 const loading = ref(true)
 const loadError = ref('')
 const days = ref(1)
+const scope = ref<PromotionScope>('HOME')
 const submitting = ref(false)
 const refreshing = ref(false)
 const actionError = ref('')
@@ -51,13 +59,61 @@ const REDIRECT_TIMEOUT_MS = 8000
 const REDIRECT_FAILED_MESSAGE = 'Չհաջողվեց բացել վճարման էջը։ Փորձեք կրկին։'
 let redirectTimer: number | undefined
 
+interface ProductOption {
+  scope: PromotionScope
+  title: string
+  description: string
+}
+
+const PRODUCTS: readonly ProductOption[] = [
+  {
+    scope: 'HOME',
+    title: 'Իմ քաղաքում վերևում',
+    description: 'Ձեր քաղաքի (շրջանի) էջում՝ բոլորից առաջ։',
+  },
+  {
+    scope: 'AREA',
+    title: 'Ամբողջ սպասարկման տարածքում',
+    description:
+      'Ձեր քաղաքում՝ բոլորից առաջ, իսկ մնացած սպասարկման քաղաքներում՝ տեղի վարորդներից հետո առաջինը։',
+  },
+]
+
+/** The HOME product lives at the top level of the status — see the type */
+function productOf(current: PromotionStatus, which: PromotionScope): PromotionProduct {
+  if (which === 'AREA') return current.area
+  return { activeUntil: current.activeUntil, maxDays: current.maxDays, brackets: current.brackets }
+}
+
+const product = computed(() => (status.value ? productOf(status.value, scope.value) : null))
+
 const price = computed(() =>
-  status.value ? promotionPriceFrom(status.value.brackets, days.value) : null,
+  product.value ? promotionPriceFrom(product.value.brackets, days.value) : null,
 )
 
+/** The first day's price, for the product picker — from the server's ladder */
+const firstDayPrice = computed<Partial<Record<PromotionScope, number>>>(() => {
+  const prices: Partial<Record<PromotionScope, number>> = {}
+  if (!status.value) return prices
+  for (const option of PRODUCTS) {
+    const value = promotionPriceFrom(productOf(status.value, option.scope).brackets, 1)
+    if (value !== null) prices[option.scope] = value
+  }
+  return prices
+})
+
+const anyActive = computed(() => !!(status.value?.activeUntil || status.value?.area.activeUntil))
+
 const canBuy = computed(
-  () => (status.value?.maxDays ?? 0) > 0 && days.value >= 1 && days.value <= (status.value?.maxDays ?? 0),
+  () => (product.value?.maxDays ?? 0) > 0 && days.value >= 1 && days.value <= (product.value?.maxDays ?? 0),
 )
+
+/** Keep the day field inside the selected product's ceiling */
+function clampDays(): void {
+  days.value = Math.min(Math.max(days.value, 1), Math.max(product.value?.maxDays ?? 1, 1))
+}
+
+watch(scope, clampDays)
 
 async function load(): Promise<void> {
   loading.value = true
@@ -67,7 +123,7 @@ async function load(): Promise<void> {
     // Clamped on arrival rather than left out of range: the ceiling moves as a
     // subscription runs down, and a field holding 30 under a «մինչև 9 օր» label
     // is a form that disagrees with itself.
-    days.value = Math.min(Math.max(days.value, 1), Math.max(status.value.maxDays, 1))
+    clampDays()
   } catch (error) {
     loadError.value = extractErrorMessage(error, 'Չհաջողվեց բեռնել։')
   } finally {
@@ -86,7 +142,7 @@ async function buy(): Promise<void> {
   actionError.value = ''
 
   try {
-    const created = await myPromotionRepository.createPayment(days.value)
+    const created = await myPromotionRepository.createPayment(days.value, scope.value)
     if (created.gateway) {
       submitPaymentForm(created.gateway)
       // The page is normally gone before this fires. When it is not, that is
@@ -140,8 +196,8 @@ function formatMoment(iso: string): string {
 
     <template v-else-if="status">
       <p class="promotion__intro">
-        Առաջխաղացումը Ձեզ դնում է Ձեր քաղաքի էջի վերևում։ Հերթականությունը որոշվում է
-        վերջին թարմացմամբ — ով վերջինն է թարմացրել, նա է առաջինը։
+        Առաջխաղացումը Ձեզ դնում է էջի վերևում։ Հերթականությունը որոշվում է վերջին
+        թարմացմամբ — ով վերջինն է թարմացրել, նա է առաջինը։
       </p>
 
       <!-- The one case where the block is shown and sells nothing. -->
@@ -152,9 +208,14 @@ function formatMoment(iso: string): string {
 
       <template v-else>
         <!-- A running placement: what is live, and the button that keeps it on top. -->
-        <div v-if="status.activeUntil" class="promotion__active">
-          <p class="promotion__active-line">
-            Ակտիվ է մինչև <strong>{{ formatDateLong(status.activeUntil) }}</strong>
+        <div v-if="anyActive" class="promotion__active">
+          <p v-if="status.area.activeUntil" class="promotion__active-line">
+            «Ամբողջ սպասարկման տարածքում»՝ ակտիվ է մինչև
+            <strong>{{ formatDateLong(status.area.activeUntil) }}</strong>
+          </p>
+          <p v-if="status.activeUntil" class="promotion__active-line">
+            «Իմ քաղաքում վերևում»՝ ակտիվ է մինչև
+            <strong>{{ formatDateLong(status.activeUntil) }}</strong>
           </p>
           <p v-if="status.lastRefreshedAt" class="promotion__muted">
             Վերջին թարմացումը՝ {{ formatMoment(status.lastRefreshedAt) }}
@@ -171,35 +232,65 @@ function formatMoment(iso: string): string {
           </p>
         </div>
 
-        <!-- Buying days. Hidden when there is nothing left to sell — which
-             happens when the placement already runs to the subscription's own
-             last day, and is a fact worth saying rather than an empty form. -->
-        <div v-if="status.maxDays > 0" class="promotion__buy">
-          <label for="promotion-days" class="promotion__label">
-            Քանի՞ օր ({{ status.maxDays }}-ից ոչ ավելի)
-          </label>
-          <input
-            id="promotion-days"
-            v-model.number="days"
-            type="number"
-            inputmode="numeric"
-            min="1"
-            :max="status.maxDays"
-            class="promotion__days"
-          >
-          <p class="promotion__price">
-            <template v-if="price !== null">
-              Արժեքը՝ <strong>{{ formatPrice(price) }}</strong>
-            </template>
-            <template v-else>Ընտրեք 1–{{ status.maxDays }} օր</template>
+        <!-- Buying days: pick a product, then a day count within its ceiling.
+             When the chosen product has nothing left to sell, that is said
+             rather than shown as an empty form. -->
+        <div class="promotion__buy">
+          <fieldset class="promotion__products">
+            <legend class="promotion__label">Ընտրեք տարբերակը</legend>
+            <label
+              v-for="option in PRODUCTS"
+              :key="option.scope"
+              class="promotion__product"
+              :class="{ 'promotion__product--selected': scope === option.scope }"
+            >
+              <input v-model="scope" type="radio" name="promotion-scope" :value="option.scope">
+              <span class="promotion__product-body">
+                <span class="promotion__product-title">{{ option.title }}</span>
+                <span class="promotion__product-text">{{ option.description }}</span>
+                <span v-if="firstDayPrice[option.scope] !== undefined" class="promotion__product-text">
+                  1 օրը՝ {{ formatPrice(firstDayPrice[option.scope]!) }}
+                </span>
+              </span>
+            </label>
+          </fieldset>
+
+          <template v-if="product && product.maxDays > 0">
+            <!-- Overlaps the driver should know about before paying. -->
+            <p v-if="scope === 'HOME' && status.area.activeUntil" class="promotion__muted">
+              «Իմ քաղաքում» օրերը կսկսվեն «Ամբողջ տարածքում» առաջխաղացման ավարտից հետո։
+            </p>
+            <p v-if="scope === 'AREA' && status.activeUntil" class="promotion__muted">
+              «Իմ քաղաքում» առաջխաղացման մնացած օրերը կշարունակեն հաշվվել զուգահեռ։
+            </p>
+            <label for="promotion-days" class="promotion__label">
+              Քանի՞ օր ({{ product.maxDays }}-ից ոչ ավելի)
+            </label>
+            <input
+              id="promotion-days"
+              v-model.number="days"
+              type="number"
+              inputmode="numeric"
+              min="1"
+              :max="product.maxDays"
+              class="promotion__days"
+            >
+            <p class="promotion__price">
+              <template v-if="price !== null">
+                Արժեքը՝ <strong>{{ formatPrice(price) }}</strong>
+              </template>
+              <template v-else>Ընտրեք 1–{{ product.maxDays }} օր</template>
+            </p>
+            <AppButton :disabled="submitting || !canBuy" @click="buy">
+              {{ submitting ? 'Ուղարկվում է…' : 'Վճարել' }}
+            </AppButton>
+          </template>
+          <!-- Nothing left to sell for this product: the placement (or the one
+               it queues behind) already runs to the subscription's last day. -->
+          <p v-else class="promotion__muted">
+            Այս տարբերակով առաջխաղացումն արդեն հասնում է բաժանորդագրության վերջին օրվան։
           </p>
-          <AppButton :disabled="submitting || !canBuy" @click="buy">
-            {{ submitting ? 'Ուղարկվում է…' : 'Վճարել' }}
-          </AppButton>
         </div>
-        <p v-else-if="status.activeUntil" class="promotion__muted">
-          Առաջխաղացումն արդեն հասնում է բաժանորդագրության վերջին օրվան։
-        </p>
       </template>
 
       <p v-if="actionError" class="promotion__error" role="alert">{{ actionError }}</p>
@@ -248,6 +339,52 @@ function formatMoment(iso: string): string {
   &__label {
     font-size: 0.9rem;
     font-weight: 600;
+  }
+
+  &__products {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  &__product {
+    display: flex;
+    gap: var(--space-2);
+    align-items: flex-start;
+    padding: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+
+    input {
+      margin-top: 3px;
+      accent-color: var(--color-success);
+    }
+
+    &--selected {
+      border-color: var(--color-success);
+      background: var(--color-success-bg);
+    }
+  }
+
+  &__product-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  &__product-title {
+    font-weight: 600;
+  }
+
+  &__product-text {
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+    line-height: 1.45;
   }
 
   &__days {

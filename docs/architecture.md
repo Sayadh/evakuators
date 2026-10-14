@@ -282,15 +282,20 @@ ABOUT one place, and their order is decided in
 `backend/src/tow-trucks/listing-order.ts` — not in the browser. The response IS
 the listing: the first server-rendered paint is already in its final order.
 
-Four ranks, lower first. Ranks 1–3 shuffled, rank 0 a queue:
+Five ranks, lower first. Ranks 1, 2 and 4 shuffled, ranks 0 and 3 queues
+(last refresh first):
 
-0. a live paid placement **and** based here — newest purchase first, never
-   shuffled. Somebody bought that position; "sometimes the top" is not what
-   they bought. It deliberately does not travel to pages the driver merely
-   covers, so it cannot be bought once and cashed in on forty of them.
+0. a live paid placement — either product — **and** based here. Never
+   shuffled: somebody bought that position, and "sometimes the top" is not
+   what they bought.
 1. our own drivers (`isPartner`) whose base is this place;
 2. everyone else based here;
-3. everyone else — the drivers who cover this place without being based in it.
+3. a live «Ամբողջ սպասարկման տարածքում» placement (`promotedInArea`), NOT based
+   here, on a page the driver names in their own `serviceAreas` (a `city` or
+   `district` entry — not a corridor, not `servesAllArmenia`). After every
+   local driver, never above one: the area product sells the first place among
+   the visitors, not the town's own top;
+4. everyone else — the drivers who cover this place without being based in it.
 
 Being based here is the OUTER split; being ours sorts inside it. Someone
 searching a town is choosing among that town's drivers, and a driver an hour

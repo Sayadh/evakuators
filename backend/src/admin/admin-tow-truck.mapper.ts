@@ -3,6 +3,7 @@ import { decimalToNumber } from '../common/coordinates'
 import { toAdminConsentSummary, type AdminConsentSummary } from '../privacy-consent/privacy-consent.service'
 import type { ServiceAreaJson, TowTruckWithImages } from '../tow-trucks/tow-truck.types'
 import { derivesHeavyEquipment } from '../tow-trucks/vehicle-types'
+import { isAreaFeaturedNow } from '../tow-trucks/featured'
 
 /**
  * Admin-list shape — deliberately NOT the raw Prisma row. Two reasons:
@@ -49,6 +50,12 @@ export interface AdminTowTruckSummary {
    * how long a driver bought is a term between them and the operator.
    */
   featuredUntil?: string
+  /**
+   * When the «Ամբողջ սպասարկման տարածքում» placement runs out — ISO, present
+   * only while it is still running (the column has no flag beside it to go
+   * stale, so a past date is simply nothing). Admin-only, like `featuredUntil`.
+   */
+  areaFeaturedUntil?: string
   vehicleBrand: string
   vehicleModel?: string
   vehicleYear: number
@@ -165,6 +172,9 @@ export function toAdminTowTruckSummary(
     paymentDueAt: truck.paymentDueAt?.toISOString(),
     hasPaidBefore,
     ...(truck.featuredUntil ? { featuredUntil: truck.featuredUntil.toISOString() } : {}),
+    ...(isAreaFeaturedNow(truck, new Date()) && truck.areaFeaturedUntil
+      ? { areaFeaturedUntil: truck.areaFeaturedUntil.toISOString() }
+      : {}),
     vehicleBrand: truck.vehicleBrand,
     vehicleModel: truck.vehicleModel ?? undefined,
     vehicleYear: truck.vehicleYear,

@@ -5,6 +5,7 @@ import { GrantSubscriptionPaymentDto } from './dto/grant-subscription-payment.dt
 import { SetPaymentDueDto } from './dto/set-payment-due.dto'
 import type {
   AdminPendingPaymentApi,
+  AdminReviewedPaymentApi,
   SubscriptionPaymentApi,
   SubscriptionPlansApi,
 } from './subscription.types'
@@ -52,7 +53,7 @@ export class AdminSubscriptionsController {
    * admin can undo from here.
    */
   @Post(':id/review')
-  review(@Param('id', ParseIntPipe) id: number): Promise<SubscriptionPaymentApi> {
+  review(@Param('id', ParseIntPipe) id: number): Promise<AdminReviewedPaymentApi> {
     return this.adminSubscriptions.review(id)
   }
 

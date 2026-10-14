@@ -110,7 +110,7 @@ export interface PaymentCoverageRow {
 }
 
 /** A pending request with just enough of its driver to render the admin's queue */
-export type PendingPaymentWithDriver = SubscriptionPaymentRow & {
+export type PendingPaymentWithDriver = SubscriptionPayment & {
   towTruck: { id: number; driverName: string; companyName: string | null; phone: string }
 }
 
@@ -174,6 +174,19 @@ export class SubscriptionsRepository {
         amount: data.amount,
         currency: data.currency,
       },
+    })
+  }
+
+  /**
+   * The caller's own PROMOTION payments, newest first — the history under the
+   * dashboard's placement block. The counterpart of `findOwn`, which lists
+   * only subscriptions for the reason given there.
+   */
+  findOwnPromotions(towTruckId: number): Promise<SubscriptionPayment[]> {
+    return this.prisma.subscriptionPayment.findMany({
+      where: { towTruckId, kind: PaymentKind.PROMOTION },
+      orderBy: { createdAt: 'desc' },
+      take: OWN_PAYMENTS_LIMIT,
     })
   }
 
@@ -364,12 +377,10 @@ export class SubscriptionsRepository {
    */
   findForReview(): Promise<PendingPaymentWithDriver[]> {
     return this.prisma.subscriptionPayment.findMany({
-      // Subscription payments only. This queue asks "money arrived, is this
-      // driver's access sorted" — a placement grants no access, so a promotion
-      // row has nothing for an admin to do here. (A general money view that
-      // shows both is worth having; it is not this screen.)
+      // Both kinds. The queue is "money that arrived, shown once so a person
+      // sees it", and a placement is money that arrived. The mapper tells the
+      // two apart (`toAdminPaymentSummaryApi`).
       where: {
-        kind: PaymentKind.SUBSCRIPTION,
         status: SubscriptionPaymentStatus.PAID,
         reviewedAt: null,
       },
@@ -380,21 +391,19 @@ export class SubscriptionsRepository {
       // one to look at next.
       orderBy: { createdAt: 'asc' },
       take: REVIEW_LIST_LIMIT,
-    }) as Promise<PendingPaymentWithDriver[]>
+    })
   }
 
   /**
    * Ticks a payment off the review list. Idempotent by the `reviewedAt: null`
    * guard, so two admins pressing at once produce one review, not an error.
    */
-  async markReviewed(id: number): Promise<SubscriptionPaymentRow | null> {
+  async markReviewed(id: number): Promise<SubscriptionPayment | null> {
     const { count } = await this.prisma.subscriptionPayment.updateMany({
       where: { id, status: SubscriptionPaymentStatus.PAID, reviewedAt: null },
       data: { reviewedAt: new Date() },
     })
-    // The caller proved the kind before it got here (see
-    // `AdminSubscriptionsService.review`), which is what this cast stands on.
-    return count === 0 ? null : (this.findById(id) as Promise<SubscriptionPaymentRow | null>)
+    return count === 0 ? null : this.findById(id)
   }
 
   /**

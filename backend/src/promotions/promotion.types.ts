@@ -1,4 +1,4 @@
-import type { PromotionScope } from '@prisma/client'
+import type { PromotionScope, SubscriptionPaymentStatus } from '@prisma/client'
 import type { PromotionPriceBracket } from './promotion-pricing'
 
 /**
@@ -76,4 +76,18 @@ export interface CreatedPromotionPaymentApi {
   status: string
   createdAt: string
   gateway: unknown
+}
+
+/** One row of the driver's own placement history — `GET /my/promotion/payments` */
+export interface PromotionPaymentApi {
+  id: number
+  scope: PromotionScope
+  days: number
+  /** «Առաջխաղացում · <product> · N օր», the same words the Idram page showed */
+  title: string
+  amount: number
+  currency: string
+  status: SubscriptionPaymentStatus
+  /** ISO datetime — when the order was placed */
+  createdAt: string
 }

@@ -72,6 +72,18 @@ function build(options: {
       createPromotion,
       confirmPromotion,
       hasRecentPendingPromotion,
+      findOwnPromotions: vi.fn(async () => [
+        {
+          id: 12,
+          kind: 'PROMOTION',
+          promotionScope: 'AREA',
+          promotionDays: 7,
+          amount: 4500,
+          currency: 'AMD',
+          status: 'PAID',
+          createdAt: NOW,
+        },
+      ]),
       findById: vi.fn(async () => ({
         id: 99,
         towTruckId: 7,
@@ -340,5 +352,23 @@ describe('one order in flight', () => {
     const { service, hasRecentPendingPromotion } = build({ paidThrough: inDays(30) })
     await service.createPayment(7, 3, 'HOME', NOW)
     expect(hasRecentPendingPromotion).toHaveBeenCalledWith(7, new Date(NOW.getTime() - 30 * 60 * 1000))
+  })
+})
+
+describe('the driver’s own history', () => {
+  it('lists each order with the product, the days and the status', async () => {
+    const { service } = build()
+    await expect(service.listOwnPayments(7)).resolves.toEqual([
+      {
+        id: 12,
+        scope: 'AREA',
+        days: 7,
+        title: 'Առաջխաղացում · Ամբողջ սպասարկման տարածքում · 7 օր',
+        amount: 4500,
+        currency: 'AMD',
+        status: 'PAID',
+        createdAt: NOW.toISOString(),
+      },
+    ])
   })
 })

@@ -698,8 +698,13 @@ async function removeFeatured(truck: AdminTowTruck): Promise<void> {
  * durations — they have no end to count to.
  */
 function featuredDaysLeft(truck: AdminTowTruck): number | null {
-  if (!truck.featuredUntil) return null
-  const ms = new Date(truck.featuredUntil).getTime() - Date.now()
+  return daysUntil(truck.featuredUntil)
+}
+
+/** Same rounding as `featuredDaysLeft`, for any end date */
+function daysUntil(iso: string | undefined): number | null {
+  if (!iso) return null
+  const ms = new Date(iso).getTime() - Date.now()
   return ms <= 0 ? 0 : Math.ceil(ms / 86_400_000)
 }
 
@@ -1818,7 +1823,7 @@ async function rejectReview(review: AdminReview): Promise<void> {
                      currently running. -->
                 <AppBadge v-if="truck.isPartner" variant="primary">Մեր վարորդ</AppBadge>
                 <AppBadge v-if="isPromotionLive(truck)" variant="accent">
-                  Առաջխաղացում{{
+                  Առաջխաղացում · Իմ քաղաքում{{
                     featuredDaysLeft(truck) === null ? '' : ` · ${featuredDaysLeft(truck)} օր`
                   }}
                 </AppBadge>
@@ -1827,6 +1832,12 @@ async function rejectReview(review: AdminReview): Promise<void> {
                      driver rings to ask why they dropped off their page. -->
                 <AppBadge v-else-if="truck.isFeatured" variant="neutral">
                   Առաջխաղացումն ավարտվել է
+                </AppBadge>
+                <!-- The second product, bought only by the driver. The server
+                     sends the date only while it runs, so there is no
+                     "ended" state to show for it. -->
+                <AppBadge v-if="truck.areaFeaturedUntil" variant="accent">
+                  Առաջխաղացում · Ամբողջ տարածքում · {{ daysUntil(truck.areaFeaturedUntil) }} օր
                 </AppBadge>
               </div>
             </header>

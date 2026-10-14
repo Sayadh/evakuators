@@ -1,7 +1,10 @@
+import type { SubscriptionPayment } from '@prisma/client'
+import { promotionPaymentTitle } from '../promotions/promotion-labels'
 import { findSubscriptionPlan, type SubscriptionPlan } from './subscription-plans'
-import type { SubscriptionPaymentRow } from './subscriptions.repository'
+import { isSubscriptionPayment, type SubscriptionPaymentRow } from './subscriptions.repository'
 import type {
   AdminPendingPaymentApi,
+  AdminReviewedPaymentApi,
   SubscriptionPaymentApi,
   SubscriptionPlanApi,
 } from './subscription.types'
@@ -49,14 +52,40 @@ export function toSubscriptionPaymentApi(payment: SubscriptionPaymentRow): Subsc
   }
 }
 
+/**
+ * Any payment row → the admin's shape for it, minus the driver.
+ *
+ * A subscription keeps every field it always had (plus `kind`), so the
+ * subscription half of the review contract is unchanged; a placement carries
+ * its own two fields and a title that says what was bought.
+ */
+export function toAdminPaymentSummaryApi(payment: SubscriptionPayment): AdminReviewedPaymentApi {
+  if (isSubscriptionPayment(payment)) {
+    return { ...toSubscriptionPaymentApi(payment), kind: payment.kind }
+  }
+
+  return {
+    id: payment.id,
+    towTruckId: payment.towTruckId,
+    kind: payment.kind,
+    planTitle: promotionPaymentTitle(payment.promotionScope, payment.promotionDays),
+    amount: payment.amount,
+    currency: payment.currency,
+    status: payment.status,
+    createdAt: payment.createdAt.toISOString(),
+    ...(payment.promotionDays ? { promotionDays: payment.promotionDays } : {}),
+    ...(payment.promotionScope ? { promotionScope: payment.promotionScope } : {}),
+  }
+}
+
 /** Stored row + its driver → the admin queue's shape */
 export function toAdminPendingPaymentApi(
-  payment: SubscriptionPaymentRow & {
+  payment: SubscriptionPayment & {
     towTruck: { id: number; driverName: string; companyName: string | null; phone: string }
   },
 ): AdminPendingPaymentApi {
   return {
-    ...toSubscriptionPaymentApi(payment),
+    ...toAdminPaymentSummaryApi(payment),
     driver: {
       id: payment.towTruck.id,
       name: payment.towTruck.driverName,

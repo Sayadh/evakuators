@@ -64,3 +64,16 @@ export interface CreatedPromotionPayment {
   createdAt: string
   gateway?: { action: string; fields: Record<string, string> }
 }
+
+/** Mirrors backend `PromotionPaymentApi` — one row of the driver's own placement history */
+export interface PromotionPayment {
+  id: number
+  scope: PromotionScope
+  days: number
+  title: string
+  amount: number
+  currency: string
+  status: 'PENDING' | 'PAID' | 'FAILED' | 'CANCELLED'
+  /** ISO datetime */
+  createdAt: string
+}

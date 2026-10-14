@@ -45,8 +45,28 @@ export interface SubscriptionPayment {
   createdAt: string
 }
 
-/** Mirrors backend AdminPendingPaymentApi — one waiting request, with who made it */
-export interface AdminPendingPayment extends SubscriptionPayment {
+/**
+ * Mirrors backend AdminPendingPaymentApi — one completed payment in the review
+ * queue, with who made it. Either product: the subscription fields are present
+ * only on a subscription, the placement fields only on a placement, and
+ * `planTitle` reads right for both.
+ */
+export interface AdminPendingPayment {
+  id: number
+  towTruckId: number
+  kind: 'SUBSCRIPTION' | 'PROMOTION'
+  planTitle: string
+  amount: number
+  currency: string
+  status: SubscriptionPaymentStatus
+  /** ISO datetime */
+  createdAt: string
+  planCode?: string
+  durationMonths?: number
+  periodStart?: string
+  periodEnd?: string
+  promotionDays?: number
+  promotionScope?: 'HOME' | 'AREA'
   driver: {
     id: number
     name: string

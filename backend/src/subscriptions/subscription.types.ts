@@ -1,4 +1,9 @@
-import type { DeactivationReason, SubscriptionPaymentStatus } from '@prisma/client'
+import type {
+  DeactivationReason,
+  PaymentKind,
+  PromotionScope,
+  SubscriptionPaymentStatus,
+} from '@prisma/client'
 import type { PaymentStatus } from './subscription-status'
 import type { SubscriptionPlanCode } from './subscription-plans'
 
@@ -48,7 +53,32 @@ export interface SubscriptionPaymentApi {
  * One pending request as the admin's queue shows it — the payment, plus just
  * enough of the driver to know who is asking without a second request.
  */
-export interface AdminPendingPaymentApi extends SubscriptionPaymentApi {
+export interface AdminPendingPaymentApi {
+  id: number
+  towTruckId: number
+  /** Which product — the queue shows both, since both are money that arrived */
+  kind: PaymentKind
+  /**
+   * What was bought, as a person reads it: the plan's title for a
+   * subscription, «Առաջխաղացում · <product> · N օր» for a placement.
+   */
+  planTitle: string
+  amount: number
+  currency: string
+  status: SubscriptionPaymentStatus
+  /** ISO datetime */
+  createdAt: string
+
+  /** SUBSCRIPTION only */
+  planCode?: string
+  durationMonths?: number
+  periodStart?: string
+  periodEnd?: string
+
+  /** PROMOTION only */
+  promotionDays?: number
+  promotionScope?: PromotionScope
+
   driver: {
     id: number
     name: string
@@ -56,6 +86,9 @@ export interface AdminPendingPaymentApi extends SubscriptionPaymentApi {
     phone: string
   }
 }
+
+/** What «Հաստատել» answers with — the row it ticked off, either kind */
+export type AdminReviewedPaymentApi = Omit<AdminPendingPaymentApi, 'driver'>
 
 /**
  * Where the signed-in driver's own subscription stands — what the dashboard

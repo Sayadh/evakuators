@@ -20,7 +20,12 @@ import {
   PROMOTION_PRICE_BRACKETS,
   promotionPrice,
 } from './promotion-pricing'
-import type { CreatedPromotionPaymentApi, PromotionStatusApi } from './promotion.types'
+import { promotionPaymentTitle } from './promotion-labels'
+import type {
+  CreatedPromotionPaymentApi,
+  PromotionPaymentApi,
+  PromotionStatusApi,
+} from './promotion.types'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -33,11 +38,6 @@ const DAY_MS = 24 * 60 * 60 * 1000
  */
 export const PROMOTION_PENDING_LOCK_MINUTES = 30
 
-/** What the driver sees on the Idram page and the receipt */
-const SCOPE_LABEL: Record<PromotionScope, string> = {
-  [PromotionScope.HOME]: 'Իմ քաղաքում վերևում',
-  [PromotionScope.AREA]: 'Ամբողջ սպասարկման տարածքում',
-}
 
 /**
  * A driver buying their own place at the top of their town's page.
@@ -133,6 +133,28 @@ export class PromotionsService {
   }
 
   /**
+   * The driver's own placement orders, newest first, every status — the same
+   * "what did I ask for and did it go through" list the subscription block has.
+   *
+   * A row missing its scope or day count cannot exist (the CHECK constraint),
+   * so the fallbacks are only there to keep a history renderable rather than
+   * to mean anything.
+   */
+  async listOwnPayments(towTruckId: number): Promise<PromotionPaymentApi[]> {
+    const rows = await this.subscriptionsRepository.findOwnPromotions(towTruckId)
+    return rows.map((row) => ({
+      id: row.id,
+      scope: row.promotionScope ?? PromotionScope.HOME,
+      days: row.promotionDays ?? 0,
+      title: promotionPaymentTitle(row.promotionScope, row.promotionDays),
+      amount: row.amount,
+      currency: row.currency,
+      status: row.status,
+      createdAt: row.createdAt.toISOString(),
+    }))
+  }
+
+  /**
    * «Վճարել» — records the order and hands back the form that pays it. No money
    * has moved and nothing is granted; the provider's callback does both.
    *
@@ -207,11 +229,7 @@ export class PromotionsService {
       // The row exists BEFORE the driver is handed over, for the same reason it
       // does on a subscription: the provider's first callback asks whether this
       // bill is a real order, and there would be nothing to answer with.
-      gateway: this.idram.paymentForm(
-        payment.id,
-        amount,
-        `Առաջխաղացում · ${SCOPE_LABEL[scope]} · ${days} օր`,
-      ),
+      gateway: this.idram.paymentForm(payment.id, amount, promotionPaymentTitle(scope, days)),
     }
   }
 

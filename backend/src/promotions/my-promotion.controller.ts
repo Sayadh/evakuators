@@ -3,7 +3,11 @@ import { Throttle } from '@nestjs/throttler'
 import { PromotionScope } from '@prisma/client'
 import { AuthenticatedDriverRequest, DriverJwtGuard } from '../driver-auth/driver-jwt.guard'
 import { CreatePromotionPaymentDto } from './dto/create-promotion-payment.dto'
-import type { CreatedPromotionPaymentApi, PromotionStatusApi } from './promotion.types'
+import type {
+  CreatedPromotionPaymentApi,
+  PromotionPaymentApi,
+  PromotionStatusApi,
+} from './promotion.types'
 import { PromotionsService } from './promotions.service'
 
 /**
@@ -19,6 +23,12 @@ export class MyPromotionController {
   @Get()
   getMine(@Req() request: AuthenticatedDriverRequest): Promise<PromotionStatusApi> {
     return this.promotions.getStatus(request.towTruckId)
+  }
+
+  /** The caller's own placement orders, newest first — the block's history */
+  @Get('payments')
+  listMine(@Req() request: AuthenticatedDriverRequest): Promise<PromotionPaymentApi[]> {
+    return this.promotions.listOwnPayments(request.towTruckId)
   }
 
   /**

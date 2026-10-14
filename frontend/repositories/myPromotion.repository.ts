@@ -1,4 +1,9 @@
-import type { CreatedPromotionPayment, PromotionScope, PromotionStatus } from '~/types/promotion'
+import type {
+  CreatedPromotionPayment,
+  PromotionPayment,
+  PromotionScope,
+  PromotionStatus,
+} from '~/types/promotion'
 import { useDriverAuthStore } from '~/stores/driverAuth'
 import { apiFetch } from './apiClient'
 
@@ -6,6 +11,13 @@ import { apiFetch } from './apiClient'
 export const myPromotionRepository = {
   getStatus(): Promise<PromotionStatus> {
     return apiFetch<PromotionStatus>('/my/promotion', {
+      headers: useDriverAuthStore().authHeader,
+    })
+  },
+
+  /** The caller's own placement orders, newest first */
+  listPayments(): Promise<PromotionPayment[]> {
+    return apiFetch<PromotionPayment[]>('/my/promotion/payments', {
       headers: useDriverAuthStore().authHeader,
     })
   },

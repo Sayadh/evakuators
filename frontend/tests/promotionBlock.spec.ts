@@ -108,3 +108,29 @@ describe('the two products', () => {
     expect(block).toContain('v-if="anyActive"')
   })
 })
+
+describe('the placement history', () => {
+  it('loads with the status, and a failed history does not fail the block', () => {
+    expect(block).toContain('myPromotionRepository.listPayments().catch(() => payments.value)')
+  })
+
+  it('lists every order with its title, price, date and status', () => {
+    expect(block).toContain('Վճարումների պատմություն')
+    expect(block).toContain('{{ payment.title }}')
+    expect(block).toContain('PAYMENT_STATUS_LABELS[payment.status]')
+  })
+
+  it('reads its own endpoint, never the subscription one', () => {
+    expect(repository).toContain("apiFetch<PromotionPayment[]>('/my/promotion/payments'")
+  })
+})
+
+describe('the admin card', () => {
+  const admin = readFileSync(`${ROOT}pages/admin/index.vue`, 'utf8')
+
+  it('names both products, so an AREA-only driver is visibly promoted', () => {
+    expect(admin).toContain('Առաջխաղացում · Իմ քաղաքում')
+    expect(admin).toContain('v-if="truck.areaFeaturedUntil"')
+    expect(admin).toContain('Առաջխաղացում · Ամբողջ տարածքում')
+  })
+})

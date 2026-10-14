@@ -99,6 +99,7 @@ caller's own truck — the id comes from the session, never from a body.
 | Method | Path | Notes |
 | --- | --- | --- |
 | `GET` | `/my/promotion` | `{ visible, blockedReason?, activeUntil?, lastRefreshedAt?, refreshesLeft, refreshesPerDay, maxDays, brackets, currency, area: { activeUntil?, maxDays, brackets } }`. The top-level `activeUntil`/`maxDays`/`brackets` are the HOME product (where they were before AREA existed); `area` is the AREA one. The refresh allowance is shared. `visible: false` only for a deactivated listing, and the dashboard renders nothing at all then. `blockedReason: 'no-subscription'` shows the block and sells nothing. `brackets` is the price ladder, sent so the page can price a day count without a second copy of the numbers |
+| `GET` | `/my/promotion/payments` | The caller's own placement orders, newest first, every status: `{ id, scope, days, title, amount, currency, status, createdAt }[]`. The dashboard block's «Վճարումների պատմություն» |
 | `POST` | `/my/promotion/payments` | Body `{ days, scope? }` (`scope` defaults to `HOME`) — **never an amount**; the price is `promotionPrice(days, scope)` on the server (`promotion-pricing.ts`). Refused while another promotion order of this driver is still PENDING from the last 30 minutes (`PROMOTION_PENDING_LOCK_MINUTES`) — `maxDays` only knows granted windows, so two unpaid orders could together overrun the subscription. Refused when the listing is deactivated, when there is no live subscription, or when `days > maxDays`. Answers with the row plus the Idram form |
 | `POST` | `/my/promotion/refresh` | «Թարմացնել» — sets `featuredAt = now`, which is what the promoted block on a town page is ordered by. Six per Armenia calendar day; the check and the spend are one UPDATE. Answers with the fresh status |
 
@@ -115,6 +116,13 @@ NOT paid, and that is a request for money rather than money.
 returning to the site, which they may never do. The confirmation marks the row
 PAID and extends the window in one transaction, and `providerTransactionId`'s
 uniqueness is what makes a retried callback add nothing.
+
+**The admin sees it in the same queue as a subscription.** `GET
+/admin/subscription-payments/review` lists every PAID, unreviewed row of
+either kind, with `kind` and a `planTitle` that reads «Առաջխաղացում ·
+<product> · N օր» for a placement; `POST …/:id/review` ticks off either. The
+admin card shows each running product as its own badge (`featuredUntil`,
+`areaFeaturedUntil`).
 
 The money lives in `SubscriptionPayment` with `kind: PROMOTION` — one ledger,
 two products, because Idram's `EDP_BILL_NO` is our payment id and two tables

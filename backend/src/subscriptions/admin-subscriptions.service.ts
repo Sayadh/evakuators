@@ -7,10 +7,18 @@ import { UNKNOWN_PLAN_MESSAGE } from './dto/create-subscription-payment.dto'
 import { renewalPeriod } from './subscription-period'
 import { findSubscriptionPlan } from './subscription-plans'
 import { PAYMENT_DUE_SOON_WITHIN_DAYS } from './subscription-status'
-import { toAdminPendingPaymentApi, toSubscriptionPaymentApi } from './subscription.mapper'
-import type { AdminPendingPaymentApi, SubscriptionPaymentApi } from './subscription.types'
+import {
+  toAdminPaymentSummaryApi,
+  toAdminPendingPaymentApi,
+  toSubscriptionPaymentApi,
+} from './subscription.mapper'
+import type {
+  AdminPendingPaymentApi,
+  AdminReviewedPaymentApi,
+  SubscriptionPaymentApi,
+} from './subscription.types'
 import { ListingRestorationService } from './listing-restoration.service'
-import { SubscriptionsRepository, isSubscriptionPayment } from './subscriptions.repository'
+import { SubscriptionsRepository } from './subscriptions.repository'
 
 /**
  * The admin half of subscriptions: reviewing payments that completed, and
@@ -60,12 +68,11 @@ export class AdminSubscriptionsService {
    * error — two admins working the same list at once is ordinary, and the
    * second one should see the row gone, not a conflict.
    */
-  async review(id: number): Promise<SubscriptionPaymentApi> {
+  async review(id: number): Promise<AdminReviewedPaymentApi> {
     const payment = await this.subscriptionsRepository.findById(id)
-    // A placement purchase never reaches this list (`findForReview` filters it
-    // out), so an id that resolves to one came from somewhere else and is not
-    // this screen's row to tick.
-    if (!payment || !isSubscriptionPayment(payment)) {
+    // Either kind: the queue lists placements too, and ticking one off means
+    // the same thing — "I have seen this money".
+    if (!payment) {
       throw new NotFoundException(`Վճարումը #${id} չի գտնվել`)
     }
     if (payment.status !== SubscriptionPaymentStatus.PAID) {
@@ -73,10 +80,10 @@ export class AdminSubscriptionsService {
     }
 
     const reviewed = await this.subscriptionsRepository.markReviewed(id)
-    if (!reviewed) return toSubscriptionPaymentApi(payment)
+    if (!reviewed) return toAdminPaymentSummaryApi(payment)
 
-    this.logger.log(`Subscription payment #${id} reviewed by an admin`)
-    return toSubscriptionPaymentApi(reviewed)
+    this.logger.log(`${payment.kind} payment #${id} reviewed by an admin`)
+    return toAdminPaymentSummaryApi(reviewed)
   }
 
   /**

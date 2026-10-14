@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { myPromotionRepository } from '~/repositories/myPromotion.repository'
-import type { PromotionProduct, PromotionScope, PromotionStatus } from '~/types/promotion'
+import type {
+  PromotionPayment,
+  PromotionProduct,
+  PromotionScope,
+  PromotionStatus,
+} from '~/types/promotion'
 import { extractErrorMessage } from '~/utils/errors'
 import { formatDateLong } from '~/utils/formatters'
 import { formatPrice } from '~/utils/formatPrice'
@@ -41,6 +46,7 @@ import { submitPaymentForm } from '~/utils/submitPaymentForm'
  * They share one refresh allowance: both queue on the same "last refreshed".
  */
 const status = ref<PromotionStatus | null>(null)
+const payments = ref<PromotionPayment[]>([])
 const loading = ref(true)
 const loadError = ref('')
 const days = ref(1)
@@ -119,7 +125,15 @@ async function load(): Promise<void> {
   loading.value = true
   loadError.value = ''
   try {
-    status.value = await myPromotionRepository.getStatus()
+    // Both at once: the history is one indexed query, and a block that
+    // rendered first and grew a list a moment later would jump under the
+    // driver's thumb. A failed history is not worth failing the block over.
+    const [loadedStatus, loadedPayments] = await Promise.all([
+      myPromotionRepository.getStatus(),
+      myPromotionRepository.listPayments().catch(() => payments.value),
+    ])
+    status.value = loadedStatus
+    payments.value = loadedPayments
     // Clamped on arrival rather than left out of range: the ceiling moves as a
     // subscription runs down, and a field holding 30 under a «մինչև 9 օր» label
     // is a form that disagrees with itself.
@@ -177,6 +191,14 @@ async function refresh(): Promise<void> {
   } finally {
     refreshing.value = false
   }
+}
+
+/** Same words as the subscription history, for the same four states */
+const PAYMENT_STATUS_LABELS: Record<PromotionPayment['status'], string> = {
+  PENDING: 'Վճարումը չի կատարվել',
+  PAID: 'Վճարված',
+  FAILED: 'Ձախողված',
+  CANCELLED: 'Չեղարկված',
 }
 
 /** «այսօր 14:32» — a refresh is a thing that happened today, almost always */
@@ -294,6 +316,22 @@ function formatMoment(iso: string): string {
       </template>
 
       <p v-if="actionError" class="promotion__error" role="alert">{{ actionError }}</p>
+
+      <!-- Collapsed, like the subscription history beside it: what was
+           already bought is a reference opened on purpose. Shown even without
+           a live subscription — a driver whose access lapsed may be asking
+           exactly what they paid for. -->
+      <details v-if="payments.length" class="promotion__history">
+        <summary class="promotion__history-title">Վճարումների պատմություն</summary>
+        <ul class="promotion__list">
+          <li v-for="payment in payments" :key="payment.id" class="promotion__item">
+            <span class="promotion__item-title">{{ payment.title }}</span>
+            <span>{{ formatPrice(payment.amount) }}</span>
+            <span class="promotion__muted">{{ formatDateLong(payment.createdAt) }}</span>
+            <span class="promotion__muted">{{ PAYMENT_STATUS_LABELS[payment.status] }}</span>
+          </li>
+        </ul>
+      </details>
     </template>
   </div>
 </template>
@@ -406,6 +444,43 @@ function formatMoment(iso: string): string {
     margin: 0;
     color: var(--color-danger);
     font-size: 0.9rem;
+  }
+
+  &__history {
+    border-top: 1px solid var(--color-border);
+    padding-top: var(--space-3);
+  }
+
+  &__history-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin: var(--space-3) 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__item {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    align-items: baseline;
+    padding: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-size: 0.9rem;
+  }
+
+  &__item-title {
+    flex-basis: 100%;
+    font-weight: 600;
   }
 }
 </style>

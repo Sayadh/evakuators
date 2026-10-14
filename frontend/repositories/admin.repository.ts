@@ -183,6 +183,11 @@ export interface AdminTowTruck {
   isFeatured: boolean
   /** ISO — when the paid placement runs out. Absent when there is none */
   featuredUntil?: string
+  /**
+   * «Ամբողջ սպասարկման տարածքում» — present only while it runs. The admin's
+   * own «Առաջխաղացնել» never writes it; only a driver's payment does.
+   */
+  areaFeaturedUntil?: string
   vehicleBrand: string
   vehicleModel?: string
   vehicleYear: number
@@ -798,8 +803,9 @@ export const adminRepository = {
    * coverage and revokes none: by the time a payment is on that list the money
    * has arrived and the driver already has what they paid for.
    */
-  reviewSubscriptionPayment(id: number): Promise<SubscriptionPayment> {
-    return apiFetch<SubscriptionPayment>(`/admin/subscription-payments/${id}/review`, {
+  /** Either product — the queue lists placements too */
+  reviewSubscriptionPayment(id: number): Promise<Omit<AdminPendingPayment, 'driver'>> {
+    return apiFetch<Omit<AdminPendingPayment, 'driver'>>(`/admin/subscription-payments/${id}/review`, {
       method: 'POST',
       headers: authHeader(),
     })

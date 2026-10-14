@@ -69,6 +69,7 @@ function build(options: {
       findById: vi.fn(async () => ({
         id: 99,
         towTruckId: 7,
+        kind: 'PROMOTION',
         promotionDays: 5,
         amount: 2000,
         currency: 'AMD',

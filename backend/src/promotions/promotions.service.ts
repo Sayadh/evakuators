@@ -7,6 +7,7 @@ import {
   NotFoundException,
   forwardRef,
 } from '@nestjs/common'
+import { PaymentKind } from '@prisma/client'
 import { armeniaDateKey } from '../common/armenia-day'
 import { IdramService } from '../idram/idram.service'
 import { SubscriptionsRepository } from '../subscriptions/subscriptions.repository'
@@ -167,7 +168,14 @@ export class PromotionsService {
     now: Date = new Date(),
   ): Promise<boolean> {
     const payment = await this.subscriptionsRepository.findById(paymentId)
-    if (!payment?.promotionDays) return false
+    // Both halves checked, not just the day count: `kind` is what the caller
+    // routed on, and `promotionDays` is what this method is about to grant.
+    // A row that satisfies one and not the other cannot exist (the CHECK
+    // constraint says so) — which is exactly why reaching here with one means
+    // something upstream is wrong and guessing would be the wrong answer.
+    if (!payment || payment.kind !== PaymentKind.PROMOTION || !payment.promotionDays) {
+      return false
+    }
 
     const confirmed = await this.subscriptionsRepository.confirmPromotion(
       paymentId,

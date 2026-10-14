@@ -553,33 +553,6 @@ export class TowTrucksRepository {
   }
 
   /**
-   * Extends a driver's own paid placement by `days`, or starts one.
-   *
-   * Extends rather than restarts, and the `GREATEST` is what does it: a driver
-   * with eight days left who buys seven more has fifteen, not seven. They paid
-   * for seven days of placement and seven days is what they get, whenever they
-   * chose to buy them.
-   *
-   * `featuredAt` is set to now, which puts them at the top of their town's
-   * promoted block — the same thing a refresh does. Paying is the first
-   * refresh; nobody should have to press a button to get what they just bought.
-   *
-   * Raw SQL because the new value depends on the stored one. Read-then-write in
-   * JavaScript would be two round trips with a window in between, and this runs
-   * from a payment callback that can arrive twice.
-   */
-  async extendPromotion(id: number, now: Date, days: number): Promise<void> {
-    await this.prisma.$executeRaw`
-      UPDATE "TowTruck"
-      SET "isFeatured" = true,
-          "featuredAt" = ${now},
-          "featuredUntil" = GREATEST(COALESCE("featuredUntil", ${now}), ${now})
-                            + (${days}::int * INTERVAL '1 day')
-      WHERE "id" = ${id}::int
-    `
-  }
-
-  /**
    * «Թարմացնել» — puts the driver back at the top of their town's promoted
    * block, if they have a refresh left today.
    *

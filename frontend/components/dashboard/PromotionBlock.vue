@@ -242,6 +242,22 @@ async function buy(): Promise<void> {
   }
 }
 
+/**
+ * «Թարմացնել» asks first. Six a day is a small allowance, and a driver who
+ * presses it six times in a row has spent the day's worth in a minute without
+ * moving — after the first press they are already on top. The dialog says
+ * what a refresh does, how many are left, and that spreading them out is what
+ * works; when nobody has refreshed after them (`topOfQueue`) it says so too.
+ */
+const refreshConfirmOpen = ref(false)
+const refreshedJustNow = ref(false)
+
+function askRefresh(): void {
+  actionError.value = ''
+  refreshedJustNow.value = false
+  refreshConfirmOpen.value = true
+}
+
 async function refresh(): Promise<void> {
   if (refreshing.value) return
   refreshing.value = true
@@ -250,10 +266,12 @@ async function refresh(): Promise<void> {
     // The endpoint answers with the fresh status, so there is no second read
     // and no window where the screen and the server disagree.
     status.value = await myPromotionRepository.refresh()
+    refreshedJustNow.value = true
   } catch (error) {
     actionError.value = extractErrorMessage(error, 'Չհաջողվեց թարմացնել։')
   } finally {
     refreshing.value = false
+    refreshConfirmOpen.value = false
   }
 }
 
@@ -313,15 +331,25 @@ function formatMoment(iso: string): string {
           <p v-if="status.lastRefreshedAt" class="promotion__muted">
             Վերջին թարմացումը՝ {{ formatMoment(status.lastRefreshedAt) }}
           </p>
+          <!-- "First" only when the server says so — two drivers can press
+               within the same second, and the screen should not claim more
+               than the queue does. -->
+          <p v-if="refreshedJustNow" class="promotion__success" role="status">
+            Թարմացված է{{ status.topOfQueue ? '. հիմա Դուք առաջինն եք' : '' }}։
+          </p>
+          <p v-else-if="status.topOfQueue" class="promotion__success">
+            Դուք հիմա առաջինն եք հերթում։
+          </p>
           <AppButton
             variant="success"
             :disabled="refreshing || status.refreshesLeft === 0"
-            @click="refresh"
+            @click="askRefresh"
           >
             {{ refreshing ? 'Թարմացվում է…' : 'Թարմացնել' }}
           </AppButton>
           <p class="promotion__muted">
             Այսօր մնացել է {{ status.refreshesLeft }} թարմացում {{ status.refreshesPerDay }}-ից։
+            Խորհուրդ է տրվում թարմացնել մոտավորապես 2–3 ժամը մեկ։
           </p>
         </div>
 
@@ -397,6 +425,38 @@ function formatMoment(iso: string): string {
       </template>
 
       <p v-if="actionError" class="promotion__error" role="alert">{{ actionError }}</p>
+
+      <AppModal v-model="refreshConfirmOpen" title="Թարմացնե՞լ առաջխաղացումը">
+        <div class="promotion__confirm">
+          <!-- The one case where pressing would waste a refresh. Said first. -->
+          <p v-if="status.topOfQueue" class="promotion__confirm-warning">
+            Դուք արդեն առաջինն եք. Ձեզնից հետո ոչ ոք չի թարմացրել, դրա համար թարմացումը
+            հիմա ոչինչ չի փոխի։ Ավելի լավ է պահել այն ավելի ուշվա համար։
+          </p>
+          <p>
+            Թարմացնելուց հետո Դուք կլինեք առաջխաղացված վարորդներից առաջինը՝ մինչև որևէ
+            մեկը թարմացնի Ձեզնից հետո։
+          </p>
+          <p>
+            Այսօր մնացել է <strong>{{ status.refreshesLeft }}</strong> թարմացում
+            {{ status.refreshesPerDay }}-ից։
+            <template v-if="status.refreshesLeft === 1">Սա այսօրվա վերջին թարմացումն է։</template>
+            Կեսգիշերից հետո (Երևանի ժամանակով) կրկին կունենաք {{ status.refreshesPerDay }}։
+          </p>
+          <p class="promotion__muted">
+            Մի ծախսեք թարմացումները միանգամից։ Լավագույնն է թարմացնել օրվա ընթացքում
+            հավասարաչափ՝ մոտավորապես 2–3 ժամը մեկ։
+          </p>
+          <div class="promotion__confirm-actions">
+            <AppButton variant="outline" :disabled="refreshing" @click="refreshConfirmOpen = false">
+              Չեղարկել
+            </AppButton>
+            <AppButton variant="success" :disabled="refreshing" @click="refresh">
+              {{ refreshing ? 'Թարմացվում է…' : 'Այո, թարմացնել' }}
+            </AppButton>
+          </div>
+        </div>
+      </AppModal>
 
       <!-- Collapsed, like the subscription history beside it: what was
            already bought is a reference opened on purpose. Shown even without
@@ -554,6 +614,40 @@ function formatMoment(iso: string): string {
     margin: 0;
     color: var(--color-danger);
     font-size: 0.9rem;
+  }
+
+  &__success {
+    margin: 0;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--color-success);
+  }
+
+  &__confirm {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    font-size: 0.95rem;
+    line-height: 1.55;
+
+    p {
+      margin: 0;
+    }
+  }
+
+  &__confirm-warning {
+    padding: var(--space-3);
+    border-radius: var(--radius-md);
+    background: var(--color-success-bg);
+    color: var(--color-text);
+    font-weight: 600;
+  }
+
+  &__confirm-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--space-2);
   }
 
   &__history {

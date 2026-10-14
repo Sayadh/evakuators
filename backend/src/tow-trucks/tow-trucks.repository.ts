@@ -587,6 +587,68 @@ export class TowTrucksRepository {
   }
 
   /**
+   * Whether any OTHER driver stands ahead of this one in a paid queue this
+   * driver is in — i.e. refreshed (or bought) more recently, on a page where
+   * both hold a live placement. Answers «Դուք արդեն առաջինն եք» in the refresh
+   * dialog; it decides nothing, so it is allowed to be approximate (it does
+   * not re-apply every listing filter, only the ones that place a driver in a
+   * paid queue at all).
+   *
+   * Mirrors the two queues of `listing-order.ts`:
+   *   home — drivers BASED on the same page holding either product;
+   *   area — on each other page this driver covers, visitors holding the area
+   *          product who name that page and are not based on it.
+   *
+   * Prisma's own filters, not raw SQL, so the dates need no `sqlUtc`.
+   */
+  async isAnyonePromotedAhead(
+    id: number,
+    queues: {
+      since: Date
+      home?: { type: 'city' | 'district'; slug: string }
+      area: { type: 'city' | 'district'; slug: string }[]
+    },
+    now: Date,
+  ): Promise<boolean> {
+    const baseColumn = (type: 'city' | 'district'): 'citySlug' | 'districtSlug' =>
+      type === 'city' ? 'citySlug' : 'districtSlug'
+    const competitor = {
+      id: { not: id },
+      isActive: true,
+      vehicleType: GENERAL_DISCOVERY_VEHICLE_TYPE,
+      featuredAt: { gt: queues.since },
+    } satisfies Prisma.TowTruckWhereInput
+
+    const checks: Prisma.TowTruckWhereInput[] = []
+    if (queues.home) {
+      checks.push({
+        ...competitor,
+        [baseColumn(queues.home.type)]: queues.home.slug,
+        OR: [
+          { isFeatured: true, OR: [{ featuredUntil: null }, { featuredUntil: { gt: now } }] },
+          { areaFeaturedUntil: { gt: now } },
+        ],
+      })
+    }
+    for (const place of queues.area) {
+      const column = baseColumn(place.type)
+      checks.push({
+        ...competitor,
+        areaFeaturedUntil: { gt: now },
+        serviceAreas: { array_contains: [{ slug: place.slug, type: place.type }] },
+        // `{ not: slug }` alone would also drop rows where the column is NULL
+        OR: [{ [column]: null }, { [column]: { not: place.slug } }],
+      })
+    }
+
+    for (const where of checks) {
+      const ahead = await this.prisma.towTruck.findFirst({ where, select: { id: true } })
+      if (ahead) return true
+    }
+    return false
+  }
+
+  /**
    * «Թարմացնել» — puts the driver back at the top of their town's promoted
    * block, if they have a refresh left today.
    *

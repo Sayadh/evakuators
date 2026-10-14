@@ -35,6 +35,7 @@ function build(options: {
   scope?: 'HOME' | 'AREA'
   vehicleType?: string
   noBasePlace?: boolean
+  someoneAhead?: boolean
 } = {}) {
   const truck = {
     id: 7,
@@ -48,6 +49,8 @@ function build(options: {
     vehicleType: options.vehicleType ?? 'flatbed',
     citySlug: options.noBasePlace ? null : 'abovyan',
     districtSlug: null,
+    locationName: 'Աբովյան',
+    serviceAreas: [],
   }
 
   const createPromotion = vi.fn(async (towTruckId: number, data: { days: number; amount: number }) => ({
@@ -60,11 +63,13 @@ function build(options: {
   }))
   const confirmPromotion = vi.fn(async () => ({ id: 99 }))
   const refreshPromotion = vi.fn(async () => options.refreshed ?? true)
+  const isAnyonePromotedAhead = vi.fn(async () => options.someoneAhead ?? false)
   const extendPromotion = vi.fn(async () => undefined)
 
   const service = new PromotionsService(
     {
       findById: vi.fn(async () => truck),
+      isAnyonePromotedAhead,
       refreshPromotion,
       extendPromotion,
     } as unknown as TowTrucksRepository,
@@ -99,7 +104,7 @@ function build(options: {
     { paymentForm: vi.fn(() => ({ action: 'https://idram' })) } as unknown as IdramService,
   )
 
-  return { service, createPromotion, confirmPromotion, refreshPromotion }
+  return { service, createPromotion, confirmPromotion, refreshPromotion, isAnyonePromotedAhead }
 }
 
 const inDays = (days: number) => new Date(NOW.getTime() + days * DAY)
@@ -436,5 +441,42 @@ describe('the driver’s own history', () => {
         createdAt: NOW.toISOString(),
       },
     ])
+  })
+})
+
+describe('«Դուք արդեն առաջինն եք» (`topOfQueue`)', () => {
+  const live = { paidThrough: inDays(30), featuredUntil: inDays(5), featuredAt: NOW }
+
+  it('is true when nobody refreshed after this driver', async () => {
+    const { service } = build(live)
+    expect((await service.getStatus(7, NOW, { withQueue: true })).topOfQueue).toBe(true)
+  })
+
+  it('is false when someone stands ahead', async () => {
+    const { service } = build({ ...live, someoneAhead: true })
+    expect((await service.getStatus(7, NOW, { withQueue: true })).topOfQueue).toBe(false)
+  })
+
+  it('asks only about the home queue for a home-only placement', async () => {
+    const { service, isAnyonePromotedAhead } = build(live)
+    await service.getStatus(7, NOW, { withQueue: true })
+    expect(isAnyonePromotedAhead).toHaveBeenCalledWith(
+      7,
+      { since: NOW, home: { type: 'city', slug: 'abovyan', name: expect.any(String) }, area: [] },
+      NOW,
+    )
+  })
+
+  it('costs nothing on the reads that decide things', async () => {
+    const { service, isAnyonePromotedAhead } = build(live)
+    const status = await service.getStatus(7, NOW)
+    expect(status.topOfQueue).toBeUndefined()
+    expect(isAnyonePromotedAhead).not.toHaveBeenCalled()
+  })
+
+  it('is absent with no placement running', async () => {
+    const { service, isAnyonePromotedAhead } = build({ paidThrough: inDays(30) })
+    expect((await service.getStatus(7, NOW, { withQueue: true })).topOfQueue).toBeUndefined()
+    expect(isAnyonePromotedAhead).not.toHaveBeenCalled()
   })
 })

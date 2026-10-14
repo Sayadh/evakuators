@@ -22,7 +22,7 @@ export class MyPromotionController {
   /** What the dashboard block renders from: whether to show it, what is running, what is on sale */
   @Get()
   getMine(@Req() request: AuthenticatedDriverRequest): Promise<PromotionStatusApi> {
-    return this.promotions.getStatus(request.towTruckId)
+    return this.promotions.getStatus(request.towTruckId, new Date(), { withQueue: true })
   }
 
   /** The caller's own placement orders, newest first — the block's history */

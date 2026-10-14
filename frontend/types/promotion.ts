@@ -70,6 +70,8 @@ export interface PromotionStatus {
   area: PromotionProduct
   /** Optional only so a status from before the field existed still renders */
   places?: PromotionPlaces
+  /** Nobody refreshed after this driver — a refresh now would change nothing */
+  topOfQueue?: boolean
 }
 
 /** Mirrors backend `CreatedPromotionPaymentApi` */

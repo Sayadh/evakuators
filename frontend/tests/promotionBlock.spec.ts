@@ -172,3 +172,24 @@ describe('the explanation inside each product card', () => {
     expect(block).toContain('v-for="point in explanations[option.scope].points"')
   })
 })
+
+describe('the refresh confirmation', () => {
+  it('asks before spending a refresh', () => {
+    expect(block).toContain('@click="askRefresh"')
+    expect(block).toContain('title="Թարմացնե՞լ առաջխաղացումը"')
+    expect(block).toContain('Այո, թարմացնել')
+  })
+
+  it('says how many are left, that the last one is the last, and when they reset', () => {
+    expect(block).toContain('status.refreshesLeft === 1')
+    expect(block).toContain('Կեսգիշերից հետո')
+  })
+
+  it('advises spreading them out', () => {
+    expect(block).toContain('2–3 ժամը մեկ')
+  })
+
+  it('warns when the driver is already on top', () => {
+    expect(block).toContain('v-if="status.topOfQueue" class="promotion__confirm-warning"')
+  })
+})

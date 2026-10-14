@@ -79,6 +79,13 @@ export interface PromotionStatusApi {
 
   /** Which pages each product acts on, so the block can say it by name */
   places: PromotionPlacesApi
+
+  /**
+   * True when nobody has refreshed after this driver on any page where they
+   * hold a placement — a refresh now would change nothing. Present only while
+   * a placement runs, and only on the dashboard's own reads.
+   */
+  topOfQueue?: boolean
 }
 
 /** What `POST /my/promotion/payments` answers with — the row, plus the form that pays it */

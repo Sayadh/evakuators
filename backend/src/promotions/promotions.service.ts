@@ -62,7 +62,11 @@ export class PromotionsService {
     private readonly idram: IdramService,
   ) {}
 
-  async getStatus(towTruckId: number, now: Date = new Date()): Promise<PromotionStatusApi> {
+  async getStatus(
+    towTruckId: number,
+    now: Date = new Date(),
+    options: { withQueue?: boolean } = {},
+  ): Promise<PromotionStatusApi> {
     const truck = await this.towTrucksRepository.findById(towTruckId)
     if (!truck) throw new NotFoundException(`Էվակուատոր #${towTruckId}-ը չի գտնվել`)
 
@@ -129,6 +133,22 @@ export class PromotionsService {
           : {}),
       },
       places: promotionPlaces(truck),
+    }
+
+    // Only for the screen that shows the refresh dialog: it costs a query per
+    // page the driver is promoted on, and nothing that DECIDES uses it.
+    if (options.withQueue && anyLive && truck.featuredAt) {
+      const places = status.places
+      const ahead = await this.towTrucksRepository.isAnyonePromotedAhead(
+        towTruckId,
+        {
+          since: truck.featuredAt,
+          ...(places.home ? { home: places.home } : {}),
+          area: areaLive ? places.area : [],
+        },
+        now,
+      )
+      status.topOfQueue = !ahead
     }
 
     if (!subscribed) status.blockedReason = 'no-subscription'
@@ -337,7 +357,7 @@ export class PromotionsService {
       PROMOTION_BUMPS_PER_DAY,
     )
 
-    const status = await this.getStatus(towTruckId, now)
+    const status = await this.getStatus(towTruckId, now, { withQueue: true })
     if (refreshed) return status
 
     if (!status.visible) throw new ConflictException('Ձեր էջը ապաակտիվացված է')

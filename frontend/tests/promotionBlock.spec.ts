@@ -46,8 +46,8 @@ describe('pricing a day count from the server’s ladder', () => {
     // goes stale is the one on the screen.
     expect(block).not.toMatch(/\b400\b/)
     expect(block).not.toMatch(/\b6000\b/)
-    expect(block).not.toMatch(/\b1000\b/)
-    expect(block).not.toMatch(/\b15000\b/)
+    expect(block).not.toMatch(/\b700\b/)
+    expect(block).not.toMatch(/\b11000\b/)
     expect(block).toContain('promotionPriceFrom(product.value.brackets, days.value)')
   })
 })

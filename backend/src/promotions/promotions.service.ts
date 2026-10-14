@@ -24,6 +24,15 @@ import type { CreatedPromotionPaymentApi, PromotionStatusApi } from './promotion
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
+/**
+ * How long an unpaid placement order blocks the next one.
+ *
+ * Long enough to cover a driver on the Idram page; short enough that an order
+ * they walked away from does not lock the block for the day. After it, the old
+ * row is left to the abandoned-payment sweep.
+ */
+export const PROMOTION_PENDING_LOCK_MINUTES = 30
+
 /** What the driver sees on the Idram page and the receipt */
 const SCOPE_LABEL: Record<PromotionScope, string> = {
   [PromotionScope.HOME]: 'Իմ քաղաքում վերևում',
@@ -157,6 +166,15 @@ export class PromotionsService {
       throw new BadRequestException(
         `Այս պահին կարող եք գնել առավելագույնը ${maxDays} օր — ` +
           'առաջխաղացումը չի կարող գերազանցել բաժանորդագրության ժամկետը',
+      )
+    }
+
+    // One order in flight at a time — see `hasRecentPendingPromotion`.
+    const since = new Date(now.getTime() - PROMOTION_PENDING_LOCK_MINUTES * 60 * 1000)
+    if (await this.subscriptionsRepository.hasRecentPendingPromotion(towTruckId, since)) {
+      throw new ConflictException(
+        'Նախորդ վճարումը դեռ ընթացքի մեջ է։ Եթե այն չեք ավարտել, ' +
+          `փորձեք կրկին ${PROMOTION_PENDING_LOCK_MINUTES} րոպեից։`,
       )
     }
 

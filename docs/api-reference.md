@@ -91,15 +91,15 @@ climb back up:
 - `HOME` — «Իմ քաղաքում վերևում»: the top of their own town page. Ladder
   400/300/150/100 ֏ per day (marginal), 30 days = 6,000 ֏.
 - `AREA` — «Ամբողջ սպասարկման տարածքում»: HOME, plus rank 3 (first after the
-  local drivers) on every city/district page they name in their coverage. The
-  same ladder at 2.5× — 1,000/750/375/250 ֏, 30 days = 15,000 ֏.
+  local drivers) on every city/district page they name in their coverage. Ladder
+  700/500/300/200 ֏ per day (marginal), 30 days = 11,000 ֏.
  Three routes, all behind `DriverJwtGuard`, all acting on the
 caller's own truck — the id comes from the session, never from a body.
 
 | Method | Path | Notes |
 | --- | --- | --- |
 | `GET` | `/my/promotion` | `{ visible, blockedReason?, activeUntil?, lastRefreshedAt?, refreshesLeft, refreshesPerDay, maxDays, brackets, currency, area: { activeUntil?, maxDays, brackets } }`. The top-level `activeUntil`/`maxDays`/`brackets` are the HOME product (where they were before AREA existed); `area` is the AREA one. The refresh allowance is shared. `visible: false` only for a deactivated listing, and the dashboard renders nothing at all then. `blockedReason: 'no-subscription'` shows the block and sells nothing. `brackets` is the price ladder, sent so the page can price a day count without a second copy of the numbers |
-| `POST` | `/my/promotion/payments` | Body `{ days, scope? }` (`scope` defaults to `HOME`) — **never an amount**; the price is `promotionPrice(days, scope)` on the server (`promotion-pricing.ts`). Refused when the listing is deactivated, when there is no live subscription, or when `days > maxDays`. Answers with the row plus the Idram form |
+| `POST` | `/my/promotion/payments` | Body `{ days, scope? }` (`scope` defaults to `HOME`) — **never an amount**; the price is `promotionPrice(days, scope)` on the server (`promotion-pricing.ts`). Refused while another promotion order of this driver is still PENDING from the last 30 minutes (`PROMOTION_PENDING_LOCK_MINUTES`) — `maxDays` only knows granted windows, so two unpaid orders could together overrun the subscription. Refused when the listing is deactivated, when there is no live subscription, or when `days > maxDays`. Answers with the row plus the Idram form |
 | `POST` | `/my/promotion/refresh` | «Թարմացնել» — sets `featuredAt = now`, which is what the promoted block on a town page is ordered by. Six per Armenia calendar day; the check and the spend are one UPDATE. Answers with the fresh status |
 
 **`maxDays` is bounded by the subscription.** A placement may not outlive the

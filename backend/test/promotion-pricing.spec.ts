@@ -93,9 +93,17 @@ describe('the placement price ladder', () => {
 })
 
 describe('the «Ամբողջ սպասարկման տարածքում» ladder', () => {
-  it('prices the two ends at 2.5× the home product', () => {
-    expect(promotionPrice(1, 'AREA')).toBe(1_000)
-    expect(promotionPrice(30, 'AREA')).toBe(15_000)
+  it('prices the agreed points', () => {
+    expect(promotionPrice(1, 'AREA')).toBe(700)
+    expect(promotionPrice(7, 'AREA')).toBe(4_500)
+    expect(promotionPrice(15, 'AREA')).toBe(7_500)
+    expect(promotionPrice(30, 'AREA')).toBe(11_000)
+  })
+
+  it('is a round hundred for every day count', () => {
+    for (const days of ALL_DAYS) {
+      expect(promotionPrice(days, 'AREA')! % 100, `${days} days`).toBe(0)
+    }
   })
 
   it('is dearer than the home product for every day count', () => {

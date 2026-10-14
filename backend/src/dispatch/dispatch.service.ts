@@ -3,7 +3,7 @@ import { assertWithinArmenia } from '../common/coordinates'
 import { ReviewsRepository } from '../reviews/reviews.repository'
 import { RouteMatrixService, type RouteMatrixEntry } from '../routing/route-matrix.service'
 import { RouteQuotaService } from '../routing/route-quota.service'
-import { isFeaturedNow } from '../tow-trucks/featured'
+import { isPromotedHomeNow } from '../tow-trucks/featured'
 import { derivePaymentStatus } from '../subscriptions/subscription-status'
 import { SubscriptionsRepository } from '../subscriptions/subscriptions.repository'
 import {
@@ -335,8 +335,10 @@ export class DispatchService {
       // Through the window, not the raw flag: an expired placement must not
       // keep a driver at the top of the dispatcher's list, and it must not keep
       // them in the «Լավագույնները» filter either. Same rule as every public
-      // read — see `isFeaturedNow`.
-      isFeatured: isFeaturedNow(truck, lookups.now),
+      // read — see `isFeaturedNow`. Either product: «Ամբողջ սպասարկման
+      // տարածքում» includes the home top, and the band only counts it for a
+      // local driver anyway (`bandOf`), exactly as the public listing does.
+      isFeatured: isPromotedHomeNow(truck, lookups.now),
       // No window to apply — see schema.prisma's own note on the column.
       isPartner: truck.isPartner,
       isActive: truck.isActive,

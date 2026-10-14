@@ -63,6 +63,8 @@ const CANDIDATE_SELECT = {
   serviceAreas: true,
   isFeatured: true,
   featuredUntil: true,
+  // The area product includes the home top — see `isPromotedHomeNow`
+  areaFeaturedUntil: true,
   isPartner: true,
   // Only ever false on a row the driver search returned — see
   // `DispatchCandidateApi.isActive`.

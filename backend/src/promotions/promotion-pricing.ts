@@ -48,21 +48,21 @@ export const PROMOTION_PRICE_BRACKETS: readonly PromotionPriceBracket[] = Object
 ] as PromotionPriceBracket[])
 
 /**
- * «Ամբողջ սպասարկման տարածքում» — the same ladder at 2.5×: 1,000 ֏ on day one,
- * 15,000 ֏ for thirty.
+ * «Ամբողջ սպասարկման տարածքում» — 700 ֏ on day one, 11,000 ֏ for thirty.
  *
- * One multiplier on the home ladder rather than a second shape, so the two
- * products keep the same reading — a burst is dearer per day than a standing
- * position — and only the reach differs. The reach is what is dearer: the home
- * product sells one page, this one sells every page the driver covers (up to
- * five towns or Yerevan districts beside their own), placed after the local
- * drivers on each.
+ * The same four bands as the home ladder, so the two products keep the same
+ * reading — a burst is dearer per day than a standing position — and only the
+ * reach differs. Deliberately NOT a big multiple of the home price: outside
+ * their own town the driver is placed after the local drivers, not above them,
+ * so what is sold is the first place among visitors on up to five more pages,
+ * and 5,000 ֏ a month over the home product is what that is worth. Every total
+ * is a round number.
  */
 export const AREA_PROMOTION_PRICE_BRACKETS: readonly PromotionPriceBracket[] = Object.freeze([
-  Object.freeze({ fromDay: 1, toDay: 5, pricePerDay: 1000 }),
-  Object.freeze({ fromDay: 6, toDay: 10, pricePerDay: 750 }),
-  Object.freeze({ fromDay: 11, toDay: 20, pricePerDay: 375 }),
-  Object.freeze({ fromDay: 21, toDay: 30, pricePerDay: 250 }),
+  Object.freeze({ fromDay: 1, toDay: 5, pricePerDay: 700 }),
+  Object.freeze({ fromDay: 6, toDay: 10, pricePerDay: 500 }),
+  Object.freeze({ fromDay: 11, toDay: 20, pricePerDay: 300 }),
+  Object.freeze({ fromDay: 21, toDay: 30, pricePerDay: 200 }),
 ] as PromotionPriceBracket[])
 
 /** The ladder for one product */

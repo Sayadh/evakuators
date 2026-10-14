@@ -178,6 +178,27 @@ export class SubscriptionsRepository {
   }
 
   /**
+   * Whether this driver has a placement order created since `since` that is
+   * still waiting for the provider.
+   *
+   * What `PromotionsService.createPayment` refuses a second order on: `maxDays`
+   * is computed from the windows already granted, not from orders in flight,
+   * so two unpaid orders paid one after the other could together run past the
+   * subscription's end.
+   */
+  async hasRecentPendingPromotion(towTruckId: number, since: Date): Promise<boolean> {
+    const count = await this.prisma.subscriptionPayment.count({
+      where: {
+        towTruckId,
+        kind: PaymentKind.PROMOTION,
+        status: SubscriptionPaymentStatus.PENDING,
+        createdAt: { gte: since },
+      },
+    })
+    return count > 0
+  }
+
+  /**
    * Marks a placement payment PAID and extends the driver's placement, in one
    * transaction.
    *

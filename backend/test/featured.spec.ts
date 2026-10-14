@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   featuredUntilFrom,
+  isAreaFeaturedNow,
   isFeaturedNow,
+  isPromotedHomeNow,
   isValidFeaturedDays,
   FEATURED_MAX_DAYS,
   FEATURED_MIN_DAYS,
@@ -80,5 +82,26 @@ describe('isValidFeaturedDays', () => {
     // A half-day placement has no price and no meaning; it would only ever
     // arrive from a caller doing arithmetic it should not be doing.
     expect(isValidFeaturedDays(1.5)).toBe(false)
+  })
+})
+
+describe('the «Ամբողջ սպասարկման տարածքում» window', () => {
+  const LATER = new Date('2026-09-10T12:00:00.000Z')
+  const EARLIER = new Date('2026-09-08T12:00:00.000Z')
+
+  it('is live only strictly before its end, and never when unset', () => {
+    expect(isAreaFeaturedNow({ areaFeaturedUntil: LATER }, NOW)).toBe(true)
+    expect(isAreaFeaturedNow({ areaFeaturedUntil: NOW }, NOW)).toBe(false)
+    expect(isAreaFeaturedNow({ areaFeaturedUntil: EARLIER }, NOW)).toBe(false)
+    expect(isAreaFeaturedNow({ areaFeaturedUntil: null }, NOW)).toBe(false)
+  })
+
+  it('counts as the home top too — this is what dispatch and the listing read', () => {
+    const areaOnly = { isFeatured: false, featuredUntil: null, areaFeaturedUntil: LATER }
+    const homeOnly = { isFeatured: true, featuredUntil: LATER, areaFeaturedUntil: null }
+    const neither = { isFeatured: false, featuredUntil: null, areaFeaturedUntil: EARLIER }
+    expect(isPromotedHomeNow(areaOnly, NOW)).toBe(true)
+    expect(isPromotedHomeNow(homeOnly, NOW)).toBe(true)
+    expect(isPromotedHomeNow(neither, NOW)).toBe(false)
   })
 })

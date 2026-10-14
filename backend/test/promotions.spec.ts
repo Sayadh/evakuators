@@ -33,6 +33,7 @@ function build(options: {
   bumpCount?: number
   refreshed?: boolean
   scope?: 'HOME' | 'AREA'
+  pending?: boolean
 } = {}) {
   const truck = {
     id: 7,
@@ -54,6 +55,7 @@ function build(options: {
     createdAt: NOW,
   }))
   const confirmPromotion = vi.fn(async () => ({ id: 99 }))
+  const hasRecentPendingPromotion = vi.fn(async () => options.pending ?? false)
   const refreshPromotion = vi.fn(async () => options.refreshed ?? true)
   const extendPromotion = vi.fn(async () => undefined)
 
@@ -69,6 +71,7 @@ function build(options: {
       ),
       createPromotion,
       confirmPromotion,
+      hasRecentPendingPromotion,
       findById: vi.fn(async () => ({
         id: 99,
         towTruckId: 7,
@@ -82,7 +85,7 @@ function build(options: {
     { paymentForm: vi.fn(() => ({ action: 'https://idram' })) } as unknown as IdramService,
   )
 
-  return { service, createPromotion, confirmPromotion, refreshPromotion }
+  return { service, createPromotion, confirmPromotion, refreshPromotion, hasRecentPendingPromotion }
 }
 
 const inDays = (days: number) => new Date(NOW.getTime() + days * DAY)
@@ -269,12 +272,12 @@ describe('the «Ամբողջ սպասարկման տարածքում» product',
 
     const created = await service.createPayment(7, 30, 'AREA', NOW)
 
-    expect(created.amount).toBe(15_000)
+    expect(created.amount).toBe(11_000)
     expect(created.scope).toBe('AREA')
     expect(createPromotion).toHaveBeenCalledWith(7, {
       days: 30,
       scope: 'AREA',
-      amount: 15_000,
+      amount: 11_000,
       currency: 'AMD',
     })
   })
@@ -321,5 +324,21 @@ describe('the «Ամբողջ սպասարկման տարածքում» product',
     const { service, confirmPromotion } = build({ scope: 'AREA' })
     await service.confirmPayment(99, undefined, NOW)
     expect(confirmPromotion).toHaveBeenCalledWith(99, 7, { days: 5, scope: 'AREA' }, NOW, undefined)
+  })
+})
+
+describe('one order in flight', () => {
+  it('refuses a second order while the first is still unpaid, by name', async () => {
+    // Two unpaid orders paid one after the other could together run past the
+    // subscription's end — `maxDays` only knows what was already granted.
+    const { service, createPromotion } = build({ paidThrough: inDays(30), pending: true })
+    await expect(service.createPayment(7, 3, 'AREA', NOW)).rejects.toThrow(/ընթացքի մեջ/)
+    expect(createPromotion).not.toHaveBeenCalled()
+  })
+
+  it('looks back exactly the lock window', async () => {
+    const { service, hasRecentPendingPromotion } = build({ paidThrough: inDays(30) })
+    await service.createPayment(7, 3, 'HOME', NOW)
+    expect(hasRecentPendingPromotion).toHaveBeenCalledWith(7, new Date(NOW.getTime() - 30 * 60 * 1000))
   })
 })

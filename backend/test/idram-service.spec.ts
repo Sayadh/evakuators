@@ -24,7 +24,9 @@ interface Options {
     id: number
     amount: number
     status: SubscriptionPaymentStatus
+    kind?: 'SUBSCRIPTION' | 'PROMOTION'
   } | null
+  grantable?: boolean
   alreadySeenTransaction?: boolean
   confirmReturns?: unknown
   configured?: boolean
@@ -57,10 +59,14 @@ function build(options: Options = {}) {
         : { recAccount: REC_ACCOUNT, secretKey: SECRET },
   } as unknown as ConfigService
 
+  const isStillGrantable = vi.fn(async () => options.grantable ?? true)
+  const promotions = { isStillGrantable } as never
+
   return {
-    service: new IdramService(config, subscriptions, repository),
+    service: new IdramService(config, subscriptions, repository, promotions),
     confirmPayment,
     recordProviderTransaction,
+    isStillGrantable,
   }
 }
 
@@ -260,5 +266,26 @@ describe('IdramService — a bill that has left PENDING', () => {
     // order, and answering YES would invite a charge against it.
     const { service } = build({ payment: paid(SubscriptionPaymentStatus.CANCELLED) })
     await expect(service.handleCallback(precheckBody())).resolves.toBe(false)
+  })
+})
+
+describe('the precheck on a placement', () => {
+  const placement = { id: 1806, amount: 3000, status: SubscriptionPaymentStatus.PENDING, kind: 'PROMOTION' as const }
+
+  it('accepts one that can still be granted', async () => {
+    const { service, isStillGrantable } = build({ payment: placement })
+    await expect(service.handleCallback(precheckBody())).resolves.toBe(true)
+    expect(isStillGrantable).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses one that no longer fits — before any money moves', async () => {
+    const { service } = build({ payment: placement, grantable: false })
+    await expect(service.handleCallback(precheckBody())).resolves.toBe(false)
+  })
+
+  it('never asks the question about a subscription', async () => {
+    const { service, isStillGrantable } = build({ grantable: false })
+    await expect(service.handleCallback(precheckBody())).resolves.toBe(true)
+    expect(isStillGrantable).not.toHaveBeenCalled()
   })
 })

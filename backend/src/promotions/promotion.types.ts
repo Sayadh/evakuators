@@ -13,6 +13,12 @@ export type PromotionBlockedReason =
   | 'inactive'
   /** No live subscription. Shown, explained, and nothing is for sale. */
   | 'no-subscription'
+  /**
+   * A specialist vehicle (manipulator, heavy-duty). Those never appear on a
+   * city or district page — they live on their own landing pages, which a
+   * placement does not reorder — so there is nothing to sell them.
+   */
+  | 'not-listed'
 
 /**
  * One of the two products, as the block needs it: is it running, how much of
@@ -39,6 +45,12 @@ export interface PromotionStatusApi {
   /** Whether the block may be rendered at all. False only for a deactivated listing. */
   visible: boolean
   blockedReason?: PromotionBlockedReason
+  /**
+   * Whether «Իմ քաղաքում վերևում» means anything for this driver — false when
+   * the base is not a city or Yerevan district (a corridor base), since no page
+   * is "theirs". The area product still works on the towns they cover.
+   */
+  homeAvailable: boolean
 
   /** Set while a paid placement is running */
   activeUntil?: string

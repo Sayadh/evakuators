@@ -138,6 +138,17 @@ export class IdramService {
       return false
     }
 
+    // A placement is also a promise about the future — the listing, the
+    // subscription and the days left must still allow it. Refusing here costs
+    // nothing: no money has moved. Reads only, like the rest of this method.
+    if (payment.kind === PaymentKind.PROMOTION && !(await this.promotions.isStillGrantable(payment))) {
+      this.logger.warn(
+        `Idram precheck refused: placement payment #${payment.id} can no longer be granted ` +
+          '(listing, subscription or days left changed since the order)',
+      )
+      return false
+    }
+
     this.logger.log(`Idram precheck accepted for payment #${payment.id}`)
     return true
   }

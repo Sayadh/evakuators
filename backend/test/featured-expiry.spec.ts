@@ -34,18 +34,20 @@ function service(overrides: Record<string, unknown> = {}) {
 }
 
 describe('AdminService.setTowTruckFeatured', () => {
-  it('records a window counted from now', async () => {
+  it('hands the repository a number of days and the moment of the grant', async () => {
+    // The repository EXTENDS a live window by these days rather than replacing
+    // it (a driver may have paid for some of it), so the end date is the
+    // database's to compute — see `TowTrucksRepository.setFeatured`.
     const { instance, setFeatured } = service()
     const before = Date.now()
 
     const result = await instance.setTowTruckFeatured(7, true, 3)
 
-    const [, window] = setFeatured.mock.calls[0]!
-    const { at, until } = window as { at: Date; until: Date }
+    const [, grant] = setFeatured.mock.calls[0]!
+    const { at, days } = grant as { at: Date; days: number }
     expect(at.getTime()).toBeGreaterThanOrEqual(before)
-    expect(until.getTime() - at.getTime()).toBe(3 * 24 * 60 * 60 * 1000)
+    expect(days).toBe(3)
     expect(result.isFeatured).toBe(true)
-    expect(result.featuredUntil).toBe(until.toISOString())
   })
 
   it('rewrites the start on a re-grant, so a renewal goes to the front of the queue', async () => {

@@ -33,7 +33,8 @@ function build(options: {
   bumpCount?: number
   refreshed?: boolean
   scope?: 'HOME' | 'AREA'
-  pending?: boolean
+  vehicleType?: string
+  noBasePlace?: boolean
 } = {}) {
   const truck = {
     id: 7,
@@ -44,6 +45,9 @@ function build(options: {
     areaFeaturedUntil: options.areaFeaturedUntil ?? null,
     promotionBumpDay: options.bumpDay ?? null,
     promotionBumpCount: options.bumpCount ?? 0,
+    vehicleType: options.vehicleType ?? 'flatbed',
+    citySlug: options.noBasePlace ? null : 'abovyan',
+    districtSlug: null,
   }
 
   const createPromotion = vi.fn(async (towTruckId: number, data: { days: number; amount: number }) => ({
@@ -55,7 +59,6 @@ function build(options: {
     createdAt: NOW,
   }))
   const confirmPromotion = vi.fn(async () => ({ id: 99 }))
-  const hasRecentPendingPromotion = vi.fn(async () => options.pending ?? false)
   const refreshPromotion = vi.fn(async () => options.refreshed ?? true)
   const extendPromotion = vi.fn(async () => undefined)
 
@@ -71,7 +74,6 @@ function build(options: {
       ),
       createPromotion,
       confirmPromotion,
-      hasRecentPendingPromotion,
       findOwnPromotions: vi.fn(async () => [
         {
           id: 12,
@@ -97,7 +99,7 @@ function build(options: {
     { paymentForm: vi.fn(() => ({ action: 'https://idram' })) } as unknown as IdramService,
   )
 
-  return { service, createPromotion, confirmPromotion, refreshPromotion, hasRecentPendingPromotion }
+  return { service, createPromotion, confirmPromotion, refreshPromotion }
 }
 
 const inDays = (days: number) => new Date(NOW.getTime() + days * DAY)
@@ -312,11 +314,14 @@ describe('the «Ամբողջ սպասարկման տարածքում» product',
     expect((await service.getStatus(7, NOW)).maxDays).toBe(18)
   })
 
-  it('does not shrink because a home placement is running', async () => {
+  it('queues behind a running home placement too — the two never share days', async () => {
+    // AREA bought while HOME runs pushes the remaining home days behind itself
+    // (`confirmPromotion`), so everything already running ends later by the
+    // days bought, and that end must still fit inside the subscription.
     const { service } = build({ paidThrough: inDays(30), featuredUntil: inDays(20) })
     const status = await service.getStatus(7, NOW)
     expect(status.maxDays).toBe(10)
-    expect(status.area.maxDays).toBe(30)
+    expect(status.area.maxDays).toBe(10)
   })
 
   it('ignores an expired window', async () => {
@@ -339,19 +344,80 @@ describe('the «Ամբողջ սպասարկման տարածքում» product',
   })
 })
 
-describe('one order in flight', () => {
-  it('refuses a second order while the first is still unpaid, by name', async () => {
-    // Two unpaid orders paid one after the other could together run past the
-    // subscription's end — `maxDays` only knows what was already granted.
-    const { service, createPromotion } = build({ paidThrough: inDays(30), pending: true })
-    await expect(service.createPayment(7, 3, 'AREA', NOW)).rejects.toThrow(/ընթացքի մեջ/)
+describe('a newer order', () => {
+  it('is accepted — the repository calls off the older unpaid one', async () => {
+    // Only the newest order is payable (`createPromotion` cancels the rest in
+    // the same transaction), so nothing here has to refuse the second press.
+    const { service, createPromotion } = build({ paidThrough: inDays(30) })
+    await service.createPayment(7, 3, 'AREA', NOW)
+    await service.createPayment(7, 1, 'HOME', NOW)
+    expect(createPromotion).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('who the placement is for', () => {
+  it('sells nothing to a specialist vehicle, which no city page lists', async () => {
+    const { service, createPromotion } = build({ paidThrough: inDays(30), vehicleType: 'manipulator' })
+    const status = await service.getStatus(7, NOW)
+    expect(status.visible).toBe(true)
+    expect(status.blockedReason).toBe('not-listed')
+    expect(status.maxDays).toBe(0)
+    expect(status.area.maxDays).toBe(0)
+    await expect(service.createPayment(7, 1, 'AREA', NOW)).rejects.toThrow(/չի ցուցադրվում/)
     expect(createPromotion).not.toHaveBeenCalled()
   })
 
-  it('looks back exactly the lock window', async () => {
-    const { service, hasRecentPendingPromotion } = build({ paidThrough: inDays(30) })
-    await service.createPayment(7, 3, 'HOME', NOW)
-    expect(hasRecentPendingPromotion).toHaveBeenCalledWith(7, new Date(NOW.getTime() - 30 * 60 * 1000))
+  it('offers only the area product to a driver whose base is no town', async () => {
+    const { service, createPromotion } = build({ paidThrough: inDays(30), noBasePlace: true })
+    const status = await service.getStatus(7, NOW)
+    expect(status.homeAvailable).toBe(false)
+    expect(status.maxDays).toBe(0)
+    expect(status.area.maxDays).toBe(30)
+    await expect(service.createPayment(7, 1, 'HOME', NOW)).rejects.toThrow(/Իմ քաղաքում/)
+    await expect(service.createPayment(7, 1, 'AREA', NOW)).resolves.toBeDefined()
+    expect(createPromotion).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('the provider’s precheck (`isStillGrantable`)', () => {
+  const order = (overrides: Record<string, unknown> = {}) => ({
+    towTruckId: 7,
+    promotionDays: 7,
+    promotionScope: 'AREA' as const,
+    createdAt: NOW,
+    ...overrides,
+  })
+
+  it('accepts an order that still fits', async () => {
+    const { service } = build({ paidThrough: inDays(30) })
+    await expect(service.isStillGrantable(order(), NOW)).resolves.toBe(true)
+  })
+
+  it('does not refuse the maximum because minutes passed on the Idram page', async () => {
+    // 7 days and 2 minutes left at the order; 6 days 23 hours by the precheck.
+    const { service } = build({ paidThrough: new Date(NOW.getTime() + 7 * DAY + 2 * 60_000) })
+    const later = new Date(NOW.getTime() + 5 * 60_000)
+    await expect(service.isStillGrantable(order(), later)).resolves.toBe(true)
+  })
+
+  it('refuses once the listing is deactivated', async () => {
+    const { service } = build({ paidThrough: inDays(30), isActive: false })
+    await expect(service.isStillGrantable(order(), NOW)).resolves.toBe(false)
+  })
+
+  it('refuses once the subscription has run out', async () => {
+    const { service } = build({ paidThrough: inDays(-1) })
+    await expect(service.isStillGrantable(order(), NOW)).resolves.toBe(false)
+  })
+
+  it('refuses when something granted since leaves no room', async () => {
+    const { service } = build({ paidThrough: inDays(10), areaFeaturedUntil: inDays(8) })
+    await expect(service.isStillGrantable(order(), NOW)).resolves.toBe(false)
+  })
+
+  it('refuses a row without a product or days', async () => {
+    const { service } = build({ paidThrough: inDays(30) })
+    await expect(service.isStillGrantable(order({ promotionScope: null }), NOW)).resolves.toBe(false)
   })
 })
 

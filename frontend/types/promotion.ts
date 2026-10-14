@@ -6,7 +6,7 @@ export interface PromotionPriceBracket {
 }
 
 /** Why the block cannot sell anything right now. Mirrors backend `PromotionBlockedReason`. */
-export type PromotionBlockedReason = 'inactive' | 'no-subscription'
+export type PromotionBlockedReason = 'inactive' | 'no-subscription' | 'not-listed'
 
 /**
  * The two placement products. Mirrors the backend's `PromotionScope` enum.
@@ -32,6 +32,11 @@ export interface PromotionStatus {
   /** False only for a deactivated listing, and then the block is not rendered at all */
   visible: boolean
   blockedReason?: PromotionBlockedReason
+  /**
+   * Whether «Իմ քաղաքում վերևում» means anything for this driver — false for
+   * a base that is no city or Yerevan district. Only AREA is offered then.
+   */
+  homeAvailable: boolean
   activeUntil?: string
   lastRefreshedAt?: string
   refreshesLeft: number

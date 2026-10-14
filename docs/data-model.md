@@ -170,6 +170,14 @@ Notable fields beyond the obvious:
   placement (`isPromotedHomeNow`) and shares `featuredAt` as its queue key,
   which is why the HOME sweep and an admin revoke keep `featuredAt` while this
   window is still running.
+
+  **Raw SQL that reads or writes these dates goes through `sqlUtc()`**
+  (`common/sql-utc.ts`). The columns are `timestamp` without a time zone
+  holding UTC, and a bare bound `Date` is converted with the session's
+  `TimeZone`: on a Postgres running in `Asia/Yerevan` that was verified to
+  compare four hours off and write four hours shifted. Prisma's own queries
+  are unaffected. An admin grant (`setFeatured`) EXTENDS a live HOME window
+  rather than replacing it — it may hold days a driver paid for.
 - `workingHoursText: String?` — free-text working hours (e.g. `"09:00 – 21:00"`),
   entirely optional. `null`/unset means "not specified" and the frontend
   hides the hours line completely rather than showing a placeholder or a

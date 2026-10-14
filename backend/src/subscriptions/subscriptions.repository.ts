@@ -5,6 +5,7 @@ import {
   SubscriptionPaymentStatus,
   type SubscriptionPayment,
 } from '@prisma/client'
+import { sqlUtc } from '../common/sql-utc'
 import { PrismaService } from '../prisma/prisma.service'
 import type { SubscriptionPeriod } from './subscription-period'
 import { resolveCoveredUntil } from './subscription-status'
@@ -161,19 +162,46 @@ export class SubscriptionsRepository {
    * it is what makes a placement unreadable as coverage even by a query that
    * forgot its `kind` filter.
    */
+  /**
+   * Records a new placement order and calls off the driver's older unpaid ones,
+   * in one transaction.
+   *
+   * Only the newest order is ever payable. Without this, an order made, left on
+   * the Idram page and paid a day later could stack on top of a newer one, and
+   * the two together could run past the subscription that `maxDays` was
+   * measured against. A CANCELLED row is refused by Idram's precheck, so the
+   * superseded order cannot be started; the precheck also re-validates the
+   * surviving one (`PromotionsService.isStillGrantable`).
+   *
+   * The advisory lock serialises two simultaneous presses from the same driver
+   * (a double tap, two tabs), which would otherwise both find nothing to
+   * cancel and both insert. Two-key form, so it can never collide with the
+   * single-key lock `confirm` takes on the same tow truck id.
+   */
   createPromotion(
     towTruckId: number,
     data: { days: number; scope: PromotionScope; amount: number; currency: string },
   ): Promise<SubscriptionPayment> {
-    return this.prisma.subscriptionPayment.create({
-      data: {
-        towTruckId,
-        kind: PaymentKind.PROMOTION,
-        promotionDays: data.days,
-        promotionScope: data.scope,
-        amount: data.amount,
-        currency: data.currency,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(2, ${towTruckId}::int)`
+      await tx.subscriptionPayment.updateMany({
+        where: {
+          towTruckId,
+          kind: PaymentKind.PROMOTION,
+          status: SubscriptionPaymentStatus.PENDING,
+        },
+        data: { status: SubscriptionPaymentStatus.CANCELLED },
+      })
+      return tx.subscriptionPayment.create({
+        data: {
+          towTruckId,
+          kind: PaymentKind.PROMOTION,
+          promotionDays: data.days,
+          promotionScope: data.scope,
+          amount: data.amount,
+          currency: data.currency,
+        },
+      })
     })
   }
 
@@ -188,27 +216,6 @@ export class SubscriptionsRepository {
       orderBy: { createdAt: 'desc' },
       take: OWN_PAYMENTS_LIMIT,
     })
-  }
-
-  /**
-   * Whether this driver has a placement order created since `since` that is
-   * still waiting for the provider.
-   *
-   * What `PromotionsService.createPayment` refuses a second order on: `maxDays`
-   * is computed from the windows already granted, not from orders in flight,
-   * so two unpaid orders paid one after the other could together run past the
-   * subscription's end.
-   */
-  async hasRecentPendingPromotion(towTruckId: number, since: Date): Promise<boolean> {
-    const count = await this.prisma.subscriptionPayment.count({
-      where: {
-        towTruckId,
-        kind: PaymentKind.PROMOTION,
-        status: SubscriptionPaymentStatus.PENDING,
-        createdAt: { gte: since },
-      },
-    })
-    return count > 0
   }
 
   /**
@@ -251,26 +258,39 @@ export class SubscriptionsRepository {
       // Raw SQL rather than a TowTrucksRepository call because it has to run
       // inside THIS transaction. `featuredAt = now` either way: a purchase is a
       // refresh, and it is the one queue key both products share.
+      //
+      // The two products never run at once on the same days — the area one
+      // already holds the home top, so overlapping them would sell the same
+      // position twice. Whichever is bought second queues behind the other:
+      //   AREA bought → home days still to run after the area window starts
+      //                 move behind it (`featuredUntil + days`);
+      //   HOME bought → the new days start where a live area window ends.
+      // Matches `PromotionsService.maxDays`, which measures both products from
+      // the latest live end of either window.
+      const at = sqlUtc(now)
       if (scope === PromotionScope.AREA) {
         await tx.$executeRaw`
           UPDATE "TowTruck"
-          SET "featuredAt" = ${now},
-              "areaFeaturedUntil" = GREATEST(COALESCE("areaFeaturedUntil", ${now}), ${now})
+          SET "featuredAt" = ${at},
+              "featuredUntil" = CASE
+                WHEN "isFeatured"
+                  AND "featuredUntil" > GREATEST(COALESCE("areaFeaturedUntil", ${at}), ${at})
+                THEN "featuredUntil" + (${days}::int * INTERVAL '1 day')
+                ELSE "featuredUntil"
+              END,
+              "areaFeaturedUntil" = GREATEST(COALESCE("areaFeaturedUntil", ${at}), ${at})
                                     + (${days}::int * INTERVAL '1 day')
           WHERE "id" = ${towTruckId}::int
         `
       } else {
-        // HOME days start where a live AREA window ends, not alongside it: the
-        // area product already holds the home top, so running both at once
-        // would sell the same position twice. Matches `PromotionsService.maxDays`.
         await tx.$executeRaw`
           UPDATE "TowTruck"
           SET "isFeatured" = true,
-              "featuredAt" = ${now},
+              "featuredAt" = ${at},
               "featuredUntil" = GREATEST(
-                                  COALESCE("featuredUntil", ${now}),
-                                  COALESCE("areaFeaturedUntil", ${now}),
-                                  ${now}
+                                  COALESCE("featuredUntil", ${at}),
+                                  COALESCE("areaFeaturedUntil", ${at}),
+                                  ${at}
                                 ) + (${days}::int * INTERVAL '1 day')
           WHERE "id" = ${towTruckId}::int
         `

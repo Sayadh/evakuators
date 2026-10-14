@@ -134,3 +134,20 @@ describe('the admin card', () => {
     expect(admin).toContain('Առաջխաղացում · Ամբողջ տարածքում')
   })
 })
+
+describe('who the block sells to', () => {
+  it('explains, and sells nothing to, a specialist vehicle', () => {
+    expect(block).toContain("status.blockedReason === 'not-listed'")
+    expect(block).toContain('քաղաքների էջերում չի ցուցադրվում')
+  })
+
+  it('offers only the area product to a driver whose base is no town', () => {
+    expect(block).toContain("option.scope !== 'HOME' || status.value?.homeAvailable !== false")
+    expect(block).toContain('v-for="option in offeredProducts"')
+  })
+
+  it('tells a HOME holder buying AREA that their home days are kept, not lost', () => {
+    expect(block).toContain('մնացած օրերը չեն կորչի')
+    expect(block).not.toContain('զուգահեռ')
+  })
+})

@@ -2083,7 +2083,7 @@ async function rejectReview(review: AdminReview): Promise<void> {
                      which destroys the dates before anything replaces them: if
                      the second request then failed, a driver who had just paid
                      twice held nothing, with no record of the interrupted term.
-                     A re-grant restarts it in one write. -->
+                     A re-grant extends it in one write. -->
                 <AppButton
                   variant="outline"
                   size="sm"
@@ -2382,11 +2382,11 @@ async function rejectReview(review: AdminReview): Promise<void> {
           Այս վարորդը կլինի առաջինը իր տարածքի էջում՝ նշված օրերի ընթացքում։ Ժամկետը
           լրանալուց հետո ավտոմատ հանվում է։
         </p>
-        <!-- Said plainly, because it is the one thing about a renewal that
-             could be mistaken for a bug: the days are not added to what is
-             left. What is sold is "N days from now". -->
+        <!-- Said plainly, because a running placement may hold days the
+             driver PAID for: the new days are added after them, never instead
+             of them (`TowTrucksRepository.setFeatured`). -->
         <p v-if="isPromotionLive(featureTarget)" class="admin-page__muted">
-          Գործող առաջխաղացումը կսկսվի նորից՝ այսօրվանից։ Մնացած օրերը չեն գումարվում։
+          Նշված օրերը կգումարվեն գործող առաջխաղացման մնացած օրերին։
         </p>
         <AppInput
           v-model="featureDays"

@@ -5,7 +5,6 @@ import { assertWithinArmenia } from '../common/coordinates'
 import { Cron, CronExpression } from '@nestjs/schedule'
 import { assertServiceAreasWithinLimit } from '../tow-trucks/service-area-limits'
 import {
-  featuredUntilFrom,
   isValidFeaturedDays,
   FEATURED_MAX_DAYS,
   FEATURED_MIN_DAYS,
@@ -1138,7 +1137,7 @@ export class AdminService {
     const now = new Date()
     const updated = await this.towTrucksRepository.setFeatured(
       id,
-      isFeatured ? { at: now, until: featuredUntilFrom(now, days as number) } : null,
+      isFeatured ? { at: now, days: days as number } : null,
     )
 
     return {

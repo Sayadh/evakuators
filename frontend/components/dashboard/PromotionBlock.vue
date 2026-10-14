@@ -41,8 +41,10 @@ import { submitPaymentForm } from '~/utils/submitPaymentForm'
  * ## Two products
  *
  * «Իմ քաղաքում վերևում» (HOME) and «Ամբողջ սպասարկման տարածքում» (AREA). The
- * second includes the first, so HOME days bought while AREA is running start
- * when it ends — the server counts it that way, and `maxDays` already says so.
+ * second includes the first, so the two never run on the same days: HOME
+ * bought while AREA runs starts when it ends, and AREA bought while HOME runs
+ * pushes the remaining home days behind itself. The server counts it that way,
+ * and `maxDays` already says so.
  * They share one refresh allowance: both queue on the same "last refreshed".
  */
 const status = ref<PromotionStatus | null>(null)
@@ -91,6 +93,16 @@ function productOf(current: PromotionStatus, which: PromotionScope): PromotionPr
   return { activeUntil: current.activeUntil, maxDays: current.maxDays, brackets: current.brackets }
 }
 
+/**
+ * The products this driver can actually buy. A base that is no town has no
+ * page of its own, so «Իմ քաղաքում» is not offered at all rather than shown
+ * and refused. `!== false` so a status from before the field existed still
+ * offers both.
+ */
+const offeredProducts = computed(() =>
+  PRODUCTS.filter((option) => option.scope !== 'HOME' || status.value?.homeAvailable !== false),
+)
+
 const product = computed(() => (status.value ? productOf(status.value, scope.value) : null))
 
 const price = computed(() =>
@@ -134,6 +146,10 @@ async function load(): Promise<void> {
     ])
     status.value = loadedStatus
     payments.value = loadedPayments
+    // Never leave the picker on a product this driver cannot buy.
+    if (!offeredProducts.value.some((option) => option.scope === scope.value)) {
+      scope.value = offeredProducts.value[0]?.scope ?? 'AREA'
+    }
     // Clamped on arrival rather than left out of range: the ceiling moves as a
     // subscription runs down, and a field holding 30 under a «մինչև 9 օր» label
     // is a form that disagrees with itself.
@@ -228,6 +244,13 @@ function formatMoment(iso: string): string {
         կարող եք կատարել վերևի «Վճարումներ» բաժնում։
       </p>
 
+      <!-- Specialist vehicles are not on city pages at all, so there is no
+           position to sell them. Said rather than hidden. -->
+      <p v-else-if="status.blockedReason === 'not-listed'" class="promotion__notice">
+        Ձեր տեխնիկայի տեսակը քաղաքների էջերում չի ցուցադրվում, դրա համար առաջխաղացումը
+        հասանելի չէ։
+      </p>
+
       <template v-else>
         <!-- A running placement: what is live, and the button that keeps it on top. -->
         <div v-if="anyActive" class="promotion__active">
@@ -261,7 +284,7 @@ function formatMoment(iso: string): string {
           <fieldset class="promotion__products">
             <legend class="promotion__label">Ընտրեք տարբերակը</legend>
             <label
-              v-for="option in PRODUCTS"
+              v-for="option in offeredProducts"
               :key="option.scope"
               class="promotion__product"
               :class="{ 'promotion__product--selected': scope === option.scope }"
@@ -283,7 +306,8 @@ function formatMoment(iso: string): string {
               «Իմ քաղաքում» օրերը կսկսվեն «Ամբողջ տարածքում» առաջխաղացման ավարտից հետո։
             </p>
             <p v-if="scope === 'AREA' && status.activeUntil" class="promotion__muted">
-              «Իմ քաղաքում» առաջխաղացման մնացած օրերը կշարունակեն հաշվվել զուգահեռ։
+              «Իմ քաղաքում» առաջխաղացման մնացած օրերը չեն կորչի. դրանք կշարունակվեն
+              «Ամբողջ տարածքում» առաջխաղացման ավարտից հետո։
             </p>
             <label for="promotion-days" class="promotion__label">
               Քանի՞ օր ({{ product.maxDays }}-ից ոչ ավելի)

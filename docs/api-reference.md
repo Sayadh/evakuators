@@ -100,15 +100,16 @@ caller's own truck — the id comes from the session, never from a body.
 | --- | --- | --- |
 | `GET` | `/my/promotion` | `{ visible, blockedReason?, activeUntil?, lastRefreshedAt?, refreshesLeft, refreshesPerDay, maxDays, brackets, currency, area: { activeUntil?, maxDays, brackets } }`. The top-level `activeUntil`/`maxDays`/`brackets` are the HOME product (where they were before AREA existed); `area` is the AREA one. The refresh allowance is shared. `visible: false` only for a deactivated listing, and the dashboard renders nothing at all then. `blockedReason: 'no-subscription'` shows the block and sells nothing. `brackets` is the price ladder, sent so the page can price a day count without a second copy of the numbers |
 | `GET` | `/my/promotion/payments` | The caller's own placement orders, newest first, every status: `{ id, scope, days, title, amount, currency, status, createdAt }[]`. The dashboard block's «Վճարումների պատմություն» |
-| `POST` | `/my/promotion/payments` | Body `{ days, scope? }` (`scope` defaults to `HOME`) — **never an amount**; the price is `promotionPrice(days, scope)` on the server (`promotion-pricing.ts`). Refused while another promotion order of this driver is still PENDING from the last 30 minutes (`PROMOTION_PENDING_LOCK_MINUTES`) — `maxDays` only knows granted windows, so two unpaid orders could together overrun the subscription. Refused when the listing is deactivated, when there is no live subscription, or when `days > maxDays`. Answers with the row plus the Idram form |
+| `POST` | `/my/promotion/payments` | Body `{ days, scope? }` (`scope` defaults to `HOME`) — **never an amount**; the price is `promotionPrice(days, scope)` on the server (`promotion-pricing.ts`). A new order **cancels the driver's older unpaid ones** in the same transaction (advisory-locked per driver), so only the newest is payable, and Idram's precheck re-validates it (`PromotionsService.isStillGrantable`: listing active, subscription live, days still fit — measured at the moment the order was made). Refused when the listing is deactivated, for a specialist vehicle (`blockedReason: 'not-listed'` — not on city pages), for `HOME` when the base is no city/district (`homeAvailable: false`), when there is no live subscription, or when `days > maxDays`. Answers with the row plus the Idram form |
 | `POST` | `/my/promotion/refresh` | «Թարմացնել» — sets `featuredAt = now`, which is what the promoted block on a town page is ordered by. Six per Armenia calendar day; the check and the spend are one UPDATE. Answers with the fresh status |
 
 **`maxDays` is bounded by the subscription.** A placement may not outlive the
 access it decorates, so it is the distance from where the placement would start
 — the end of a running one, or now — to the day the subscription runs out,
-capped at `FEATURED_MAX_DAYS`. HOME days queue behind a live AREA window too
-(AREA already holds the home top, and the grant counts the same way); AREA days
-queue only behind their own window. "Subscription" here means `paidThrough`, real
+capped at `FEATURED_MAX_DAYS`. The two products never run on the same days:
+HOME bought during AREA starts when AREA ends, and AREA bought during HOME
+pushes the remaining home days behind itself — so BOTH products are measured
+from the latest live end of either window. "Subscription" here means `paidThrough`, real
 money: `coveredUntil` also counts the deadline an admin gives a driver who has
 NOT paid, and that is a request for money rather than money.
 

@@ -13,6 +13,7 @@ import { IdramService } from '../idram/idram.service'
 import { SubscriptionsRepository } from '../subscriptions/subscriptions.repository'
 import { FEATURED_MAX_DAYS, isAreaFeaturedNow, isFeaturedNow } from '../tow-trucks/featured'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
+import { isSpecialistVehicleType } from '../tow-trucks/vehicle-types'
 import {
   AREA_PROMOTION_PRICE_BRACKETS,
   PROMOTION_BUMPS_PER_DAY,
@@ -28,16 +29,6 @@ import type {
 } from './promotion.types'
 
 const DAY_MS = 24 * 60 * 60 * 1000
-
-/**
- * How long an unpaid placement order blocks the next one.
- *
- * Long enough to cover a driver on the Idram page; short enough that an order
- * they walked away from does not lock the block for the day. After it, the old
- * row is left to the abandoned-payment sweep.
- */
-export const PROMOTION_PENDING_LOCK_MINUTES = 30
-
 
 /**
  * A driver buying their own place at the top of their town's page.
@@ -80,16 +71,21 @@ export class PromotionsService {
       currency: PROMOTION_CURRENCY,
     }
 
-    if (!truck.isActive) {
-      return {
-        ...base,
-        visible: false,
-        blockedReason: 'inactive',
-        refreshesLeft: 0,
-        maxDays: 0,
-        area: { maxDays: 0, brackets: AREA_PROMOTION_PRICE_BRACKETS },
-      }
-    }
+    const closed = (blockedReason: 'inactive' | 'not-listed'): PromotionStatusApi => ({
+      ...base,
+      visible: blockedReason !== 'inactive',
+      blockedReason,
+      homeAvailable: false,
+      refreshesLeft: 0,
+      maxDays: 0,
+      area: { maxDays: 0, brackets: AREA_PROMOTION_PRICE_BRACKETS },
+    })
+
+    if (!truck.isActive) return closed('inactive')
+    // Same predicate the listings use to keep these off city pages, so the two
+    // cannot disagree about who a placement can do anything for.
+    if (isSpecialistVehicleType(truck.vehicleType)) return closed('not-listed')
+    const homeAvailable = truck.citySlug !== null || truck.districtSlug !== null
 
     const live = isFeaturedNow(truck, now)
     const areaLive = isAreaFeaturedNow(truck, now)
@@ -101,26 +97,30 @@ export class PromotionsService {
     const paidThrough = coverage.get(towTruckId)?.paidThrough ?? null
     const subscribed = paidThrough !== null && paidThrough.getTime() > now.getTime()
 
+    // Both products are measured from the latest live end of EITHER window.
+    // They never run on the same days (see `confirmPromotion`): HOME bought
+    // now starts after a live AREA window, and AREA bought now pushes the
+    // remaining HOME days behind itself — so whichever is bought, everything
+    // already running ends later by exactly the days bought, and that end must
+    // still fit inside the subscription.
+    const onSale = subscribed
+      ? this.maxDays(
+          [live ? truck.featuredUntil : null, areaLive ? truck.areaFeaturedUntil : null],
+          paidThrough,
+          now,
+        )
+      : 0
+
     const status: PromotionStatusApi = {
       ...base,
       visible: true,
+      homeAvailable,
       refreshesLeft: anyLive ? this.refreshesLeft(truck, now) : 0,
-      // HOME starts where a live AREA window ends — the area product already
-      // holds the home top, and the grant (`confirmPromotion`) counts the same
-      // way, so this is the number the driver can actually receive.
-      maxDays: subscribed
-        ? this.maxDays(
-            [live ? truck.featuredUntil : null, areaLive ? truck.areaFeaturedUntil : null],
-            paidThrough,
-            now,
-          )
-        : 0,
+      maxDays: homeAvailable ? onSale : 0,
       ...(live && truck.featuredUntil ? { activeUntil: truck.featuredUntil.toISOString() } : {}),
       ...(anyLive && truck.featuredAt ? { lastRefreshedAt: truck.featuredAt.toISOString() } : {}),
       area: {
-        maxDays: subscribed
-          ? this.maxDays([areaLive ? truck.areaFeaturedUntil : null], paidThrough, now)
-          : 0,
+        maxDays: onSale,
         brackets: AREA_PROMOTION_PRICE_BRACKETS,
         ...(areaLive && truck.areaFeaturedUntil
           ? { activeUntil: truck.areaFeaturedUntil.toISOString() }
@@ -172,6 +172,16 @@ export class PromotionsService {
     if (!status.visible) {
       throw new ConflictException('Ձեր էջը ապաակտիվացված է')
     }
+    if (status.blockedReason === 'not-listed') {
+      throw new ConflictException(
+        'Ձեր տեխնիկայի տեսակը քաղաքների էջերում չի ցուցադրվում, առաջխաղացումը հասանելի չէ',
+      )
+    }
+    if (scope === PromotionScope.HOME && !status.homeAvailable) {
+      throw new ConflictException(
+        '«Իմ քաղաքում վերևում» հասանելի է միայն քաղաքում կամ Երևանի շրջանում գրանցված վարորդին',
+      )
+    }
     if (status.blockedReason === 'no-subscription') {
       throw new ConflictException(
         'Առաջխաղացում գնելու համար նախ պետք է ակտիվ բաժանորդագրություն ունենաք',
@@ -191,20 +201,15 @@ export class PromotionsService {
       )
     }
 
-    // One order in flight at a time — see `hasRecentPendingPromotion`.
-    const since = new Date(now.getTime() - PROMOTION_PENDING_LOCK_MINUTES * 60 * 1000)
-    if (await this.subscriptionsRepository.hasRecentPendingPromotion(towTruckId, since)) {
-      throw new ConflictException(
-        'Նախորդ վճարումը դեռ ընթացքի մեջ է։ Եթե այն չեք ավարտել, ' +
-          `փորձեք կրկին ${PROMOTION_PENDING_LOCK_MINUTES} րոպեից։`,
-      )
-    }
-
     const amount = promotionPrice(days, scope)
     // Unreachable through the DTO, which bounds 1–30. Checked because this is
     // the number the driver will be charged.
     if (amount === null) throw new BadRequestException(`Օրերի քանակը պետք է լինի 1–${FEATURED_MAX_DAYS}`)
 
+    // Supersedes any older unpaid order of this driver (see
+    // `createPromotion`): only the newest is payable, and the provider's
+    // precheck re-validates it (`isStillGrantable`), so two orders can never
+    // together run past the subscription.
     const payment = await this.subscriptionsRepository.createPromotion(towTruckId, {
       days,
       scope,
@@ -231,6 +236,42 @@ export class PromotionsService {
       // bill is a real order, and there would be nothing to answer with.
       gateway: this.idram.paymentForm(payment.id, amount, promotionPaymentTitle(scope, days)),
     }
+  }
+
+  /**
+   * Idram's precheck asks "is this still a real order?" right before taking the
+   * money. For a placement that also means "would we still sell it?" — the
+   * driver may have been deactivated, their subscription may have run out, or
+   * time may have passed since the order was made. Refusing here costs
+   * nothing: no money has moved yet.
+   *
+   * Reads only; the precheck is unauthenticated and must stay write-free.
+   */
+  async isStillGrantable(
+    payment: {
+      towTruckId: number
+      promotionDays: number | null
+      promotionScope: PromotionScope | null
+      createdAt: Date
+    },
+    now: Date = new Date(),
+  ): Promise<boolean> {
+    if (!payment.promotionDays || !payment.promotionScope) return false
+
+    // Can we still sell to this driver at all — right now.
+    const current = await this.getStatus(payment.towTruckId, now)
+    if (!current.visible || current.blockedReason) return false
+
+    // Does the order still fit — measured at the moment it was MADE, against
+    // today's windows. `maxDays` is whole days, floored, so measuring at `now`
+    // would refuse a driver who bought the maximum and spent five minutes on
+    // the Idram page: 7 days and 2 minutes left becomes 6 days and 23 hours.
+    // The windows are read fresh, so anything granted since (an admin's
+    // extension) still counts against the order.
+    const atOrder = await this.getStatus(payment.towTruckId, payment.createdAt)
+    const maxDays =
+      payment.promotionScope === PromotionScope.AREA ? atOrder.area.maxDays : atOrder.maxDays
+    return payment.promotionDays <= maxDays
   }
 
   /**

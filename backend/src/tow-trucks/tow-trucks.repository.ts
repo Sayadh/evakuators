@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import type { DeactivationReason, DriverPrivacyConsent, Prisma, TowTruck } from '@prisma/client'
 import { IMAGE_ORDER } from '../images/image-order'
+import { sqlUtc } from '../common/sql-utc'
 import { PrismaService } from '../prisma/prisma.service'
 import { PRIVACY_POLICY_VERSION } from '../privacy-consent/privacy-consent.text'
 import type { TowTruckFilters, TowTruckWhere, TowTruckWithImages } from './tow-truck.types'
@@ -546,12 +547,24 @@ export class TowTrucksRepository {
    * and it would come back to life the moment someone re-granted the flag
    * alone.
    */
-  async setFeatured(id: number, window: { until: Date; at: Date } | null): Promise<TowTruck> {
-    if (window) {
-      return this.prisma.towTruck.update({
-        where: { id },
-        data: { isFeatured: true, featuredAt: window.at, featuredUntil: window.until },
-      })
+  async setFeatured(id: number, grant: { days: number; at: Date } | null): Promise<TowTruck> {
+    if (grant) {
+      // EXTENDS a live window rather than replacing it. The HOME window also
+      // holds days a driver paid for, and the admin's button reads
+      // «Երկարացնել» while one runs — overwriting it with now + N would have
+      // quietly cut a paid month down to the N days the admin typed.
+      const at = sqlUtc(grant.at)
+      await this.prisma.$executeRaw`
+        UPDATE "TowTruck"
+        SET "isFeatured" = true,
+            "featuredAt" = ${at},
+            "featuredUntil" = GREATEST(
+                                COALESCE(CASE WHEN "isFeatured" THEN "featuredUntil" END, ${at}),
+                                ${at}
+                              ) + (${grant.days}::int * INTERVAL '1 day')
+        WHERE "id" = ${id}::int
+      `
+      return this.prisma.towTruck.findUniqueOrThrow({ where: { id } })
     }
 
     // A revoke takes down the HOME window only. `featuredAt` is also the queue
@@ -565,7 +578,7 @@ export class TowTrucksRepository {
       SET "isFeatured" = false,
           "featuredUntil" = NULL,
           "featuredAt" = CASE
-            WHEN "areaFeaturedUntil" > ${now} THEN "featuredAt"
+            WHEN "areaFeaturedUntil" > ${sqlUtc(now)} THEN "featuredAt"
             ELSE NULL
           END
       WHERE "id" = ${id}::int
@@ -598,7 +611,7 @@ export class TowTrucksRepository {
   ): Promise<boolean> {
     const updated = await this.prisma.$executeRaw`
       UPDATE "TowTruck"
-      SET "featuredAt" = ${now},
+      SET "featuredAt" = ${sqlUtc(now)},
           "promotionBumpDay" = ${dayKey},
           "promotionBumpCount" = CASE
             WHEN "promotionBumpDay" = ${dayKey} THEN "promotionBumpCount" + 1
@@ -607,8 +620,8 @@ export class TowTrucksRepository {
       WHERE "id" = ${id}::int
         AND "isActive" = true
         AND (
-          ("isFeatured" = true AND "featuredUntil" IS NOT NULL AND "featuredUntil" > ${now})
-          OR "areaFeaturedUntil" > ${now}
+          ("isFeatured" = true AND "featuredUntil" IS NOT NULL AND "featuredUntil" > ${sqlUtc(now)})
+          OR "areaFeaturedUntil" > ${sqlUtc(now)}
         )
         AND CASE
               WHEN "promotionBumpDay" = ${dayKey} THEN "promotionBumpCount"
@@ -636,12 +649,12 @@ export class TowTrucksRepository {
       SET "isFeatured" = false,
           "featuredUntil" = NULL,
           "featuredAt" = CASE
-            WHEN "areaFeaturedUntil" > ${now} THEN "featuredAt"
+            WHEN "areaFeaturedUntil" > ${sqlUtc(now)} THEN "featuredAt"
             ELSE NULL
           END
       WHERE "isFeatured" = true
         AND "featuredUntil" IS NOT NULL
-        AND "featuredUntil" <= ${now}
+        AND "featuredUntil" <= ${sqlUtc(now)}
     `
     return count
   }

@@ -1,0 +1,11 @@
+-- A second admin-panel role for the live dispatch console.
+--
+-- Additive only. Its own migration because `ALTER TYPE ... ADD VALUE` may not
+-- be USED in the transaction that adds it — keeping it alone means nothing in
+-- this file can trip over that.
+--
+-- Nothing existing changes behaviour: `AdminJwtGuard` still accepts ONLY
+-- `ADMIN`, so a DISPATCHER token is refused by every pre-existing /admin route
+-- (moderation, payments, broadcasts, the manual dispatch screen). The new
+-- `OpsJwtGuard` is the only guard that accepts it.
+ALTER TYPE "UserRole" ADD VALUE IF NOT EXISTS 'DISPATCHER';

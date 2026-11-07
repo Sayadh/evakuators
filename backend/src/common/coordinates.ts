@@ -54,27 +54,8 @@ export const OUTSIDE_ARMENIA_MESSAGE =
  * pair (`44.4991, 40.1792`) or a coordinate pasted from an entirely different
  * country, and it does that at any padding.
  */
-export const ARMENIA_BOUNDS_PADDING_DEGREES = 0.25
-
-/**
- * Armenia's bounding box, already padded by the constant above.
- *
- * Unpadded extent, for reference when adjusting: latitude 38.84 (Meghri, the
- * southern tip) to 41.30 (Tavush/Lori, the northern border), longitude 43.45
- * (west of Armavir) to 46.63 (eastern Syunik).
- *
- * This is a rectangle, not the actual border polygon, and that is on purpose:
- * a polygon test would need a geometry dependency and a border dataset to
- * maintain, to reject points in Naxçıvan's airspace that no driver is going to
- * type by accident. Change these four numbers if the rule ever needs to move —
- * nothing else in the backend hardcodes a coordinate.
- */
-export const ARMENIA_BOUNDS = {
-  minLatitude: 38.84 - ARMENIA_BOUNDS_PADDING_DEGREES,
-  maxLatitude: 41.3 + ARMENIA_BOUNDS_PADDING_DEGREES,
-  minLongitude: 43.45 - ARMENIA_BOUNDS_PADDING_DEGREES,
-  maxLongitude: 46.63 + ARMENIA_BOUNDS_PADDING_DEGREES,
-} as const
+export { ARMENIA_BOUNDS_PADDING_DEGREES, ARMENIA_BOUNDS, isWithinArmenia } from './armenia-bounds'
+import { isWithinArmenia } from './armenia-bounds'
 
 /**
  * Latitude as it may arrive on any DTO in this project.
@@ -104,14 +85,6 @@ export function IsLongitudeValue(): PropertyDecorator {
 }
 
 /** Pure predicate — the assertion below is the one callers should use */
-export function isWithinArmenia(latitude: number, longitude: number): boolean {
-  return (
-    latitude >= ARMENIA_BOUNDS.minLatitude &&
-    latitude <= ARMENIA_BOUNDS.maxLatitude &&
-    longitude >= ARMENIA_BOUNDS.minLongitude &&
-    longitude <= ARMENIA_BOUNDS.maxLongitude
-  )
-}
 
 /**
  * The geography half of the rule, kept OUT of the DTO on purpose.

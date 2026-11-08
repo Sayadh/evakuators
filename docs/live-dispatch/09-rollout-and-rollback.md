@@ -112,7 +112,7 @@ Restore-ի ստուգում ամսական՝ staging-ում `pg_restore` + `npm 
 ```sql
 EXPLAIN (ANALYZE, BUFFERS)
 WITH origin AS (SELECT ST_SetSRID(ST_MakePoint(44.5126, 40.1772), 4326)::geography AS point)
-SELECT lc."towTruckId" FROM "DriverLocationCurrent" lc, origin o
+SELECT lc."driverId" FROM "DriverLocationCurrent" lc, origin o
 WHERE ST_DWithin(lc."location", o.point, 20000)
 ORDER BY lc."location" <-> o.point LIMIT 10;
 -- Սպասվում է "Index Scan using DriverLocationCurrent_location_gist"

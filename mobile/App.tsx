@@ -1,7 +1,7 @@
 /**
  * Routing by STATE, not by history: what is on screen is a function of the
  * server snapshot. A live offer always takes over the screen; an active order
- * comes next. (No navigation library: eight screens, one flow.)
+ * comes next. (No navigation library: nine screens, one flow.)
  */
 import * as Location from 'expo-location'
 import { StatusBar } from 'expo-status-bar'
@@ -15,6 +15,7 @@ import { HomeScreen } from './src/screens/HomeScreen'
 import { LoginScreen } from './src/screens/LoginScreen'
 import { OfferScreen } from './src/screens/OfferScreen'
 import { PermissionsScreen } from './src/screens/PermissionsScreen'
+import { RegisterScreen } from './src/screens/RegisterScreen'
 import { RequestScreen } from './src/screens/RequestScreen'
 import { SettingsScreen } from './src/screens/SettingsScreen'
 import { AppStateProvider, useApp } from './src/state/AppState'
@@ -26,13 +27,16 @@ function Router() {
   const app = useApp()
   const [route, setRoute] = useState<Route>('home')
   const [permissionsDone, setPermissionsDone] = useState(false)
+  const [registering, setRegistering] = useState(false)
   // Skip the explanation screen on later launches when everything is already
   // in place; revoked permission (Settings) brings it back.
   useEffect(() => {
     void Location.getForegroundPermissionsAsync().then((p) => setPermissionsDone(p.granted))
   }, [app.loggedIn])
   if (!app.ready) return null
-  if (!app.loggedIn) return <LoginScreen />
+  if (!app.loggedIn) {
+    return registering ? <RegisterScreen onBack={() => setRegistering(false)} /> : <LoginScreen onRegister={() => setRegistering(true)} />
+  }
   const s = app.snapshot
   if (s && (!permissionsDone || (s.trackingConsentVersion ?? 0) < 1)) {
     return <PermissionsScreen onDone={() => setPermissionsDone(true)} />

@@ -41,12 +41,12 @@ export class PushService {
     private readonly texts: PushTexts = ARMENIAN_PUSH_TEXTS,
   ) {}
 
-  private async tokensFor(towTruckId: number): Promise<string[]> {
+  private async tokensFor(driverId: number): Promise<string[]> {
     const rows = await this.db.query<{ token: string }>(
       `SELECT pt."token" FROM "PushDeviceToken" pt
          JOIN "DriverDeviceSession" s ON s."id" = pt."sessionId" AND s."revokedAt" IS NULL
-        WHERE pt."towTruckId" = $1::int AND pt."invalidatedAt" IS NULL`,
-      [towTruckId],
+        WHERE pt."driverId" = $1::int AND pt."invalidatedAt" IS NULL`,
+      [driverId],
     )
     return rows.map((r) => r.token)
   }
@@ -61,7 +61,7 @@ export class PushService {
   /** @returns 'retry' when a transient failure should be retried by the outbox */
   async sendOfferPush(offerId: string): Promise<'sent' | 'skipped' | 'retry'> {
     const rows = await this.db.query<Record<string, unknown>>(
-      `SELECT "id"::text AS "id", "orderId", "towTruckId", "status", "expiresAt", "roadMeters",
+      `SELECT "id"::text AS "id", "orderId", "driverId", "status", "expiresAt", "roadMeters",
               EXTRACT(EPOCH FROM ("expiresAt" - now()))::float8 AS "ttl"
          FROM "OrderOffer" WHERE "id" = $1::uuid`,
       [offerId],
@@ -72,8 +72,8 @@ export class PushService {
       await this.setDelivery(offerId, 'SKIPPED', null, offer ? `offer ${String(offer.status)} ttl ${Math.round(ttl)}` : 'missing')
       return 'skipped'
     }
-    const towTruckId = toNumber(offer.towTruckId)
-    const tokens = await this.tokensFor(towTruckId)
+    const driverId = toNumber(offer.driverId)
+    const tokens = await this.tokensFor(driverId)
     if (tokens.length === 0) {
       await this.setDelivery(offerId, 'SKIPPED', null, 'no live push token')
       return 'skipped'
@@ -109,8 +109,8 @@ export class PushService {
     return 'skipped'
   }
 
-  async sendOrderPush(orderId: number, towTruckId: number, kind: string): Promise<'sent' | 'skipped' | 'retry'> {
-    const tokens = await this.tokensFor(towTruckId)
+  async sendOrderPush(orderId: number, driverId: number, kind: string): Promise<'sent' | 'skipped' | 'retry'> {
+    const tokens = await this.tokensFor(driverId)
     if (tokens.length === 0) return 'skipped'
     let sent = false
     let retry = false

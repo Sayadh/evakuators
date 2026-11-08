@@ -95,12 +95,12 @@ export class RealtimeGatewayHost implements OnApplicationBootstrap, OnApplicatio
         if (role === 'driver') {
           const id = await verifyDriverAppToken(this.jwt, this.config.getOrThrow<string>('driverJwtSecret'), this.holder, token)
           return {
-            audience: `driver:${id.towTruckId}`,
+            audience: `driver:${id.driverId}`,
             stillValid: async () => {
               const session = await rt.fleet.findSession(id.sessionId)
               return Boolean(session && !session.revokedAt)
             },
-            onAck: (offerId) => rt.offers.acknowledgeDelivery(offerId, id.towTruckId, 'REALTIME'),
+            onAck: (offerId) => rt.offers.acknowledgeDelivery(offerId, id.driverId, 'REALTIME'),
           }
         }
         await verifyOpsToken(this.jwt, this.config.getOrThrow<string>('adminJwtSecret'), token)

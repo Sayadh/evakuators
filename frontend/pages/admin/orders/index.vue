@@ -213,6 +213,7 @@ useSeoMetaData({ title: 'Պատվերներ', description: 'Պատվերների
       <h1 class="ops__title">Պատվերներ</h1>
       <div class="ops__header-actions">
         <span class="ops__live" :class="{ 'ops__live--on': connected }">{{ connected ? 'Կենդանի' : 'Թարմացվում է 15 վ-ը մեկ' }}</span>
+        <NuxtLink v-if="adminAuth.role === 'ADMIN'" to="/admin/orders/drivers" class="ops__link">Հավելվածի վարորդներ</NuxtLink>
         <NuxtLink to="/admin/orders/settings" class="ops__link">Կարգավորումներ</NuxtLink>
         <NuxtLink to="/admin" class="ops__link">Ադմին վահանակ</NuxtLink>
       </div>
@@ -342,7 +343,7 @@ useSeoMetaData({ title: 'Պատվերներ', description: 'Պատվերների
             @viewport="(b) => { mapBbox = b; loadSide() }"
           />
           <ul class="ops__drivers">
-            <li v-for="d in drivers" :key="d.towTruckId" :class="{ selected: selectedDriver === d.towTruckId }" @click="selectedDriver = d.towTruckId">
+            <li v-for="d in drivers" :key="d.driverId" :class="{ selected: selectedDriver === d.driverId }" @click="selectedDriver = d.driverId">
               <strong>{{ d.driverName }}</strong>
               <span :class="`tone-${availabilitySummary(d.availability).tone}`">{{ availabilitySummary(d.availability).text }}</span>
               <span class="ops__muted">GPS {{ formatAge(d.availability.gpsAgeSeconds) }}<template v-if="d.position?.accuracyM"> · ±{{ Math.round(d.position.accuracyM) }} մ</template></span>

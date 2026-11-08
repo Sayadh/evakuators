@@ -6,6 +6,7 @@
  *   `uncertain` (it may have reached the server), never as success or failure.
  * - 401 SESSION_REVOKED (other device logged in, admin revoked) → logout.
  */
+import type { RegistrationPayload } from '../domain/registration'
 import Constants from 'expo-constants'
 import { randomUUID } from 'expo-crypto'
 import type { HistoryItem, ProgressAction, Snapshot } from './types'
@@ -70,8 +71,10 @@ async function request<T>(method: string, path: string, body?: unknown, options:
 
 export const api = {
   login(body: { phone: string; password: string; deviceId: string; platform: 'ios' | 'android'; appVersion: string }) {
-    return request<{ token: string; sessionId: string; towTruckId: number; mustChangePassword: boolean }>('POST', '/driver-app/sessions', body)
+    return request<{ token: string; sessionId: string; driverId: number; kind: 'SITE_LINKED' | 'APP_ONLY'; mustChangePassword: boolean }>('POST', '/driver-app/sessions', body)
   },
+  /** Sign-up for drivers NOT on the website; the account waits for an admin */
+  register: (body: RegistrationPayload) => request<{ driverId: number; status: 'PENDING_REVIEW' }>('POST', '/driver-app/registrations', body, { timeoutMs: 15_000 }),
   logout: () => request<void>('DELETE', '/driver-app/sessions/current'),
   consent: (version: number) => request<void>('POST', '/driver-app/consent/tracking', { version }),
   snapshot: () => request<Snapshot>('GET', '/driver-app/me'),

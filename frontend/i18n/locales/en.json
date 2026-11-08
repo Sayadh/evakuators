@@ -106,11 +106,10 @@
     "fallbackText": "If location access is not available, pick your region or city to see all the tow trucks working there.",
     "regionsButton": "Regions",
     "yerevanButton": "Yerevan",
-    "liveTitle": "Online now — by GPS",
     "liveDisclaimer": "Computed from the drivers’ app GPS (within the last 2 minutes) at {time}. This is not a booking: the driver may already be busy — call to confirm.",
-    "liveNone": "No free online driver with GPS nearby right now. Below — by the drivers’ parking spot.",
-    "liveStraightLine": "Road data is unavailable right now: distances are straight-line, with no time.",
-    "profileSectionTitle": "By the drivers’ parking spot"
+    "liveBadge": "Online now",
+    "liveBadgeTitle": "Distance from the driver’s current phone position",
+    "mixedDistanceDisclaimer": "For drivers marked “Online now” the distance is from their phone’s current position; for everyone else, from the parking spot in their profile. Confirm the exact time with the driver by phone."
   },
   "dispatch": {
     "bannerTitle": "Not sure which truck you need?",

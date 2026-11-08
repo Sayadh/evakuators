@@ -4,6 +4,7 @@
 | --- | --- |
 | `/admin/orders` | Պատվերների ցուցակ (tabs՝ ակտիվ / ուշադրություն / փակված / բոլորը, որոնում, cursor pagination), alerts (ack), նոր պատվերի ձև, վարորդների քարտեզ + ցուցակ (availability, GPS age, accuracy) |
 | `/admin/orders/:id` | Մանրամասներ, առաջարկի countdown, նշանակված վարորդ, գործողություններ, քարտեզ pickup-ով, առաջարկների պատմություն, թեկնածուներ (road vs straight-line՝ առանձին), audit timeline |
+| `/admin/orders/drivers` | **Հավելվածի վարորդներ** (միայն ADMIN)․ նոր հայտեր (հաստատել/մերժել), կայքի վարորդին հասանելիություն տալ, կասեցնել/վերականգնել, կապել կայքի պրոֆիլին — [11](11-driver-access.md) |
 | `/admin/orders/settings` | Dispatch settings (կարդալ՝ բոլորը, պահել՝ ADMIN), health (flags, outbox) |
 
 Գործողություններ՝ սկսել/դադարեցնել որոնումը, ձեռքով առաջարկ (hard constraint-ները

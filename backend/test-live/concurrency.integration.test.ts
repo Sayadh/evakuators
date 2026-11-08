@@ -26,7 +26,7 @@ describe('races and failures (real Postgres)', { skip: integrationSkip }, () => 
     await startDispatch(h, order)
     await drain(h)
     const offer = await pendingOffer(h, order.id)
-    assert.equal(offer?.towTruckId, driver.towTruckId)
+    assert.equal(offer?.driverId, driver.driverId)
     return { driver, order, offer: offer! }
   }
 
@@ -36,7 +36,7 @@ describe('races and failures (real Postgres)', { skip: integrationSkip }, () => 
   it('#1 twenty simultaneous accepts of the same offer → exactly one assignment', async () => {
     await fresh()
     const { driver, order, offer } = await offeredOrder()
-    const results = await Promise.all(Array.from({ length: 20 }, () => h.service.driverAccept(driver.towTruckId, offer.id, ctx())))
+    const results = await Promise.all(Array.from({ length: 20 }, () => h.service.driverAccept(driver.driverId, offer.id, ctx())))
     assert.ok(results.every((r) => r.status === 200), JSON.stringify(results.map((r) => r.body)))
     assert.equal(await activeAssignments(order.id), 1)
     assert.equal(await count(h, `SELECT count(*)::int AS n FROM "OrderEvent" WHERE "orderId" = $1::int AND "type" = 'OFFER_ACCEPTED'`, [order.id]), 1)
@@ -46,7 +46,7 @@ describe('races and failures (real Postgres)', { skip: integrationSkip }, () => 
     await fresh()
     const { order, offer } = await offeredOrder()
     const intruder = await eligibleDriver(h, offset(YEREVAN, 20_000, 0))
-    const r = await h.service.driverAccept(intruder.towTruckId, offer.id, ctx())
+    const r = await h.service.driverAccept(intruder.driverId, offer.id, ctx())
     assert.equal(r.status, 404)
     assert.equal((r.body as { code: string }).code, 'OFFER_NOT_FOUND')
     assert.equal(await activeAssignments(order.id), 0)
@@ -60,7 +60,7 @@ describe('races and failures (real Postgres)', { skip: integrationSkip }, () => 
     await startDispatch(h, a)
     await startDispatch(h, b)
     await Promise.all([h.rt.engine.advance(a.id), h.rt.engine.advance(b.id), h.rt.engine.advance(a.id), h.rt.engine.advance(b.id)])
-    assert.equal(await count(h, `SELECT count(*)::int AS n FROM "OrderOffer" WHERE "towTruckId" = $1::int AND "status" = 'PENDING'`, [only.towTruckId]), 1)
+    assert.equal(await count(h, `SELECT count(*)::int AS n FROM "OrderOffer" WHERE "driverId" = $1::int AND "status" = 'PENDING'`, [only.driverId]), 1)
 
     // and directly at the database, bypassing every application check:
     const [{ attemptId }] = await h.db.pool.query<{ attemptId: number }>(
@@ -69,8 +69,8 @@ describe('races and failures (real Postgres)', { skip: integrationSkip }, () => 
     )
     await assert.rejects(
       h.db.pool.query(
-        `INSERT INTO "OrderOffer" ("orderId","attemptId","towTruckId","termsVersion","expiresAt") VALUES ($1::int,$2::int,$3::int,1, now() + interval '30 s')`,
-        [b.id, attemptId, only.towTruckId],
+        `INSERT INTO "OrderOffer" ("orderId","attemptId","driverId","termsVersion","expiresAt") VALUES ($1::int,$2::int,$3::int,1, now() + interval '30 s')`,
+        [b.id, attemptId, only.driverId],
       ),
       (e: { constraint?: string }) => e.constraint === 'OrderOffer_one_pending_per_driver' || e.constraint === 'OrderOffer_one_pending_per_order',
     )
@@ -79,18 +79,18 @@ describe('races and failures (real Postgres)', { skip: integrationSkip }, () => 
   it('#2b a driver can never hold two active assignments, even if the database is written directly', async () => {
     await fresh()
     const { driver, order, offer } = await offeredOrder()
-    await h.service.driverAccept(driver.towTruckId, offer.id, ctx())
+    await h.service.driverAccept(driver.driverId, offer.id, ctx())
     const other = await createOrder(h)
     const [{ attemptId }] = await h.db.pool.query<{ attemptId: number }>(
       `INSERT INTO "DispatchAttempt" ("orderId","number","alertAt","deadlineAt","maxOffers") VALUES ($1::int, 1, now(), now() + interval '1 h', 5) RETURNING "id" AS "attemptId"`,
       [other.id],
     )
     const [{ id: offer2 }] = await h.db.pool.query<{ id: string }>(
-      `INSERT INTO "OrderOffer" ("orderId","attemptId","towTruckId","termsVersion","expiresAt","status") VALUES ($1::int,$2::int,$3::int,1, now() + interval '30 s','ACCEPTED') RETURNING "id"::text`,
-      [other.id, attemptId, driver.towTruckId],
+      `INSERT INTO "OrderOffer" ("orderId","attemptId","driverId","termsVersion","expiresAt","status") VALUES ($1::int,$2::int,$3::int,1, now() + interval '30 s','ACCEPTED') RETURNING "id"::text`,
+      [other.id, attemptId, driver.driverId],
     )
     await assert.rejects(
-      h.db.pool.query(`INSERT INTO "OrderAssignment" ("orderId","towTruckId","offerId") VALUES ($1::int,$2::int,$3::uuid)`, [other.id, driver.towTruckId, offer2]),
+      h.db.pool.query(`INSERT INTO "OrderAssignment" ("orderId","driverId","offerId") VALUES ($1::int,$2::int,$3::uuid)`, [other.id, driver.driverId, offer2]),
       (e: { constraint?: string }) => e.constraint === 'OrderAssignment_one_active_per_driver',
     )
     assert.equal(await activeAssignments(order.id), 1)
@@ -111,7 +111,7 @@ describe('races and failures (real Postgres)', { skip: integrationSkip }, () => 
         [offer.id, (round % 5) * 0.004],
       )
       const [acceptResult] = await Promise.all([
-        h.service.driverAccept(driver.towTruckId, offer.id, ctx()),
+        h.service.driverAccept(driver.driverId, offer.id, ctx()),
         (async () => {
           await new Promise((r) => setTimeout(r, round % 3))
           return h.rt.offers.expire(offer.id)
@@ -143,7 +143,7 @@ describe('races and failures (real Postgres)', { skip: integrationSkip }, () => 
       const { driver, order, offer } = await offeredOrder(offset(YEREVAN, 300 + round, 0))
       const current = await orderRow(h, order.id)
       const [acceptResult, cancelResult] = await Promise.all([
-        h.service.driverAccept(driver.towTruckId, offer.id, ctx()),
+        h.service.driverAccept(driver.driverId, offer.id, ctx()),
         h.service.cancelOrder(h.adminId, order.id, { reason: 'CUSTOMER_DECLINED', expectedVersion: Number(current.version) }, ctx({ c: round })),
       ])
       const row = await orderRow(h, order.id)
@@ -172,9 +172,9 @@ describe('races and failures (real Postgres)', { skip: integrationSkip }, () => 
     await fresh()
     const { driver, offer } = await offeredOrder()
     const key = 'accept-key-0001'
-    const first = await h.service.driverAccept(driver.towTruckId, offer.id, ctx({}, key, `/driver-app/offers/${offer.id}/accept`))
+    const first = await h.service.driverAccept(driver.driverId, offer.id, ctx({}, key, `/driver-app/offers/${offer.id}/accept`))
     const again = await Promise.all(
-      Array.from({ length: 5 }, () => h.service.driverAccept(driver.towTruckId, offer.id, ctx({}, key, `/driver-app/offers/${offer.id}/accept`))),
+      Array.from({ length: 5 }, () => h.service.driverAccept(driver.driverId, offer.id, ctx({}, key, `/driver-app/offers/${offer.id}/accept`))),
     )
     assert.equal(first.replayed, false)
     for (const r of again) {
@@ -197,7 +197,7 @@ describe('races and failures (real Postgres)', { skip: integrationSkip }, () => 
     await drain(h)
     const next = await pendingOffer(h, order.id)
     assert.ok(next)
-    await h.service.driverAccept(next.towTruckId, next.id, ctx())
+    await h.service.driverAccept(next.driverId, next.id, ctx())
     await overdue(h, next.id).catch(() => undefined)
     assert.equal(await h.rt.offers.expire(next.id), false, 'expiry of an accepted offer is a no-op')
     const [{ status }] = await h.db.pool.query<{ status: string }>(`SELECT "status"::text FROM "OrderOffer" WHERE "id" = $1::uuid`, [next.id])
@@ -223,7 +223,7 @@ describe('races and failures (real Postgres)', { skip: integrationSkip }, () => 
     await fresh()
     const { driver, offer } = await offeredOrder()
     h.events.length = 0
-    await h.service.driverAccept(driver.towTruckId, offer.id, ctx())
+    await h.service.driverAccept(driver.driverId, offer.id, ctx())
     // A worker claims the notification rows… and dies (never marks them).
     const claimed = await claimDue(h.db.pool, 'doomed-worker', 50, 1)
     assert.ok(claimed.some((m) => m.topic === 'realtime'))
@@ -231,7 +231,7 @@ describe('races and failures (real Postgres)', { skip: integrationSkip }, () => 
     // Lease expires; a healthy worker picks the work up.
     await h.db.pool.query(`UPDATE "OutboxEvent" SET "lockedUntil" = now() - interval '1 second' WHERE "lockedBy" = 'doomed-worker'`)
     await drain(h)
-    assert.ok(h.events.some((e) => e.event === 'order.changed' && e.audiences.includes(`driver:${driver.towTruckId}`)))
+    assert.ok(h.events.some((e) => e.event === 'order.changed' && e.audiences.includes(`driver:${driver.driverId}`)))
   })
 
   it('#11 queue lost (Redis/worker restart) → reconciliation expires the overdue offer and dispatch continues', async () => {
@@ -244,7 +244,7 @@ describe('races and failures (real Postgres)', { skip: integrationSkip }, () => 
     const report = await h.rt.reconciler.run(await h.rt.settings.get())
     assert.equal(report.expiredOffers, 1)
     await drain(h)
-    assert.equal((await pendingOffer(h, order.id))?.towTruckId, second.towTruckId)
+    assert.equal((await pendingOffer(h, order.id))?.driverId, second.driverId)
 
     // A SEARCHING order with no offer and no job at all is also re-queued
     await h.db.pool.query(`DELETE FROM "OutboxEvent"`)
@@ -257,10 +257,10 @@ describe('races and failures (real Postgres)', { skip: integrationSkip }, () => 
     await fresh()
     const { driver, order, offer } = await offeredOrder()
     await eligibleDriver(h, offset(YEREVAN, 1000, 0))
-    await h.service.driverAccept(driver.towTruckId, offer.id, ctx())
+    await h.service.driverAccept(driver.driverId, offer.id, ctx())
     await h.db.pool.query(`UPDATE "OrderAssignment" SET "startedAt" = now() - interval '20 minutes' WHERE "orderId" = $1::int`, [order.id])
-    await h.db.pool.query(`UPDATE "DriverLocationCurrent" SET "measuredAt" = now() - interval '15 minutes' WHERE "towTruckId" = $1::int`, [driver.towTruckId])
-    await h.db.pool.query(`UPDATE "DriverPresence" SET "lastHeartbeatAt" = now() - interval '15 minutes' WHERE "towTruckId" = $1::int`, [driver.towTruckId])
+    await h.db.pool.query(`UPDATE "DriverLocationCurrent" SET "measuredAt" = now() - interval '15 minutes' WHERE "driverId" = $1::int`, [driver.driverId])
+    await h.db.pool.query(`UPDATE "DriverPresence" SET "lastHeartbeatAt" = now() - interval '15 minutes' WHERE "driverId" = $1::int`, [driver.driverId])
     const report = await h.rt.reconciler.run(await h.rt.settings.get())
     await drain(h)
     assert.equal(report.gpsLostAlerts, 1)
@@ -283,9 +283,9 @@ describe('races and failures (real Postgres)', { skip: integrationSkip }, () => 
     await startDispatch(h, order)
     await drain(h)
     const offer = await pendingOffer(h, order.id)
-    assert.equal(offer?.towTruckId, routable.towTruckId, 'routed candidate is offered before the unroutable nearer one')
+    assert.equal(offer?.driverId, routable.driverId, 'routed candidate is offered before the unroutable nearer one')
     const detail = await h.service.orderDetail(order.id)
-    const unrouted = detail.candidates.find((c) => c.towTruckId === nearestButUnroutable.towTruckId)
+    const unrouted = detail.candidates.find((c) => c.driverId === nearestButUnroutable.driverId)
     assert.equal(unrouted?.routeOk, false)
     assert.equal(unrouted?.etaSeconds, null)
     assert.equal(unrouted?.roadMeters, null)
@@ -297,8 +297,8 @@ describe('races and failures (real Postgres)', { skip: integrationSkip }, () => 
     await startDispatch(h, order2)
     await drain(h)
     const offer2 = await pendingOffer(h, order2.id)
-    assert.equal(offer2?.towTruckId, d.towTruckId)
-    const snapshot = await h.service.driverSnapshot(d.towTruckId)
+    assert.equal(offer2?.driverId, d.driverId)
+    const snapshot = await h.service.driverSnapshot(d.driverId)
     const toPickup = (snapshot.currentOffer as { toPickup: { etaSeconds: number | null; roadMeters: number | null; straightLineMeters: number | null } }).toPickup
     assert.equal(toPickup.etaSeconds, null)
     assert.equal(toPickup.roadMeters, null)
@@ -317,14 +317,14 @@ describe('races and failures (real Postgres)', { skip: integrationSkip }, () => 
     assert.equal(step.kind, 'need-candidates')
     await h.rt.engine.advance(order.id) // builds the list AND offers to `first`…
     const offer = await pendingOffer(h, order.id)
-    assert.equal(offer?.towTruckId, first.towTruckId)
+    assert.equal(offer?.driverId, first.driverId)
     // …now simulate a candidate going stale between list and offer: reject, and make `second` go offline first
-    await h.rt.fleet.setAvailability(second.towTruckId, second.sessionId, { wantsOnline: false })
-    await h.service.driverReject(first.towTruckId, offer!.id, null, ctx())
+    await h.rt.fleet.setAvailability(second.driverId, second.sessionId, { wantsOnline: false })
+    await h.service.driverReject(first.driverId, offer!.id, null, ctx())
     await drain(h)
     assert.equal(await pendingOffer(h, order.id), null, 'offline driver from the old list was not offered')
     const detail = await h.service.orderDetail(order.id)
-    assert.equal(detail.candidates.find((c) => c.towTruckId === second.towTruckId)?.skipReason, 'NOT_ELIGIBLE_AT_OFFER')
+    assert.equal(detail.candidates.find((c) => c.driverId === second.driverId)?.skipReason, 'NOT_ELIGIBLE_AT_OFFER')
   })
 
   it('#16 idempotency key misuse: same key, different body → refused; same key, same body → same result', async () => {
@@ -357,15 +357,15 @@ describe('races and failures (real Postgres)', { skip: integrationSkip }, () => 
       ctx({ p: 22000 }),
     )
     assert.equal(updated.status, 200, JSON.stringify(updated.body))
-    const late = await h.service.driverAccept(driver.towTruckId, offer.id, ctx())
+    const late = await h.service.driverAccept(driver.driverId, offer.id, ctx())
     assert.equal((late.body as { code: string }).code, 'OFFER_TERMS_CHANGED')
     await drain(h)
     const fresh2 = await pendingOffer(h, order.id)
-    assert.equal(fresh2?.towTruckId, driver.towTruckId)
+    assert.equal(fresh2?.driverId, driver.driverId)
     assert.notEqual(fresh2?.id, offer.id)
-    const snapshot = await h.service.driverSnapshot(driver.towTruckId)
+    const snapshot = await h.service.driverSnapshot(driver.driverId)
     assert.equal((snapshot.currentOffer as { order: { price: { quotedAmd: number } } }).order.price.quotedAmd, 22000)
-    const ok = await h.service.driverAccept(driver.towTruckId, fresh2!.id, ctx())
+    const ok = await h.service.driverAccept(driver.driverId, fresh2!.id, ctx())
     assert.equal(ok.status, 200)
     const priceEvents = (await h.rt.orders.timeline(order.id)).filter((e) => e.type === 'PRICE_CHANGED')
     assert.equal(priceEvents.length, 1)
@@ -376,10 +376,10 @@ describe('races and failures (real Postgres)', { skip: integrationSkip }, () => 
     for (let round = 0; round < 15; round++) {
       await fresh()
       const { driver, order, offer } = await offeredOrder(offset(YEREVAN, 300 + round, 0))
-      await h.service.driverAccept(driver.towTruckId, offer.id, ctx())
+      await h.service.driverAccept(driver.driverId, offer.id, ctx())
       const [request, progress] = await Promise.all([
-        h.service.driverRequest(driver.towTruckId, order.id, { kind: 'CANCEL', reason: 'DRIVER_CANNOT_PERFORM' }, ctx({ r: round })),
-        h.service.driverProgress(driver.towTruckId, order.id, 'EN_ROUTE', ctx({ p: round })),
+        h.service.driverRequest(driver.driverId, order.id, { kind: 'CANCEL', reason: 'DRIVER_CANNOT_PERFORM' }, ctx({ r: round })),
+        h.service.driverProgress(driver.driverId, order.id, 'EN_ROUTE', ctx({ p: round })),
       ])
       const row = await orderRow(h, order.id)
       assert.equal(request.status, 201, 'the request always lands')
@@ -398,13 +398,13 @@ describe('races and failures (real Postgres)', { skip: integrationSkip }, () => 
   it('#15 ownership at the data layer: a driver cannot read or move another driver\'s order', async () => {
     await fresh()
     const { driver, order, offer } = await offeredOrder()
-    await h.service.driverAccept(driver.towTruckId, offer.id, ctx())
+    await h.service.driverAccept(driver.driverId, offer.id, ctx())
     const stranger = await eligibleDriver(h, offset(YEREVAN, 9000, 0))
-    const moved = await h.service.driverProgress(stranger.towTruckId, order.id, 'EN_ROUTE', ctx())
+    const moved = await h.service.driverProgress(stranger.driverId, order.id, 'EN_ROUTE', ctx())
     assert.equal(moved.status, 404)
-    const asked = await h.service.driverRequest(stranger.towTruckId, order.id, { kind: 'PROBLEM', reason: 'OTHER', comment: 'x' }, ctx())
+    const asked = await h.service.driverRequest(stranger.driverId, order.id, { kind: 'PROBLEM', reason: 'OTHER', comment: 'x' }, ctx())
     assert.equal(asked.status, 404)
-    const snap = await h.service.driverSnapshot(stranger.towTruckId)
+    const snap = await h.service.driverSnapshot(stranger.driverId)
     assert.equal(snap.activeOrder, null)
     assert.equal(snap.currentOffer, null)
   })
@@ -412,8 +412,8 @@ describe('races and failures (real Postgres)', { skip: integrationSkip }, () => 
   it('stale GPS for an otherwise perfect driver → not offered (heartbeat fresh does not help)', async () => {
     await fresh()
     const d = await eligibleDriver(h, offset(YEREVAN, 300, 0))
-    await h.db.pool.query(`UPDATE "DriverLocationCurrent" SET "measuredAt" = now() - interval '130 seconds' WHERE "towTruckId" = $1::int`, [d.towTruckId])
-    await h.rt.fleet.heartbeat(d.towTruckId, d.sessionId)
+    await h.db.pool.query(`UPDATE "DriverLocationCurrent" SET "measuredAt" = now() - interval '130 seconds' WHERE "driverId" = $1::int`, [d.driverId])
+    await h.rt.fleet.heartbeat(d.driverId, d.sessionId)
     const order = await createOrder(h)
     await startDispatch(h, order)
     await drain(h)

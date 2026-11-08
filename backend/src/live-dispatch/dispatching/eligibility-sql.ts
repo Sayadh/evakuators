@@ -6,7 +6,7 @@
  * `test-live/eligibility-parity.integration.test.ts` evaluates this predicate
  * and the TypeScript functions over the same rows; they must agree.
  *
- * Aliases: t = "TowTruck", p = "DriverPresence", lc = "DriverLocationCurrent".
+ * Aliases: t = "FleetDriverProfile" (one shape for both kinds of driver), p = "DriverPresence", lc = "DriverLocationCurrent".
  * Everything is compared with the DATABASE clock.
  */
 import type { Params } from '../platform/params'
@@ -25,8 +25,8 @@ export function availabilityPredicate(p: Params, settings: DispatchSettings): st
     AND lc."accuracyM" <= ${p.add(settings.gpsMaxAccuracyMeters)}::real
     AND lc."suspicious" = false
     AND p."externalBusy" = false
-    AND NOT EXISTS (SELECT 1 FROM "OrderOffer" x WHERE x."towTruckId" = t."id" AND x."status" = 'PENDING')
-    AND NOT EXISTS (SELECT 1 FROM "OrderAssignment" y WHERE y."towTruckId" = t."id" AND y."endedAt" IS NULL)
+    AND NOT EXISTS (SELECT 1 FROM "OrderOffer" x WHERE x."driverId" = t."id" AND x."status" = 'PENDING')
+    AND NOT EXISTS (SELECT 1 FROM "OrderAssignment" y WHERE y."driverId" = t."id" AND y."endedAt" IS NULL)
   )`
 }
 
@@ -39,6 +39,6 @@ export function capabilityPredicate(p: Params, requirements: OrderRequirements):
 }
 
 export const ELIGIBLE_FROM = `
-  "TowTruck" t
-  JOIN "DriverPresence" p ON p."towTruckId" = t."id"
-  JOIN "DriverLocationCurrent" lc ON lc."towTruckId" = t."id"`
+  "FleetDriverProfile" t
+  JOIN "DriverPresence" p ON p."driverId" = t."id"
+  JOIN "DriverLocationCurrent" lc ON lc."driverId" = t."id"`

@@ -20,7 +20,7 @@ const props = defineProps<{
   pickup?: { latitude: number; longitude: number } | null
   selectedId?: number | null
 }>()
-const emit = defineEmits<{ select: [towTruckId: number]; viewport: [bbox: string | null] }>()
+const emit = defineEmits<{ select: [driverId: number]; viewport: [bbox: string | null] }>()
 
 const VIEWS = {
   armenia: { minLat: 38.8, maxLat: 41.35, minLng: 43.4, maxLng: 46.7, label: 'Ամբողջ Հայաստան' },
@@ -78,12 +78,12 @@ function mapsLink(d: OpsMapDriver): string {
     </div>
     <svg :viewBox="`0 0 ${W} ${H}`" class="ops-map__svg" role="img" aria-label="Վարորդների դիրքերի սխեմատիկ քարտեզ">
       <rect x="0" y="0" :width="W" :height="H" class="ops-map__bg" />
-      <g v-for="p in points" :key="p.d.towTruckId" class="ops-map__point" @click="emit('select', p.d.towTruckId)">
+      <g v-for="p in points" :key="p.d.driverId" class="ops-map__point" @click="emit('select', p.d.driverId)">
         <circle
           :cx="p.x"
           :cy="p.y"
-          :r="selectedId === p.d.towTruckId ? 8 : 5"
-          :class="[p.fresh ? `dot--${p.tone}` : 'dot--stale', { 'is-selected': selectedId === p.d.towTruckId }]"
+          :r="selectedId === p.d.driverId ? 8 : 5"
+          :class="[p.fresh ? `dot--${p.tone}` : 'dot--stale', { 'is-selected': selectedId === p.d.driverId }]"
         />
         <title>
           {{ p.d.driverName }} · {{ availabilitySummary(p.d.availability).text }} · GPS {{ formatAge(p.d.availability.gpsAgeSeconds) }}
@@ -97,7 +97,7 @@ function mapsLink(d: OpsMapDriver): string {
       Սխեմատիկ պատկեր՝ առանց ճանապարհների։ Ճշգրիտ կետը բացելու համար ընտրեք վարորդին ցուցակում ու սեղմեք «Google Maps»։
     </p>
     <ul v-if="selectedId" class="ops-map__selected">
-      <li v-for="d in drivers.filter((x) => x.towTruckId === selectedId && x.position)" :key="d.towTruckId">
+      <li v-for="d in drivers.filter((x) => x.driverId === selectedId && x.position)" :key="d.driverId">
         <a :href="mapsLink(d)" target="_blank" rel="noopener">Google Maps</a>
       </li>
     </ul>

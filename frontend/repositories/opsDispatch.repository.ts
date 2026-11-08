@@ -9,6 +9,10 @@
 import { apiFetch } from './apiClient'
 import { useAdminAuthStore } from '~/stores/adminAuth'
 import type {
+  FleetDriver,
+  FleetDriverKind,
+  FleetDriverStatus,
+  FleetSiteCandidate,
   OpsAlert,
   OpsMapDriver,
   OpsOrder,
@@ -51,7 +55,7 @@ export const opsDispatchRepository = {
   progress(id: number, action: ProgressAction, expectedVersion: number, key: string) {
     return this.action(id, 'progress', { action, expectedVersion }, key)
   },
-  manualOffer(id: number, body: { towTruckId: number; overrideReason?: string | null; expectedVersion: number }, key: string) {
+  manualOffer(id: number, body: { driverId: number; overrideReason?: string | null; expectedVersion: number }, key: string) {
     return apiFetch<{ offerId: string; expiresAt: string }>(`${base}/orders/${id}/manual-offer`, { method: 'POST', headers: auth(key), body })
   },
   computeRoute(id: number) {
@@ -66,8 +70,8 @@ export const opsDispatchRepository = {
       query: { bbox: query.bbox, onlyOnline: query.onlyOnline ? 'true' : undefined },
     })
   },
-  suspendDriver(towTruckId: number, suspended: boolean, reason: string | null) {
-    return apiFetch<{ ok: true }>(`${base}/drivers/${towTruckId}/suspend`, { method: 'POST', headers: auth(), body: { suspended, reason } })
+  suspendDriver(driverId: number, suspended: boolean, reason: string | null) {
+    return apiFetch<{ ok: true }>(`${base}/drivers/${driverId}/suspend`, { method: 'POST', headers: auth(), body: { suspended, reason } })
   },
   alerts() {
     return apiFetch<OpsAlert[]>(`${base}/alerts`, { headers: auth() })
@@ -80,6 +84,25 @@ export const opsDispatchRepository = {
   },
   updateSettings(body: Record<string, unknown>) {
     return apiFetch<Record<string, number | number[]>>(`${base}/settings`, { method: 'PATCH', headers: auth(), body })
+  },
+  // ─── App access (ADMIN only) ───
+  fleet(query: { status?: FleetDriverStatus; kind?: FleetDriverKind; q?: string }) {
+    return apiFetch<FleetDriver[]>(`${base}/fleet`, { headers: auth(), query: { status: query.status, kind: query.kind, q: query.q || undefined } })
+  },
+  siteCandidates(q: string) {
+    return apiFetch<FleetSiteCandidate[]>(`${base}/fleet/site-candidates`, { headers: auth(), query: { q } })
+  },
+  grantSiteAccess(towTruckId: number) {
+    return apiFetch<FleetDriver>(`${base}/fleet/grant`, { method: 'POST', headers: auth(), body: { towTruckId } })
+  },
+  fleetAction(id: number, action: 'approve' | 'reactivate') {
+    return apiFetch<FleetDriver>(`${base}/fleet/${id}/${action}`, { method: 'POST', headers: auth() })
+  },
+  fleetActionWithReason(id: number, action: 'reject' | 'suspend', reason: string) {
+    return apiFetch<FleetDriver>(`${base}/fleet/${id}/${action}`, { method: 'POST', headers: auth(), body: { reason } })
+  },
+  linkToSite(id: number, towTruckId: number) {
+    return apiFetch<FleetDriver>(`${base}/fleet/${id}/link-site`, { method: 'POST', headers: auth(), body: { towTruckId } })
   },
   health() {
     return apiFetch<{ flags: { dispatch: boolean; tracking: boolean }; outbox: { backlog: number; oldestDueSeconds: number | null; deadLetters: number } }>(`${base}/health`, { headers: auth() })

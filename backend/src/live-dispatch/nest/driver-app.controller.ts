@@ -38,25 +38,58 @@ export class DriverAppController {
     if (typeof body?.phone !== 'string' || typeof body.password !== 'string') throw new DispatchError('VALIDATION_FAILED', { field: 'phone/password' })
     if (typeof body.deviceId !== 'string' || body.deviceId.length < 8 || body.deviceId.length > 128) throw new DispatchError('VALIDATION_FAILED', { field: 'deviceId' })
     if (body.platform !== 'ios' && body.platform !== 'android') throw new DispatchError('VALIDATION_FAILED', { field: 'platform' })
-    // Throws 401/403 exactly as the website login does.
-    const web = await this.driverAuth.login(body.phone, body.password)
+    // The website is asked first: a number listed on the site signs in ONLY
+    // with the site password (DriverAuthService, unchanged — same 401/403).
+    // Then app ACCESS is checked: listed on the site is not the same as
+    // allowed in the app. A number not on the site is an app-only account.
+    let web: Awaited<ReturnType<DriverAuthService['login']>> | null = null
+    const identity = await this.holder.runtime.access.authenticate(body.phone, body.password, async (phone, password) => {
+      web = await this.driverAuth.login(phone, password)
+      return { towTruckId: web.towTruckId }
+    })
+    const site = web as Awaited<ReturnType<DriverAuthService['login']>> | null
     const { session } = await this.holder.runtime.fleet.createSession({
-      towTruckId: web.towTruckId,
+      driverId: identity.driverId,
       deviceId: body.deviceId,
       platform: body.platform,
       appVersion: typeof body.appVersion === 'string' ? body.appVersion.slice(0, 32) : null,
     })
     const token = await this.jwt.signAsync(
-      { sub: web.towTruckId, sid: session.id },
+      { sub: identity.driverId, sid: session.id },
       { secret: this.config.getOrThrow<string>('driverJwtSecret'), expiresIn: APP_TOKEN_TTL, audience: DRIVER_APP_AUDIENCE },
     )
     return {
       token,
       sessionId: session.id,
-      towTruckId: web.towTruckId,
-      mustChangePassword: web.mustChangePassword,
-      requiresPrivacyConsent: web.requiresPrivacyConsent,
+      driverId: identity.driverId,
+      kind: identity.kind,
+      // Website-account facts; always false for an app-only driver.
+      mustChangePassword: site?.mustChangePassword ?? false,
+      requiresPrivacyConsent: site?.requiresPrivacyConsent ?? false,
     }
+  }
+
+  /**
+   * Sign-up for a driver who is NOT on the website. Creates nothing public:
+   * the account waits for an admin (PENDING_REVIEW) and cannot sign in until
+   * approved. A number already on the website is refused with a pointer to
+   * the site login instead — never a second account for the same driver.
+   */
+  @Throttle({ default: { limit: 5, ttl: 3_600_000 } })
+  @Post('registrations')
+  @HttpCode(201)
+  register(@Body() body: Record<string, unknown>) {
+    return this.holder.runtime.access.register({
+      phone: body?.phone,
+      password: body?.password,
+      driverName: body?.driverName,
+      vehicleType: body?.vehicleType,
+      capacityTons: body?.capacityTons,
+      maxLoadTons: body?.maxLoadTons,
+      manipulator: body?.manipulator,
+      wheelSkates: body?.wheelSkates,
+      vehicleDescription: body?.vehicleDescription,
+    })
   }
 
   @UseGuards(DriverAppGuard)
@@ -70,13 +103,13 @@ export class DriverAppController {
   @Post('consent/tracking')
   @HttpCode(204)
   async consent(@Req() req: DriverAppRequest, @Body() body: { version?: number }): Promise<void> {
-    await this.holder.runtime.fleet.recordTrackingConsent(req.towTruckId, Number(body?.version))
+    await this.holder.runtime.fleet.recordTrackingConsent(req.driverId, Number(body?.version))
   }
 
   @UseGuards(DriverAppGuard)
   @Get('me')
   snapshot(@Req() req: DriverAppRequest) {
-    return this.holder.service.driverSnapshot(req.towTruckId)
+    return this.holder.service.driverSnapshot(req.driverId)
   }
 
   @UseGuards(DriverAppGuard)
@@ -86,15 +119,15 @@ export class DriverAppController {
     if (typeof body?.wantsOnline === 'boolean') change.wantsOnline = body.wantsOnline
     if (typeof body?.externalBusy === 'boolean') change.externalBusy = body.externalBusy
     if (Object.keys(change).length === 0) throw new DispatchError('VALIDATION_FAILED', { field: 'wantsOnline/externalBusy' })
-    await this.holder.runtime.fleet.setAvailability(req.towTruckId, req.sessionId, change)
-    return this.holder.service.driverSnapshot(req.towTruckId)
+    await this.holder.runtime.fleet.setAvailability(req.driverId, req.sessionId, change)
+    return this.holder.service.driverSnapshot(req.driverId)
   }
 
   @UseGuards(DriverAppGuard)
   @Throttle({ default: { limit: 12, ttl: 60_000 } })
   @Post('me/heartbeat')
   heartbeat(@Req() req: DriverAppRequest) {
-    return this.holder.runtime.fleet.heartbeat(req.towTruckId, req.sessionId)
+    return this.holder.runtime.fleet.heartbeat(req.driverId, req.sessionId)
   }
 
   @UseGuards(DriverAppGuard)
@@ -102,7 +135,7 @@ export class DriverAppController {
   @Post('me/locations')
   locations(@Req() req: DriverAppRequest, @Body() body: { fixes?: unknown }) {
     if (!Array.isArray(body?.fixes)) throw new DispatchError('VALIDATION_FAILED', { field: 'fixes' })
-    return this.holder.service.ingestLocations(req.towTruckId, req.sessionId, body.fixes as never)
+    return this.holder.service.ingestLocations(req.driverId, req.sessionId, body.fixes as never)
   }
 
   @UseGuards(DriverAppGuard)
@@ -110,14 +143,14 @@ export class DriverAppController {
   @HttpCode(204)
   async pushToken(@Req() req: DriverAppRequest, @Body() body: { token?: string }): Promise<void> {
     if (typeof body?.token !== 'string') throw new DispatchError('VALIDATION_FAILED', { field: 'token' })
-    await this.holder.runtime.fleet.registerPushToken(req.sessionId, req.towTruckId, body.token)
+    await this.holder.runtime.fleet.registerPushToken(req.sessionId, req.driverId, body.token)
   }
 
   @UseGuards(DriverAppGuard)
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('offers/:offerId/accept')
   async accept(@Req() req: DriverAppRequest & Request, @Param('offerId') offerId: string, @Body() body: unknown, @Res() res: Response) {
-    send(res, await this.holder.service.driverAccept(req.towTruckId, offerId, mutationContext(req, body ?? {})))
+    send(res, await this.holder.service.driverAccept(req.driverId, offerId, mutationContext(req, body ?? {})))
   }
 
   @UseGuards(DriverAppGuard)
@@ -125,7 +158,7 @@ export class DriverAppController {
   @Post('offers/:offerId/reject')
   async reject(@Req() req: DriverAppRequest & Request, @Param('offerId') offerId: string, @Body() body: { reason?: string }, @Res() res: Response) {
     const reason = typeof body?.reason === 'string' ? body.reason.slice(0, 200) : null
-    send(res, await this.holder.service.driverReject(req.towTruckId, offerId, reason, mutationContext(req, body ?? {})))
+    send(res, await this.holder.service.driverReject(req.driverId, offerId, reason, mutationContext(req, body ?? {})))
   }
 
   /** The app rendered the offer (delivery fact — NOT an acceptance) */
@@ -134,7 +167,7 @@ export class DriverAppController {
   @HttpCode(204)
   async ack(@Req() req: DriverAppRequest, @Param('offerId') offerId: string, @Body() body: { channel?: string }): Promise<void> {
     const channel = body?.channel === 'REALTIME' ? 'REALTIME' : 'PUSH'
-    await this.holder.runtime.offers.acknowledgeDelivery(offerId, req.towTruckId, channel)
+    await this.holder.runtime.offers.acknowledgeDelivery(offerId, req.driverId, channel)
   }
 
   @UseGuards(DriverAppGuard)
@@ -144,19 +177,19 @@ export class DriverAppController {
     if (action !== 'EN_ROUTE' && action !== 'ARRIVED' && action !== 'START_TRANSPORT' && action !== 'COMPLETE') {
       throw new DispatchError('VALIDATION_FAILED', { field: 'action' })
     }
-    send(res, await this.holder.service.driverProgress(req.towTruckId, intParam(orderId, 'orderId'), action, mutationContext(req, body)))
+    send(res, await this.holder.service.driverProgress(req.driverId, intParam(orderId, 'orderId'), action, mutationContext(req, body)))
   }
 
   @UseGuards(DriverAppGuard)
   @Post('orders/:orderId/requests')
   async request(@Req() req: DriverAppRequest & Request, @Param('orderId') orderId: string, @Body() body: unknown, @Res() res: Response) {
-    send(res, await this.holder.service.driverRequest(req.towTruckId, intParam(orderId, 'orderId'), body, mutationContext(req, body)))
+    send(res, await this.holder.service.driverRequest(req.driverId, intParam(orderId, 'orderId'), body, mutationContext(req, body)))
   }
 
   @UseGuards(DriverAppGuard)
   @Get('orders/history')
   history(@Req() req: DriverAppRequest, @Query('limit') limit?: string, @Query('before') before?: string) {
     const beforeDate = before && !Number.isNaN(Date.parse(before)) ? new Date(before) : null
-    return this.holder.service.driverHistory(req.towTruckId, Number(limit ?? 20), beforeDate)
+    return this.holder.service.driverHistory(req.driverId, Number(limit ?? 20), beforeDate)
   }
 }

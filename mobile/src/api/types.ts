@@ -57,6 +57,7 @@ export interface TrackingPolicyDto {
 
 export interface Snapshot {
   serverTime: string
+  driver: { name: string; kind: 'SITE_LINKED' | 'APP_ONLY' }
   availability: Availability
   switches: { wantsOnline: boolean; externalBusy: boolean }
   trackingConsentVersion: number | null

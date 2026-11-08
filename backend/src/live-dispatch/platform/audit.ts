@@ -4,7 +4,7 @@ import type { Actor } from '../orders/domain/order-state'
 
 export interface ActorRef {
   type: Actor
-  /** User.id for ADMIN, TowTruck.id for DRIVER, null for SYSTEM */
+  /** User.id for ADMIN, FleetDriver.id for DRIVER, null for SYSTEM */
   id: number | null
 }
 

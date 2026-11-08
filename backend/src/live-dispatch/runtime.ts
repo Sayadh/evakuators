@@ -12,6 +12,7 @@ import { PostgisCandidateFinder, type CandidateFinder } from './dispatching/cand
 import { DispatchEngine, silentLogger, type EngineLogger } from './dispatching/engine'
 import { OffersRepository } from './dispatching/offers.repository'
 import { Reconciler } from './dispatching/reconciler'
+import { FleetAccess, type PasswordHasher } from './fleet/fleet-access'
 import { FleetRepository } from './fleet/fleet.repository'
 import { OrdersRepository } from './orders/orders.repository'
 import { FcmSender, RecordingPushSender, type PushSender, type ServiceAccount } from './notify/fcm'
@@ -68,11 +69,24 @@ export function readLiveDispatchConfig(env: NodeJS.ProcessEnv): LiveDispatchConf
   }
 }
 
+/** The worker never hashes passwords; the API process passes bcrypt (nest/runtime.provider.ts). */
+const unconfiguredHasher: PasswordHasher = {
+  dummyHash: '',
+  hash: async () => {
+    throw new Error('password hashing is not configured in this process')
+  },
+  compare: async () => {
+    throw new Error('password hashing is not configured in this process')
+  },
+}
+
 export interface LiveDispatchRuntime {
   db: SqlDatabase
   config: LiveDispatchConfig
   settings: SettingsRepository
   fleet: FleetRepository
+  /** Who may use the app (grant, register, approve, suspend, login) */
+  access: FleetAccess
   orders: OrdersRepository
   offers: OffersRepository
   routing: GuardedRouting
@@ -95,10 +109,12 @@ export function createRuntime(
     pushSender?: PushSender
     bus?: RealtimeBus
     logger?: EngineLogger
+    passwordHasher?: PasswordHasher
   } = {},
 ): LiveDispatchRuntime {
   const settings = new SettingsRepository(db)
   const fleet = new FleetRepository(db)
+  const access = new FleetAccess(db, overrides.passwordHasher ?? unconfiguredHasher)
   const orders = new OrdersRepository(db)
   const offers = new OffersRepository(db)
   const provider =
@@ -142,7 +158,7 @@ export function createRuntime(
     },
     'push.offer': async (message) => ((await push.sendOfferPush(String(message.payload.offerId))) === 'retry' ? 'retry' : 'done'),
     'push.order': async (message) =>
-      (await push.sendOrderPush(Number(message.payload.orderId), Number(message.payload.towTruckId), String(message.payload.kind))) === 'retry'
+      (await push.sendOrderPush(Number(message.payload.orderId), Number(message.payload.driverId), String(message.payload.kind))) === 'retry'
         ? 'retry'
         : 'done',
     realtime: async (message) => {
@@ -162,6 +178,7 @@ export function createRuntime(
     config,
     settings,
     fleet,
+    access,
     orders,
     offers,
     routing,

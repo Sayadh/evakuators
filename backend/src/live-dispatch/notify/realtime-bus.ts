@@ -11,7 +11,7 @@ import { RedisPublisher, RedisSubscriber, type RedisOptions } from './redis-resp
 
 export interface RealtimeEvent {
   eventId: string
-  /** 'admin' | `driver:<towTruckId>` */
+  /** 'admin' | `driver:<driverId>` */
   audiences: string[]
   event: string
   data: Record<string, unknown>

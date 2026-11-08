@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { NearestTowTruck } from '~/types/nearest'
+import type { LiveNearestTowTruck } from '~/types/nearest'
 import { formatDistanceLine, formatDurationLine } from '~/utils/formatDistance'
 
 /**
@@ -20,12 +20,14 @@ import { formatDistanceLine, formatDurationLine } from '~/utils/formatDistance'
  * unaffected by this feature existing.
  */
 interface Props {
-  result: NearestTowTruck
+  /** `live` is present only when the distance is from the driver's phone right now */
+  result: LiveNearestTowTruck
   /** Whether the response carried real road data — see `NearestSearchResult.routed` */
   routed: boolean
 }
 
 const props = defineProps<Props>()
+const { t } = useI18n()
 
 /**
  * Road distance when this particular driver was routable, straight line
@@ -50,6 +52,10 @@ const durationLine = computed(() =>
 <template>
   <div class="nearest-result">
     <div class="nearest-result__distance">
+      <span v-if="result.live" class="nearest-result__live" :title="t('nearest.liveBadgeTitle')">
+        <span class="nearest-result__live-dot" aria-hidden="true" />
+        {{ t('nearest.liveBadge') }}
+      </span>
       <span class="nearest-result__metric">
         <AppIcon name="map-pin" :size="16" />
         {{ distanceLine }}
@@ -82,6 +88,22 @@ const durationLine = computed(() =>
     border-bottom: none;
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     background: var(--color-bg);
+  }
+
+  &__live {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--color-success);
+  }
+
+  &__live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-success);
   }
 
   &__metric {

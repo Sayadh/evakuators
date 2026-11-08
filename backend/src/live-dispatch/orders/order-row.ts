@@ -58,7 +58,7 @@ export interface OrderRow {
   termsVersion: number
   version: number
   activeAssignmentId: number | null
-  assignedTowTruckId: number | null
+  assignedDriverId: number | null
   routeMeters: number | null
   routeSeconds: number | null
   routeComputedAt: Date | null
@@ -88,7 +88,7 @@ export const ORDER_COLUMNS = `
   o."pricingMode", o."currency", o."quotedPriceAmd", o."agreedPriceAmd", o."priceConfirmedAt", o."priceConfirmedBy",
   o."paymentStatus", o."paymentUpdatedAt",
   o."status", o."attentionKind", o."statusBeforeAttention", o."termsVersion", o."version", o."activeAssignmentId",
-  (SELECT a."towTruckId" FROM "OrderAssignment" a WHERE a."id" = o."activeAssignmentId") AS "assignedTowTruckId",
+  (SELECT a."driverId" FROM "OrderAssignment" a WHERE a."id" = o."activeAssignmentId") AS "assignedDriverId",
   o."routeMeters", o."routeSeconds", o."routeComputedAt", o."routeProvider", o."routeManual",
   o."cancelReason", o."cancelComment", o."internalNote",
   o."createdAt", o."updatedAt", o."dispatchStartedAt", o."assignedAt", o."enRouteAt", o."arrivedAt",
@@ -136,7 +136,7 @@ export function mapOrder(row: Record<string, unknown>): OrderRow {
     termsVersion: toNumber(row.termsVersion),
     version: toNumber(row.version),
     activeAssignmentId: toNullableNumber(row.activeAssignmentId),
-    assignedTowTruckId: toNullableNumber(row.assignedTowTruckId),
+    assignedDriverId: toNullableNumber(row.assignedDriverId),
     routeMeters: toNullableNumber(row.routeMeters),
     routeSeconds: toNullableNumber(row.routeSeconds),
     routeComputedAt: toNullableDate(row.routeComputedAt),
@@ -259,7 +259,7 @@ export function adminOrderView(order: OrderRow) {
     requirements: requirementsView(order),
     price: priceView(order),
     payment: { status: order.paymentStatus, updatedAt: iso(order.paymentUpdatedAt) },
-    assignedTowTruckId: order.assignedTowTruckId,
+    assignedDriverId: order.assignedDriverId,
     pickupToDestination: routeView(order),
     cancel: order.cancelReason ? { reason: order.cancelReason, comment: order.cancelComment } : null,
     internalNote: order.internalNote,

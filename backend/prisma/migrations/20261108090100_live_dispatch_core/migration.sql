@@ -1,5 +1,5 @@
--- Live dispatch: driver presence/location, orders, offers, assignments,
--- audit trail, outbox, idempotency, settings.
+-- Live dispatch: app drivers (FleetDriver), driver presence/location, orders,
+-- offers, assignments, audit trail, outbox, idempotency, settings.
 --
 -- ADDITIVE ONLY. No existing table, column, index or enum value is altered or
 -- dropped, and nothing is backfilled. Rolling the application back leaves
@@ -41,6 +41,115 @@ CREATE TYPE "OrderCancelReason" AS ENUM (
   'PRICE_NOT_AGREED', 'TECHNICAL_PROBLEM', 'OTHER'
 );
 
+-- ─── Fleet drivers: who may use the driver app ─────────────────────────────
+--
+-- Two concepts the rest of the platform must never mix:
+--
+--   * a SITE LISTING  — "TowTruck": the public profile, SEO pages, reviews,
+--     subscription. Untouched by this feature.
+--   * an APP DRIVER   — "FleetDriver": permission to use the driver app and
+--     receive orders. Every live-dispatch table points HERE, never at TowTruck.
+--
+-- A FleetDriver is one of two kinds, and the CHECK below makes the shapes
+-- impossible to blur:
+--
+--   SITE_LINKED — a driver already listed on the site whom an admin GRANTED
+--                 app access. One row per TowTruck at most. Signs in with the
+--                 SAME phone + password as the site (the TowTruck row stays the
+--                 only credential), and their vehicle data is the moderated
+--                 TowTruck data. No credential or vehicle column here is used.
+--   APP_ONLY    — someone who registered in the app and is NOT on the site.
+--                 Owns its phone/password/vehicle columns here, starts as
+--                 PENDING_REVIEW, and appears nowhere public — ever.
+--
+-- Keeping the id separate from TowTruck.id is what lets an APP_ONLY driver be
+-- linked to a site profile later without rewriting their order history.
+CREATE TYPE "FleetDriverKind" AS ENUM ('SITE_LINKED', 'APP_ONLY');
+CREATE TYPE "FleetDriverStatus" AS ENUM ('PENDING_REVIEW', 'ACTIVE', 'SUSPENDED', 'REJECTED');
+
+CREATE TABLE "FleetDriver" (
+  "id"                 SERIAL NOT NULL,
+  "kind"               "FleetDriverKind" NOT NULL,
+  "status"             "FleetDriverStatus" NOT NULL,
+  "towTruckId"         INTEGER,
+  -- APP_ONLY only (NULL for SITE_LINKED — the TowTruck row is the source):
+  "phone"              TEXT,
+  "passwordHash"       TEXT,
+  "driverName"         TEXT,
+  "vehicleType"        TEXT,
+  "capacityTons"       DOUBLE PRECISION,
+  "maxLoadTons"        DOUBLE PRECISION,
+  "manipulator"        BOOLEAN,
+  "wheelSkates"        BOOLEAN,
+  "vehicleDescription" TEXT,
+  -- Who changed the status last, and why (grant, approve, reject, suspend).
+  "statusChangedAt"    TIMESTAMPTZ(3) NOT NULL DEFAULT now(),
+  "statusChangedBy"    INTEGER,
+  "statusReason"       TEXT,
+  "createdAt"          TIMESTAMPTZ(3) NOT NULL DEFAULT now(),
+  "updatedAt"          TIMESTAMPTZ(3) NOT NULL DEFAULT now(),
+  CONSTRAINT "FleetDriver_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "FleetDriver_shape_check" CHECK (
+    ("kind" = 'SITE_LINKED' AND "towTruckId" IS NOT NULL
+       AND "phone" IS NULL AND "passwordHash" IS NULL AND "driverName" IS NULL
+       AND "vehicleType" IS NULL AND "capacityTons" IS NULL AND "maxLoadTons" IS NULL
+       AND "manipulator" IS NULL AND "wheelSkates" IS NULL AND "vehicleDescription" IS NULL
+       AND "status" <> 'PENDING_REVIEW' AND "status" <> 'REJECTED')
+    OR
+    ("kind" = 'APP_ONLY' AND "towTruckId" IS NULL
+       AND "phone" IS NOT NULL AND "passwordHash" IS NOT NULL AND "driverName" IS NOT NULL
+       AND "vehicleType" IS NOT NULL AND "capacityTons" IS NOT NULL
+       AND "manipulator" IS NOT NULL AND "wheelSkates" IS NOT NULL)
+  ),
+  CONSTRAINT "FleetDriver_capacity_check" CHECK ("capacityTons" IS NULL OR "capacityTons" > 0),
+  CONSTRAINT "FleetDriver_towTruckId_fkey" FOREIGN KEY ("towTruckId")
+    REFERENCES "TowTruck"("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+CREATE UNIQUE INDEX "FleetDriver_towTruckId_key" ON "FleetDriver" ("towTruckId");
+-- Same canonical +374XXXXXXXX shape as TowTruck.phone. Uniqueness ACROSS the
+-- two tables cannot be a constraint; FleetService checks it under an advisory
+-- lock on the phone (and login always resolves the site first).
+CREATE UNIQUE INDEX "FleetDriver_phone_key" ON "FleetDriver" ("phone") WHERE "phone" IS NOT NULL;
+CREATE INDEX "FleetDriver_status_idx" ON "FleetDriver" ("status", "createdAt");
+
+-- Append-only history of access decisions (grant, register, approve, reject,
+-- suspend, reactivate, link) — the "who let this person in" record.
+CREATE TABLE "FleetDriverEvent" (
+  "id"          BIGSERIAL NOT NULL,
+  "driverId"    INTEGER NOT NULL,
+  "type"        TEXT NOT NULL,
+  "actorUserId" INTEGER,
+  "data"        JSONB NOT NULL DEFAULT '{}',
+  "createdAt"   TIMESTAMPTZ(3) NOT NULL DEFAULT now(),
+  CONSTRAINT "FleetDriverEvent_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "FleetDriverEvent_driverId_fkey" FOREIGN KEY ("driverId")
+    REFERENCES "FleetDriver"("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+CREATE INDEX "FleetDriverEvent_driverId_id_idx" ON "FleetDriverEvent" ("driverId", "id");
+
+-- What dispatch reads about a driver, whichever kind: ONE shape, so the
+-- eligibility SQL never branches on kind. `isActive` = may receive orders now:
+-- access ACTIVE, and for a site driver also listed (TowTruck.isActive) — a
+-- driver an admin took off the site does not keep getting orders through the
+-- back door. `towTruckId` is non-NULL exactly for drivers with a public card.
+CREATE VIEW "FleetDriverProfile" AS
+SELECT
+  d."id",
+  d."kind",
+  d."status",
+  d."towTruckId",
+  (d."status" = 'ACTIVE' AND (d."kind" = 'APP_ONLY' OR tt."isActive" IS TRUE)) AS "isActive",
+  CASE WHEN d."kind" = 'SITE_LINKED' THEN tt."driverName"   ELSE d."driverName"   END AS "driverName",
+  CASE WHEN d."kind" = 'SITE_LINKED' THEN tt."phone"        ELSE d."phone"        END AS "phone",
+  CASE WHEN d."kind" = 'SITE_LINKED' THEN tt."vehicleType"  ELSE d."vehicleType"  END AS "vehicleType",
+  CASE WHEN d."kind" = 'SITE_LINKED' THEN tt."capacityTons" ELSE d."capacityTons" END AS "capacityTons",
+  CASE WHEN d."kind" = 'SITE_LINKED' THEN tt."maxLoadTons"  ELSE d."maxLoadTons"  END AS "maxLoadTons",
+  CASE WHEN d."kind" = 'SITE_LINKED' THEN tt."manipulator"  ELSE d."manipulator"  END AS "manipulator",
+  CASE WHEN d."kind" = 'SITE_LINKED' THEN tt."wheelSkates"  ELSE d."wheelSkates"  END AS "wheelSkates",
+  CASE WHEN d."kind" = 'SITE_LINKED' THEN tt."slug"         ELSE NULL             END AS "slug"
+FROM "FleetDriver" d
+LEFT JOIN "TowTruck" tt ON tt."id" = d."towTruckId";
+
 -- ─── Driver devices and presence ────────────────────────────────────────────
 
 -- One row per app login. The JWT the app holds carries this id as `sid`, and
@@ -49,7 +158,7 @@ CREATE TYPE "OrderCancelReason" AS ENUM (
 -- something the 30-day web token has never been able to do.
 CREATE TABLE "DriverDeviceSession" (
   "id"           UUID NOT NULL DEFAULT gen_random_uuid(),
-  "towTruckId"   INTEGER NOT NULL,
+  "driverId"   INTEGER NOT NULL,
   "deviceId"     TEXT NOT NULL,
   "platform"     TEXT NOT NULL,
   "appVersion"   TEXT,
@@ -59,18 +168,18 @@ CREATE TABLE "DriverDeviceSession" (
   "revokeReason" TEXT,
   CONSTRAINT "DriverDeviceSession_pkey" PRIMARY KEY ("id"),
   CONSTRAINT "DriverDeviceSession_platform_check" CHECK ("platform" IN ('ios', 'android')),
-  CONSTRAINT "DriverDeviceSession_towTruckId_fkey" FOREIGN KEY ("towTruckId")
-    REFERENCES "TowTruck"("id") ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT "DriverDeviceSession_driverId_fkey" FOREIGN KEY ("driverId")
+    REFERENCES "FleetDriver"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 -- One live tracking session per driver (first version). A new login revokes
 -- the previous row in the same transaction; this index is the backstop.
 CREATE UNIQUE INDEX "DriverDeviceSession_one_active_per_driver"
-  ON "DriverDeviceSession" ("towTruckId") WHERE "revokedAt" IS NULL;
+  ON "DriverDeviceSession" ("driverId") WHERE "revokedAt" IS NULL;
 
 CREATE TABLE "PushDeviceToken" (
   "id"            SERIAL NOT NULL,
   "sessionId"     UUID NOT NULL,
-  "towTruckId"    INTEGER NOT NULL,
+  "driverId"    INTEGER NOT NULL,
   "provider"      TEXT NOT NULL DEFAULT 'FCM',
   "token"         TEXT NOT NULL,
   "createdAt"     TIMESTAMPTZ(3) NOT NULL DEFAULT now(),
@@ -79,13 +188,13 @@ CREATE TABLE "PushDeviceToken" (
   CONSTRAINT "PushDeviceToken_pkey" PRIMARY KEY ("id"),
   CONSTRAINT "PushDeviceToken_sessionId_fkey" FOREIGN KEY ("sessionId")
     REFERENCES "DriverDeviceSession"("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "PushDeviceToken_towTruckId_fkey" FOREIGN KEY ("towTruckId")
-    REFERENCES "TowTruck"("id") ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT "PushDeviceToken_driverId_fkey" FOREIGN KEY ("driverId")
+    REFERENCES "FleetDriver"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 -- A token belongs to one live binding at a time: re-registering it from a new
 -- session invalidates the old row first.
 CREATE UNIQUE INDEX "PushDeviceToken_token_active" ON "PushDeviceToken" ("token") WHERE "invalidatedAt" IS NULL;
-CREATE INDEX "PushDeviceToken_towTruckId_idx" ON "PushDeviceToken" ("towTruckId") WHERE "invalidatedAt" IS NULL;
+CREATE INDEX "PushDeviceToken_driverId_idx" ON "PushDeviceToken" ("driverId") WHERE "invalidatedAt" IS NULL;
 
 -- Deliberately several independent facts, never one `online` boolean:
 -- what the driver CHOSE (wantsOnline), whether the app is ALIVE
@@ -94,7 +203,7 @@ CREATE INDEX "PushDeviceToken_towTruckId_idx" ON "PushDeviceToken" ("towTruckId"
 -- Location freshness lives in DriverLocationCurrent; "has an offer/order" is
 -- derived from OrderOffer/OrderAssignment. Eligibility combines all of them.
 CREATE TABLE "DriverPresence" (
-  "towTruckId"              INTEGER NOT NULL,
+  "driverId"              INTEGER NOT NULL,
   "wantsOnline"             BOOLEAN NOT NULL DEFAULT false,
   "wantsOnlineChangedAt"    TIMESTAMPTZ(3),
   "lastHeartbeatAt"         TIMESTAMPTZ(3),
@@ -108,9 +217,9 @@ CREATE TABLE "DriverPresence" (
   "trackingConsentVersion"  INTEGER,
   "trackingConsentAt"       TIMESTAMPTZ(3),
   "updatedAt"               TIMESTAMPTZ(3) NOT NULL DEFAULT now(),
-  CONSTRAINT "DriverPresence_pkey" PRIMARY KEY ("towTruckId"),
-  CONSTRAINT "DriverPresence_towTruckId_fkey" FOREIGN KEY ("towTruckId")
-    REFERENCES "TowTruck"("id") ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT "DriverPresence_pkey" PRIMARY KEY ("driverId"),
+  CONSTRAINT "DriverPresence_driverId_fkey" FOREIGN KEY ("driverId")
+    REFERENCES "FleetDriver"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- The newest TRUSTED fix per driver. Written only when a fix is newer (by
@@ -118,7 +227,7 @@ CREATE TABLE "DriverPresence" (
 -- FleetRepository.ingestLocations — so a late or replayed fix can never move
 -- a driver backwards. The PostGIS column is added by the next migration.
 CREATE TABLE "DriverLocationCurrent" (
-  "towTruckId"       INTEGER NOT NULL,
+  "driverId"       INTEGER NOT NULL,
   "sessionId"        UUID NOT NULL,
   "seq"              BIGINT NOT NULL,
   "latitude"         DECIMAL(9, 6) NOT NULL,
@@ -130,12 +239,12 @@ CREATE TABLE "DriverLocationCurrent" (
   "receivedAt"       TIMESTAMPTZ(3) NOT NULL,
   "suspicious"       BOOLEAN NOT NULL DEFAULT false,
   "suspiciousReason" TEXT,
-  CONSTRAINT "DriverLocationCurrent_pkey" PRIMARY KEY ("towTruckId"),
+  CONSTRAINT "DriverLocationCurrent_pkey" PRIMARY KEY ("driverId"),
   CONSTRAINT "DriverLocationCurrent_lat_check" CHECK ("latitude" BETWEEN -90 AND 90),
   CONSTRAINT "DriverLocationCurrent_lng_check" CHECK ("longitude" BETWEEN -180 AND 180),
   CONSTRAINT "DriverLocationCurrent_accuracy_check" CHECK ("accuracyM" >= 0),
-  CONSTRAINT "DriverLocationCurrent_towTruckId_fkey" FOREIGN KEY ("towTruckId")
-    REFERENCES "TowTruck"("id") ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT "DriverLocationCurrent_driverId_fkey" FOREIGN KEY ("driverId")
+    REFERENCES "FleetDriver"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- Bounded history, purged by the worker after `locationHistoryRetentionDays`.
@@ -143,7 +252,7 @@ CREATE TABLE "DriverLocationCurrent" (
 -- a present position (an offline buffer flushed on reconnect).
 CREATE TABLE "DriverLocationHistory" (
   "id"          BIGSERIAL NOT NULL,
-  "towTruckId"  INTEGER NOT NULL,
+  "driverId"  INTEGER NOT NULL,
   "sessionId"   UUID NOT NULL,
   "seq"         BIGINT NOT NULL,
   "latitude"    DECIMAL(9, 6) NOT NULL,
@@ -157,13 +266,13 @@ CREATE TABLE "DriverLocationHistory" (
   "late"        BOOLEAN NOT NULL DEFAULT false,
   "suspicious"  BOOLEAN NOT NULL DEFAULT false,
   CONSTRAINT "DriverLocationHistory_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "DriverLocationHistory_towTruckId_fkey" FOREIGN KEY ("towTruckId")
-    REFERENCES "TowTruck"("id") ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT "DriverLocationHistory_driverId_fkey" FOREIGN KEY ("driverId")
+    REFERENCES "FleetDriver"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 -- Duplicate delivery of the same fix (retry, offline flush racing a live send)
 -- is absorbed by ON CONFLICT DO NOTHING on this key.
 CREATE UNIQUE INDEX "DriverLocationHistory_session_seq_key" ON "DriverLocationHistory" ("sessionId", "seq");
-CREATE INDEX "DriverLocationHistory_towTruckId_measuredAt_idx" ON "DriverLocationHistory" ("towTruckId", "measuredAt");
+CREATE INDEX "DriverLocationHistory_driverId_measuredAt_idx" ON "DriverLocationHistory" ("driverId", "measuredAt");
 CREATE INDEX "DriverLocationHistory_receivedAt_idx" ON "DriverLocationHistory" ("receivedAt");
 
 -- ─── Orders ─────────────────────────────────────────────────────────────────
@@ -300,7 +409,7 @@ CREATE UNIQUE INDEX "DispatchAttempt_one_open_per_order" ON "DispatchAttempt" ("
 CREATE TABLE "DispatchCandidate" (
   "id"                 BIGSERIAL NOT NULL,
   "attemptId"          INTEGER NOT NULL,
-  "towTruckId"         INTEGER NOT NULL,
+  "driverId"         INTEGER NOT NULL,
   "batch"              INTEGER NOT NULL,
   "rank"               INTEGER NOT NULL,
   "straightLineMeters" INTEGER NOT NULL,
@@ -318,14 +427,14 @@ CREATE TABLE "DispatchCandidate" (
   CONSTRAINT "DispatchCandidate_attemptId_fkey" FOREIGN KEY ("attemptId")
     REFERENCES "DispatchAttempt"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
-CREATE UNIQUE INDEX "DispatchCandidate_attempt_truck_key" ON "DispatchCandidate" ("attemptId", "towTruckId");
+CREATE UNIQUE INDEX "DispatchCandidate_attempt_truck_key" ON "DispatchCandidate" ("attemptId", "driverId");
 CREATE INDEX "DispatchCandidate_attempt_status_rank_idx" ON "DispatchCandidate" ("attemptId", "status", "rank");
 
 CREATE TABLE "OrderOffer" (
   "id"                 UUID NOT NULL DEFAULT gen_random_uuid(),
   "orderId"            INTEGER NOT NULL,
   "attemptId"          INTEGER NOT NULL,
-  "towTruckId"         INTEGER NOT NULL,
+  "driverId"         INTEGER NOT NULL,
   "status"             "OrderOfferStatus" NOT NULL DEFAULT 'PENDING',
   "manual"             BOOLEAN NOT NULL DEFAULT false,
   "createdByUserId"    INTEGER,
@@ -345,24 +454,24 @@ CREATE TABLE "OrderOffer" (
     REFERENCES "DispatchOrder"("id") ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT "OrderOffer_attemptId_fkey" FOREIGN KEY ("attemptId")
     REFERENCES "DispatchAttempt"("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "OrderOffer_towTruckId_fkey" FOREIGN KEY ("towTruckId")
-    REFERENCES "TowTruck"("id") ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT "OrderOffer_driverId_fkey" FOREIGN KEY ("driverId")
+    REFERENCES "FleetDriver"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 -- THE reservation: a driver holds at most one live offer, platform-wide.
-CREATE UNIQUE INDEX "OrderOffer_one_pending_per_driver" ON "OrderOffer" ("towTruckId") WHERE "status" = 'PENDING';
+CREATE UNIQUE INDEX "OrderOffer_one_pending_per_driver" ON "OrderOffer" ("driverId") WHERE "status" = 'PENDING';
 -- Sequential dispatch: an order has at most one live offer at a time.
 CREATE UNIQUE INDEX "OrderOffer_one_pending_per_order" ON "OrderOffer" ("orderId") WHERE "status" = 'PENDING';
 -- Never the same driver twice for the same terms in the same attempt. A terms
 -- change (new termsVersion) is what legitimately allows a fresh offer.
-CREATE UNIQUE INDEX "OrderOffer_attempt_driver_terms_key" ON "OrderOffer" ("attemptId", "towTruckId", "termsVersion");
+CREATE UNIQUE INDEX "OrderOffer_attempt_driver_terms_key" ON "OrderOffer" ("attemptId", "driverId", "termsVersion");
 CREATE INDEX "OrderOffer_pending_expiresAt_idx" ON "OrderOffer" ("expiresAt") WHERE "status" = 'PENDING';
-CREATE INDEX "OrderOffer_towTruckId_createdAt_idx" ON "OrderOffer" ("towTruckId", "createdAt");
+CREATE INDEX "OrderOffer_driverId_createdAt_idx" ON "OrderOffer" ("driverId", "createdAt");
 CREATE INDEX "OrderOffer_orderId_createdAt_idx" ON "OrderOffer" ("orderId", "createdAt");
 
 CREATE TABLE "OrderAssignment" (
   "id"            SERIAL NOT NULL,
   "orderId"       INTEGER NOT NULL,
-  "towTruckId"    INTEGER NOT NULL,
+  "driverId"    INTEGER NOT NULL,
   "offerId"       UUID NOT NULL,
   "startedAt"     TIMESTAMPTZ(3) NOT NULL DEFAULT now(),
   "endedAt"       TIMESTAMPTZ(3),
@@ -371,14 +480,14 @@ CREATE TABLE "OrderAssignment" (
   CONSTRAINT "OrderAssignment_pkey" PRIMARY KEY ("id"),
   CONSTRAINT "OrderAssignment_orderId_fkey" FOREIGN KEY ("orderId")
     REFERENCES "DispatchOrder"("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "OrderAssignment_towTruckId_fkey" FOREIGN KEY ("towTruckId")
-    REFERENCES "TowTruck"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "OrderAssignment_driverId_fkey" FOREIGN KEY ("driverId")
+    REFERENCES "FleetDriver"("id") ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT "OrderAssignment_offerId_fkey" FOREIGN KEY ("offerId")
     REFERENCES "OrderOffer"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 -- The two invariants the whole feature exists to keep:
 CREATE UNIQUE INDEX "OrderAssignment_one_active_per_order" ON "OrderAssignment" ("orderId") WHERE "endedAt" IS NULL;
-CREATE UNIQUE INDEX "OrderAssignment_one_active_per_driver" ON "OrderAssignment" ("towTruckId") WHERE "endedAt" IS NULL;
+CREATE UNIQUE INDEX "OrderAssignment_one_active_per_driver" ON "OrderAssignment" ("driverId") WHERE "endedAt" IS NULL;
 CREATE UNIQUE INDEX "OrderAssignment_offerId_key" ON "OrderAssignment" ("offerId");
 
 ALTER TABLE "DispatchOrder"
@@ -425,7 +534,7 @@ CREATE INDEX "OrderAlert_open_idx" ON "OrderAlert" ("createdAt") WHERE "acknowle
 CREATE TABLE "OrderDriverRequest" (
   "id"               SERIAL NOT NULL,
   "orderId"          INTEGER NOT NULL,
-  "towTruckId"       INTEGER NOT NULL,
+  "driverId"       INTEGER NOT NULL,
   "kind"             TEXT NOT NULL,
   "reason"           "OrderCancelReason" NOT NULL,
   "comment"          TEXT,
@@ -440,8 +549,8 @@ CREATE TABLE "OrderDriverRequest" (
   CONSTRAINT "OrderDriverRequest_other_comment_check" CHECK ("reason" <> 'OTHER' OR length(coalesce("comment", '')) > 0),
   CONSTRAINT "OrderDriverRequest_orderId_fkey" FOREIGN KEY ("orderId")
     REFERENCES "DispatchOrder"("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "OrderDriverRequest_towTruckId_fkey" FOREIGN KEY ("towTruckId")
-    REFERENCES "TowTruck"("id") ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT "OrderDriverRequest_driverId_fkey" FOREIGN KEY ("driverId")
+    REFERENCES "FleetDriver"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 CREATE UNIQUE INDEX "OrderDriverRequest_one_open_per_order" ON "OrderDriverRequest" ("orderId") WHERE "status" = 'OPEN';
 
@@ -453,7 +562,7 @@ CREATE TABLE "NotificationDelivery" (
   "id"                UUID NOT NULL DEFAULT gen_random_uuid(),
   "offerId"           UUID,
   "orderId"           INTEGER NOT NULL,
-  "towTruckId"        INTEGER NOT NULL,
+  "driverId"        INTEGER NOT NULL,
   "channel"           TEXT NOT NULL,
   "kind"              TEXT NOT NULL,
   "status"            TEXT NOT NULL DEFAULT 'QUEUED',

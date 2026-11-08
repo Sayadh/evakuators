@@ -12,7 +12,7 @@ import { DEFAULT_DISPATCH_SETTINGS, type DispatchSettings } from '../src/live-di
 import { FakeRoutingProvider } from '../src/live-dispatch/routing/providers'
 import type { RoutingProvider } from '../src/live-dispatch/routing/routing-provider'
 import { createRuntime, type LiveDispatchConfig, type LiveDispatchRuntime } from '../src/live-dispatch/runtime'
-import { insertAdminUser, insertTowTruck, type TestDatabase } from '../src/live-dispatch/test-support/test-db'
+import { insertAdminUser, insertAppOnlyDriver, insertSiteDriver, type TestDatabase } from '../src/live-dispatch/test-support/test-db'
 import { isoSecondsAgo, offset, YEREVAN } from './helpers'
 
 export const TEST_CONFIG: LiveDispatchConfig = {
@@ -77,16 +77,31 @@ let seq = 1
 export async function eligibleDriver(
   h: Harness,
   point: { latitude: number; longitude: number },
-  truck: Parameters<typeof insertTowTruck>[1] = {},
-): Promise<{ towTruckId: number; sessionId: string }> {
-  const towTruckId = await insertTowTruck(h.db.pool, truck)
-  const { session } = await h.rt.fleet.createSession({ towTruckId, deviceId: `dev-${towTruckId}`, platform: 'android', appVersion: '1.0.0' })
-  await h.rt.fleet.recordTrackingConsent(towTruckId, 1)
-  await h.rt.fleet.setAvailability(towTruckId, session.id, { wantsOnline: true })
-  await h.rt.fleet.heartbeat(towTruckId, session.id)
-  await h.rt.fleet.registerPushToken(session.id, towTruckId, `token-${towTruckId}-`.padEnd(40, 'x'))
-  await h.rt.fleet.ingestLocations(towTruckId, session.id, [{ seq: seq++, ...point, accuracyM: 10, measuredAt: isoSecondsAgo(1) }], await h.rt.settings.get())
-  return { towTruckId, sessionId: session.id }
+  truck: Parameters<typeof insertSiteDriver>[1] = {},
+): Promise<{ driverId: number; towTruckId: number; sessionId: string }> {
+  const { driverId, towTruckId } = await insertSiteDriver(h.db.pool, truck)
+  const { session } = await h.rt.fleet.createSession({ driverId, deviceId: `dev-${driverId}`, platform: 'android', appVersion: '1.0.0' })
+  await h.rt.fleet.recordTrackingConsent(driverId, 1)
+  await h.rt.fleet.setAvailability(driverId, session.id, { wantsOnline: true })
+  await h.rt.fleet.heartbeat(driverId, session.id)
+  await h.rt.fleet.registerPushToken(session.id, driverId, `token-${driverId}-`.padEnd(40, 'x'))
+  await h.rt.fleet.ingestLocations(driverId, session.id, [{ seq: seq++, ...point, accuracyM: 10, measuredAt: isoSecondsAgo(1) }], await h.rt.settings.get())
+  return { driverId, towTruckId, sessionId: session.id }
+}
+
+/** Same as eligibleDriver for an APP-ONLY driver (no website card) */
+export async function eligibleAppOnlyDriver(
+  h: Harness,
+  point: { latitude: number; longitude: number },
+  truck: Parameters<typeof insertAppOnlyDriver>[1] = {},
+): Promise<{ driverId: number; sessionId: string }> {
+  const driverId = await insertAppOnlyDriver(h.db.pool, truck)
+  const { session } = await h.rt.fleet.createSession({ driverId, deviceId: `dev-app-${driverId}`, platform: 'ios', appVersion: '1.0.0' })
+  await h.rt.fleet.recordTrackingConsent(driverId, 1)
+  await h.rt.fleet.setAvailability(driverId, session.id, { wantsOnline: true })
+  await h.rt.fleet.heartbeat(driverId, session.id)
+  await h.rt.fleet.ingestLocations(driverId, session.id, [{ seq: seq++, ...point, accuracyM: 10, measuredAt: isoSecondsAgo(1) }], await h.rt.settings.get())
+  return { driverId, sessionId: session.id }
 }
 
 export const ORDER_BODY = {
@@ -123,8 +138,8 @@ export async function drain(h: Harness, rounds = 20): Promise<void> {
 }
 
 export async function pendingOffer(h: Harness, orderId: number) {
-  const rows = await h.db.pool.query<{ id: string; towTruckId: number }>(
-    `SELECT "id"::text AS "id", "towTruckId" FROM "OrderOffer" WHERE "orderId" = $1::int AND "status" = 'PENDING'`,
+  const rows = await h.db.pool.query<{ id: string; driverId: number }>(
+    `SELECT "id"::text AS "id", "driverId" FROM "OrderOffer" WHERE "orderId" = $1::int AND "status" = 'PENDING'`,
     [orderId],
   )
   return rows[0] ?? null

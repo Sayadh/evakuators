@@ -49,9 +49,9 @@ const now = ref(Date.now())
 
 const order = computed(() => detail.value?.order ?? null)
 const pendingOffer = computed(() => detail.value?.offers.find((o) => o.status === 'PENDING') ?? null)
-const assignedDriver = computed(() => drivers.value.find((d) => d.towTruckId === order.value?.assignedTowTruckId) ?? null)
+const assignedDriver = computed(() => drivers.value.find((d) => d.driverId === order.value?.assignedDriverId) ?? null)
 const searchFailed = computed(() => !!order.value?.attentionKind && SEARCH_FAILURE_KINDS.includes(order.value.attentionKind))
-const driverAttached = computed(() => order.value?.assignedTowTruckId != null)
+const driverAttached = computed(() => order.value?.assignedDriverId != null)
 
 async function load() {
   try {
@@ -127,11 +127,11 @@ const override = () =>
 
 const manualDriver = ref<number | null>(null)
 const manualOverride = ref('')
-const manualCandidate = computed(() => drivers.value.find((d) => d.towTruckId === manualDriver.value) ?? null)
+const manualCandidate = computed(() => drivers.value.find((d) => d.driverId === manualDriver.value) ?? null)
 const manualOffer = () =>
   run(
     'manual-offer',
-    (k, v) => opsDispatchRepository.manualOffer(orderId, { towTruckId: manualDriver.value!, overrideReason: manualOverride.value || null, expectedVersion: v }, k),
+    (k, v) => opsDispatchRepository.manualOffer(orderId, { driverId: manualDriver.value!, overrideReason: manualOverride.value || null, expectedVersion: v }, k),
     'Առաջարկն ուղարկվեց ընտրված վարորդին։',
   )
 
@@ -256,7 +256,7 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
           <h2>Գործողություններ</h2>
 
           <div v-if="pendingOffer" class="box">
-            Առաջարկ #{{ pendingOffer.towTruckId }} վարորդին — մնաց <strong>{{ secondsLeft(pendingOffer.expiresAt) }} վ</strong>
+            Առաջարկ #{{ pendingOffer.driverId }} վարորդին — մնաց <strong>{{ secondsLeft(pendingOffer.expiresAt) }} վ</strong>
             <span v-if="pendingOffer.etaSeconds" class="muted">· մոտ {{ formatSeconds(pendingOffer.etaSeconds) }}</span>
           </div>
 
@@ -309,7 +309,7 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
               Ձեռքով առաջարկ վարորդին
               <select v-model="manualDriver">
                 <option :value="null">— ընտրեք —</option>
-                <option v-for="d in drivers" :key="d.towTruckId" :value="d.towTruckId" :disabled="!d.manualOverridable">
+                <option v-for="d in drivers" :key="d.driverId" :value="d.driverId" :disabled="!d.manualOverridable">
                   {{ d.driverName }} — {{ availabilitySummary(d.availability).text }}
                 </option>
               </select>
@@ -346,7 +346,7 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
 
       <section class="card">
         <h2>Քարտեզ</h2>
-        <OpsDriverMap :drivers="drivers" :gps-max-age-seconds="gpsMaxAgeSeconds" :pickup="order.pickup" :selected-id="order.assignedTowTruckId" />
+        <OpsDriverMap :drivers="drivers" :gps-max-age-seconds="gpsMaxAgeSeconds" :pickup="order.pickup" :selected-id="order.assignedDriverId" />
       </section>
 
       <div class="order__grid">
@@ -356,7 +356,7 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
             <thead><tr><th>Վարորդ</th><th>Վիճակ</th><th>ETA</th><th>Ստեղծվել</th><th>Պատասխան</th></tr></thead>
             <tbody>
               <tr v-for="offer in detail.offers" :key="offer.id">
-                <td>#{{ offer.towTruckId }}<span v-if="offer.manual" class="muted"> (ձեռքով)</span></td>
+                <td>#{{ offer.driverId }}<span v-if="offer.manual" class="muted"> (ձեռքով)</span></td>
                 <td>{{ OFFER_STATUS_LABEL[offer.status] }}<span v-if="offer.closeReason" class="muted"> · {{ offer.closeReason }}</span></td>
                 <td>{{ offer.etaSeconds ? formatSeconds(offer.etaSeconds) : 'ճանապարհ չի հաշվարկվել' }}</td>
                 <td>{{ when(offer.createdAt) }}</td>
@@ -370,7 +370,7 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
           <table v-if="detail.candidates.length" class="table">
             <thead><tr><th>#</th><th>Վարորդ</th><th>Ճանապարհով</th><th>Ուղիղ գծով</th><th>Վիճակ</th></tr></thead>
             <tbody>
-              <tr v-for="c in detail.candidates" :key="c.towTruckId">
+              <tr v-for="c in detail.candidates" :key="c.driverId">
                 <td>{{ c.rank >= 0 ? c.rank % 1000 + 1 : '—' }}</td>
                 <td>{{ c.driverName }}</td>
                 <td>{{ c.routeOk ? `${formatMeters(c.roadMeters)}, ${formatSeconds(c.etaSeconds)}` : `չհաշվարկվեց (${c.routeError ?? '—'})` }}</td>

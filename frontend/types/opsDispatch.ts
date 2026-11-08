@@ -55,7 +55,7 @@ export interface OpsOrder {
   }
   price: { mode: PricingMode; currency: 'AMD'; quotedAmd: number | null; agreedAmd: number | null; confirmed: boolean; confirmedAt: string | null }
   payment: { status: PaymentStatus; updatedAt: string | null }
-  assignedTowTruckId: number | null
+  assignedDriverId: number | null
   pickupToDestination: { meters: number | null; seconds: number | null; computedAt: string | null; provider: string | null; manual: boolean } | null
   cancel: { reason: CancelReason; comment: string | null } | null
   internalNote: string | null
@@ -64,7 +64,7 @@ export interface OpsOrder {
 
 export interface OpsOffer {
   id: string
-  towTruckId: number
+  driverId: number
   status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED' | 'REVOKED'
   manual: boolean
   termsVersion: number
@@ -77,7 +77,7 @@ export interface OpsOffer {
 }
 
 export interface OpsCandidate {
-  towTruckId: number
+  driverId: number
   driverName: string
   rank: number
   straightLineMeters: number
@@ -119,7 +119,12 @@ export interface OpsAvailability {
 }
 
 export interface OpsMapDriver {
-  towTruckId: number
+  /** FleetDriver.id — the app driver, NOT the website TowTruck id */
+  driverId: number
+  kind: FleetDriverKind
+  /** Website profile, only for SITE_LINKED */
+  towTruckId: number | null
+  slug: string | null
   driverName: string
   phone: string
   vehicleType: string
@@ -141,4 +146,45 @@ export interface OpsApiError {
   code: string
   message: string
   details?: Record<string, unknown>
+}
+
+/**
+ * App drivers (`/ops/dispatch/fleet`, ADMIN only). Mirrors `FleetDriverView`
+ * in backend/src/live-dispatch/fleet/fleet-access.ts.
+ *
+ * SITE_LINKED — on the website; an admin granted app access; signs in with the
+ * website password. APP_ONLY — registered in the app, never on the website.
+ */
+export type FleetDriverKind = 'SITE_LINKED' | 'APP_ONLY'
+export type FleetDriverStatus = 'PENDING_REVIEW' | 'ACTIVE' | 'SUSPENDED' | 'REJECTED'
+
+export interface FleetDriver {
+  id: number
+  kind: FleetDriverKind
+  status: FleetDriverStatus
+  towTruckId: number | null
+  slug: string | null
+  driverName: string
+  phone: string
+  vehicleType: string
+  capacityTons: number | null
+  maxLoadTons: number | null
+  manipulator: boolean
+  wheelSkates: boolean
+  vehicleDescription: string | null
+  isActive: boolean
+  statusReason: string | null
+  statusChangedAt: string
+  createdAt: string
+}
+
+export interface FleetSiteCandidate {
+  towTruckId: number
+  driverName: string
+  phone: string
+  slug: string
+  isActive: boolean
+  vehicleType: string
+  driverId: number | null
+  accessStatus: FleetDriverStatus | null
 }

@@ -16,7 +16,7 @@ import type { OrderRequirements } from '../orders/domain/requirements'
 import { availabilityPredicate, capabilityPredicate, ELIGIBLE_FROM } from './eligibility-sql'
 
 export interface FoundCandidate {
-  towTruckId: number
+  driverId: number
   straightLineMeters: number
   latitude: number
   longitude: number
@@ -39,7 +39,7 @@ export interface CandidateFinder {
 
 function mapFound(row: Record<string, unknown>): FoundCandidate {
   return {
-    towTruckId: toNumber(row.towTruckId),
+    driverId: toNumber(row.driverId),
     straightLineMeters: Math.round(toNumber(row.straightLineMeters)),
     latitude: toNumber(row.latitude),
     longitude: toNumber(row.longitude),
@@ -50,7 +50,7 @@ function mapFound(row: Record<string, unknown>): FoundCandidate {
 
 function exclusion(p: Params, attemptId: number | null): string {
   if (attemptId === null) return 'true'
-  return `NOT EXISTS (SELECT 1 FROM "DispatchCandidate" c WHERE c."attemptId" = ${p.add(attemptId)}::int AND c."towTruckId" = t."id")`
+  return `NOT EXISTS (SELECT 1 FROM "DispatchCandidate" c WHERE c."attemptId" = ${p.add(attemptId)}::int AND c."driverId" = t."id")`
 }
 
 export class PostgisCandidateFinder implements CandidateFinder {
@@ -63,7 +63,7 @@ export class PostgisCandidateFinder implements CandidateFinder {
       `WITH origin AS (
          SELECT ST_SetSRID(ST_MakePoint(${lng}::double precision, ${lat}::double precision), 4326)::geography AS point
        )
-       SELECT t."id" AS "towTruckId", ST_Distance(lc."location", o.point) AS "straightLineMeters",
+       SELECT t."id" AS "driverId", ST_Distance(lc."location", o.point) AS "straightLineMeters",
               lc."latitude", lc."longitude", p."availableSince", lc."measuredAt"
          FROM ${ELIGIBLE_FROM}, origin o
         WHERE ST_DWithin(lc."location", o.point, ${p.add(query.radiusMeters)}::double precision)
@@ -97,7 +97,7 @@ export class PlainSqlCandidateFinder implements CandidateFinder {
         * power(sin(radians(lc."longitude"::float8 - ${lng}::float8) / 2), 2)))))`
     const rows = await db.query<Record<string, unknown>>(
       `SELECT * FROM (
-         SELECT t."id" AS "towTruckId", ${distance} AS "straightLineMeters",
+         SELECT t."id" AS "driverId", ${distance} AS "straightLineMeters",
                 lc."latitude", lc."longitude", p."availableSince", lc."measuredAt"
            FROM ${ELIGIBLE_FROM}
           WHERE ${availabilityPredicate(p, settings)}
@@ -105,7 +105,7 @@ export class PlainSqlCandidateFinder implements CandidateFinder {
             AND ${exclusion(p, query.excludeAttemptId)}
        ) d
        WHERE d."straightLineMeters" <= ${p.add(query.radiusMeters)}::float8
-       ORDER BY d."straightLineMeters", d."towTruckId"
+       ORDER BY d."straightLineMeters", d."driverId"
        LIMIT ${p.add(query.limit)}::int`,
       p.values,
     )

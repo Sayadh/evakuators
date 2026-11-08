@@ -5,7 +5,7 @@
 | Ֆայլ | Ինչ է անում |
 | --- | --- |
 | `20261108090000_add_dispatcher_role` | `UserRole` + `DISPATCHER` |
-| `20261108090100_live_dispatch_core` | 16 աղյուսակ, 6 enum, sequence (ստորև) |
+| `20261108090100_live_dispatch_core` | `FleetDriver` + `FleetDriverEvent` + `FleetDriverProfile` view, 16 dispatch աղյուսակ, 8 enum, sequence (ստորև) |
 | `20261108090200_live_dispatch_postgis` | `DriverLocationCurrent.location` և `DispatchOrder.pickupLocation` — `GENERATED ALWAYS … STORED` geography + GiST |
 
 Բոլոր նոր ժամերը `TIMESTAMPTZ(3)` են (UTC)։ Գործող աղյուսակների `TIMESTAMP(3)`-ի
@@ -17,15 +17,18 @@
 
 | Աղյուսակ | Դեր | Կարևոր constraint-ներ |
 | --- | --- | --- |
+| `FleetDriver` | **Հավելվածի վարորդ** (`SITE_LINKED` → `TowTruck`, կամ `APP_ONLY`)։ Բոլոր dispatch աղյուսակների `driverId`-ն սա է, ոչ թե `TowTruck.id`-ն — տե՛ս [11-driver-access.md](11-driver-access.md) | `shape_check` (երկու տեսակի դաշտերը չեն խառնվում), `towTruckId` unique, `phone` partial unique |
+| `FleetDriverEvent` | Հասանելիության որոշումների պատմություն | append-only |
+| `FleetDriverProfile` (view) | Dispatch-ի կարդացած **մեկ ձևը** երկու տեսակի համար, `isActive`-ով | — |
 | `DriverDeviceSession` | Հավելվածի մուտք, revoke-ելի | `one_active_per_driver` (partial unique, `revokedAt IS NULL`) |
 | `PushDeviceToken` | FCM token ↔ session | `token_active` (partial unique) |
-| `DriverPresence` | Վարորդի ընտրություն, heartbeat, արտաքին զբաղվածություն, ադմինի կասեցում, consent, `availableSince` | PK = `towTruckId` |
-| `DriverLocationCurrent` | Վերջին **վստահելի** fix | PK = `towTruckId`; monotonic UPSERT (session → seq → measuredAt) |
+| `DriverPresence` | Վարորդի ընտրություն, heartbeat, արտաքին զբաղվածություն, ադմինի կասեցում, consent, `availableSince` | PK = `driverId` |
+| `DriverLocationCurrent` | Վերջին **վստահելի** fix | PK = `driverId`; monotonic UPSERT (session → seq → measuredAt) |
 | `DriverLocationHistory` | Սահմանափակ պատմություն (`late`, `suspicious`) | `(sessionId, seq)` unique → կրկնվող առաքումը կլանվում է; retention cleanup |
 | `DispatchOrder` | Պատվեր | `attention_check` (NEEDS_ATTENTION ⇔ attentionKind), գնի ≥ 0, AMD-only, destination զույգ |
 | `DispatchAttempt` | Մեկ որոնման փորձ՝ բացարձակ `alertAt`/`deadlineAt` | `one_open_per_order` |
-| `DispatchCandidate` | Փորձի դասավորված ցուցակ + road figures + ինչ եղավ յուրաքանչյուրի հետ | `(attemptId, towTruckId)` unique — նույն վարորդը նույն փորձում երկու անգամ չի դիտարկվում |
-| `OrderOffer` | Առաջարկ = **reservation** | `one_pending_per_driver`, `one_pending_per_order`, `(attemptId, towTruckId, termsVersion)` unique, `expiresAt > createdAt` |
+| `DispatchCandidate` | Փորձի դասավորված ցուցակ + road figures + ինչ եղավ յուրաքանչյուրի հետ | `(attemptId, driverId)` unique — նույն վարորդը նույն փորձում երկու անգամ չի դիտարկվում |
+| `OrderOffer` | Առաջարկ = **reservation** | `one_pending_per_driver`, `one_pending_per_order`, `(attemptId, driverId, termsVersion)` unique, `expiresAt > createdAt` |
 | `OrderAssignment` | Նշանակում (պատմությամբ) | `one_active_per_order`, `one_active_per_driver` (partial unique, `endedAt IS NULL`), `offerId` unique |
 | `OrderEvent` | Audit trail (append-only) | ամեն փոփոխության հետ նույն transaction-ում |
 | `OrderAlert` | Ազդանշաններ, որոնք վիճակ չեն փոխում | `dedupeKey` unique |

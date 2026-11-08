@@ -59,12 +59,12 @@ export class LiveDispatchService {
    * every WebSocket (re)connect and when opened from a push. The app never
    * assumes it saw every event.
    */
-  async driverSnapshot(towTruckId: number) {
+  async driverSnapshot(driverId: number) {
     const settings = await this.rt.settings.get()
-    const state = await this.rt.fleet.driverState(towTruckId)
+    const state = await this.rt.fleet.driverState(driverId)
     if (!state) throw new DispatchError('FORBIDDEN')
     const availability = availabilityOf(state, settings)
-    const offer = await this.rt.offers.currentOfferFor(towTruckId)
+    const offer = await this.rt.offers.currentOfferFor(driverId)
     let currentOffer: Record<string, unknown> | null = null
     if (offer && offer.beforeDeadline) {
       const order = await readOrder(this.rt.db, offer.orderId)
@@ -86,9 +86,10 @@ export class LiveDispatchService {
         }
       }
     }
-    const active = await this.rt.orders.activeOrderFor(towTruckId)
+    const active = await this.rt.orders.activeOrderFor(driverId)
     return {
       serverTime: state.now.toISOString(),
+      driver: { name: state.driverName, kind: state.kind },
       availability,
       switches: { wantsOnline: state.wantsOnline, externalBusy: state.externalBusy },
       trackingConsentVersion: state.trackingConsentVersion,
@@ -98,49 +99,49 @@ export class LiveDispatchService {
     }
   }
 
-  async ingestLocations(towTruckId: number, sessionId: string, fixes: IncomingFix[]) {
+  async ingestLocations(driverId: number, sessionId: string, fixes: IncomingFix[]) {
     if (!this.rt.config.trackingEnabled) throw new DispatchError('FEATURE_DISABLED')
-    return this.rt.fleet.ingestLocations(towTruckId, sessionId, fixes, await this.rt.settings.get())
+    return this.rt.fleet.ingestLocations(driverId, sessionId, fixes, await this.rt.settings.get())
   }
 
-  async driverAccept(towTruckId: number, offerId: string, ctx: MutationContext) {
-    return this.mutate(`driver:${towTruckId}:offer`, ctx, (tx) =>
+  async driverAccept(driverId: number, offerId: string, ctx: MutationContext) {
+    return this.mutate(`driver:${driverId}:offer`, ctx, (tx) =>
       asResponse(tx, async () => {
-        const result = await this.rt.offers.accept(offerId, towTruckId, tx)
+        const result = await this.rt.offers.accept(offerId, driverId, tx)
         if (!result.ok) return result
         return { orderId: result.orderId, status: result.status }
       }),
     )
   }
 
-  async driverReject(towTruckId: number, offerId: string, reason: string | null, ctx: MutationContext) {
-    return this.mutate(`driver:${towTruckId}:offer`, ctx, (tx) =>
+  async driverReject(driverId: number, offerId: string, reason: string | null, ctx: MutationContext) {
+    return this.mutate(`driver:${driverId}:offer`, ctx, (tx) =>
       asResponse(tx, async () => {
-        const result = await this.rt.offers.reject(offerId, towTruckId, reason, tx)
+        const result = await this.rt.offers.reject(offerId, driverId, reason, tx)
         if (!result.ok) return result
         return { offerId, status: 'REJECTED' }
       }),
     )
   }
 
-  async driverProgress(towTruckId: number, orderId: number, action: 'EN_ROUTE' | 'ARRIVED' | 'START_TRANSPORT' | 'COMPLETE', ctx: MutationContext) {
-    return this.mutate(`driver:${towTruckId}:order`, ctx, (tx) =>
+  async driverProgress(driverId: number, orderId: number, action: 'EN_ROUTE' | 'ARRIVED' | 'START_TRANSPORT' | 'COMPLETE', ctx: MutationContext) {
+    return this.mutate(`driver:${driverId}:order`, ctx, (tx) =>
       asResponse(tx, async () => {
-        const order = await this.rt.orders.progress(tx, orderId, action, { type: 'DRIVER', id: towTruckId })
+        const order = await this.rt.orders.progress(tx, orderId, action, { type: 'DRIVER', id: driverId })
         return driverActiveOrderView(order)
       }),
     )
   }
 
-  async driverRequest(towTruckId: number, orderId: number, body: unknown, ctx: MutationContext) {
+  async driverRequest(driverId: number, orderId: number, body: unknown, ctx: MutationContext) {
     const input = parse(driverRequestSchema, body)
-    return this.mutate(`driver:${towTruckId}:order`, ctx, (tx) =>
-      asResponse(tx, async () => driverActiveOrderView(await this.rt.orders.driverRequest(tx, orderId, towTruckId, input)), 201),
+    return this.mutate(`driver:${driverId}:order`, ctx, (tx) =>
+      asResponse(tx, async () => driverActiveOrderView(await this.rt.orders.driverRequest(tx, orderId, driverId, input)), 201),
     )
   }
 
-  async driverHistory(towTruckId: number, limit: number, before: Date | null) {
-    const rows = await this.rt.orders.historyFor(towTruckId, limit, before)
+  async driverHistory(driverId: number, limit: number, before: Date | null) {
+    const rows = await this.rt.orders.historyFor(driverId, limit, before)
     // History shows the job, not the customer: contact data is for the live order only.
     return rows.map((order) => ({
       id: order.id,
@@ -243,13 +244,13 @@ export class LiveDispatchService {
    * Manual offer. The road ETA is computed BEFORE the transaction (best
    * effort — on provider failure the offer goes out without one, and says so).
    */
-  async manualOffer(adminUserId: number, orderId: number, body: { towTruckId: number; overrideReason?: string | null; expectedVersion: number }, ctx: MutationContext) {
+  async manualOffer(adminUserId: number, orderId: number, body: { driverId: number; overrideReason?: string | null; expectedVersion: number }, ctx: MutationContext) {
     if (!this.rt.config.enabled) throw new DispatchError('FEATURE_DISABLED')
-    if (!Number.isSafeInteger(body?.towTruckId)) throw new DispatchError('VALIDATION_FAILED', { field: 'towTruckId' })
+    if (!Number.isSafeInteger(body?.driverId)) throw new DispatchError('VALIDATION_FAILED', { field: 'driverId' })
     const settings = await this.rt.settings.get()
     const order = await readOrder(this.rt.db, orderId)
     if (!order) throw new DispatchError('ORDER_NOT_FOUND')
-    const state = await this.rt.fleet.driverState(body.towTruckId)
+    const state = await this.rt.fleet.driverState(body.driverId)
     let route: { meters: number; seconds: number; computedAt: Date } | null = null
     if (state?.latitude != null && state.longitude != null) {
       const matrix = await this.rt.routing.matrix([{ latitude: state.latitude, longitude: state.longitude }], {
@@ -265,7 +266,7 @@ export class LiveDispatchService {
         async () =>
           this.rt.offers.manualOffer(
             tx,
-            { orderId, towTruckId: body.towTruckId, adminUserId, overrideReason: body.overrideReason ?? null, expectedVersion: body.expectedVersion, route },
+            { orderId, driverId: body.driverId, adminUserId, overrideReason: body.overrideReason ?? null, expectedVersion: body.expectedVersion, route },
             settings,
           ),
         201,
@@ -315,9 +316,9 @@ export class LiveDispatchService {
       this.rt.offers.offersOfOrder(orderId),
       this.rt.orders.timeline(orderId),
       this.rt.db.query<Record<string, unknown>>(
-        `SELECT c."towTruckId", c."batch", c."rank", c."straightLineMeters", c."roadMeters", c."etaSeconds", c."routeOk",
+        `SELECT c."driverId", c."batch", c."rank", c."straightLineMeters", c."roadMeters", c."etaSeconds", c."routeOk",
                 c."routeError", c."routedAt", c."status", c."skipReason", t."driverName"
-           FROM "DispatchCandidate" c JOIN "DispatchAttempt" a ON a."id" = c."attemptId" JOIN "TowTruck" t ON t."id" = c."towTruckId"
+           FROM "DispatchCandidate" c JOIN "DispatchAttempt" a ON a."id" = c."attemptId" JOIN "FleetDriverProfile" t ON t."id" = c."driverId"
           WHERE a."orderId" = $1::int AND a."id" = (SELECT max("id") FROM "DispatchAttempt" WHERE "orderId" = $1::int)
           ORDER BY c."rank"`,
         [orderId],
@@ -327,7 +328,7 @@ export class LiveDispatchService {
       order: adminOrderView(order),
       offers: offers.map((o) => ({
         id: o.id,
-        towTruckId: o.towTruckId,
+        driverId: o.driverId,
         status: o.status,
         manual: o.manual,
         termsVersion: o.termsVersion,
@@ -339,7 +340,7 @@ export class LiveDispatchService {
         closeReason: o.closeReason,
       })),
       candidates: candidates.map((c) => ({
-        towTruckId: toNumber(c.towTruckId),
+        driverId: toNumber(c.driverId),
         driverName: String(c.driverName),
         rank: toNumber(c.rank),
         straightLineMeters: toNumber(c.straightLineMeters),
@@ -391,7 +392,10 @@ export class LiveDispatchService {
       items: rows.map((row) => {
         const availability = availabilityOf(row, settings)
         return {
+          driverId: row.driverId,
+          kind: row.kind,
           towTruckId: row.towTruckId,
+          slug: row.slug,
           driverName: row.driverName,
           phone: row.phone,
           vehicleType: row.vehicleType,

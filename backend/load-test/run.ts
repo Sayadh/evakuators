@@ -26,7 +26,7 @@ import { NearbyLiveService, PlainSqlLiveQuery } from '../src/live-dispatch/publi
 import { FakeRoutingProvider } from '../src/live-dispatch/routing/providers'
 import { GuardedRouting } from '../src/live-dispatch/routing/routing-provider'
 import { createRuntime, type LiveDispatchRuntime } from '../src/live-dispatch/runtime'
-import { createTestDatabase, insertAdminUser, insertTowTruck, type TestDatabase } from '../src/live-dispatch/test-support/test-db'
+import { createTestDatabase, insertAdminUser, insertSiteDriver, type TestDatabase } from '../src/live-dispatch/test-support/test-db'
 import { TEST_CONFIG } from '../test-live/support'
 
 const REGISTERED = Number(process.env.LOAD_REGISTERED ?? 400)
@@ -90,21 +90,21 @@ function jitterPoint(i: number) {
 }
 
 async function setupDrivers(db: TestDatabase, rt: LiveDispatchRuntime) {
-  const drivers: { towTruckId: number; sessionId: string; seq: number; point: { latitude: number; longitude: number }; online: boolean }[] = []
+  const drivers: { driverId: number; sessionId: string; seq: number; point: { latitude: number; longitude: number }; online: boolean }[] = []
   const settings = await rt.settings.get()
   for (let i = 0; i < REGISTERED; i++) {
-    const towTruckId = await insertTowTruck(db.pool, { wheelSkates: i % 3 === 0 })
+    const { driverId } = await insertSiteDriver(db.pool, { wheelSkates: i % 3 === 0 })
     const online = i < REGISTERED * ONLINE_FRACTION
-    const { session } = await rt.fleet.createSession({ towTruckId, deviceId: `load-${i}-device`, platform: i % 2 ? 'ios' : 'android', appVersion: 'load' })
-    await rt.fleet.recordTrackingConsent(towTruckId, 1)
+    const { session } = await rt.fleet.createSession({ driverId, deviceId: `load-${i}-device`, platform: i % 2 ? 'ios' : 'android', appVersion: 'load' })
+    await rt.fleet.recordTrackingConsent(driverId, 1)
     if (online) {
-      await rt.fleet.setAvailability(towTruckId, session.id, { wantsOnline: true })
-      await rt.fleet.heartbeat(towTruckId, session.id)
+      await rt.fleet.setAvailability(driverId, session.id, { wantsOnline: true })
+      await rt.fleet.heartbeat(driverId, session.id)
     }
-    await rt.fleet.registerPushToken(session.id, towTruckId, `load-token-${towTruckId}`.padEnd(40, 'x'))
+    await rt.fleet.registerPushToken(session.id, driverId, `load-token-${driverId}`.padEnd(40, 'x'))
     const point = jitterPoint(i)
-    await rt.fleet.ingestLocations(towTruckId, session.id, [{ seq: 1, ...point, accuracyM: 12, measuredAt: new Date().toISOString() }], settings)
-    drivers.push({ towTruckId, sessionId: session.id, seq: 1, point, online })
+    await rt.fleet.ingestLocations(driverId, session.id, [{ seq: 1, ...point, accuracyM: 12, measuredAt: new Date().toISOString() }], settings)
+    drivers.push({ driverId, sessionId: session.id, seq: 1, point, online })
   }
   return drivers
 }
@@ -163,11 +163,11 @@ async function main() {
           driver.seq++
           driver.point = { latitude: driver.point.latitude + (Math.random() - 0.5) * 0.002, longitude: driver.point.longitude + (Math.random() - 0.5) * 0.002 }
           await timed(location, () =>
-            rt.fleet.ingestLocations(driver.towTruckId, driver.sessionId, [{ seq: driver.seq, ...driver.point, accuracyM: 10, measuredAt: new Date().toISOString() }], settings),
+            rt.fleet.ingestLocations(driver.driverId, driver.sessionId, [{ seq: driver.seq, ...driver.point, accuracyM: 10, measuredAt: new Date().toISOString() }], settings),
           )
           if (Date.now() - lastHeartbeat > 45_000) {
             lastHeartbeat = Date.now()
-            await timed(heartbeat, () => rt.fleet.heartbeat(driver.towTruckId, driver.sessionId))
+            await timed(heartbeat, () => rt.fleet.heartbeat(driver.driverId, driver.sessionId))
           }
           await new Promise((r) => setTimeout(r, 20_000 + Math.random() * 20_000))
         }
@@ -223,16 +223,16 @@ async function main() {
   loops.push(
     (async () => {
       while (running && Date.now() < until) {
-        const pending = await db.pool.query<{ id: string; towTruckId: number }>(`SELECT "id"::text, "towTruckId" FROM "OrderOffer" WHERE "status" = 'PENDING'`)
+        const pending = await db.pool.query<{ id: string; driverId: number }>(`SELECT "id"::text, "driverId" FROM "OrderOffer" WHERE "status" = 'PENDING'`)
         for (const offer of pending) {
           const roll = Math.random()
           if (roll < 0.7) {
             await timed(accept, async () => {
-              const r = await service.driverAccept(offer.towTruckId, offer.id, { idempotencyKey: `load-accept-${offer.id}`, method: 'POST', route: '/load', body: {} })
+              const r = await service.driverAccept(offer.driverId, offer.id, { idempotencyKey: `load-accept-${offer.id}`, method: 'POST', route: '/load', body: {} })
               if (r.status !== 200) throw Object.assign(new Error('refused'), { code: (r.body as { code: string }).code })
             })
           } else if (roll < 0.9) {
-            await service.driverReject(offer.towTruckId, offer.id, null, { idempotencyKey: `load-reject-${offer.id}`, method: 'POST', route: '/load', body: {} })
+            await service.driverReject(offer.driverId, offer.id, null, { idempotencyKey: `load-reject-${offer.id}`, method: 'POST', route: '/load', body: {} })
           }
         }
         await new Promise((r) => setTimeout(r, 1500))
@@ -258,7 +258,7 @@ async function main() {
     (async () => {
       while (running && Date.now() < until) {
         const d = drivers[Math.floor(Math.random() * drivers.length)]
-        await timed(snapshot, () => service.driverSnapshot(d.towTruckId))
+        await timed(snapshot, () => service.driverSnapshot(d.driverId))
         await new Promise((r) => setTimeout(r, 100))
       }
     })(),
@@ -269,8 +269,8 @@ async function main() {
   setTimeout(async () => {
     const t = performance.now()
     await Promise.all(drivers.filter((d) => d.online).map((d) => timed(burst, async () => {
-      await rt.fleet.heartbeat(d.towTruckId, d.sessionId)
-      await service.driverSnapshot(d.towTruckId)
+      await rt.fleet.heartbeat(d.driverId, d.sessionId)
+      await service.driverSnapshot(d.driverId)
     })))
     console.log(`reconnect burst: ${burst.ok} drivers in ${(performance.now() - t).toFixed(0)} ms`)
   }, (DURATION_S * 1000) / 2)
@@ -292,7 +292,7 @@ async function main() {
     `SELECT count(*)::int AS "doubleOrder" FROM (SELECT "orderId" FROM "OrderAssignment" WHERE "endedAt" IS NULL GROUP BY "orderId" HAVING count(*) > 1) x`,
   )
   const [{ doubleDriver }] = await db.pool.query<{ doubleDriver: number }>(
-    `SELECT count(*)::int AS "doubleDriver" FROM (SELECT "towTruckId" FROM "OrderAssignment" WHERE "endedAt" IS NULL GROUP BY "towTruckId" HAVING count(*) > 1) x`,
+    `SELECT count(*)::int AS "doubleDriver" FROM (SELECT "driverId" FROM "OrderAssignment" WHERE "endedAt" IS NULL GROUP BY "driverId" HAVING count(*) > 1) x`,
   )
   const [{ overdue }] = await db.pool.query<{ overdue: number }>(
     `SELECT count(*)::int AS overdue FROM "OrderOffer" WHERE "status" = 'PENDING' AND "expiresAt" < now() - interval '10 seconds'`,

@@ -42,21 +42,21 @@ function checkVersion(order: OrderRow, expectedVersion: number | undefined): voi
 
 async function endActiveAssignment(tx: Sql, order: OrderRow, reason: string, adminUserId: number | null): Promise<number | null> {
   if (order.activeAssignmentId === null) return null
-  const rows = await tx.query<{ towTruckId: number }>(
+  const rows = await tx.query<{ driverId: number }>(
     `UPDATE "OrderAssignment" SET "endedAt" = now(), "endReason" = $2, "endedByUserId" = $3::int
-      WHERE "id" = $1::int AND "endedAt" IS NULL RETURNING "towTruckId"`,
+      WHERE "id" = $1::int AND "endedAt" IS NULL RETURNING "driverId"`,
     [order.activeAssignmentId, reason, adminUserId],
   )
-  const towTruckId = rows[0] ? toNumber(rows[0].towTruckId) : null
-  if (towTruckId !== null) {
+  const driverId = rows[0] ? toNumber(rows[0].driverId) : null
+  if (driverId !== null) {
     // The driver is free again: they re-enter the fair queue from now.
     await tx.query(
       `UPDATE "DriverPresence" SET "availableSince" = CASE WHEN "wantsOnline" AND NOT "externalBusy" THEN now() ELSE NULL END,
-              "updatedAt" = now() WHERE "towTruckId" = $1::int`,
-      [towTruckId],
+              "updatedAt" = now() WHERE "driverId" = $1::int`,
+      [driverId],
     )
   }
-  return towTruckId
+  return driverId
 }
 
 async function resolveOpenRequest(tx: Sql, orderId: number, adminUserId: number | null, resolution: string): Promise<void> {
@@ -67,11 +67,11 @@ async function resolveOpenRequest(tx: Sql, orderId: number, adminUserId: number 
   )
 }
 
-async function pushToDriver(tx: Sql, order: OrderRow, towTruckId: number, kind: string): Promise<void> {
+async function pushToDriver(tx: Sql, order: OrderRow, driverId: number, kind: string): Promise<void> {
   const [{ version }] = await tx.query<{ version: number }>(`SELECT "version" FROM "DispatchOrder" WHERE "id" = $1::int`, [order.id])
   await enqueue(tx, {
     topic: 'push.order',
-    payload: { orderId: order.id, towTruckId, kind },
+    payload: { orderId: order.id, driverId, kind },
     dedupeKey: `push-order:${order.id}:v${version}:${kind}`,
   })
 }
@@ -170,8 +170,8 @@ export class OrdersRepository {
       if (revoked) {
         // Give the same driver a chance at the new terms.
         await tx.query(
-          `UPDATE "DispatchCandidate" SET "status" = 'QUEUED' WHERE "attemptId" = $1::int AND "towTruckId" = $2::int`,
-          [revoked.attemptId, revoked.towTruckId],
+          `UPDATE "DispatchCandidate" SET "status" = 'QUEUED' WHERE "attemptId" = $1::int AND "driverId" = $2::int`,
+          [revoked.attemptId, revoked.driverId],
         )
         await tx.query(`UPDATE "DispatchAttempt" SET "offersMade" = GREATEST(0, "offersMade" - 1) WHERE "id" = $1::int`, [revoked.attemptId])
         await enqueue(tx, {
@@ -182,8 +182,8 @@ export class OrdersRepository {
       }
     }
     const updated = await lockOrder(tx, orderId)
-    if (assigned && changedMaterial.length > 0 && updated.assignedTowTruckId) {
-      await pushToDriver(tx, updated, updated.assignedTowTruckId, 'TERMS_CHANGED')
+    if (assigned && changedMaterial.length > 0 && updated.assignedDriverId) {
+      await pushToDriver(tx, updated, updated.assignedDriverId, 'TERMS_CHANGED')
     }
     await notifyOrderChanged(tx, updated, 'ORDER_EDITED')
     return updated
@@ -263,7 +263,7 @@ export class OrdersRepository {
     expectedVersion?: number,
   ): Promise<OrderRow> {
     const order = await lockOrder(tx, orderId)
-    if (actor.type === 'DRIVER' && order.assignedTowTruckId !== actor.id) {
+    if (actor.type === 'DRIVER' && order.assignedDriverId !== actor.id) {
       // Not this driver's order: indistinguishable from "does not exist".
       throw new DispatchError('ORDER_NOT_FOUND')
     }
@@ -272,13 +272,13 @@ export class OrdersRepository {
     const p = new Params()
     const sets = [`"status" = ${p.add(planned.to)}::"DispatchOrderStatus"`, `"${PROGRESS_COLUMN[action]}" = now()`]
     if (action === 'COMPLETE') sets.push('"activeAssignmentId" = NULL')
-    const towTruckId = order.assignedTowTruckId
+    const driverId = order.assignedDriverId
     if (action === 'COMPLETE') await endActiveAssignment(tx, order, 'COMPLETED', actor.type === 'ADMIN' ? actor.id : null)
     await bumpOrder(tx, orderId, sets, p)
     await recordEvent(tx, orderId, `PROGRESS_${action}`, actor, { from: order.status, to: planned.to })
     const updated = await lockOrder(tx, orderId)
-    await notifyOrderChanged(tx, updated, `PROGRESS_${action}`, towTruckId ? [towTruckId] : [])
-    if (actor.type === 'ADMIN' && towTruckId) await pushToDriver(tx, updated, towTruckId, `PROGRESS_${action}`)
+    await notifyOrderChanged(tx, updated, `PROGRESS_${action}`, driverId ? [driverId] : [])
+    if (actor.type === 'ADMIN' && driverId) await pushToDriver(tx, updated, driverId, `PROGRESS_${action}`)
     return updated
   }
 
@@ -305,7 +305,7 @@ export class OrdersRepository {
     )
     await recordEvent(tx, orderId, 'PRICE_CONFIRMED', { type: 'ADMIN', id: adminUserId }, { agreedPriceAmd, quotedPriceAmd: order.quotedPriceAmd })
     const updated = await lockOrder(tx, orderId)
-    if (updated.assignedTowTruckId) await pushToDriver(tx, updated, updated.assignedTowTruckId, 'PRICE_CONFIRMED')
+    if (updated.assignedDriverId) await pushToDriver(tx, updated, updated.assignedDriverId, 'PRICE_CONFIRMED')
     await notifyOrderChanged(tx, updated, 'PRICE_CONFIRMED')
     return updated
   }
@@ -337,7 +337,7 @@ export class OrdersRepository {
     const admin: ActorRef = { type: 'ADMIN', id: adminUserId }
     await revokePendingOffer(tx, orderId, 'ORDER_CANCELLED', admin)
     await tx.query(`UPDATE "DispatchAttempt" SET "endedAt" = now(), "endReason" = 'CANCELLED' WHERE "orderId" = $1::int AND "endedAt" IS NULL`, [orderId])
-    const towTruckId = await endActiveAssignment(tx, order, 'ORDER_CANCELLED', adminUserId)
+    const driverId = await endActiveAssignment(tx, order, 'ORDER_CANCELLED', adminUserId)
     await resolveOpenRequest(tx, orderId, adminUserId, 'ORDER_CANCELLED')
     const p = new Params()
     await bumpOrder(
@@ -354,10 +354,10 @@ export class OrdersRepository {
       ],
       p,
     )
-    await recordEvent(tx, orderId, 'ORDER_CANCELLED', admin, { reason: input.reason, comment: input.comment ?? null, releasedTowTruckId: towTruckId })
+    await recordEvent(tx, orderId, 'ORDER_CANCELLED', admin, { reason: input.reason, comment: input.comment ?? null, releasedDriverId: driverId })
     const updated = await lockOrder(tx, orderId)
-    if (towTruckId) await pushToDriver(tx, updated, towTruckId, 'ORDER_CANCELLED')
-    await notifyOrderChanged(tx, updated, 'ORDER_CANCELLED', towTruckId ? [towTruckId] : [])
+    if (driverId) await pushToDriver(tx, updated, driverId, 'ORDER_CANCELLED')
+    await notifyOrderChanged(tx, updated, 'ORDER_CANCELLED', driverId ? [driverId] : [])
     return updated
   }
 
@@ -369,12 +369,12 @@ export class OrdersRepository {
   async driverRequest(
     tx: Sql,
     orderId: number,
-    towTruckId: number,
+    driverId: number,
     input: { kind: 'CANCEL' | 'PROBLEM'; reason: string; comment?: string | null },
   ): Promise<OrderRow> {
     const order = await lockOrder(tx, orderId)
-    if (order.assignedTowTruckId !== towTruckId) throw new DispatchError('ORDER_NOT_FOUND')
-    const driver: ActorRef = { type: 'DRIVER', id: towTruckId }
+    if (order.assignedDriverId !== driverId) throw new DispatchError('ORDER_NOT_FOUND')
+    const driver: ActorRef = { type: 'DRIVER', id: driverId }
     // Decide BEFORE writing anything: a refused request leaves no trace.
     const planned = input.kind === 'CANCEL' ? planTransition('DRIVER_CANCEL_REQUEST', snapshotOf(order), 'DRIVER') : null
     if (order.status === 'COMPLETED' || order.status === 'CANCELLED') throw new DispatchError('INVALID_TRANSITION', { action: 'DRIVER_REQUEST', status: order.status })
@@ -382,9 +382,9 @@ export class OrdersRepository {
     if (open.length > 0) throw new DispatchError('REQUEST_ALREADY_OPEN')
 
     const [request] = await tx.query<{ id: number }>(
-      `INSERT INTO "OrderDriverRequest" ("orderId", "towTruckId", "kind", "reason", "comment")
+      `INSERT INTO "OrderDriverRequest" ("orderId", "driverId", "kind", "reason", "comment")
        VALUES ($1::int, $2::int, $3, $4::"OrderCancelReason", $5) RETURNING "id"`,
-      [orderId, towTruckId, input.kind, input.reason, input.comment ?? null],
+      [orderId, driverId, input.kind, input.reason, input.comment ?? null],
     )
     if (planned) {
       const p = new Params()
@@ -451,7 +451,7 @@ export class OrdersRepository {
     )
     await recordEvent(tx, orderId, 'ATTENTION_RESOLVED_RESUMED', { type: 'ADMIN', id: adminUserId }, { note, status: planned.to })
     const updated = await lockOrder(tx, orderId)
-    if (updated.assignedTowTruckId) await pushToDriver(tx, updated, updated.assignedTowTruckId, 'RESUMED')
+    if (updated.assignedDriverId) await pushToDriver(tx, updated, updated.assignedDriverId, 'RESUMED')
     await notifyOrderChanged(tx, updated, 'ATTENTION_RESOLVED')
     return updated
   }
@@ -475,7 +475,7 @@ export class OrdersRepository {
     const planned = planTransition('RELEASE_ASSIGNMENT', snapshotOf(order), 'ADMIN', { restartSearch: input.restartSearch })
     if (input.restartSearch) assertDispatchable(order)
     const admin: ActorRef = { type: 'ADMIN', id: adminUserId }
-    const releasedTowTruckId = await endActiveAssignment(tx, order, `RELEASED: ${input.reason}`, adminUserId)
+    const releasedDriverId = await endActiveAssignment(tx, order, `RELEASED: ${input.reason}`, adminUserId)
     await resolveOpenRequest(tx, orderId, adminUserId, 'ASSIGNMENT_RELEASED')
     const p = new Params()
     const sets = [
@@ -493,27 +493,27 @@ export class OrdersRepository {
     ]
     await bumpOrder(tx, orderId, sets, p)
     await recordEvent(tx, orderId, 'ASSIGNMENT_RELEASED', admin, {
-      releasedTowTruckId,
+      releasedDriverId,
       reason: input.reason,
       restartSearch: input.restartSearch,
     })
     if (input.restartSearch) {
       const attemptId = await createAttempt(tx, orderId, 'AUTO', adminUserId, settings)
-      if (releasedTowTruckId !== null) {
+      if (releasedDriverId !== null) {
         // The driver who just left this job is not offered it again in the
         // new search (they are free for OTHER orders immediately).
         await tx.query(
-          `INSERT INTO "DispatchCandidate" ("attemptId", "towTruckId", "batch", "rank", "straightLineMeters", "status", "skipReason")
+          `INSERT INTO "DispatchCandidate" ("attemptId", "driverId", "batch", "rank", "straightLineMeters", "status", "skipReason")
            VALUES ($1::int, $2::int, -1, -1, 0, 'SKIPPED', 'RELEASED_FROM_THIS_ORDER')`,
-          [attemptId, releasedTowTruckId],
+          [attemptId, releasedDriverId],
         )
       }
       await recordEvent(tx, orderId, 'DISPATCH_STARTED', admin, { attemptId, afterRelease: true })
       await enqueue(tx, { topic: 'dispatch.advance', payload: { orderId, attemptId }, dedupeKey: `advance:${attemptId}:start` })
     }
     const updated = await lockOrder(tx, orderId)
-    if (releasedTowTruckId) await pushToDriver(tx, updated, releasedTowTruckId, 'ASSIGNMENT_RELEASED')
-    await notifyOrderChanged(tx, updated, 'ASSIGNMENT_RELEASED', releasedTowTruckId ? [releasedTowTruckId] : [])
+    if (releasedDriverId) await pushToDriver(tx, updated, releasedDriverId, 'ASSIGNMENT_RELEASED')
+    await notifyOrderChanged(tx, updated, 'ASSIGNMENT_RELEASED', releasedDriverId ? [releasedDriverId] : [])
     return updated
   }
 
@@ -589,24 +589,24 @@ export class OrdersRepository {
     }))
   }
 
-  async activeOrderFor(towTruckId: number): Promise<OrderRow | null> {
+  async activeOrderFor(driverId: number): Promise<OrderRow | null> {
     const rows = await this.db.query<Record<string, unknown>>(
       `SELECT ${ORDER_COLUMNS} FROM "DispatchOrder" o
          JOIN "OrderAssignment" a ON a."id" = o."activeAssignmentId"
-        WHERE a."towTruckId" = $1::int AND a."endedAt" IS NULL`,
-      [towTruckId],
+        WHERE a."driverId" = $1::int AND a."endedAt" IS NULL`,
+      [driverId],
     )
     return rows[0] ? mapOrder(rows[0]) : null
   }
 
-  async historyFor(towTruckId: number, limit: number, before: Date | null): Promise<OrderRow[]> {
+  async historyFor(driverId: number, limit: number, before: Date | null): Promise<OrderRow[]> {
     const rows = await this.db.query<Record<string, unknown>>(
       `SELECT DISTINCT ON (o."id") ${ORDER_COLUMNS}, a."startedAt" AS "assignedStartedAt"
          FROM "OrderAssignment" a JOIN "DispatchOrder" o ON o."id" = a."orderId"
-        WHERE a."towTruckId" = $1::int AND ($2::timestamptz IS NULL OR a."startedAt" < $2::timestamptz)
+        WHERE a."driverId" = $1::int AND ($2::timestamptz IS NULL OR a."startedAt" < $2::timestamptz)
         ORDER BY o."id" DESC, a."startedAt" DESC
         LIMIT $3::int`,
-      [towTruckId, before, Math.min(Math.max(limit, 1), 50)],
+      [driverId, before, Math.min(Math.max(limit, 1), 50)],
     )
     return rows.map(mapOrder)
   }

@@ -20,7 +20,7 @@
 import type { RouteEntry } from '../../routing/routing-provider'
 
 export interface RankInput {
-  towTruckId: number
+  driverId: number
   straightLineMeters: number
   route: RouteEntry | null
   availableSince: Date | null
@@ -45,12 +45,12 @@ export function rankCandidates(candidates: RankInput[], etaTieSeconds: number): 
       const waitedDiff = waited(a) - waited(b)
       if (waitedDiff !== 0) return waitedDiff
       if (aEta !== bEta) return aEta - bEta
-      return a.towTruckId - b.towTruckId
+      return a.driverId - b.driverId
     }
     if (a.straightLineMeters !== b.straightLineMeters) return a.straightLineMeters - b.straightLineMeters
     const waitedDiff = waited(a) - waited(b)
     if (waitedDiff !== 0) return waitedDiff
-    return a.towTruckId - b.towTruckId
+    return a.driverId - b.driverId
   })
   return sorted.map((candidate, index) => ({ ...candidate, rank: index }))
 }

@@ -114,13 +114,13 @@ export class OpsDispatchController {
   }
 
   @Post('orders/:id/manual-offer')
-  async manualOffer(@Req() req: Req2, @Param('id') id: string, @Body() body: { towTruckId?: number; overrideReason?: string }, @Res() res: Response) {
+  async manualOffer(@Req() req: Req2, @Param('id') id: string, @Body() body: { driverId?: number; overrideReason?: string }, @Res() res: Response) {
     send(
       res,
       await this.service.manualOffer(
         req.adminUserId,
         intParam(id, 'id'),
-        { towTruckId: Number(body?.towTruckId), overrideReason: body?.overrideReason ?? null, expectedVersion: versionOf(body) },
+        { driverId: Number(body?.driverId), overrideReason: body?.overrideReason ?? null, expectedVersion: versionOf(body) },
         mutationContext(req, body),
       ),
     )
@@ -148,11 +148,79 @@ export class OpsDispatchController {
     })
   }
 
-  @Post('drivers/:towTruckId/suspend')
-  async suspend(@Req() req: Req2, @Param('towTruckId') towTruckId: string, @Body() body: { suspended?: boolean; reason?: string }) {
+  @Post('drivers/:driverId/suspend')
+  async suspend(@Req() req: Req2, @Param('driverId') driverId: string, @Body() body: { suspended?: boolean; reason?: string }) {
     if (typeof body?.suspended !== 'boolean') throw new DispatchError('VALIDATION_FAILED', { field: 'suspended' })
-    await this.holder.runtime.fleet.setDispatchSuspended(intParam(towTruckId, 'towTruckId'), body.suspended, body.reason ?? null, req.adminUserId)
+    await this.holder.runtime.fleet.setDispatchSuspended(intParam(driverId, 'driverId'), body.suspended, body.reason ?? null, req.adminUserId)
     return { ok: true }
+  }
+
+  // ─── App access (who may use the driver app) — ADMIN only ───────────────
+  //
+  // Separate from the dispatch pause above: `drivers/:id/suspend` is an
+  // operator pausing ORDERS for a while; these decide whether the person may
+  // use the app at all.
+
+  @AdminOnly()
+  @Get('fleet')
+  fleetList(@Query() query: { status?: string; kind?: string; q?: string; limit?: string; offset?: string }) {
+    const status = ['PENDING_REVIEW', 'ACTIVE', 'SUSPENDED', 'REJECTED'].includes(query.status ?? '') ? (query.status as never) : undefined
+    const kind = ['SITE_LINKED', 'APP_ONLY'].includes(query.kind ?? '') ? (query.kind as never) : undefined
+    return this.holder.runtime.access.list({
+      status,
+      kind,
+      q: query.q,
+      limit: query.limit ? Number(query.limit) : undefined,
+      offset: query.offset ? Number(query.offset) : undefined,
+    })
+  }
+
+  @AdminOnly()
+  @Get('fleet/site-candidates')
+  siteCandidates(@Query('q') q?: string) {
+    return this.holder.runtime.access.siteCandidates(q ?? '')
+  }
+
+  @AdminOnly()
+  @Get('fleet/:id')
+  fleetDetail(@Param('id') id: string) {
+    return this.holder.runtime.access.get(intParam(id, 'id'))
+  }
+
+  @AdminOnly()
+  @Post('fleet/grant')
+  grant(@Req() req: Req2, @Body() body: { towTruckId?: unknown }) {
+    return this.holder.runtime.access.grantSiteAccess(intParam(String(body?.towTruckId ?? ''), 'towTruckId'), req.adminUserId)
+  }
+
+  @AdminOnly()
+  @Post('fleet/:id/approve')
+  approve(@Req() req: Req2, @Param('id') id: string) {
+    return this.holder.runtime.access.approve(intParam(id, 'id'), req.adminUserId)
+  }
+
+  @AdminOnly()
+  @Post('fleet/:id/reject')
+  reject(@Req() req: Req2, @Param('id') id: string, @Body() body: { reason?: unknown }) {
+    return this.holder.runtime.access.reject(intParam(id, 'id'), body?.reason, req.adminUserId)
+  }
+
+  @AdminOnly()
+  @Post('fleet/:id/suspend')
+  suspendAccess(@Req() req: Req2, @Param('id') id: string, @Body() body: { reason?: unknown }) {
+    return this.holder.runtime.access.suspend(intParam(id, 'id'), body?.reason, req.adminUserId)
+  }
+
+  @AdminOnly()
+  @Post('fleet/:id/reactivate')
+  reactivate(@Req() req: Req2, @Param('id') id: string) {
+    return this.holder.runtime.access.reactivate(intParam(id, 'id'), req.adminUserId)
+  }
+
+  @AdminOnly()
+  @Post('fleet/:id/link-site')
+  linkSite(@Req() req: Req2, @Param('id') id: string, @Body() body: { towTruckId?: unknown }) {
+    return this.holder.runtime.access.linkToSite(intParam(id, 'id'), intParam(String(body?.towTruckId ?? ''), 'towTruckId'), req.adminUserId)
   }
 
   // ─── Alerts, settings, health ─────────────────────────────────────────────

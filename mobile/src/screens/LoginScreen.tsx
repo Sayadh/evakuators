@@ -1,11 +1,12 @@
 import React, { useState } from 'react'
 import { Text, TextInput, StyleSheet } from 'react-native'
-import { ApiError } from '../api/client'
+import { ApiError, NetworkError } from '../api/client'
+import { loginErrorKey } from '../domain/registration'
 import { useT } from '../i18n'
 import { useApp } from '../state/AppState'
 import { Button, Card, colors, Note, Screen } from '../ui/kit'
 
-export function LoginScreen() {
+export function LoginScreen({ onRegister }: { onRegister: () => void }) {
   const t = useT()
   const app = useApp()
   const [phone, setPhone] = useState('+374')
@@ -19,7 +20,7 @@ export function LoginScreen() {
     try {
       await app.login(phone.replace(/[\s-]/g, ''), password)
     } catch (e) {
-      setError(e instanceof ApiError && e.status === 403 ? t('login.deactivated') : e instanceof ApiError ? t('login.invalid') : t('errors.NETWORK'))
+      setError(t(e instanceof ApiError ? loginErrorKey(e.status, e.code) : e instanceof NetworkError ? loginErrorKey(null, null) : 'errors.UNKNOWN'))
     } finally {
       setBusy(false)
     }
@@ -37,6 +38,7 @@ export function LoginScreen() {
         <Note>{t('login.hint')}</Note>
         <Note>{t('login.otherDevice')}</Note>
       </Card>
+      <Button label={t('login.noAccount')} onPress={onRegister} variant="outline" />
     </Screen>
   )
 }

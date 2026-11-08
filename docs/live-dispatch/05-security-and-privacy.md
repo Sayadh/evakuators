@@ -8,7 +8,7 @@
 
 | Դեր | Token | Ինչ կարող է |
 | --- | --- | --- |
-| Driver | App token (`aud: driver:app`, `sid` → revoke-ելի session) | Միայն իր presence/location-ը, իր PENDING offer-ը, իր assigned order-ը, իր պատմությունը։ Ուրիշի offer/order → 404 (չի հաստատվում գոյությունը) |
+| Driver | App token (`aud: driver:app`, `sub` = `FleetDriver.id`, `sid` → revoke-ելի session)։ Միայն ադմինի տված/հաստատած հասանելիությամբ — [11](11-driver-access.md) | Միայն իր presence/location-ը, իր PENDING offer-ը, իր assigned order-ը, իր պատմությունը։ Ուրիշի offer/order → 404 (չի հաստատվում գոյությունը) |
 | Dispatcher | Admin session, role DISPATCHER | `/ops/dispatch/*` (բացի settings PATCH-ից)։ Գործող `/admin/*`-ը՝ 403 |
 | Administrator | Admin session, role ADMIN | Ամեն ինչ + settings |
 | Public visitor | — | `POST /nearest-tow-trucks/live`՝ առանց կոորդինատների, առանց հաճախորդի տվյալների, առանց պատմության |
@@ -22,6 +22,7 @@ Driver ID-ն միշտ token-ից է, երբեք request body-ից։
 | Endpoint | Սահման |
 | --- | --- |
 | `POST /driver-app/sessions` | 10/ր/IP (գործող driver login-ի պես) |
+| `POST /driver-app/registrations` | 5/ժամ/IP |
 | `/me/heartbeat` | 12/ր |
 | `/me/locations` | 30/ր |
 | `/offers/:id/accept`, `/reject` | 20/ր |

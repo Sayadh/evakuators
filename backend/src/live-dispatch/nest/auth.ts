@@ -29,7 +29,7 @@ import { LiveDispatchRuntimeHolder } from './runtime.provider'
 export const DRIVER_APP_AUDIENCE = 'driver:app'
 
 export interface DriverAppRequest extends Request {
-  towTruckId: number
+  driverId: number
   sessionId: string
 }
 
@@ -55,7 +55,7 @@ export async function verifyDriverAppToken(
   secret: string,
   holder: LiveDispatchRuntimeHolder,
   token: string,
-): Promise<{ towTruckId: number; sessionId: string }> {
+): Promise<{ driverId: number; sessionId: string }> {
   let payload: { sub: number; sid: string }
   try {
     payload = await jwt.verifyAsync<{ sub: number; sid: string }>(token, { secret, audience: DRIVER_APP_AUDIENCE })
@@ -63,10 +63,10 @@ export async function verifyDriverAppToken(
     throw new UnauthorizedException('Ձեր մուտքի ժամկետը սպառվել է, խնդրում ենք նորից մուտք գործել')
   }
   const session = await holder.runtime.fleet.findSession(String(payload.sid))
-  if (!session || session.revokedAt || session.towTruckId !== payload.sub) {
+  if (!session || session.revokedAt || session.driverId !== payload.sub) {
     throw new UnauthorizedException({ code: 'SESSION_REVOKED', message: 'Այս սարքի նստաշրջանն ավարտված է, մուտք գործեք կրկին' })
   }
-  return { towTruckId: payload.sub, sessionId: session.id }
+  return { driverId: payload.sub, sessionId: session.id }
 }
 
 export async function verifyOpsToken(jwt: JwtService, secret: string, token: string): Promise<{ adminUserId: number; role: OpsRole }> {
@@ -90,7 +90,7 @@ export class DriverAppGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<DriverAppRequest>()
     const identity = await verifyDriverAppToken(this.jwt, this.config.getOrThrow<string>('driverJwtSecret'), this.holder, bearer(request))
-    request.towTruckId = identity.towTruckId
+    request.driverId = identity.driverId
     request.sessionId = identity.sessionId
     void this.holder.runtime.fleet.touchSession(identity.sessionId).catch(() => undefined)
     return true

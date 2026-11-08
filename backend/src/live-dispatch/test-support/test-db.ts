@@ -123,6 +123,53 @@ export async function insertTowTruck(
   return row.id
 }
 
+/** A website driver who was GRANTED app access: TowTruck + SITE_LINKED FleetDriver */
+export async function insertSiteDriver(
+  pool: PgPool,
+  overrides: Parameters<typeof insertTowTruck>[1] & { accessStatus?: 'ACTIVE' | 'SUSPENDED' } = {},
+): Promise<{ driverId: number; towTruckId: number }> {
+  const towTruckId = await insertTowTruck(pool, overrides)
+  const [row] = await pool.query<{ id: number }>(
+    `INSERT INTO "FleetDriver" ("kind", "status", "towTruckId") VALUES ('SITE_LINKED', $2::"FleetDriverStatus", $1::int) RETURNING "id"`,
+    [towTruckId, overrides.accessStatus ?? 'ACTIVE'],
+  )
+  return { driverId: Number(row.id), towTruckId }
+}
+
+/** An app-only driver (never on the website), ACTIVE unless stated */
+export async function insertAppOnlyDriver(
+  pool: PgPool,
+  overrides: Partial<{
+    vehicleType: string
+    capacityTons: number
+    maxLoadTons: number | null
+    manipulator: boolean
+    wheelSkates: boolean
+    status: 'PENDING_REVIEW' | 'ACTIVE' | 'SUSPENDED' | 'REJECTED'
+    phone: string
+    passwordHash: string
+  }> = {},
+): Promise<number> {
+  const phone = overrides.phone ?? `+3747${String(Math.floor(Math.random() * 1e7)).padStart(7, '0')}`
+  const [row] = await pool.query<{ id: number }>(
+    `INSERT INTO "FleetDriver" ("kind", "status", "phone", "passwordHash", "driverName", "vehicleType", "capacityTons",
+                                "maxLoadTons", "manipulator", "wheelSkates")
+     VALUES ('APP_ONLY', $1::"FleetDriverStatus", $2, $3, $4, $5, $6::float8, $7::float8, $8::boolean, $9::boolean) RETURNING "id"`,
+    [
+      overrides.status ?? 'ACTIVE',
+      phone,
+      overrides.passwordHash ?? 'x',
+      `App driver ${randomBytes(3).toString('hex')}`,
+      overrides.vehicleType ?? 'flatbed',
+      overrides.capacityTons ?? 3.5,
+      overrides.maxLoadTons ?? null,
+      overrides.manipulator ?? false,
+      overrides.wheelSkates ?? false,
+    ],
+  )
+  return Number(row.id)
+}
+
 export async function insertAdminUser(pool: PgPool, role: 'ADMIN' | 'DISPATCHER' = 'ADMIN'): Promise<number> {
   const [row] = await pool.query<{ id: number }>(
     `INSERT INTO "User" ("email", "passwordHash", "role", "updatedAt") VALUES ($1, 'x', $2::"UserRole", now()) RETURNING "id"`,

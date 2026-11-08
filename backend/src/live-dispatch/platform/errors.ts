@@ -34,6 +34,20 @@ export const DISPATCH_ERRORS = {
   IDEMPOTENCY_KEY_REUSED: { status: 422, message: 'Նույն Idempotency-Key-ը օգտագործվել է այլ հարցման համար' },
   IDEMPOTENCY_IN_PROGRESS: { status: 409, message: 'Նույն հարցումն արդեն մշակվում է' },
   RATE_LIMITED: { status: 429, message: 'Չափազանց շատ հարցումներ' },
+  // ─── App access (FleetDriver) ───
+  INVALID_CREDENTIALS: { status: 401, message: 'Սխալ հեռախոսահամար կամ գաղտնաբառ' },
+  APP_ACCESS_NOT_GRANTED: { status: 403, message: 'Ձեզ դեռ հասանելիություն չի տրվել հավելվածին։ Դիմեք ադմինիստրատորին' },
+  APP_ACCOUNT_PENDING: { status: 403, message: 'Ձեր հայտը դեռ ստուգվում է։ Ադմինիստրատորը կկապվի ձեզ հետ' },
+  APP_ACCOUNT_REJECTED: { status: 403, message: 'Ձեր հայտը մերժվել է։ Դիմեք ադմինիստրատորին' },
+  APP_ACCESS_SUSPENDED: { status: 403, message: 'Հավելվածից օգտվելու ձեր հասանելիությունը կասեցված է։ Դիմեք ադմինիստրատորին' },
+  SITE_PROFILE_INACTIVE: { status: 403, message: 'Ձեր կայքի պրոֆիլն ապաակտիվացված է։ Դիմեք ադմինիստրատորին' },
+  PHONE_BELONGS_TO_SITE_DRIVER: { status: 409, message: 'Այս համարով վարորդ արդեն կա կայքում։ Մուտք գործեք կայքի գաղտնաբառով, իսկ եթե հավելվածը հասանելի չէ՝ դիմեք ադմինիստրատորին' },
+  PHONE_ALREADY_REGISTERED: { status: 409, message: 'Այս համարով արդեն գրանցված հաշիվ կա' },
+  REGISTRATION_ALREADY_PENDING: { status: 409, message: 'Այս համարով հայտն արդեն ստուգման մեջ է' },
+  PHONE_HAS_APP_ONLY_ACCOUNT: { status: 409, message: 'Այս համարով կա միայն հավելվածի հաշիվ․ միացրեք այն կայքի պրոֆիլին, նոր հասանելիություն մի ստեղծեք' },
+  FLEET_DRIVER_NOT_FOUND: { status: 404, message: 'Վարորդը չի գտնվել' },
+  TOW_TRUCK_NOT_FOUND: { status: 404, message: 'Կայքի պրոֆիլը չի գտնվել' },
+  TOW_TRUCK_ALREADY_LINKED: { status: 409, message: 'Այս կայքի պրոֆիլն արդեն կապված է հավելվածի վարորդի հետ' },
 } as const
 
 export type DispatchErrorCode = keyof typeof DISPATCH_ERRORS

@@ -81,10 +81,10 @@ export class Reconciler {
 
     // Active orders: GPS lost. Ten-minute buckets: one alert per stretch of
     // silence, re-raised if it lasts.
-    const gpsLost = await this.db.query<{ orderId: number; assignmentId: number; towTruckId: number }>(
-      `SELECT o."id" AS "orderId", a."id" AS "assignmentId", a."towTruckId"
+    const gpsLost = await this.db.query<{ orderId: number; assignmentId: number; driverId: number }>(
+      `SELECT o."id" AS "orderId", a."id" AS "assignmentId", a."driverId"
          FROM "DispatchOrder" o JOIN "OrderAssignment" a ON a."id" = o."activeAssignmentId"
-         LEFT JOIN "DriverLocationCurrent" lc ON lc."towTruckId" = a."towTruckId"
+         LEFT JOIN "DriverLocationCurrent" lc ON lc."driverId" = a."driverId"
         WHERE o."status" IN ('PRICE_CONFIRMATION_PENDING','ASSIGNED','EN_ROUTE_TO_PICKUP','ARRIVED_AT_PICKUP','TRANSPORTING')
           AND a."startedAt" <= now() - make_interval(secs => $1::int)
           AND (lc."measuredAt" IS NULL OR lc."measuredAt" <= now() - make_interval(secs => $1::int))`,
@@ -92,7 +92,7 @@ export class Reconciler {
     )
     const tenMinutes = Math.floor(Date.now() / 600_000)
     for (const row of gpsLost) {
-      if (await raiseAlert(this.db, toNumber(row.orderId), 'ACTIVE_GPS_LOST', `gps-lost:${row.assignmentId}:${tenMinutes}`, { towTruckId: toNumber(row.towTruckId) })) {
+      if (await raiseAlert(this.db, toNumber(row.orderId), 'ACTIVE_GPS_LOST', `gps-lost:${row.assignmentId}:${tenMinutes}`, { driverId: toNumber(row.driverId) })) {
         report.gpsLostAlerts++
       }
     }

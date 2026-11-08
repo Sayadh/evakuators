@@ -1,25 +1,29 @@
 /**
  * "Find the nearest tow truck" with LIVE positions — the existing `/evakuator`
- * button, extended.
+ * search, extended. ONE list:
  *
- * What this search does NOT do (and the tests assert it): it creates no
- * order, reserves no driver, asks no driver for a GPS fix, sends no
- * notification. It reads what drivers' apps already reported.
+ * - a website driver who uses the app, is online and free, and whose phone
+ *   reported a fresh GPS fix is measured from WHERE THEY ARE NOW (and marked
+ *   `live`);
+ * - every other website driver is measured from the parking spot in their
+ *   profile — the existing search, unchanged;
+ * - a driver is never listed twice: the live entry replaces the profile one.
  *
- * Two clearly separate sections in the answer:
+ * Who can appear: only drivers with a public website card. App-only drivers
+ * (FleetDriver kind APP_ONLY) have no card and never appear on the website —
+ * the query selects `towTruckId IS NOT NULL` before LIMIT.
  *
- * - `live` — drivers who are online, free, and whose GPS is fresh, ranked by
- *   road ETA when the routing budget allows. Their exact coordinates NEVER
- *   leave the server: only a rounded distance, a rounded ETA, and a label.
- * - `fallback` — the existing search (distance from the parking spot in the
- *   driver's profile), unchanged, minus anyone already listed live.
+ * What this search does NOT do (and the tests assert it): it creates no order,
+ * reserves no driver, asks no driver for a fix, sends no notification. Live
+ * coordinates NEVER leave the server: a live entry carries only a distance
+ * rounded to 100 m and a time rounded to the minute.
+ *
+ * Specialist vehicle types (manipulator / heavy-duty) are excluded INSIDE the
+ * query, before LIMIT — the same general-discovery rule as every public
+ * listing (CLAUDE.md § "Two vehicle types are landing-page-only").
  *
  * A result is not a promise: the visitor still calls the driver, and the
- * driver may have taken another job a second later. The response says so.
- *
- * Specialist vehicle types (manipulator / heavy-duty) are excluded INSIDE
- * the query, before LIMIT — the same general-discovery rule as every public
- * listing (CLAUDE.md § "Two vehicle types are landing-page-only").
+ * driver may take another job a second later. The response says so.
  */
 import { isWithinArmenia } from '../../common/armenia-bounds'
 import { SPECIALIST_VEHICLE_TYPES } from '../../tow-trucks/vehicle-types'
@@ -36,33 +40,64 @@ export interface PublicCard {
   [key: string]: unknown
 }
 
-export interface LiveNearbyItem {
+/** Same shape as the existing search's result (NearestTowTruckApi), plus `live` */
+export interface NearbyItem {
   towTruck: PublicCard
-  /** Rounded to 100 m; road distance when routed, otherwise null */
-  roadMeters: number | null
-  /** Rounded to the minute; only ever present together with roadMeters */
-  etaSeconds: number | null
-  /** Rounded to 100 m; shown only as «ուղիղ գծով» when there is no road figure */
   straightLineMeters: number
-  availability: 'ONLINE_FREE'
-  locationFreshness: 'UNDER_1_MIN' | 'UNDER_2_MIN'
+  roadMeters?: number
+  durationSeconds?: number
+  /** Present only when measured from the driver's live phone position */
+  live?: { freshness: 'UNDER_1_MIN' | 'UNDER_2_MIN' }
 }
 
 export interface LiveNearbyResponse {
+  results: NearbyItem[]
+  /** Road figures are real for this response (same meaning as the existing search) */
+  routed: boolean
+  /** How many results are measured from a live position */
+  liveCount: number
   computedAt: string
-  live: { items: LiveNearbyItem[]; routed: boolean; reason: 'OK' | 'NO_LIVE_DRIVERS' }
-  fallback: unknown
   disclaimer: 'NOT_A_RESERVATION'
 }
 
+export interface FallbackSearchResult {
+  results: { towTruck: PublicCard; straightLineMeters: number; roadMeters?: number; durationSeconds?: number }[]
+  routed: boolean
+}
+
+export interface LiveCandidate {
+  /** TowTruck.id — the public card, never the FleetDriver id */
+  towTruckId: number
+  straightLineMeters: number
+  latitude: number
+  longitude: number
+  gpsAgeSeconds: number
+}
+
 export interface LiveCandidateQuery {
-  find(db: Sql, point: { latitude: number; longitude: number }, radiusMeters: number, limit: number, settings: DispatchSettings): Promise<
-    { towTruckId: number; straightLineMeters: number; latitude: number; longitude: number; gpsAgeSeconds: number }[]
-  >
+  find(db: Sql, point: { latitude: number; longitude: number }, radiusMeters: number, limit: number, settings: DispatchSettings): Promise<LiveCandidate[]>
 }
 
 const LIVE_RADIUS_METERS = 50_000
 const PREFILTER = 25
+/** Same as NEAREST_RESULT_LIMIT in src/nearest/nearest.constants.ts */
+export const NEARBY_RESULT_LIMIT = 10
+
+function publicWhere(p: Params, settings: DispatchSettings): string {
+  return `t."towTruckId" IS NOT NULL
+          AND t."vehicleType" <> ALL(${p.add(pgArray([...SPECIALIST_VEHICLE_TYPES]))}::text[])
+          AND ${availabilityPredicate(p, settings)}`
+}
+
+function mapCandidate(r: Record<string, unknown>): LiveCandidate {
+  return {
+    towTruckId: Number(r.towTruckId),
+    straightLineMeters: Number(r.d),
+    latitude: Number(r.latitude),
+    longitude: Number(r.longitude),
+    gpsAgeSeconds: Number(r.age),
+  }
+}
 
 /** PostGIS, index-aware — production */
 export class PostgisLiveQuery implements LiveCandidateQuery {
@@ -72,23 +107,16 @@ export class PostgisLiveQuery implements LiveCandidateQuery {
     const lat = p.add(point.latitude)
     const rows = await db.query<Record<string, unknown>>(
       `WITH origin AS (SELECT ST_SetSRID(ST_MakePoint(${lng}::double precision, ${lat}::double precision), 4326)::geography AS point)
-       SELECT t."id" AS "towTruckId", ST_Distance(lc."location", o.point) AS "d", lc."latitude", lc."longitude",
+       SELECT t."towTruckId", ST_Distance(lc."location", o.point) AS "d", lc."latitude", lc."longitude",
               EXTRACT(EPOCH FROM now() - lc."measuredAt")::float8 AS "age"
          FROM ${ELIGIBLE_FROM}, origin o
         WHERE ST_DWithin(lc."location", o.point, ${p.add(radiusMeters)}::double precision)
-          AND t."vehicleType" <> ALL(${p.add(pgArray([...SPECIALIST_VEHICLE_TYPES]))}::text[])
-          AND ${availabilityPredicate(p, settings)}
+          AND ${publicWhere(p, settings)}
         ORDER BY lc."location" <-> o.point
         LIMIT ${p.add(limit)}::int`,
       p.values,
     )
-    return rows.map((r) => ({
-      towTruckId: Number(r.towTruckId),
-      straightLineMeters: Number(r.d),
-      latitude: Number(r.latitude),
-      longitude: Number(r.longitude),
-      gpsAgeSeconds: Number(r.age),
-    }))
+    return rows.map(mapCandidate)
   }
 }
 
@@ -102,29 +130,46 @@ export class PlainSqlLiveQuery implements LiveCandidateQuery {
       + cos(radians(${lat}::float8)) * cos(radians(lc."latitude"::float8)) * power(sin(radians(lc."longitude"::float8 - ${lng}::float8) / 2), 2)))))`
     const rows = await db.query<Record<string, unknown>>(
       `SELECT * FROM (
-         SELECT t."id" AS "towTruckId", ${distance} AS "d", lc."latitude", lc."longitude",
+         SELECT t."towTruckId", ${distance} AS "d", lc."latitude", lc."longitude",
                 EXTRACT(EPOCH FROM now() - lc."measuredAt")::float8 AS "age"
            FROM ${ELIGIBLE_FROM}
-          WHERE t."vehicleType" <> ALL(${p.add(pgArray([...SPECIALIST_VEHICLE_TYPES]))}::text[])
-            AND ${availabilityPredicate(p, settings)}) x
+          WHERE ${publicWhere(p, settings)}) x
         WHERE x."d" <= ${p.add(radiusMeters)}::float8 ORDER BY x."d" LIMIT ${p.add(limit)}::int`,
       p.values,
     )
-    return rows.map((r) => ({
-      towTruckId: Number(r.towTruckId),
-      straightLineMeters: Number(r.d),
-      latitude: Number(r.latitude),
-      longitude: Number(r.longitude),
-      gpsAgeSeconds: Number(r.age),
-    }))
+    return rows.map(mapCandidate)
   }
 }
 
 const round100 = (m: number) => Math.round(m / 100) * 100
 const roundMinute = (s: number) => Math.max(60, Math.round(s / 60) * 60)
 
+/**
+ * Pure: one ranked list from live entries and the profile-based search.
+ * Ranking is the existing search's rule, applied to everyone: drivers with a
+ * road time first, fastest first; then the rest by straight line.
+ */
+export function mergeNearby(live: NearbyItem[], fallback: FallbackSearchResult['results'], limit: number): NearbyItem[] {
+  const liveIds = new Set(live.map((i) => i.towTruck.id))
+  const merged: NearbyItem[] = [...live, ...fallback.filter((r) => !liveIds.has(r.towTruck.id))]
+  return merged
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => {
+      const at = a.item.durationSeconds
+      const bt = b.item.durationSeconds
+      if (at !== undefined && bt !== undefined && at !== bt) return at - bt
+      if ((at === undefined) !== (bt === undefined)) return at === undefined ? 1 : -1
+      if (a.item.straightLineMeters !== b.item.straightLineMeters) return a.item.straightLineMeters - b.item.straightLineMeters
+      // A live position beats a profile position at the same distance.
+      if (!!a.item.live !== !!b.item.live) return a.item.live ? -1 : 1
+      return a.index - b.index
+    })
+    .slice(0, limit)
+    .map((x) => x.item)
+}
+
 export class NearbyLiveService {
-  private readonly cache = new Map<string, { at: number; value: Omit<LiveNearbyResponse, 'fallback'> }>()
+  private readonly cache = new Map<string, { at: number; value: { items: NearbyItem[]; routed: boolean } }>()
 
   constructor(
     private readonly db: Sql,
@@ -132,7 +177,7 @@ export class NearbyLiveService {
     private readonly routing: GuardedRouting,
     private readonly loadSettings: () => Promise<DispatchSettings>,
     private readonly cardsByIds: (ids: number[]) => Promise<PublicCard[]>,
-    private readonly fallbackSearch: (latitude: number, longitude: number, skipRouting: boolean) => Promise<{ results: { towTruck: { id: number } }[] } & Record<string, unknown>>,
+    private readonly fallbackSearch: (latitude: number, longitude: number, skipRouting: boolean) => Promise<FallbackSearchResult>,
     private readonly options: { enabled: boolean; cacheTtlMs: number; cacheMax: number } = { enabled: false, cacheTtlMs: 60_000, cacheMax: 500 },
   ) {}
 
@@ -141,16 +186,20 @@ export class NearbyLiveService {
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || !isWithinArmenia(latitude, longitude)) {
       throw new DispatchError('VALIDATION_FAILED', { field: 'latitude/longitude' })
     }
-    const live = await this.liveSection(latitude, longitude, skipRouting)
+    const live = await this.livePart(latitude, longitude, skipRouting)
     const fallback = await this.fallbackSearch(latitude, longitude, skipRouting)
-    const liveIds = new Set(live.live.items.map((i) => i.towTruck.id))
+    const results = mergeNearby(live.items, fallback.results, NEARBY_RESULT_LIMIT)
     return {
-      ...live,
-      fallback: { ...fallback, results: fallback.results.filter((r) => !liveIds.has(r.towTruck.id)) },
+      results,
+      // Same meaning as the existing search: road figures are real here.
+      routed: results.some((r) => r.durationSeconds !== undefined) && (live.routed || fallback.routed),
+      liveCount: results.filter((r) => r.live).length,
+      computedAt: new Date().toISOString(),
+      disclaimer: 'NOT_A_RESERVATION',
     }
   }
 
-  private async liveSection(latitude: number, longitude: number, skipRouting: boolean): Promise<Omit<LiveNearbyResponse, 'fallback'>> {
+  private async livePart(latitude: number, longitude: number, skipRouting: boolean): Promise<{ items: NearbyItem[]; routed: boolean }> {
     // ~110 m neighbourhood key; the visitor's exact position exists nowhere
     // else on the server and is never written to the database or logs.
     const key = `${latitude.toFixed(3)},${longitude.toFixed(3)}|${skipRouting ? 'nr' : 'r'}`
@@ -178,23 +227,23 @@ export class NearbyLiveService {
         return a.f.straightLineMeters - b.f.straightLineMeters
       })
       .slice(0, settings.publicNearbyLiveLimit)
-    const cards = await this.cardsByIds(ranked.map((r) => r.f.towTruckId))
+    const cards = ranked.length > 0 ? await this.cardsByIds(ranked.map((r) => r.f.towTruckId)) : []
     const byId = new Map(cards.map((c) => [c.id, c]))
-    const items: LiveNearbyItem[] = ranked
+    const items: NearbyItem[] = ranked
       .filter((r) => byId.has(r.f.towTruckId))
-      .map((r) => ({
-        towTruck: byId.get(r.f.towTruckId)!,
-        roadMeters: r.e.ok ? round100(r.e.meters) : null,
-        etaSeconds: r.e.ok ? roundMinute(r.e.seconds) : null,
-        straightLineMeters: round100(r.f.straightLineMeters),
-        availability: 'ONLINE_FREE' as const,
-        locationFreshness: r.f.gpsAgeSeconds <= 60 ? ('UNDER_1_MIN' as const) : ('UNDER_2_MIN' as const),
-      }))
-    const value = {
-      computedAt: new Date().toISOString(),
-      live: { items, routed, reason: items.length > 0 ? ('OK' as const) : ('NO_LIVE_DRIVERS' as const) },
-      disclaimer: 'NOT_A_RESERVATION' as const,
-    }
+      .map((r) => {
+        const item: NearbyItem = {
+          towTruck: byId.get(r.f.towTruckId)!,
+          straightLineMeters: round100(r.f.straightLineMeters),
+          live: { freshness: r.f.gpsAgeSeconds <= 60 ? 'UNDER_1_MIN' : 'UNDER_2_MIN' },
+        }
+        if (r.e.ok) {
+          item.roadMeters = round100(r.e.meters)
+          item.durationSeconds = roundMinute(r.e.seconds)
+        }
+        return item
+      })
+    const value = { items, routed }
     if (this.cache.size >= this.options.cacheMax) this.cache.delete(this.cache.keys().next().value as string)
     this.cache.set(key, { at: now, value })
     return value

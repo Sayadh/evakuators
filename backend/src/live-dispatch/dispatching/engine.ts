@@ -102,7 +102,7 @@ export class DispatchEngine {
     )
     const ranked = rankCandidates(
       found.map((c, i) => ({
-        towTruckId: c.towTruckId,
+        driverId: c.driverId,
         straightLineMeters: c.straightLineMeters,
         route: matrix.entries[i] ?? null,
         availableSince: c.availableSince,
@@ -127,7 +127,7 @@ export class DispatchEngine {
     const matrix = await this.routing.matrix(rows.map((r) => ({ latitude: r.latitude, longitude: r.longitude })), pickup)
     const ranked = rankCandidates(
       rows.map((r, i) => ({
-        towTruckId: r.towTruckId,
+        driverId: r.driverId,
         straightLineMeters: Math.round(haversineMeters(r.latitude, r.longitude, pickup.latitude, pickup.longitude)),
         route: matrix.entries[i] ?? null,
         availableSince: null,
@@ -135,11 +135,11 @@ export class DispatchEngine {
       settings.etaTieSeconds,
     )
     const base = Math.min(...rows.map((r) => r.batch)) * 1000
-    const byTruck = new Map(rows.map((r) => [r.towTruckId, r]))
+    const byTruck = new Map(rows.map((r) => [r.driverId, r]))
     await this.offers.applyRefresh(
       attemptId,
       ranked.map((c) => ({
-        id: byTruck.get(c.towTruckId)!.id,
+        id: byTruck.get(c.driverId)!.id,
         rank: base + c.rank,
         route: c.route ?? { ok: false, error: 'PROVIDER_ERROR' },
       })),

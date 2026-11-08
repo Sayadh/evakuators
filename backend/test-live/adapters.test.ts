@@ -94,26 +94,26 @@ describe('ranking', () => {
   it('ETA first; near-equal ETAs go to whoever has waited longest; unrouted last; total and stable', () => {
     const ranked = rankCandidates(
       [
-        { towTruckId: 1, straightLineMeters: 900, route: { ok: true, meters: 2000, seconds: 300 }, availableSince: at(50) },
-        { towTruckId: 2, straightLineMeters: 800, route: { ok: true, meters: 2100, seconds: 330 }, availableSince: at(10) },
-        { towTruckId: 3, straightLineMeters: 100, route: { ok: false, error: 'NO_ROUTE' }, availableSince: at(0) },
-        { towTruckId: 4, straightLineMeters: 3000, route: { ok: true, meters: 9000, seconds: 900 }, availableSince: at(0) },
+        { driverId: 1, straightLineMeters: 900, route: { ok: true, meters: 2000, seconds: 300 }, availableSince: at(50) },
+        { driverId: 2, straightLineMeters: 800, route: { ok: true, meters: 2100, seconds: 330 }, availableSince: at(10) },
+        { driverId: 3, straightLineMeters: 100, route: { ok: false, error: 'NO_ROUTE' }, availableSince: at(0) },
+        { driverId: 4, straightLineMeters: 3000, route: { ok: true, meters: 9000, seconds: 900 }, availableSince: at(0) },
       ],
       60,
     )
-    assert.deepEqual(ranked.map((c) => c.towTruckId), [2, 1, 4, 3])
+    assert.deepEqual(ranked.map((c) => c.driverId), [2, 1, 4, 3])
   })
 
   it('is a valid total order over random inputs (sorting twice gives the same result)', () => {
     for (let trial = 0; trial < 200; trial++) {
       const input = Array.from({ length: 12 }, (_, i) => ({
-        towTruckId: i,
+        driverId: i,
         straightLineMeters: Math.floor(Math.random() * 5000),
         route: Math.random() < 0.2 ? ({ ok: false, error: 'NO_ROUTE' } as const) : ({ ok: true, meters: 1, seconds: Math.floor(Math.random() * 900) } as const),
         availableSince: Math.random() < 0.3 ? null : at(Math.floor(Math.random() * 60)),
       }))
-      const a = rankCandidates(input, 60).map((c) => c.towTruckId)
-      const b = rankCandidates([...input].reverse(), 60).map((c) => c.towTruckId)
+      const a = rankCandidates(input, 60).map((c) => c.driverId)
+      const b = rankCandidates([...input].reverse(), 60).map((c) => c.driverId)
       assert.deepEqual(a, b)
     }
   })

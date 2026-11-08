@@ -19,6 +19,8 @@ cd ../mobile && npm test
 cd ../frontend && npm run test
 ```
 
+Test client-ը աջակցում է trust, md5 և **SCRAM-SHA-256** (PostgreSQL 14+-ի և Postgres.app-ի լռելյայնը) auth-ին։
+
 `LIVE_DISPATCH_TEST_DATABASE_URL`-ը **սերվերի** URL է․ յուրաքանչյուր թեստային ֆայլ
 ստեղծում և ջնջում է իր `ld_test_<random>` բազան։ `DATABASE_URL`-ը երբեք չի կարդացվում։
 Առանց այդ փոփոխականի integration թեստերը **բաց են թողնվում և դա ասում են**, ոչ թե
@@ -29,9 +31,9 @@ PostGIS migration-ները բաց են թողնվում (ինչպես `migration
 
 | Հավաքածու | Միջավայր | Արդյունք |
 | --- | --- | --- |
-| `backend/test-live/*.test.ts` | PostgreSQL 16.15 + Redis 7.0.15, Node 22.23 | **109 / 109 pass**, 0 skip, ~16 վ |
+| `backend/test-live/*.test.ts` | PostgreSQL 16.15 + Redis 7.0.15, Node 22.23 | **144 / 144 pass**, 0 skip, ~21 վ (ներառյալ `fleet-access` — 35 թեստ հասանելիության, գրանցման, մուտքի, կապելու և մեկ ցուցակով հանրային որոնման համար) |
 | Typecheck (framework-free կոդ + թեստեր) | TypeScript 6.0.3, strict, `noUnusedLocals` | 0 սխալ |
-| `mobile/test/*.test.ts` | Node 22 | **15 / 15 pass** |
+| `mobile/test/*.test.ts` | Node 22 | **21 / 21 pass** (ներառյալ գրանցման ձևի ստուգումը և մուտքի սխալների հաղորդագրությունները) |
 | Mobile pure modules typecheck | TypeScript 6.0.3 strict | 0 սխալ |
 | `frontend/tests/opsDispatch.spec.ts` | vitest-համատեղելի shim (node:test) | **6 / 6 pass** |
 | Գործող frontend թեստեր (ռեգրեսիա) | նույն shim-ը, `main` vs ճյուղ | **նույնական արդյունքներ** (723 pass; 9 ձախողում և՛ `main`-ում, և՛ ճյուղում — shim-ի սահմանափակում, ոչ իմ փոփոխություն) |

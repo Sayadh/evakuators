@@ -21,7 +21,7 @@ import {
 
 export interface DeviceSession {
   id: string
-  towTruckId: number
+  driverId: number
   deviceId: string
   platform: 'ios' | 'android'
   revokedAt: Date | null
@@ -38,7 +38,12 @@ export interface IngestResult {
 }
 
 export interface DriverStateRow {
-  towTruckId: number
+  /** FleetDriver.id — the identity every live-dispatch table uses */
+  driverId: number
+  kind: 'SITE_LINKED' | 'APP_ONLY'
+  /** The public site profile, only for SITE_LINKED */
+  towTruckId: number | null
+  slug: string | null
   driverName: string
   phone: string
   vehicleType: string
@@ -61,24 +66,27 @@ export interface DriverStateRow {
 }
 
 export const DRIVER_STATE_SELECT = `
-  t."id" AS "towTruckId", t."driverName", t."phone", t."vehicleType", t."isActive",
+  t."id" AS "driverId", t."kind", t."towTruckId", t."slug", t."driverName", t."phone", t."vehicleType", t."isActive",
   p."dispatchSuspendedAt", COALESCE(p."wantsOnline", false) AS "wantsOnline",
   COALESCE(p."externalBusy", false) AS "externalBusy", p."lastHeartbeatAt",
   p."trackingConsentVersion", p."availableSince",
   lc."latitude", lc."longitude", lc."accuracyM", lc."speedMps", lc."measuredAt",
   COALESCE(lc."suspicious", false) AS "suspicious",
-  EXISTS (SELECT 1 FROM "OrderOffer" o WHERE o."towTruckId" = t."id" AND o."status" = 'PENDING') AS "hasPendingOffer",
-  (SELECT a."orderId" FROM "OrderAssignment" a WHERE a."towTruckId" = t."id" AND a."endedAt" IS NULL) AS "activeOrderId",
+  EXISTS (SELECT 1 FROM "OrderOffer" o WHERE o."driverId" = t."id" AND o."status" = 'PENDING') AS "hasPendingOffer",
+  (SELECT a."orderId" FROM "OrderAssignment" a WHERE a."driverId" = t."id" AND a."endedAt" IS NULL) AS "activeOrderId",
   now() AS "now"`
 
 export const DRIVER_STATE_FROM = `
-  FROM "TowTruck" t
-  LEFT JOIN "DriverPresence" p ON p."towTruckId" = t."id"
-  LEFT JOIN "DriverLocationCurrent" lc ON lc."towTruckId" = t."id"`
+  FROM "FleetDriverProfile" t
+  LEFT JOIN "DriverPresence" p ON p."driverId" = t."id"
+  LEFT JOIN "DriverLocationCurrent" lc ON lc."driverId" = t."id"`
 
 export function mapDriverState(row: Record<string, unknown>): DriverStateRow {
   return {
-    towTruckId: toNumber(row.towTruckId),
+    driverId: toNumber(row.driverId),
+    kind: row.kind === 'APP_ONLY' ? 'APP_ONLY' : 'SITE_LINKED',
+    towTruckId: toNullableNumber(row.towTruckId),
+    slug: row.slug == null ? null : String(row.slug),
     driverName: String(row.driverName),
     phone: String(row.phone),
     vehicleType: String(row.vehicleType),
@@ -134,21 +142,21 @@ export class FleetRepository {
    * index is the backstop.
    */
   async createSession(input: {
-    towTruckId: number
+    driverId: number
     deviceId: string
     platform: 'ios' | 'android'
     appVersion: string | null
   }): Promise<{ session: DeviceSession; replacedSessionIds: string[] }> {
     return withRetryingTransaction(this.db, async (tx) => {
       await tx.query(
-        `INSERT INTO "DriverPresence" ("towTruckId") VALUES ($1::int) ON CONFLICT ("towTruckId") DO NOTHING`,
-        [input.towTruckId],
+        `INSERT INTO "DriverPresence" ("driverId") VALUES ($1::int) ON CONFLICT ("driverId") DO NOTHING`,
+        [input.driverId],
       )
-      await tx.query(`SELECT 1 FROM "DriverPresence" WHERE "towTruckId" = $1::int FOR UPDATE`, [input.towTruckId])
+      await tx.query(`SELECT 1 FROM "DriverPresence" WHERE "driverId" = $1::int FOR UPDATE`, [input.driverId])
       const replaced = await tx.query<{ id: string }>(
         `UPDATE "DriverDeviceSession" SET "revokedAt" = now(), "revokeReason" = 'REPLACED'
-          WHERE "towTruckId" = $1::int AND "revokedAt" IS NULL RETURNING "id"::text AS "id"`,
-        [input.towTruckId],
+          WHERE "driverId" = $1::int AND "revokedAt" IS NULL RETURNING "id"::text AS "id"`,
+        [input.driverId],
       )
       if (replaced.length > 0) {
         await tx.query(
@@ -158,10 +166,10 @@ export class FleetRepository {
         )
       }
       const [row] = await tx.query<Record<string, unknown>>(
-        `INSERT INTO "DriverDeviceSession" ("towTruckId", "deviceId", "platform", "appVersion", "lastSeenAt")
+        `INSERT INTO "DriverDeviceSession" ("driverId", "deviceId", "platform", "appVersion", "lastSeenAt")
          VALUES ($1::int, $2, $3, $4, now())
-         RETURNING "id"::text AS "id", "towTruckId", "deviceId", "platform", "revokedAt"`,
-        [input.towTruckId, input.deviceId, input.platform, input.appVersion],
+         RETURNING "id"::text AS "id", "driverId", "deviceId", "platform", "revokedAt"`,
+        [input.driverId, input.deviceId, input.platform, input.appVersion],
       )
       return { session: mapSession(row), replacedSessionIds: replaced.map((r) => r.id) }
     })
@@ -170,7 +178,7 @@ export class FleetRepository {
   async findSession(sessionId: string): Promise<DeviceSession | null> {
     if (!/^[0-9a-f-]{36}$/i.test(sessionId)) return null
     const rows = await this.db.query<Record<string, unknown>>(
-      `SELECT "id"::text AS "id", "towTruckId", "deviceId", "platform", "revokedAt"
+      `SELECT "id"::text AS "id", "driverId", "deviceId", "platform", "revokedAt"
          FROM "DriverDeviceSession" WHERE "id" = $1::uuid`,
       [sessionId],
     )
@@ -193,9 +201,9 @@ export class FleetRepository {
    */
   async revokeSession(sessionId: string, reason: string): Promise<void> {
     await withRetryingTransaction(this.db, async (tx) => {
-      const rows = await tx.query<{ towTruckId: number }>(
+      const rows = await tx.query<{ driverId: number }>(
         `UPDATE "DriverDeviceSession" SET "revokedAt" = now(), "revokeReason" = $2
-          WHERE "id" = $1::uuid AND "revokedAt" IS NULL RETURNING "towTruckId"`,
+          WHERE "id" = $1::uuid AND "revokedAt" IS NULL RETURNING "driverId"`,
         [sessionId, reason],
       )
       await tx.query(
@@ -206,17 +214,17 @@ export class FleetRepository {
       if (rows[0]) {
         await tx.query(
           `UPDATE "DriverPresence" SET "wantsOnline" = false, "wantsOnlineChangedAt" = now(), "updatedAt" = now()
-            WHERE "towTruckId" = $1::int`,
-          [rows[0].towTruckId],
+            WHERE "driverId" = $1::int`,
+          [rows[0].driverId],
         )
       }
     })
   }
 
-  async registerPushToken(sessionId: string, towTruckId: number, token: string): Promise<void> {
+  async registerPushToken(sessionId: string, driverId: number, token: string): Promise<void> {
     if (token.length < 20 || token.length > 4096) throw new DispatchError('VALIDATION_FAILED', { field: 'token' })
     await withRetryingTransaction(this.db, async (tx) => {
-      await this.assertActiveSession(tx, sessionId, towTruckId)
+      await this.assertActiveSession(tx, sessionId, driverId)
       // Same token bound elsewhere (reinstall, account switch on one phone):
       // only one live binding may exist.
       await tx.query(
@@ -230,10 +238,10 @@ export class FleetRepository {
         [sessionId, token],
       )
       await tx.query(
-        `INSERT INTO "PushDeviceToken" ("sessionId", "towTruckId", "token")
+        `INSERT INTO "PushDeviceToken" ("sessionId", "driverId", "token")
          SELECT $1::uuid, $2::int, $3
           WHERE NOT EXISTS (SELECT 1 FROM "PushDeviceToken" WHERE "token" = $3 AND "sessionId" = $1::uuid AND "invalidatedAt" IS NULL)`,
-        [sessionId, towTruckId, token],
+        [sessionId, driverId, token],
       )
     })
   }
@@ -246,25 +254,25 @@ export class FleetRepository {
   }
 
   /** Locks the session row FOR SHARE: a concurrent revoke waits until this transaction ends */
-  private async assertActiveSession(tx: Sql, sessionId: string, towTruckId: number): Promise<void> {
+  private async assertActiveSession(tx: Sql, sessionId: string, driverId: number): Promise<void> {
     const rows = await tx.query(
       `SELECT 1 FROM "DriverDeviceSession"
-        WHERE "id" = $1::uuid AND "towTruckId" = $2::int AND "revokedAt" IS NULL FOR SHARE`,
-      [sessionId, towTruckId],
+        WHERE "id" = $1::uuid AND "driverId" = $2::int AND "revokedAt" IS NULL FOR SHARE`,
+      [sessionId, driverId],
     )
     if (rows.length === 0) throw new DispatchError('SESSION_REVOKED')
   }
 
   // ─── Presence ─────────────────────────────────────────────────────────────
 
-  async recordTrackingConsent(towTruckId: number, version: number): Promise<void> {
+  async recordTrackingConsent(driverId: number, version: number): Promise<void> {
     if (version !== TRACKING_CONSENT_VERSION) throw new DispatchError('VALIDATION_FAILED', { field: 'version' })
     await this.db.query(
-      `INSERT INTO "DriverPresence" ("towTruckId", "trackingConsentVersion", "trackingConsentAt")
+      `INSERT INTO "DriverPresence" ("driverId", "trackingConsentVersion", "trackingConsentAt")
        VALUES ($1::int, $2::int, now())
-       ON CONFLICT ("towTruckId") DO UPDATE SET "trackingConsentVersion" = EXCLUDED."trackingConsentVersion",
+       ON CONFLICT ("driverId") DO UPDATE SET "trackingConsentVersion" = EXCLUDED."trackingConsentVersion",
          "trackingConsentAt" = now(), "updatedAt" = now()`,
-      [towTruckId, version],
+      [driverId, version],
     )
   }
 
@@ -273,19 +281,19 @@ export class FleetRepository {
    * stops NEW offers; the order itself is untouched.
    */
   async setAvailability(
-    towTruckId: number,
+    driverId: number,
     sessionId: string,
     change: { wantsOnline?: boolean; externalBusy?: boolean },
   ): Promise<void> {
     await withRetryingTransaction(this.db, async (tx) => {
-      await this.assertActiveSession(tx, sessionId, towTruckId)
+      await this.assertActiveSession(tx, sessionId, driverId)
       await tx.query(
-        `INSERT INTO "DriverPresence" ("towTruckId") VALUES ($1::int) ON CONFLICT ("towTruckId") DO NOTHING`,
-        [towTruckId],
+        `INSERT INTO "DriverPresence" ("driverId") VALUES ($1::int) ON CONFLICT ("driverId") DO NOTHING`,
+        [driverId],
       )
       const [presence] = await tx.query<{ trackingConsentVersion: number | null }>(
-        `SELECT "trackingConsentVersion" FROM "DriverPresence" WHERE "towTruckId" = $1::int FOR UPDATE`,
-        [towTruckId],
+        `SELECT "trackingConsentVersion" FROM "DriverPresence" WHERE "driverId" = $1::int FOR UPDATE`,
+        [driverId],
       )
       if (change.wantsOnline === true && (presence.trackingConsentVersion ?? 0) < TRACKING_CONSENT_VERSION) {
         throw new DispatchError('TRACKING_CONSENT_REQUIRED')
@@ -306,19 +314,19 @@ export class FleetRepository {
         `"externalBusy" = ${newBusy}`,
         `"updatedAt" = now()`,
       ]
-      await tx.query(`UPDATE "DriverPresence" SET ${sets.join(', ')} WHERE "towTruckId" = ${p.add(towTruckId)}::int`, p.values)
+      await tx.query(`UPDATE "DriverPresence" SET ${sets.join(', ')} WHERE "driverId" = ${p.add(driverId)}::int`, p.values)
     })
   }
 
-  async heartbeat(towTruckId: number, sessionId: string): Promise<{ serverTime: string }> {
+  async heartbeat(driverId: number, sessionId: string): Promise<{ serverTime: string }> {
     return withRetryingTransaction(this.db, async (tx) => {
-      await this.assertActiveSession(tx, sessionId, towTruckId)
+      await this.assertActiveSession(tx, sessionId, driverId)
       const [row] = await tx.query<{ now: Date }>(
-        `INSERT INTO "DriverPresence" ("towTruckId", "lastHeartbeatAt", "heartbeatSessionId")
+        `INSERT INTO "DriverPresence" ("driverId", "lastHeartbeatAt", "heartbeatSessionId")
          VALUES ($1::int, now(), $2::uuid)
-         ON CONFLICT ("towTruckId") DO UPDATE SET "lastHeartbeatAt" = now(), "heartbeatSessionId" = $2::uuid
+         ON CONFLICT ("driverId") DO UPDATE SET "lastHeartbeatAt" = now(), "heartbeatSessionId" = $2::uuid
          RETURNING now() AS "now"`,
-        [towTruckId, sessionId],
+        [driverId, sessionId],
       )
       return { serverTime: toDate(row.now).toISOString() }
     })
@@ -327,7 +335,7 @@ export class FleetRepository {
   // ─── Location ─────────────────────────────────────────────────────────────
 
   async ingestLocations(
-    towTruckId: number,
+    driverId: number,
     sessionId: string,
     fixes: IncomingFix[],
     settings: DispatchSettings,
@@ -336,14 +344,14 @@ export class FleetRepository {
       throw new DispatchError('VALIDATION_FAILED', { field: 'fixes', max: MAX_FIXES_PER_REQUEST })
     }
     return withRetryingTransaction(this.db, async (tx) => {
-      await this.assertActiveSession(tx, sessionId, towTruckId)
+      await this.assertActiveSession(tx, sessionId, driverId)
       const [{ now }] = await tx.query<{ now: Date }>(`SELECT now() AS "now"`)
       const receivedAt = toDate(now)
       const batch = classifyBatch(fixes, receivedAt, settings)
 
       const [context] = await tx.query<{ orderId: number | null }>(
-        `SELECT (SELECT a."orderId" FROM "OrderAssignment" a WHERE a."towTruckId" = $1::int AND a."endedAt" IS NULL) AS "orderId"`,
-        [towTruckId],
+        `SELECT (SELECT a."orderId" FROM "OrderAssignment" a WHERE a."driverId" = $1::int AND a."endedAt" IS NULL) AS "orderId"`,
+        [driverId],
       )
 
       let currentUpdated = false
@@ -352,8 +360,8 @@ export class FleetRepository {
         const candidate = batch.currentCandidate
         const stored = await tx.query<Record<string, unknown>>(
           `SELECT "sessionId"::text AS "sessionId", "seq", "latitude", "longitude", "accuracyM", "measuredAt"
-             FROM "DriverLocationCurrent" WHERE "towTruckId" = $1::int FOR UPDATE`,
-          [towTruckId],
+             FROM "DriverLocationCurrent" WHERE "driverId" = $1::int FOR UPDATE`,
+          [driverId],
         )
         const previous = stored[0]
           ? {
@@ -371,11 +379,11 @@ export class FleetRepository {
         // a newer session (the old one is revoked, see assertActiveSession) or
         // is later in the same session by BOTH sequence and measurement time.
         const updated = await tx.query(
-          `INSERT INTO "DriverLocationCurrent" ("towTruckId", "sessionId", "seq", "latitude", "longitude",
+          `INSERT INTO "DriverLocationCurrent" ("driverId", "sessionId", "seq", "latitude", "longitude",
               "accuracyM", "speedMps", "headingDeg", "measuredAt", "receivedAt", "suspicious", "suspiciousReason")
            VALUES ($1::int, $2::uuid, $3::bigint, $4::numeric, $5::numeric, $6::real, $7::real, $8::real,
               $9::timestamptz, $10::timestamptz, $11::boolean, $12)
-           ON CONFLICT ("towTruckId") DO UPDATE SET
+           ON CONFLICT ("driverId") DO UPDATE SET
               "sessionId" = EXCLUDED."sessionId", "seq" = EXCLUDED."seq",
               "latitude" = EXCLUDED."latitude", "longitude" = EXCLUDED."longitude",
               "accuracyM" = EXCLUDED."accuracyM", "speedMps" = EXCLUDED."speedMps", "headingDeg" = EXCLUDED."headingDeg",
@@ -386,7 +394,7 @@ export class FleetRepository {
                    AND EXCLUDED."measuredAt" >= "DriverLocationCurrent"."measuredAt")
            RETURNING 1`,
           [
-            towTruckId,
+            driverId,
             sessionId,
             candidate.seq,
             candidate.latitude,
@@ -407,14 +415,14 @@ export class FleetRepository {
         const p = new Params()
         const tuples = batch.accepted.map((fix) => {
           const isCurrent = batch.currentCandidate?.seq === fix.seq
-          return `(${p.add(towTruckId)}::int, ${p.add(sessionId)}::uuid, ${p.add(fix.seq)}::bigint,
+          return `(${p.add(driverId)}::int, ${p.add(sessionId)}::uuid, ${p.add(fix.seq)}::bigint,
             ${p.add(fix.latitude)}::numeric, ${p.add(fix.longitude)}::numeric, ${p.add(fix.accuracyM)}::real,
             ${p.add(fix.speedMps)}::real, ${p.add(fix.headingDeg)}::real, ${p.add(fix.measuredAt)}::timestamptz,
             ${p.add(receivedAt)}::timestamptz, ${p.add(context.orderId)}::int, ${p.add(fix.late)}::boolean,
             ${p.add(isCurrent && suspicious)}::boolean)`
         })
         await tx.query(
-          `INSERT INTO "DriverLocationHistory" ("towTruckId", "sessionId", "seq", "latitude", "longitude", "accuracyM",
+          `INSERT INTO "DriverLocationHistory" ("driverId", "sessionId", "seq", "latitude", "longitude", "accuracyM",
              "speedMps", "headingDeg", "measuredAt", "receivedAt", "orderId", "late", "suspicious")
            VALUES ${tuples.join(', ')}
            ON CONFLICT ("sessionId", "seq") DO NOTHING`,
@@ -423,8 +431,8 @@ export class FleetRepository {
       }
 
       const [presence] = await tx.query<{ wantsOnline: boolean | null }>(
-        `SELECT "wantsOnline" FROM "DriverPresence" WHERE "towTruckId" = $1::int`,
-        [towTruckId],
+        `SELECT "wantsOnline" FROM "DriverPresence" WHERE "driverId" = $1::int`,
+        [driverId],
       )
       return {
         serverTime: receivedAt.toISOString(),
@@ -443,10 +451,10 @@ export class FleetRepository {
 
   // ─── Reads ────────────────────────────────────────────────────────────────
 
-  async driverState(towTruckId: number): Promise<DriverStateRow | null> {
-    const rows = await this.db.query<Record<string, unknown>>(
+  async driverState(driverId: number, sql: Sql = this.db): Promise<DriverStateRow | null> {
+    const rows = await sql.query<Record<string, unknown>>(
       `SELECT ${DRIVER_STATE_SELECT} ${DRIVER_STATE_FROM} WHERE t."id" = $1::int`,
-      [towTruckId],
+      [driverId],
     )
     return rows[0] ? mapDriverState(rows[0]) : null
   }
@@ -463,7 +471,7 @@ export class FleetRepository {
     offset: number
   }): Promise<DriverStateRow[]> {
     const p = new Params()
-    const where: string[] = ['p."towTruckId" IS NOT NULL']
+    const where: string[] = ['p."driverId" IS NOT NULL']
     if (filter.onlyWantsOnline) where.push('p."wantsOnline"')
     if (filter.bbox) {
       where.push(
@@ -481,10 +489,10 @@ export class FleetRepository {
     return rows.map(mapDriverState)
   }
 
-  async setDispatchSuspended(towTruckId: number, suspended: boolean, reason: string | null, adminUserId: number): Promise<void> {
+  async setDispatchSuspended(driverId: number, suspended: boolean, reason: string | null, adminUserId: number): Promise<void> {
     await this.db.query(
-      `INSERT INTO "DriverPresence" ("towTruckId") VALUES ($1::int) ON CONFLICT ("towTruckId") DO NOTHING`,
-      [towTruckId],
+      `INSERT INTO "DriverPresence" ("driverId") VALUES ($1::int) ON CONFLICT ("driverId") DO NOTHING`,
+      [driverId],
     )
     await this.db.query(
       `UPDATE "DriverPresence"
@@ -492,8 +500,8 @@ export class FleetRepository {
               "dispatchSuspendedReason" = CASE WHEN $2::boolean THEN $3 ELSE NULL END,
               "dispatchSuspendedBy" = CASE WHEN $2::boolean THEN $4::int ELSE NULL END,
               "updatedAt" = now()
-        WHERE "towTruckId" = $1::int`,
-      [towTruckId, suspended, reason, adminUserId],
+        WHERE "driverId" = $1::int`,
+      [driverId, suspended, reason, adminUserId],
     )
   }
 
@@ -517,7 +525,7 @@ export class FleetRepository {
 function mapSession(row: Record<string, unknown>): DeviceSession {
   return {
     id: String(row.id),
-    towTruckId: toNumber(row.towTruckId),
+    driverId: toNumber(row.driverId),
     deviceId: String(row.deviceId),
     platform: row.platform as 'ios' | 'android',
     revokedAt: toNullableDate(row.revokedAt),

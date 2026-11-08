@@ -35,14 +35,16 @@
 ### 1.3 Վարորդի հաշիվ, auth, դերեր
 
 - **Վարորդը = `TowTruck` տող։** Առանձին `Driver`/`User` մոդել չկա։ Մուտքը՝
-  `POST /driver-auth/login` (հեռախոս + գաղտնաբառ, bcrypt), JWT `{ sub: towTruckId }`,
+  `POST /driver-auth/login` (հեռախոս + գաղտնաբառ, bcrypt), JWT `{ sub: driverId }`,
   30 օր, `DRIVER_JWT_SECRET`։ Refresh token, session revoke **չկա** (փաստագրված
   `docs/auth-and-security.md`-ում)։
-  → **Որոշում.** Նոր վարորդի հաշիվ չենք ստեղծում։ Բոլոր նոր աղյուսակները
-  հղվում են `TowTruck.id`-ին։ Բջջային հավելվածը մուտք է գործում **նույն
-  credential-ով**, բայց ստանում է առանձին token՝ `aud: 'driver:app'` և `sid`
-  (device session id), որը կարելի է revoke անել։ Գործող վեբ token-ները
-  անփոփոխ են։
+  → **Որոշում (թարմացված).** Կայքի վարորդի համար երկրորդ հաշիվ/գաղտնաբառ չենք
+  ստեղծում․ հավելվածը մուտք է գործում **կայքի նույն credential-ով**։ Բայց
+  հավելվածից օգտվելու **իրավունքը** առանձին է՝ `FleetDriver` (ADR-10)․ ոչ բոլոր
+  կայքի վարորդներն են այն ստանում, և կան վարորդներ, որոնք կայքում չեն։ Բոլոր
+  live-dispatch աղյուսակները հղվում են `FleetDriver.id`-ին։ Հավելվածը ստանում է
+  առանձին token՝ `aud: 'driver:app'`, `sub` = `FleetDriver.id`, `sid` (device
+  session id, revoke-ելի)։ Գործող վեբ token-ները անփոփոխ են։
 - **Ադմին.** `User` մոդել, `enum UserRole { ADMIN }` — միակ դերը։ `AdminJwtGuard`-ը
   մերժում է ամեն ինչ, որը `ADMIN` չէ։ Telegram 2FA կա (կամընտիր)։
   → **Որոշում.** Ավելացվում է `DISPATCHER` արժեքը (additive `ALTER TYPE ... ADD VALUE`)։
@@ -176,12 +178,12 @@ Redis client-ը փոքր, dependency-free RESP client է (`notify/redis-resp.ts`
 Առանձին `DriverReservation` աղյուսակ չի ստեղծվում։ Reservation-ը PENDING
 offer-ն է, և եզակիությունը պարտադրվում է՝
 
-- `UNIQUE ("towTruckId") WHERE status = 'PENDING'` — վարորդը մեկից ավելի ակտիվ առաջարկ չունի,
+- `UNIQUE ("driverId") WHERE status = 'PENDING'` — վարորդը մեկից ավելի ակտիվ առաջարկ չունի,
 - `UNIQUE ("orderId") WHERE status = 'PENDING'` — sequential dispatch,
-- `UNIQUE ("attemptId", "towTruckId")` — նույն փորձում նույն վարորդին կրկին չենք առաջարկում։
+- `UNIQUE ("attemptId", "driverId")` — նույն փորձում նույն վարորդին կրկին չենք առաջարկում։
 
 Assignment-ները՝ `OrderAssignment` աղյուսակ՝
-`UNIQUE ("orderId") WHERE "endedAt" IS NULL` և `UNIQUE ("towTruckId") WHERE "endedAt" IS NULL`։
+`UNIQUE ("orderId") WHERE "endedAt" IS NULL` և `UNIQUE ("driverId") WHERE "endedAt" IS NULL`։
 
 Երկու առանձին աղյուսակ (reservation + offer) կնշանակեր երկու բան, որոնք
 պետք է համաձայնեցված մնան — դա ճիշտ այն տեսակի drift-ն է, որից գործող
@@ -243,8 +245,10 @@ Expo development build-ը (config plugins + `expo prebuild`) տալիս է նո�
 
 Գործող `/evakuator`-ը չի փոխարինվում, այլ ընդլայնվում է։ Նոր endpoint
 `POST /nearest-tow-trucks/live` (feature flag `LIVE_NEARBY_ENABLED`)
-վերադարձնում է երկու առանձին բաժին՝ `live` (թարմ GPS, online, ազատ) և
-`fallback` (գործող՝ պրոֆիլի կայանատեղից)։ Հանրային պատասխանում **ճշգրիտ
+վերադարձնում է **մեկ ցուցակ** (թարմացված որոշում, սեփականատիրոջ ընտրությամբ)․
+կայքի վարորդը, որն առցանց է հավելվածում թարմ GPS-ով, չափվում է իր ներկա դիրքից
+(`live` նշանով), մնացածը՝ պրոֆիլի կայանատեղից (գործող որոնումը), նույն վարորդը՝
+մեկ անգամ։ Միայն-հավելվածի վարորդները չեն երևում ([11](11-driver-access.md))։ Հանրային պատասխանում **ճշգրիտ
 կոորդինատներ չկան**՝ միայն ճանապարհային հեռավորություն/ETA (կամ ուղիղ գծով՝
 առանց ժամանակի), availability label, `computedAt`։
 
@@ -254,11 +258,31 @@ Expo development build-ը (config plugins + `expo prebuild`) տալիս է նո�
 (location ingest), `LIVE_NEARBY_ENABLED` (հանրային live բաժին), frontend-ում՝
 `NUXT_PUBLIC_LIVE_NEARBY_ENABLED`։ Բոլորը լռելյայն `false`։
 
+
+### ADR-10. Կայքի պրոֆիլը և հավելվածի հասանելիությունը՝ երկու առանձին էություն
+
+**Խնդիր.** Ոչ բոլոր կայքի վարորդներն են պետք է օգտվեն հավելվածից (ադմինը
+ընտրում է), և կան վարորդներ, որոնք միայն հավելվածում են (կայքում չեն)։ Երկու
+տրամաբանությունը չպետք է խառնվի, իսկ կայքի վարորդի կրկնակի հաշիվ չպետք է լինի։
+
+**Որոշում.** `FleetDriver` աղյուսակ՝ երկու տեսակով (`SITE_LINKED` → `TowTruck`,
+`APP_ONLY` → սեփական credential և մեքենայի տվյալներ) և `FleetDriverProfile` view,
+որը dispatch-ին տալիս է մեկ ձև։ Live-dispatch-ի բոլոր աղյուսակները հղվում են
+`FleetDriver.id`-ին։ Կայքի կոդը չի փոխվում և `FleetDriver`-ի մասին չգիտի։
+
+**Մերժված տարբերակներ.** (1) `TowTruck`-ում «միայն հավելված» flag․ ամեն հանրային
+read path (5+ տեղ, sitemap) պետք է հիշեր այն բացառել — հենց այն խառնումը, որից
+խուսափում ենք։ (2) Dispatch աղյուսակները թողնել `TowTruck.id`-ի վրա և
+app-only-ների համար երկրորդ սյունակ․ ամեն partial unique index (կրկնակի նշանակման
+պաշտպանությունը) կկիսվեր երկու սյունակի։
+
+Մանրամասներ՝ [11-driver-access.md](11-driver-access.md)։
+
 ## 4. Ինչ ենք օգտագործում / ընդլայնում / ինչ է բացակայում
 
 | Օգտագործում ենք անփոփոխ | Ընդլայնում ենք | Նոր |
 | --- | --- | --- |
-| `TowTruck` որպես վարորդի հաշիվ | `UserRole` + `DISPATCHER` | Device sessions, presence, current location, history |
+| `TowTruck` որպես կայքի վարորդի հաշիվ (հավելվածի հասանելիությունը՝ առանձին `FleetDriver`, [11](11-driver-access.md)) | `UserRole` + `DISPATCHER` | Device sessions, presence, current location, history |
 | `DriverAuthService.login` credential check | `/evakuator` + live բաժին | Orders, offers, assignments, events, alerts, requests |
 | `assertWithinArmenia`, `ARMENIA_BOUNDS` | `ecosystem.config.js` + worker | Outbox, idempotency keys, dispatch settings |
 | `hasManipulator`, `SPECIALIST_VEHICLE_TYPES` | nginx՝ WebSocket upgrade | RoutingProvider, Google Routes adapter |

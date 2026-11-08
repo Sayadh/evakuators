@@ -120,7 +120,20 @@
           "TRACKING_CONSENT_REQUIRED",
           "IDEMPOTENCY_KEY_REUSED",
           "IDEMPOTENCY_IN_PROGRESS",
-          "RATE_LIMITED"
+          "RATE_LIMITED",
+          "INVALID_CREDENTIALS",
+          "APP_ACCESS_NOT_GRANTED",
+          "APP_ACCOUNT_PENDING",
+          "APP_ACCOUNT_REJECTED",
+          "APP_ACCESS_SUSPENDED",
+          "SITE_PROFILE_INACTIVE",
+          "PHONE_BELONGS_TO_SITE_DRIVER",
+          "PHONE_ALREADY_REGISTERED",
+          "REGISTRATION_ALREADY_PENDING",
+          "PHONE_HAS_APP_ONLY_ACCOUNT",
+          "FLEET_DRIVER_NOT_FOUND",
+          "TOW_TRUCK_NOT_FOUND",
+          "TOW_TRUCK_ALREADY_LINKED"
         ]
       },
       "Error": {
@@ -485,7 +498,7 @@
               }
             }
           },
-          "assignedTowTruckId": {
+          "assignedDriverId": {
             "type": [
               "integer",
               "null"
@@ -730,6 +743,21 @@
           },
           "tracking": {
             "$ref": "#/components/schemas/TrackingPolicy"
+          },
+          "driver": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "SITE_LINKED",
+                  "APP_ONLY"
+                ]
+              }
+            }
           }
         }
       },
@@ -777,6 +805,94 @@
             ]
           }
         }
+      },
+      "FleetDriver": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "SITE_LINKED",
+              "APP_ONLY"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING_REVIEW",
+              "ACTIVE",
+              "SUSPENDED",
+              "REJECTED"
+            ]
+          },
+          "towTruckId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Website profile; set only for SITE_LINKED"
+          },
+          "slug": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "driverName": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "vehicleType": {
+            "type": "string"
+          },
+          "capacityTons": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "maxLoadTons": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "manipulator": {
+            "type": "boolean"
+          },
+          "wheelSkates": {
+            "type": "boolean"
+          },
+          "vehicleDescription": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "May receive orders now (access ACTIVE and, for a website driver, listed on the site)"
+          },
+          "statusReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "statusChangedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
       }
     }
   },
@@ -787,8 +903,8 @@
         "tags": [
           "driver-app"
         ],
-        "summary": "App login — the SAME phone + password as the website; revokes the driver's previous device session",
-        "description": "Throttled 10/min/IP.",
+        "summary": "App login. A number listed on the website signs in ONLY with the website password, and only if an admin granted app access; any other number is an app-only account",
+        "description": "Throttled 10/min/IP. 401 INVALID_CREDENTIALS (or the website's own 401); 403 APP_ACCESS_NOT_GRANTED / APP_ACCOUNT_PENDING / APP_ACCOUNT_REJECTED / APP_ACCESS_SUSPENDED / SITE_PROFILE_INACTIVE (status only revealed after a correct password).",
         "requestBody": {
           "required": true,
           "content": {
@@ -844,14 +960,22 @@
                       "type": "string",
                       "format": "uuid"
                     },
-                    "towTruckId": {
-                      "type": "integer"
+                    "driverId": {
+                      "type": "integer",
+                      "description": "FleetDriver.id (NOT TowTruck.id)"
                     },
                     "mustChangePassword": {
                       "type": "boolean"
                     },
                     "requiresPrivacyConsent": {
                       "type": "boolean"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "SITE_LINKED",
+                        "APP_ONLY"
+                      ]
                     }
                   }
                 }
@@ -2111,13 +2235,13 @@
                 "type": "object",
                 "required": [
                   "expectedVersion",
-                  "towTruckId"
+                  "driverId"
                 ],
                 "properties": {
                   "expectedVersion": {
                     "type": "integer"
                   },
-                  "towTruckId": {
+                  "driverId": {
                     "type": "integer"
                   },
                   "overrideReason": {
@@ -2275,7 +2399,7 @@
         }
       }
     },
-    "/ops/dispatch/drivers/{towTruckId}/suspend": {
+    "/ops/dispatch/drivers/{driverId}/suspend": {
       "post": {
         "tags": [
           "ops"
@@ -2287,7 +2411,7 @@
         ],
         "parameters": [
           {
-            "name": "towTruckId",
+            "name": "driverId",
             "in": "path",
             "required": true,
             "schema": {
@@ -2437,8 +2561,8 @@
         "tags": [
           "public"
         ],
-        "summary": "Live nearest drivers (fresh GPS) + the existing profile-base results as a separate fallback section",
-        "description": "POST so the visitor's position never reaches access logs. Creates no order, reserves nobody, notifies nobody.\nLive items carry NO coordinates — rounded road distance/ETA or a straight line (no time) only.\nThrottled 10/min/IP; cached ~60 s per ~110 m cell; separate daily routing budget.\nA result is not a reservation (`disclaimer: NOT_A_RESERVATION`).\n",
+        "summary": "Nearest drivers in ONE list: website drivers online in the app with fresh GPS are measured from where they are now (`live`), everyone else from their profile parking spot (the existing search)",
+        "description": "POST so the visitor's position never reaches access logs. Creates no order, reserves nobody, notifies nobody.\nOnly drivers with a public website card appear — app-only drivers never do. A driver is listed once.\nLive entries carry NO coordinates — distance rounded to 100 m, time rounded to the minute.\nRanking = the existing search's rule for everyone: with a road time first (fastest first), then by straight line.\nThrottled 10/min/IP; live part cached ~60 s per ~110 m cell; separate daily routing budget.\nA result is not a reservation (`disclaimer: NOT_A_RESERVATION`).\n",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2466,58 +2590,35 @@
         },
         "responses": {
           "200": {
-            "description": "Live + fallback",
+            "description": "One ranked list",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "computedAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "live": {
-                      "type": "object",
-                      "properties": {
-                        "routed": {
-                          "type": "boolean"
-                        },
-                        "reason": {
-                          "type": "string",
-                          "enum": [
-                            "OK",
-                            "NO_LIVE_DRIVERS"
-                          ]
-                        },
-                        "items": {
-                          "type": "array",
-                          "items": {
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "towTruck": {
                             "type": "object",
+                            "description": "The public card (same shape as GET /tow-trucks)"
+                          },
+                          "straightLineMeters": {
+                            "type": "integer"
+                          },
+                          "roadMeters": {
+                            "type": "integer"
+                          },
+                          "durationSeconds": {
+                            "type": "integer"
+                          },
+                          "live": {
+                            "type": "object",
+                            "description": "Present only when measured from the live phone position",
                             "properties": {
-                              "towTruck": {
-                                "type": "object",
-                                "description": "The public card (same shape as GET /tow-trucks)"
-                              },
-                              "roadMeters": {
-                                "type": [
-                                  "integer",
-                                  "null"
-                                ]
-                              },
-                              "etaSeconds": {
-                                "type": [
-                                  "integer",
-                                  "null"
-                                ]
-                              },
-                              "straightLineMeters": {
-                                "type": "integer"
-                              },
-                              "availability": {
-                                "type": "string",
-                                "const": "ONLINE_FREE"
-                              },
-                              "locationFreshness": {
+                              "freshness": {
                                 "type": "string",
                                 "enum": [
                                   "UNDER_1_MIN",
@@ -2529,9 +2630,15 @@
                         }
                       }
                     },
-                    "fallback": {
-                      "type": "object",
-                      "description": "Existing NearestSearchApi minus drivers already listed live"
+                    "routed": {
+                      "type": "boolean"
+                    },
+                    "liveCount": {
+                      "type": "integer"
+                    },
+                    "computedAt": {
+                      "type": "string",
+                      "format": "date-time"
                     },
                     "disclaimer": {
                       "type": "string",
@@ -2544,6 +2651,643 @@
           },
           "404": {
             "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/driver-app/registrations": {
+      "post": {
+        "tags": [
+          "driver-app"
+        ],
+        "summary": "Sign-up for a driver NOT on the website → PENDING_REVIEW (admin approves). Creates nothing public",
+        "description": "Throttled 5/hour/IP. 409 PHONE_BELONGS_TO_SITE_DRIVER (use the website login), REGISTRATION_ALREADY_PENDING, PHONE_ALREADY_REGISTERED. A REJECTED number may apply again.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "phone",
+                  "password",
+                  "driverName",
+                  "vehicleType",
+                  "capacityTons",
+                  "manipulator",
+                  "wheelSkates"
+                ],
+                "properties": {
+                  "phone": {
+                    "type": "string",
+                    "pattern": "^\\+374\\d{8}$"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 72
+                  },
+                  "driverName": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 80
+                  },
+                  "vehicleType": {
+                    "type": "string",
+                    "enum": [
+                      "flatbed",
+                      "sliding-platform",
+                      "manipulator",
+                      "heavy-duty"
+                    ]
+                  },
+                  "capacityTons": {
+                    "type": "number",
+                    "minimum": 0.5,
+                    "maximum": 80
+                  },
+                  "maxLoadTons": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "manipulator": {
+                    "type": "boolean"
+                  },
+                  "wheelSkates": {
+                    "type": "boolean"
+                  },
+                  "vehicleDescription": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 200
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Registered, waiting for review",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "driverId": {
+                      "type": "integer"
+                    },
+                    "status": {
+                      "type": "string",
+                      "const": "PENDING_REVIEW"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/ops/dispatch/fleet": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "summary": "App drivers (both kinds), pending first (ADMIN only)",
+        "responses": {
+          "200": {
+            "description": "List",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FleetDriver"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "PENDING_REVIEW",
+                "ACTIVE",
+                "SUSPENDED",
+                "REJECTED"
+              ]
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "SITE_LINKED",
+                "APP_ONLY"
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
+      }
+    },
+    "/ops/dispatch/fleet/site-candidates": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "summary": "Website profiles matching a search, with their current app access — for the grant picker (ADMIN only)",
+        "responses": {
+          "200": {
+            "description": "Up to 20",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "towTruckId": {
+                        "type": "integer"
+                      },
+                      "driverName": {
+                        "type": "string"
+                      },
+                      "phone": {
+                        "type": "string"
+                      },
+                      "slug": {
+                        "type": "string"
+                      },
+                      "isActive": {
+                        "type": "boolean"
+                      },
+                      "vehicleType": {
+                        "type": "string"
+                      },
+                      "driverId": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "accessStatus": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 2
+            }
+          }
+        ]
+      }
+    },
+    "/ops/dispatch/fleet/{id}": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "summary": "One app driver (ADMIN only)",
+        "responses": {
+          "200": {
+            "description": "Driver",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetDriver"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
+      }
+    },
+    "/ops/dispatch/fleet/grant": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "summary": "Give a WEBSITE driver app access (or give it back). Their site login becomes their app login. 409 PHONE_HAS_APP_ONLY_ACCOUNT → use link-site (ADMIN only)",
+        "responses": {
+          "200": {
+            "description": "Updated driver",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetDriver"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "towTruckId"
+                ],
+                "properties": {
+                  "towTruckId": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ops/dispatch/fleet/{id}/approve": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "summary": "Approve an app-only registration (ADMIN only)",
+        "responses": {
+          "200": {
+            "description": "Updated driver",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetDriver"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
+      }
+    },
+    "/ops/dispatch/fleet/{id}/reject": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "summary": "Reject an app-only registration (ADMIN only)",
+        "responses": {
+          "200": {
+            "description": "Updated driver",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetDriver"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 300
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ops/dispatch/fleet/{id}/suspend": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "summary": "Take app access away (either kind): every device logged out at once. 409 DRIVER_BUSY while holding an order (ADMIN only)",
+        "responses": {
+          "200": {
+            "description": "Updated driver",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetDriver"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 300
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ops/dispatch/fleet/{id}/reactivate": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "summary": "Restore suspended access (ADMIN only)",
+        "responses": {
+          "200": {
+            "description": "Updated driver",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetDriver"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
+      }
+    },
+    "/ops/dispatch/fleet/{id}/link-site": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "summary": "Merge an app-only driver into a website profile: same driver id (history kept), site password from now on, devices logged out (ADMIN only)",
+        "responses": {
+          "200": {
+            "description": "Updated driver",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetDriver"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "towTruckId"
+                ],
+                "properties": {
+                  "towTruckId": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
           }
         }
       }

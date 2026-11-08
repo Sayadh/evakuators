@@ -12,7 +12,7 @@
  * by type OID. One query at a time per connection; a `PgPool` hands out
  * connections for parallelism.
  */
-import { createHash } from 'node:crypto'
+import { createHash, createHmac, pbkdf2Sync, randomBytes } from 'node:crypto'
 import net from 'node:net'
 import { SqlError, type IsolationLevel, type Row, type Sql, type SqlDatabase, type SqlParam } from '../platform/sql'
 
@@ -151,6 +151,7 @@ export class PgWireClient implements Sql {
   private socket!: net.Socket
   private buffer = Buffer.alloc(0)
   private queue: Pending[] = []
+  private scram: { nonce: string; firstBare: string; serverSignature?: Buffer } | null = null
   private chain: Promise<unknown> = Promise.resolve()
   private readyResolve: (() => void) | null = null
   private readyReject: ((error: Error) => void) | null = null
@@ -232,7 +233,49 @@ export class PgWireClient implements Sql {
           this.socket.write(message('p', cstring('md5' + outer)))
           return
         }
-        this.fail(new Error(`unsupported auth method ${code} (use trust/md5 for the test database)`))
+        if (code === 10) {
+          // SASL: the default since PostgreSQL 14 and in Postgres.app.
+          const mechanisms = body.toString('utf8', 4).split('\0')
+          if (!mechanisms.includes('SCRAM-SHA-256')) {
+            this.fail(new Error(`unsupported SASL mechanisms ${mechanisms.join(',')}`))
+            return
+          }
+          const nonce = randomBytes(18).toString('base64')
+          const firstBare = `n=*,r=${nonce}`
+          this.scram = { nonce, firstBare }
+          const first = Buffer.from(`n,,${firstBare}`)
+          const len = Buffer.alloc(4)
+          len.writeInt32BE(first.length)
+          this.socket.write(message('p', Buffer.concat([cstring('SCRAM-SHA-256'), len, first])))
+          return
+        }
+        if (code === 11 && this.scram) {
+          const serverFirst = body.toString('utf8', 4)
+          const attrs = Object.fromEntries(serverFirst.split(',').map((kv) => [kv[0], kv.slice(2)]))
+          if (!String(attrs.r).startsWith(this.scram.nonce)) {
+            this.fail(new Error('SCRAM: server nonce mismatch'))
+            return
+          }
+          const salted = pbkdf2Sync(this.options.password ?? '', Buffer.from(String(attrs.s), 'base64'), Number(attrs.i), 32, 'sha256')
+          const clientKey = createHmac('sha256', salted).update('Client Key').digest()
+          const storedKey = createHash('sha256').update(clientKey).digest()
+          const finalBare = `c=biws,r=${attrs.r}`
+          const authMessage = `${this.scram.firstBare},${serverFirst},${finalBare}`
+          const signature = createHmac('sha256', storedKey).update(authMessage).digest()
+          const proof = Buffer.from(clientKey.map((b, i) => b ^ signature[i]))
+          const serverKey = createHmac('sha256', salted).update('Server Key').digest()
+          this.scram.serverSignature = createHmac('sha256', serverKey).update(authMessage).digest()
+          this.socket.write(message('p', Buffer.from(`${finalBare},p=${proof.toString('base64')}`)))
+          return
+        }
+        if (code === 12 && this.scram) {
+          const verifier = body.toString('utf8', 4).replace(/^v=/, '')
+          const ok = this.scram.serverSignature && Buffer.from(verifier, 'base64').equals(this.scram.serverSignature)
+          this.scram = null
+          if (!ok) this.fail(new Error('SCRAM: server signature mismatch'))
+          return
+        }
+        this.fail(new Error(`unsupported auth method ${code}`))
         return
       }
       case 'K':

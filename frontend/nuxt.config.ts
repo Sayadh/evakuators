@@ -501,6 +501,12 @@ export default defineNuxtConfig({
        * exactly like `gtag.id` is gated through `shouldLoadGtag.ts`.
        */
       metaPixelId: '',
+      /**
+       * Live nearest search (driver-app GPS). `false` by default; set
+       * NUXT_PUBLIC_LIVE_NEARBY_ENABLED=true together with the backend's
+       * LIVE_NEARBY_ENABLED. While false, /evakuator behaves exactly as before.
+       */
+      liveNearbyEnabled: false,
     },
   },
 

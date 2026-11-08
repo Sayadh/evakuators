@@ -3,7 +3,7 @@ import { isApiEnabled, nearestRepository } from '~/repositories'
 import { NEAREST_SEARCH_ENABLED } from '~/constants/features'
 import { NEAREST_DAILY_SEARCH_LIMIT } from '~/constants/nearest'
 import { SITE_NAME } from '~/constants/site'
-import type { NearestSearchResult } from '~/types/nearest'
+import type { LiveNearbyResult, NearestSearchResult } from '~/types/nearest'
 import { extractErrorMessage } from '~/utils/errors'
 import { formatClockTime } from '~/utils/formatters'
 import { useGeolocation } from '~/composables/useGeolocation'
@@ -79,6 +79,16 @@ const searching = ref(false)
 const searchError = ref('')
 /** Null until the first search completes — distinguishes "not asked yet" from "asked, found nothing" */
 const result = ref<NearestSearchResult | null>(null)
+/**
+ * The LIVE section (drivers' app GPS), only when NUXT_PUBLIC_LIVE_NEARBY_ENABLED
+ * is on. Never remembered in storage: an hour-old "online now" list would be
+ * the exact lie the cache disclaimer exists to prevent — a remembered answer
+ * shows only the profile-base section.
+ */
+const liveEnabled = useRuntimeConfig().public.liveNearbyEnabled === true
+const liveResult = ref<LiveNearbyResult['live'] | null>(null)
+const liveComputedAt = ref<Date | null>(null)
+
 /** Set when a press was answered from storage rather than the network */
 const servedFromCache = ref(false)
 /**
@@ -162,7 +172,9 @@ watch(result, (value) => {
 })
 
 /** Asked at least once and got an empty list back — a different screen from the initial one */
-const hasEmptyResult = computed(() => result.value !== null && result.value.results.length === 0)
+const hasEmptyResult = computed(
+  () => result.value !== null && result.value.results.length === 0 && !(liveResult.value?.items.length ?? 0),
+)
 
 /** "14:32" — when the list on screen was actually computed */
 const cachedAtLabel = computed(() => (cachedAt.value ? formatClockTime(cachedAt.value) : ''))
@@ -212,11 +224,18 @@ async function findNearest(): Promise<void> {
 
   searching.value = true
   try {
-    const fresh = await nearestRepository.findNearest(
-      position.latitude,
-      position.longitude,
-      straightLineOnly,
-    )
+    let fresh: NearestSearchResult
+    if (liveEnabled) {
+      // One request, two clearly separate answers. The profile-base part is
+      // exactly what the non-live endpoint returns (minus drivers already
+      // listed live), so everything below keeps working unchanged on it.
+      const combined = await nearestRepository.findNearestLive(position.latitude, position.longitude, straightLineOnly)
+      fresh = combined.fallback
+      liveResult.value = combined.live
+      liveComputedAt.value = new Date(combined.computedAt)
+    } else {
+      fresh = await nearestRepository.findNearest(position.latitude, position.longitude, straightLineOnly)
+    }
     result.value = fresh
     degradedByAllowance.value = straightLineOnly
     // Charged only for a delivered answer that actually bought road data — a
@@ -321,6 +340,37 @@ async function findNearest(): Promise<void> {
       />
 
       <template v-else-if="result">
+        <section v-if="liveResult && !servedFromCache" class="nearest-page__live" aria-live="polite">
+          <h2 class="nearest-page__results-title">{{ t('nearest.liveTitle') }}</h2>
+          <p v-if="liveResult.items.length && liveComputedAt" class="nearest-page__disclaimer">
+            <AppIcon name="info" :size="16" />
+            <span>{{ t('nearest.liveDisclaimer', { time: formatClockTime(liveComputedAt) }) }}</span>
+          </p>
+          <p v-if="liveResult.items.length && !liveResult.routed" class="nearest-page__disclaimer">
+            <AppIcon name="alert" :size="16" />
+            <span>{{ t('nearest.liveStraightLine') }}</span>
+          </p>
+          <p v-if="!liveResult.items.length" class="nearest-page__disclaimer">
+            <AppIcon name="info" :size="16" />
+            <span>{{ t('nearest.liveNone') }}</span>
+          </p>
+          <div v-if="liveResult.items.length" class="nearest-page__results">
+            <!-- The same card every listing uses, so the call button and its
+                 analytics behave identically (docs/nearest-search.md). -->
+            <NearestResultCard
+              v-for="item in liveResult.items"
+              :key="`live-${item.towTruck.id}`"
+              :result="{
+                towTruck: item.towTruck,
+                straightLineMeters: item.straightLineMeters,
+                roadMeters: item.roadMeters ?? undefined,
+                durationSeconds: item.etaSeconds ?? undefined,
+              }"
+              :routed="liveResult.routed && item.roadMeters !== null"
+            />
+          </div>
+          <h2 v-if="result.results.length" class="nearest-page__results-title">{{ t('nearest.profileSectionTitle') }}</h2>
+        </section>
         <div class="nearest-page__summary">
           <h2 class="nearest-page__results-title">{{ t('nearest.resultsTitle') }}</h2>
           <!-- Shown only for a remembered list. A visitor looking at drivers

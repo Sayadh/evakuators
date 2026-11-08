@@ -87,7 +87,8 @@ async function handleExpiredSession(error: unknown, path: string): Promise<void>
   if (!import.meta.client) return
   if (!(error instanceof FetchError) || error.statusCode !== 401) return
 
-  if (path.startsWith('/admin/')) {
+  // `/ops/` is the live dispatch console — same admin-panel session.
+  if (path.startsWith('/admin/') || path.startsWith('/ops/')) {
     useAdminAuthStore().logout()
     await navigateTo('/admin')
   } else if (path.startsWith('/my/')) {

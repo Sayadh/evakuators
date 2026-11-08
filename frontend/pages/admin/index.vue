@@ -85,6 +85,10 @@ function isUnauthorized(error: unknown): boolean {
 
 async function afterLogin(token: string): Promise<void> {
   adminAuth.login(token)
+  if (adminAuth.role === 'DISPATCHER') {
+    await navigateTo('/admin/orders')
+    return
+  }
   await Promise.all([loadRegistrations(), loadProfileChanges(), loadReviews(), loadTowTrucks()])
 }
 
@@ -1300,6 +1304,12 @@ async function submitReject(): Promise<void> {
 
 onMounted(() => {
   if (!apiEnabled || !adminAuth.isLoggedIn) return
+  // A DISPATCHER session can use only the live dispatch console; every
+  // request this page makes would be refused (403) for them.
+  if (adminAuth.role === 'DISPATCHER') {
+    void navigateTo('/admin/orders')
+    return
+  }
   void loadRegistrations()
   void loadProfileChanges()
   void loadReviews()
@@ -1408,6 +1418,7 @@ async function rejectReview(review: AdminReview): Promise<void> {
         <!-- First, because it is the only one used while a customer is on the
              phone — the other links are desk work that can wait. -->
         <NuxtLink to="/admin/dispatch" class="admin-page__nav-link">Ուղղորդում</NuxtLink>
+        <NuxtLink to="/admin/orders" class="admin-page__nav-link">Պատվերներ</NuxtLink>
         <NuxtLink to="/admin/payments" class="admin-page__nav-link">Վճարումներ</NuxtLink>
         <AppButton variant="outline" size="sm" @click="logout">
           Դուրս գալ

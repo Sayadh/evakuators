@@ -1,6 +1,7 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common'
@@ -36,8 +37,9 @@ export class AdminJwtGuard implements CanActivate {
       throw new UnauthorizedException('Մուտք գործեք admin հաշվով շարունակելու համար')
     }
 
+    let payload: { sub: number; role: UserRole }
     try {
-      const payload = await this.jwt.verifyAsync<{ sub: number; role: UserRole }>(
+      payload = await this.jwt.verifyAsync<{ sub: number; role: UserRole }>(
         header.slice('Bearer '.length),
         {
           secret: this.config.getOrThrow<string>('adminJwtSecret'),
@@ -49,11 +51,17 @@ export class AdminJwtGuard implements CanActivate {
           audience: ADMIN_SESSION_AUDIENCE,
         },
       )
-      if (payload.role !== UserRole.ADMIN) throw new Error('not an admin')
-      request.adminUserId = payload.sub
-      return true
     } catch {
       throw new UnauthorizedException('Ձեր admin նստաշրջանի ժամկետը սպառվել է, մուտք գործեք կրկին')
     }
+    // A VALID session of another role (DISPATCHER, live dispatch console
+    // only) is 403, not 401: the session is fine, this route is not theirs.
+    // A 401 here would make the frontend's apiFetch log them out of the
+    // console they are allowed to use.
+    if (payload.role !== UserRole.ADMIN) {
+      throw new ForbiddenException('Այս բաժինը հասանելի է միայն ադմինիստրատորին')
+    }
+    request.adminUserId = payload.sub
+    return true
   }
 }

@@ -30,7 +30,7 @@ export const nearestRepository = {
       method: 'POST',
       body: { latitude, longitude, skipRouting },
     })
-  },,
+  },
 
   /**
    * Live variant (behind NUXT_PUBLIC_LIVE_NEARBY_ENABLED). Same POST-only

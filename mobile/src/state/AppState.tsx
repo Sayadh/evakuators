@@ -21,6 +21,9 @@ import { registerPushToken, subscribePush } from '../push/push'
 import { connectRealtime } from '../realtime/socket'
 import { reconcile, type PendingAction, type PendingKind } from './pendingActions'
 
+/** Fallback re-read while foreground + online: worst-case delay for a missed offer hint. */
+const SAFETY_REFRESH_MS = 10_000
+
 interface Ctx {
   ready: boolean
   loggedIn: boolean
@@ -53,6 +56,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false)
   const [loggedIn, setLoggedIn] = useState(false)
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
+  const snapshotRef = useRef(snapshot)
+  snapshotRef.current = snapshot
   const [clock, setClock] = useState<ServerClock>({ offsetMs: 0 })
   const [connected, setConnected] = useState(false)
   const [pending, setPending] = useState<PendingAction[]>([])
@@ -120,11 +125,21 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     })
     // Foreground heartbeat (background heartbeats ride on the location task)
     const heartbeat = setInterval(() => void api.heartbeat().catch(() => undefined), 40_000)
+    // Safety net: WebSocket hints and push are both best-effort (Redis down,
+    // FCM delayed, socket "open" but silent). While the driver is in the app
+    // and online (or has an offer/order), re-read the server state on a fixed
+    // cadence so an offer is never missed for longer than one interval.
+    const safetyNet = setInterval(() => {
+      if (RNAppState.currentState !== 'active') return
+      const s = snapshotRef.current
+      if (s && (s.switches.wantsOnline || s.currentOffer || s.activeOrder)) void refresh()
+    }, SAFETY_REFRESH_MS)
     return () => {
       stopRealtime()
       stopPush()
       sub.remove()
       clearInterval(heartbeat)
+      clearInterval(safetyNet)
     }
   }, [loggedIn, refresh])
 

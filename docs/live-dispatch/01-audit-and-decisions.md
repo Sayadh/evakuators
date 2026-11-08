@@ -161,6 +161,16 @@ reconnect-ից հետո միշտ կարդում են snapshot։ Եթե հետա�
 Redis client-ը փոքր, dependency-free RESP client է (`notify/redis-resp.ts`),
 որը թեստավորվում է իրական `redis-server`-ով։
 
+**Ինչ է լինում առանց Redis-ի (`REDIS_URL` դատարկ).** Realtime hint-երը
+հրապարակում է worker-ը (outbox handler), իսկ WebSocket-ները API process-ում են։
+Առանց Redis-ի դրանք իրար չեն հանդիպում (`InProcessBus`), worker-ը log-ում
+զգուշացնում է։ Բաշխումը, timeout-ները, push-ը աշխատում են նույն կերպ։ Ակնթարթայինը
+դառնում է պարբերական․ ադմինի էջերը վերակարդում են 15 վ-ը մեկ, իսկ հավելվածը՝
+10 վ-ը մեկ (երբ բաց է և online / ունի առաջարկ կամ պատվեր) + push-ի և reconnect-ի
+ժամանակ։ Այդ safety-net-ը կա նաև Redis-ով, որովհետև «բաց, բայց լուռ» socket-ը և
+ուշացած FCM-ը նույն ռիսկն են։ Production-ում Redis-ը խորհուրդ է տրվում
+(`apt install redis-server`, `bind 127.0.0.1`), տեղական աշխատանքում՝ ըստ ցանկության։
+
 ### ADR-3. Reservation = PENDING offer + partial unique index
 
 Առանձին `DriverReservation` աղյուսակ չի ստեղծվում։ Reservation-ը PENDING

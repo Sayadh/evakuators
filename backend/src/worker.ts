@@ -29,6 +29,12 @@ async function main(): Promise<void> {
   const config = readLiveDispatchConfig(process.env)
   if (!config.enabled) {
     log('warn', 'LIVE_DISPATCH_ENABLED is not "true" — worker idles (no outbox, no reconciler)')
+  } else if (!config.redisUrl) {
+    // Realtime hints are published by THIS process; WebSockets live in the API
+    // process. Without Redis they never meet — dispatch still works (DB is the
+    // truth, apps/console re-read on push, on a timer and on reconnect), but
+    // nothing is instant.
+    log('warn', 'REDIS_URL is empty — realtime hints will not reach WebSocket clients (apps/console fall back to periodic re-reads)')
   }
   const prisma = new PrismaClient()
   await prisma.$connect()

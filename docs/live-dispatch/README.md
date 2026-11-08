@@ -22,6 +22,7 @@
 
 ```bash
 docker compose -f docker-compose.dev.yml up -d          # PostGIS 16 + Redis 7 on 55432 / 56379
+# No Docker? Postgres.app (bundles PostGIS) works; Redis is optional — see 01 § ADR-2
 cd backend
 cp .env.example .env    # DATABASE_URL → the postgis container; LIVE_DISPATCH_ENABLED=true; REDIS_URL=redis://127.0.0.1:56379
 npx prisma migrate deploy && npx prisma generate

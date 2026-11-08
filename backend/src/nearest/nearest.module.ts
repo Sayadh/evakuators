@@ -19,5 +19,10 @@ import { NearestService } from './nearest.service'
   imports: [TowTrucksModule, RoutingModule],
   controllers: [NearestController],
   providers: [NearestService, NearestRepository, NearestCacheService],
+  // Exported for the live-dispatch public search, which shows these
+  // base-parking results as its clearly-labelled FALLBACK section. The
+  // dependency stays one-directional: this module imports nothing from
+  // live-dispatch.
+  exports: [NearestService],
 })
 export class NearestModule {}

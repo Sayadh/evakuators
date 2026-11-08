@@ -168,7 +168,7 @@ export class PgWireClient implements Sql {
       this.readyResolve = resolve
       this.readyReject = reject
       this.socket = net.createConnection({ host: this.options.host, port: this.options.port })
-      this.socket.on('data', (chunk) => this.onData(chunk))
+      this.socket.on('data', (chunk: Buffer) => this.onData(chunk))
       this.socket.on('error', (error) => this.fail(error))
       this.socket.on('close', () => {
         this.closed = true

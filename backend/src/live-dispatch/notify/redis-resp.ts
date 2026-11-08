@@ -89,7 +89,7 @@ class Connection {
       socket.setNoDelay(true)
       socket.once('connect', () => resolve())
       socket.once('error', reject)
-      socket.on('data', (chunk) => this.onData(chunk))
+      socket.on('data', (chunk: Buffer) => this.onData(chunk))
       socket.on('close', () => {
         for (const waiter of this.waiting.splice(0)) waiter.reject(new Error('redis connection closed'))
         this.socket = null

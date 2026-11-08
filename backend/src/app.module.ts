@@ -14,6 +14,7 @@ import { DriverAuthModule } from './driver-auth/driver-auth.module'
 import { FreeRoutesModule } from './free-routes/free-routes.module'
 import { HealthModule } from './health/health.module'
 import { IdramModule } from './idram/idram.module'
+import { LiveDispatchModule } from './live-dispatch/nest/live-dispatch.module'
 import { ImagesModule } from './images/images.module'
 import { MyTowTruckModule } from './my-tow-truck/my-tow-truck.module'
 import { NearestModule } from './nearest/nearest.module'
@@ -65,6 +66,10 @@ import { TowTrucksModule } from './tow-trucks/tow-trucks.module'
     DispatchModule,
     SubscriptionsModule,
     IdramModule,
+    // Live dispatch (driver app, order console, live nearby search). Every
+    // endpoint is behind LIVE_DISPATCH_ENABLED / DRIVER_TRACKING_ENABLED /
+    // LIVE_NEARBY_ENABLED (all off by default) — see docs/live-dispatch/.
+    LiveDispatchModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: SsrAwareThrottlerGuard }],
 })

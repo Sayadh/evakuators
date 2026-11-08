@@ -20,7 +20,25 @@ enum RegistrationStatus {
 
 enum UserRole {
   ADMIN
+  /// Live dispatch console only (/ops/dispatch/*). Refused by AdminJwtGuard,
+  /// so it reaches none of the pre-existing /admin routes. Migration
+  /// 20261108090000_add_dispatcher_role.
+  DISPATCHER
 }
+
+// Live dispatch tables (DriverDeviceSession, DriverPresence,
+// DriverLocationCurrent/History, DispatchOrder, DispatchAttempt,
+// DispatchCandidate, OrderOffer, OrderAssignment, OrderEvent, OrderAlert,
+// OrderDriverRequest, NotificationDelivery, OutboxEvent, IdempotencyKey,
+// DispatchSetting, RoutingUsageDay) are created by the hand-written
+// migrations 20261108090100_live_dispatch_core and _postgis and are accessed
+// ONLY through parameterised raw SQL in backend/src/live-dispatch/ — every
+// correctness rule there (partial unique indexes, FOR UPDATE, DB-clock
+// deadlines, ON CONFLICT … WHERE) is outside what the typed client expresses.
+// They are deliberately not modelled here; `prisma migrate diff` therefore
+// lists them as DROP TABLE lines, alongside the known DROP DEFAULT baseline
+// (docs/data-model.md § Migrations). Never apply that diff.
+// See docs/live-dispatch/03-data-model.md.
 
 /// Lifecycle of a driver's proposed edit to their own live profile.
 ///

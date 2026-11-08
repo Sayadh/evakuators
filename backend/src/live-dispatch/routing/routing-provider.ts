@@ -105,6 +105,11 @@ export interface GuardOptions {
   baseBackoffMs: number
   maxConcurrent: number
   dailyElementBudget: () => number
+  /**
+   * Usage row key. Defaults to the provider name; the public nearby search
+   * uses its own key so visitors can never spend the dispatch budget.
+   */
+  budgetKey?: string
 }
 
 export interface RoutingMetrics {
@@ -136,6 +141,10 @@ export class GuardedRouting {
     return this.provider.name
   }
 
+  private get usageKey(): string {
+    return this.options.budgetKey ?? this.provider.name
+  }
+
   async matrix(origins: LatLng[], destination: LatLng): Promise<MatrixResult> {
     if (origins.length === 0) return { provider: this.provider.name, computedAt: new Date(), entries: [], billableElements: 0 }
     if (origins.length > this.provider.maxElementsPerRequest) {
@@ -153,7 +162,7 @@ export class GuardedRouting {
              "elements" = "RoutingUsageDay"."elements" + EXCLUDED."elements"
        WHERE "RoutingUsageDay"."elements" + EXCLUDED."elements" <= $4::int
        RETURNING 1`,
-      [day, this.provider.name, origins.length, this.options.dailyElementBudget()],
+      [day, this.usageKey, origins.length, this.options.dailyElementBudget()],
     )
     if (reserved.length === 0 || origins.length > this.options.dailyElementBudget()) {
       this.metrics.budgetRefusals++
@@ -195,7 +204,7 @@ export class GuardedRouting {
         }
       }
       await this.db
-        .query(`UPDATE "RoutingUsageDay" SET "errors" = "errors" + 1 WHERE "day" = $1 AND "provider" = $2`, [day, this.provider.name])
+        .query(`UPDATE "RoutingUsageDay" SET "errors" = "errors" + 1 WHERE "day" = $1 AND "provider" = $2`, [day, this.usageKey])
         .catch(() => undefined)
       return failedAll(this.provider.name, origins.length, lastError)
     })

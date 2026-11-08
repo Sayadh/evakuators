@@ -76,6 +76,8 @@ export interface LiveDispatchRuntime {
   orders: OrdersRepository
   offers: OffersRepository
   routing: GuardedRouting
+  /** The raw provider, for a second guard with its own budget (public search) */
+  routingProvider: RoutingProvider
   engine: DispatchEngine
   reconciler: Reconciler
   push: PushService
@@ -163,6 +165,7 @@ export function createRuntime(
     orders,
     offers,
     routing,
+    routingProvider: provider,
     engine,
     reconciler,
     push,

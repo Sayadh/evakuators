@@ -20,7 +20,10 @@
     "admin:create": "node scripts/create-admin-user.js",
     "admin:telegram-link": "node scripts/generate-admin-telegram-link.js",
     "driver:create-test": "node scripts/create-test-driver.js",
-    "featured": "node scripts/featured.js"
+    "featured": "node scripts/featured.js",
+    "start:worker": "node dist/worker.js",
+    "test:live": "npx --yes tsx@4.19.2 --test test-live/*.test.ts",
+    "load:live": "npx --yes tsx@4.19.2 load-test/run.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",

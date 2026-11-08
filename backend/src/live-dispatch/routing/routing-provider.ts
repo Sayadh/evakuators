@@ -82,7 +82,7 @@ export function failedAll(provider: string, count: number, error: RouteError): M
 }
 
 class Semaphore {
-  private active = 0
+  active = 0
   private readonly waiting: (() => void)[] = []
 
   constructor(private readonly limit: number) {}
@@ -110,6 +110,13 @@ export interface GuardOptions {
    * uses its own key so visitors can never spend the dispatch budget.
    */
   budgetKey?: string
+  /**
+   * When every concurrency slot is taken, fail fast (RATE_LIMITED) instead of
+   * queueing. For the public search: a visitor gets a straight-line list now
+   * rather than a road list in three seconds (measured — see
+   * docs/live-dispatch/10-load-test-report.md). Dispatch keeps queueing.
+   */
+  rejectWhenBusy?: boolean
 }
 
 export interface RoutingMetrics {
@@ -117,6 +124,7 @@ export interface RoutingMetrics {
   elements: number
   errors: number
   budgetRefusals: number
+  busyRefusals: number
   latenciesMs: number[]
 }
 
@@ -126,7 +134,7 @@ export interface RoutingMetrics {
  */
 export class GuardedRouting {
   private readonly semaphore: Semaphore
-  readonly metrics: RoutingMetrics = { requests: 0, elements: 0, errors: 0, budgetRefusals: 0, latenciesMs: [] }
+  readonly metrics: RoutingMetrics = { requests: 0, elements: 0, errors: 0, budgetRefusals: 0, busyRefusals: 0, latenciesMs: [] }
 
   constructor(
     private readonly provider: RoutingProvider,
@@ -149,6 +157,11 @@ export class GuardedRouting {
     if (origins.length === 0) return { provider: this.provider.name, computedAt: new Date(), entries: [], billableElements: 0 }
     if (origins.length > this.provider.maxElementsPerRequest) {
       throw new Error(`matrix of ${origins.length} exceeds ${this.provider.maxElementsPerRequest} elements per request`)
+    }
+
+    if (this.options.rejectWhenBusy && this.semaphore.active >= this.options.maxConcurrent) {
+      this.metrics.busyRefusals++
+      return failedAll(this.provider.name, origins.length, 'RATE_LIMITED')
     }
 
     const day = armeniaDateKey(new Date())

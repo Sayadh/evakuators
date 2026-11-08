@@ -1,0 +1,2552 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Evakuators.am — Live dispatch API",
+    "version": "1.0.0",
+    "description": "Driver app, operator console and public live search. All paths are under\n`/api/v1`. Errors are `{ code, message, details? }` where `code` is one of\n`ErrorCode` — clients branch on `code`, never on `message` (Armenian text).\n\n**Idempotency.** Every mutation marked `Idempotency-Key: required` must carry\na client-generated key (8–128 chars `[A-Za-z0-9_-]`). Repeating the same\nkey with the same body returns the original result (header\n`Idempotent-Replayed: true`); the same key with a different body returns\n`IDEMPOTENCY_KEY_REUSED`.\n\n**Optimistic concurrency.** Operator mutations carry `expectedVersion`;\na stale one returns `VERSION_CONFLICT` with `details.currentVersion`.\n\n**Time.** All timestamps are UTC ISO-8601. Countdown = `expiresAt − serverTime`\nfrom the same response, never the device clock.\n"
+  },
+  "servers": [
+    {
+      "url": "https://api.evakuators.am/api/v1"
+    },
+    {
+      "url": "https://staging-api.evakuators.am/api/v1",
+      "description": "Staging (see docs/deployment.md § Staging)"
+    }
+  ],
+  "tags": [
+    {
+      "name": "driver-app"
+    },
+    {
+      "name": "ops"
+    },
+    {
+      "name": "public"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "driverApp": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "App token from POST /driver-app/sessions (aud driver:app, bound to a revocable device session). The website's driver token is NOT accepted."
+      },
+      "ops": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Admin-panel session token (POST /admin-auth/login, 2FA if linked). Role ADMIN or DISPATCHER; settings PATCH requires ADMIN."
+      }
+    },
+    "parameters": {
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{8,128}$"
+        }
+      },
+      "OrderId": {
+        "name": "orderId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "Id": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "OfferId": {
+        "name": "offerId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "Business or validation error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "ErrorCode": {
+        "type": "string",
+        "enum": [
+          "VALIDATION_FAILED",
+          "SESSION_REVOKED",
+          "FORBIDDEN",
+          "FEATURE_DISABLED",
+          "ORDER_NOT_FOUND",
+          "OFFER_NOT_FOUND",
+          "OFFER_EXPIRED",
+          "OFFER_REVOKED",
+          "OFFER_ALREADY_RESPONDED",
+          "OFFER_TERMS_CHANGED",
+          "ORDER_ALREADY_ASSIGNED",
+          "ORDER_CANCELLED",
+          "ORDER_NOT_SEARCHING",
+          "INVALID_TRANSITION",
+          "VERSION_CONFLICT",
+          "DRIVER_UNAVAILABLE",
+          "DRIVER_BUSY",
+          "DRIVER_RESERVED",
+          "CAPABILITY_MISMATCH",
+          "REQUIREMENTS_UNCONFIRMED",
+          "PRICE_REQUIRED",
+          "PRICE_NOT_CONFIRMED",
+          "REQUEST_ALREADY_OPEN",
+          "NO_OPEN_REQUEST",
+          "LOCATION_REJECTED",
+          "TRACKING_CONSENT_REQUIRED",
+          "IDEMPOTENCY_KEY_REUSED",
+          "IDEMPOTENCY_IN_PROGRESS",
+          "RATE_LIMITED"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "OrderStatus": {
+        "type": "string",
+        "enum": [
+          "DRAFT",
+          "SEARCHING",
+          "PRICE_CONFIRMATION_PENDING",
+          "ASSIGNED",
+          "EN_ROUTE_TO_PICKUP",
+          "ARRIVED_AT_PICKUP",
+          "TRANSPORTING",
+          "COMPLETED",
+          "NEEDS_ATTENTION",
+          "CANCELLED"
+        ]
+      },
+      "OfferStatus": {
+        "type": "string",
+        "enum": [
+          "PENDING",
+          "ACCEPTED",
+          "REJECTED",
+          "EXPIRED",
+          "REVOKED"
+        ]
+      },
+      "AttentionKind": {
+        "type": "string",
+        "enum": [
+          "SEARCH_EXHAUSTED",
+          "SEARCH_TIMEOUT",
+          "MANUAL_OFFER_FAILED",
+          "DRIVER_CANCEL_REQUEST",
+          "DRIVER_PROBLEM",
+          "OPERATOR_FLAG"
+        ]
+      },
+      "CancelReason": {
+        "type": "string",
+        "enum": [
+          "DRIVER_CANNOT_PERFORM",
+          "CUSTOMER_DECLINED",
+          "WRONG_DATA",
+          "PRICE_NOT_AGREED",
+          "TECHNICAL_PROBLEM",
+          "OTHER"
+        ]
+      },
+      "Point": {
+        "type": "object",
+        "required": [
+          "latitude",
+          "longitude",
+          "address"
+        ],
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "longitude": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "address": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 500
+          }
+        }
+      },
+      "Requirements": {
+        "type": "object",
+        "description": "null = not asked yet. Dispatch refuses to start while any is null (or weight unknown) unless an operator recorded an override.",
+        "properties": {
+          "wheelsRoll": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "steeringLocked": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "gearboxLocked": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "needsManipulator": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
+      "Price": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "FIXED",
+              "NEGOTIATION_REQUIRED"
+            ]
+          },
+          "currency": {
+            "type": "string",
+            "const": "AMD"
+          },
+          "quotedAmd": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Whole dram. Never a float."
+          },
+          "agreedAmd": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "confirmed": {
+            "type": "boolean",
+            "description": "true for FIXED",
+            "or once an operator confirmed the negotiated price": null
+          },
+          "confirmedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "CreateOrder": {
+        "type": "object",
+        "required": [
+          "customerPhone",
+          "pickup",
+          "pricing"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "customerPhone": {
+            "type": "string",
+            "description": "Normalised to +374XXXXXXXX"
+          },
+          "customerName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 120
+          },
+          "pickup": {
+            "$ref": "#/components/schemas/Point"
+          },
+          "destination": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Point"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "vehicle": {
+            "type": "object",
+            "properties": {
+              "make": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "model": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "plate": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "weightKg": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 100,
+                "maximum": 60000
+              }
+            }
+          },
+          "problemDescription": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "requirements": {
+            "$ref": "#/components/schemas/Requirements"
+          },
+          "pricing": {
+            "type": "object",
+            "required": [
+              "mode"
+            ],
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "FIXED",
+                  "NEGOTIATION_REQUIRED"
+                ]
+              },
+              "quotedPriceAmd": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              }
+            }
+          },
+          "internalNote": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          }
+        }
+      },
+      "UpdateOrder": {
+        "allOf": [
+          {
+            "type": "object",
+            "required": [
+              "expectedVersion"
+            ],
+            "properties": {
+              "expectedVersion": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        ],
+        "description": "Any subset of CreateOrder fields. A change to pickup, destination, weight, requirements or pricing is MATERIAL — it bumps termsVersion and revokes a pending offer (the driver is re-offered the new terms)."
+      },
+      "AdminOrder": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "number": {
+            "type": "string",
+            "example": "EV-000123"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OrderStatus"
+          },
+          "attentionKind": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AttentionKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version": {
+            "type": "integer"
+          },
+          "termsVersion": {
+            "type": "integer"
+          },
+          "customer": {
+            "type": "object",
+            "properties": {
+              "phone": {
+                "type": "string"
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "pickup": {
+            "$ref": "#/components/schemas/Point"
+          },
+          "destination": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Point"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requirements": {
+            "$ref": "#/components/schemas/Requirements"
+          },
+          "price": {
+            "$ref": "#/components/schemas/Price"
+          },
+          "payment": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "UNKNOWN",
+                  "UNPAID",
+                  "PAID"
+                ]
+              },
+              "updatedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "assignedTowTruckId": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "pickupToDestination": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Road figures for the description only. null when no destination. `manual` = typed by an operator. Never a straight line."
+          },
+          "internalNote": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timestamps": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          }
+        }
+      },
+      "Availability": {
+        "type": "object",
+        "description": "Six independent facts — never one \"online\" boolean.",
+        "properties": {
+          "eligible": {
+            "type": "boolean"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "INACTIVE",
+                "SUSPENDED",
+                "NO_TRACKING_CONSENT",
+                "OFFLINE_BY_CHOICE",
+                "CONNECTION_STALE",
+                "GPS_MISSING",
+                "GPS_STALE",
+                "GPS_INACCURATE",
+                "GPS_SUSPICIOUS",
+                "RESERVED",
+                "ON_ORDER",
+                "EXTERNAL_BUSY"
+              ]
+            }
+          },
+          "admin": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "SUSPENDED",
+              "INACTIVE"
+            ]
+          },
+          "preference": {
+            "type": "string",
+            "enum": [
+              "ONLINE",
+              "OFFLINE"
+            ]
+          },
+          "connection": {
+            "type": "string",
+            "enum": [
+              "FRESH",
+              "STALE",
+              "NEVER"
+            ]
+          },
+          "gps": {
+            "type": "string",
+            "enum": [
+              "FRESH",
+              "STALE",
+              "INACCURATE",
+              "SUSPICIOUS",
+              "NONE"
+            ]
+          },
+          "occupancy": {
+            "type": "string",
+            "enum": [
+              "FREE",
+              "RESERVED",
+              "ON_ORDER",
+              "EXTERNAL_BUSY"
+            ]
+          },
+          "gpsAgeSeconds": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "heartbeatAgeSeconds": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        }
+      },
+      "TrackingPolicy": {
+        "type": "object",
+        "description": "A request to the app, not a promise — the OS decides actual delivery.",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "OFF",
+              "IDLE_STATIONARY",
+              "IDLE_MOVING",
+              "ACTIVE_ORDER"
+            ]
+          },
+          "locationIntervalSeconds": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "heartbeatIntervalSeconds": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "distanceFilterMeters": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "jitterSeconds": {
+            "type": "integer"
+          }
+        }
+      },
+      "DriverSnapshot": {
+        "type": "object",
+        "properties": {
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "availability": {
+            "$ref": "#/components/schemas/Availability"
+          },
+          "switches": {
+            "type": "object",
+            "properties": {
+              "wantsOnline": {
+                "type": "boolean"
+              },
+              "externalBusy": {
+                "type": "boolean"
+              }
+            }
+          },
+          "trackingConsentVersion": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "currentOffer": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "The live offer. Contains NO customer contact. `toPickup.etaSeconds` is null when the road could not be routed — then `straightLineMeters` is set and must be labelled «ուղիղ գծով».",
+            "properties": {
+              "offerId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "expiresAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "serverTime": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "manual": {
+                "type": "boolean"
+              },
+              "toPickup": {
+                "type": "object",
+                "properties": {
+                  "roadMeters": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "etaSeconds": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "approximate": {
+                    "type": "boolean",
+                    "const": true
+                  },
+                  "straightLineMeters": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
+              "order": {
+                "type": "object",
+                "description": "Addresses",
+                "vehicle": null,
+                "problem": null,
+                "requirements": null,
+                "price — no contact": null
+              }
+            }
+          },
+          "activeOrder": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "The assigned order, WITH customer contact and `allowedActions` (server-computed; the app only renders them)."
+          },
+          "tracking": {
+            "$ref": "#/components/schemas/TrackingPolicy"
+          }
+        }
+      },
+      "Fix": {
+        "type": "object",
+        "required": [
+          "seq",
+          "latitude",
+          "longitude",
+          "accuracyM",
+          "measuredAt"
+        ],
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Monotonic per device session"
+          },
+          "latitude": {
+            "type": "number"
+          },
+          "longitude": {
+            "type": "number"
+          },
+          "accuracyM": {
+            "type": "number",
+            "minimum": 0
+          },
+          "measuredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Device clock; tolerated up to 30 s ahead",
+            "clamped": null
+          },
+          "speedMps": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "headingDeg": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "security": [],
+  "paths": {
+    "/driver-app/sessions": {
+      "post": {
+        "tags": [
+          "driver-app"
+        ],
+        "summary": "App login — the SAME phone + password as the website; revokes the driver's previous device session",
+        "description": "Throttled 10/min/IP.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "phone",
+                  "password",
+                  "deviceId",
+                  "platform"
+                ],
+                "properties": {
+                  "phone": {
+                    "type": "string",
+                    "example": "+37491000001"
+                  },
+                  "password": {
+                    "type": "string"
+                  },
+                  "deviceId": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 128
+                  },
+                  "platform": {
+                    "type": "string",
+                    "enum": [
+                      "ios",
+                      "android"
+                    ]
+                  },
+                  "appVersion": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Session created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": {
+                      "type": "string"
+                    },
+                    "sessionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "towTruckId": {
+                      "type": "integer"
+                    },
+                    "mustChangePassword": {
+                      "type": "boolean"
+                    },
+                    "requiresPrivacyConsent": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/driver-app/sessions/current": {
+      "delete": {
+        "tags": [
+          "driver-app"
+        ],
+        "security": [
+          {
+            "driverApp": []
+          }
+        ],
+        "summary": "Logout — revokes this session and its push tokens; an active order is NOT cancelled",
+        "responses": {
+          "204": {
+            "description": "Logged out"
+          }
+        }
+      }
+    },
+    "/driver-app/consent/tracking": {
+      "post": {
+        "tags": [
+          "driver-app"
+        ],
+        "security": [
+          {
+            "driverApp": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "type": "integer",
+                    "const": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Recorded"
+          }
+        }
+      }
+    },
+    "/driver-app/me": {
+      "get": {
+        "tags": [
+          "driver-app"
+        ],
+        "security": [
+          {
+            "driverApp": []
+          }
+        ],
+        "summary": "Full state snapshot — call on launch, on every WebSocket (re)connect, and when opened from a push",
+        "responses": {
+          "200": {
+            "description": "Snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DriverSnapshot"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/driver-app/me/availability": {
+      "put": {
+        "tags": [
+          "driver-app"
+        ],
+        "security": [
+          {
+            "driverApp": []
+          }
+        ],
+        "summary": "The driver's own switches. Offline during an active order stops NEW offers only.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "wantsOnline": {
+                    "type": "boolean"
+                  },
+                  "externalBusy": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DriverSnapshot"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/driver-app/me/heartbeat": {
+      "post": {
+        "tags": [
+          "driver-app"
+        ],
+        "security": [
+          {
+            "driverApp": []
+          }
+        ],
+        "summary": "App liveness. Does NOT refresh GPS freshness. Throttled 12/min.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "serverTime": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/driver-app/me/locations": {
+      "post": {
+        "tags": [
+          "driver-app"
+        ],
+        "security": [
+          {
+            "driverApp": []
+          }
+        ],
+        "summary": "1–50 fixes. Only the newest FRESH fix can become the current position; older ones are history. Throttled 30/min.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "fixes"
+                ],
+                "properties": {
+                  "fixes": {
+                    "type": "array",
+                    "maxItems": 50,
+                    "items": {
+                      "$ref": "#/components/schemas/Fix"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ingested",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "serverTime": {
+                      "type": "string"
+                    },
+                    "accepted": {
+                      "type": "integer"
+                    },
+                    "rejected": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "seq": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          },
+                          "reason": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "currentUpdated": {
+                      "type": "boolean"
+                    },
+                    "suspicious": {
+                      "type": "boolean"
+                    },
+                    "policy": {
+                      "$ref": "#/components/schemas/TrackingPolicy"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/driver-app/me/push-token": {
+      "post": {
+        "tags": [
+          "driver-app"
+        ],
+        "security": [
+          {
+            "driverApp": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "token"
+                ],
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Bound to this session"
+          }
+        }
+      }
+    },
+    "/driver-app/offers/{offerId}/accept": {
+      "post": {
+        "tags": [
+          "driver-app"
+        ],
+        "security": [
+          {
+            "driverApp": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/OfferId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "summary": "Accept. Show success ONLY on 200 — never optimistically.",
+        "responses": {
+          "200": {
+            "description": "Assigned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "orderId": {
+                      "type": "integer"
+                    },
+                    "status": {
+                      "$ref": "#/components/schemas/OrderStatus"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/driver-app/offers/{offerId}/reject": {
+      "post": {
+        "tags": [
+          "driver-app"
+        ],
+        "security": [
+          {
+            "driverApp": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/OfferId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Rejected"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/driver-app/offers/{offerId}/ack": {
+      "post": {
+        "tags": [
+          "driver-app"
+        ],
+        "security": [
+          {
+            "driverApp": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/OfferId"
+          }
+        ],
+        "summary": "The app rendered the offer (delivery fact — NOT an acceptance)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "channel": {
+                    "type": "string",
+                    "enum": [
+                      "PUSH",
+                      "REALTIME"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Recorded"
+          }
+        }
+      }
+    },
+    "/driver-app/orders/{orderId}/progress": {
+      "post": {
+        "tags": [
+          "driver-app"
+        ],
+        "security": [
+          {
+            "driverApp": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/OrderId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "action"
+                ],
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "EN_ROUTE",
+                      "ARRIVED",
+                      "START_TRANSPORT",
+                      "COMPLETE"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated active order"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/driver-app/orders/{orderId}/requests": {
+      "post": {
+        "tags": [
+          "driver-app"
+        ],
+        "security": [
+          {
+            "driverApp": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/OrderId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "summary": "CANCEL (asks out — assignment is KEPT until an operator releases it) or PROBLEM",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "kind",
+                  "reason"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "CANCEL",
+                      "PROBLEM"
+                    ]
+                  },
+                  "reason": {
+                    "$ref": "#/components/schemas/CancelReason"
+                  },
+                  "comment": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Required when reason is OTHER"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Request recorded; operator alerted"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/driver-app/orders/history": {
+      "get": {
+        "tags": [
+          "driver-app"
+        ],
+        "security": [
+          {
+            "driverApp": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "maximum": 50
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The driver's own past orders — no customer contact"
+          }
+        }
+      }
+    },
+    "/ops/dispatch/orders": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "summary": "Create (DRAFT). Creating and starting dispatch are separate actions.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrder"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOrder"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated OrderStatus values"
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Number",
+            "phone or pickup address": null
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminOrder"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ops/dispatch/orders/{id}": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "summary": "Order + offers history + current attempt's ranked candidates + audit timeline",
+        "responses": {
+          "200": {
+            "description": "Detail"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOrder"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/ops/dispatch/orders/{id}/start": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "expectedVersion"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SEARCHING"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/ops/dispatch/orders/{id}/stop": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "expectedVersion"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Back to DRAFT; pending offer revoked"
+          }
+        }
+      }
+    },
+    "/ops/dispatch/orders/{id}/cancel": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "expectedVersion",
+                  "reason"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer"
+                  },
+                  "reason": {
+                    "$ref": "#/components/schemas/CancelReason"
+                  },
+                  "comment": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "CANCELLED"
+          }
+        }
+      }
+    },
+    "/ops/dispatch/orders/{id}/confirm-price": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "expectedVersion",
+                  "agreedPriceAmd"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer"
+                  },
+                  "agreedPriceAmd": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Price confirmed (audited)"
+          }
+        }
+      }
+    },
+    "/ops/dispatch/orders/{id}/payment": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "expectedVersion",
+                  "status"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "UNKNOWN",
+                      "UNPAID",
+                      "PAID"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Payment status set — independent of completion"
+          }
+        }
+      }
+    },
+    "/ops/dispatch/orders/{id}/progress": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "summary": "Progress on the driver's behalf (driver phoned) — audited as ADMIN",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "expectedVersion",
+                  "action"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer"
+                  },
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "EN_ROUTE",
+                      "ARRIVED",
+                      "START_TRANSPORT",
+                      "COMPLETE"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated"
+          }
+        }
+      }
+    },
+    "/ops/dispatch/orders/{id}/release": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "summary": "The one safe way to take an order from a driver — ends the assignment and optionally restarts the search in ONE transaction",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "expectedVersion",
+                  "confirm",
+                  "reason"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer"
+                  },
+                  "confirm": {
+                    "type": "boolean",
+                    "const": true
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 3
+                  },
+                  "restartSearch": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Released"
+          }
+        }
+      }
+    },
+    "/ops/dispatch/orders/{id}/resume": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "expectedVersion"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer"
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Back to statusBeforeAttention",
+            "driver kept": null
+          }
+        }
+      }
+    },
+    "/ops/dispatch/orders/{id}/flag": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "expectedVersion"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "OPERATOR_FLAG",
+                      "DRIVER_PROBLEM"
+                    ]
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "NEEDS_ATTENTION",
+            "assignment kept": null
+          }
+        }
+      }
+    },
+    "/ops/dispatch/orders/{id}/override-requirements": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "summary": "Explicitly accept unknown requirements (audited, with a note ≥ 5 chars)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "expectedVersion",
+                  "note"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer"
+                  },
+                  "note": {
+                    "type": "string",
+                    "minLength": 5
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Overridden"
+          }
+        }
+      }
+    },
+    "/ops/dispatch/orders/{id}/manual-offer": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "summary": "Offer to a chosen driver. Busy/reserved/inactive/suspended/capability can never be overridden; GPS/online/heartbeat/external-busy only with overrideReason (audited).",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "expectedVersion",
+                  "towTruckId"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer"
+                  },
+                  "towTruckId": {
+                    "type": "integer"
+                  },
+                  "overrideReason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Offer made",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "offerId": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/ops/dispatch/orders/{id}/route": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "summary": "Compute pickup → destination road figures (never invented without a destination)",
+        "responses": {
+          "200": {
+            "description": "{ computed, meters?, seconds?, provider?, reason? }"
+          }
+        }
+      }
+    },
+    "/ops/dispatch/orders/{id}/route/manual": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "summary": "Operator-entered distance when the provider fails — stored and shown as manual",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "meters"
+                ],
+                "properties": {
+                  "meters": {
+                    "type": "number"
+                  },
+                  "seconds": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored"
+          }
+        }
+      }
+    },
+    "/ops/dispatch/drivers/map": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "summary": "Drivers who use the app, with position, fix age/accuracy and availability. Filter by viewport.",
+        "parameters": [
+          {
+            "name": "bbox",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "minLat,minLng,maxLat,maxLng"
+          },
+          {
+            "name": "onlyOnline",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "maximum": 500
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Map rows"
+          }
+        }
+      }
+    },
+    "/ops/dispatch/drivers/{towTruckId}/suspend": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "towTruckId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "suspended"
+                ],
+                "properties": {
+                  "suspended": {
+                    "type": "boolean"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Dispatch suspension toggled (the public profile is unaffected)"
+          }
+        }
+      }
+    },
+    "/ops/dispatch/alerts": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Open alerts (SEARCH_SLOW",
+            "SEARCH_FAILED": null,
+            "ACTIVE_GPS_LOST": null,
+            "DRIVER_NOT_MOVING": null,
+            "DRIVER_CANCEL_REQUEST": null,
+            "DRIVER_PROBLEM)": null
+          }
+        }
+      }
+    },
+    "/ops/dispatch/alerts/{id}/ack": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Acknowledged"
+          }
+        }
+      }
+    },
+    "/ops/dispatch/settings": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Effective settings (defaults merged with stored values)"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "summary": "ADMIN only. Each key range-checked and the combination validated before anything is stored.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated settings"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/ops/dispatch/health": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Feature flags + outbox backlog / oldest due / dead letters"
+          }
+        }
+      }
+    },
+    "/nearest-tow-trucks/live": {
+      "post": {
+        "tags": [
+          "public"
+        ],
+        "summary": "Live nearest drivers (fresh GPS) + the existing profile-base results as a separate fallback section",
+        "description": "POST so the visitor's position never reaches access logs. Creates no order, reserves nobody, notifies nobody.\nLive items carry NO coordinates — rounded road distance/ETA or a straight line (no time) only.\nThrottled 10/min/IP; cached ~60 s per ~110 m cell; separate daily routing budget.\nA result is not a reservation (`disclaimer: NOT_A_RESERVATION`).\n",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "latitude",
+                  "longitude"
+                ],
+                "properties": {
+                  "latitude": {
+                    "type": "number"
+                  },
+                  "longitude": {
+                    "type": "number"
+                  },
+                  "skipRouting": {
+                    "type": "boolean",
+                    "description": "Can only ask for LESS (no road figures)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Live + fallback",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "computedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "live": {
+                      "type": "object",
+                      "properties": {
+                        "routed": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "OK",
+                            "NO_LIVE_DRIVERS"
+                          ]
+                        },
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "towTruck": {
+                                "type": "object",
+                                "description": "The public card (same shape as GET /tow-trucks)"
+                              },
+                              "roadMeters": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
+                              },
+                              "etaSeconds": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
+                              },
+                              "straightLineMeters": {
+                                "type": "integer"
+                              },
+                              "availability": {
+                                "type": "string",
+                                "const": "ONLINE_FREE"
+                              },
+                              "locationFreshness": {
+                                "type": "string",
+                                "enum": [
+                                  "UNDER_1_MIN",
+                                  "UNDER_2_MIN"
+                                ]
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "fallback": {
+                      "type": "object",
+                      "description": "Existing NearestSearchApi minus drivers already listed live"
+                    },
+                    "disclaimer": {
+                      "type": "string",
+                      "const": "NOT_A_RESERVATION"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    }
+  }
+}

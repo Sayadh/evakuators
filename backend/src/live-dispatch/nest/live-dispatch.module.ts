@@ -37,12 +37,15 @@ export class NearbyLiveProvider {
       rt.routingProvider,
       rt.db,
       {
-        timeoutMs: rt.config.routingTimeoutMs,
+        // A visitor waits at most ~2 s for road figures, then gets the
+        // straight-line list (never presented as road distance).
+        timeoutMs: Math.min(rt.config.routingTimeoutMs, 2000),
         retries: 0,
         baseBackoffMs: 250,
         maxConcurrent: 2,
         dailyElementBudget: () => Number(process.env.PUBLIC_NEARBY_DAILY_ELEMENT_BUDGET ?? 5000),
         budgetKey: `${rt.routing.providerName}:public`,
+        rejectWhenBusy: true,
       },
     )
     this.service = new NearbyLiveService(

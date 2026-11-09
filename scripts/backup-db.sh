@@ -43,6 +43,12 @@ fi
 
 command -v pg_dump >/dev/null || fail "pg_dump not found (apt install postgresql-client)"
 
+# DATABASE_URL is written for Prisma, which accepts a `schema=` query parameter
+# that libpq does not: pg_dump refuses the whole URL with `invalid URI query
+# parameter: "schema"`, and this script failed on every run until this line
+# existed. Strip that one parameter and keep any others (sslmode, ...).
+PG_URL="$(printf '%s' "$DATABASE_URL" | sed -E 's/([?&])schema=[^&]*(&|$)/\1/; s/[?&]$//')"
+
 mkdir -p "$BACKUP_DIR"
 TARGET="$BACKUP_DIR/db-$(date +%F-%H%M).sql.gz"
 
@@ -50,7 +56,7 @@ TARGET="$BACKUP_DIR/db-$(date +%F-%H%M).sql.gz"
 # halfway through would otherwise leave a truncated .sql.gz that looks like a
 # valid backup until the day someone tries to restore it.
 log "dumping to $TARGET"
-if ! pg_dump --no-owner --no-privileges "$DATABASE_URL" | gzip -9 > "$TARGET.partial"; then
+if ! pg_dump --no-owner --no-privileges "$PG_URL" | gzip -9 > "$TARGET.partial"; then
   rm -f "$TARGET.partial"
   fail "pg_dump failed — NO backup was written"
 fi

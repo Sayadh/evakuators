@@ -50,9 +50,8 @@
  */
 process.env.NODE_ENV ||= 'production'
 process.env.DATABASE_URL ||= 'postgresql://u:p@127.0.0.1:5432/di_graph_check'
-process.env.SUPABASE_URL ||= 'https://example.supabase.co'
-process.env.SUPABASE_SERVICE_ROLE_KEY ||= 'di-graph-check'
-process.env.SUPABASE_STORAGE_BUCKET ||= 'di-graph-check'
+process.env.MEDIA_DIR ||= require('node:os').tmpdir() + '/di-graph-check-media'
+process.env.MEDIA_PUBLIC_URL ||= 'http://localhost:4002/media'
 process.env.TELEGRAM_BOT_TOKEN ||= 'di-graph-check'
 process.env.TELEGRAM_BOT_USERNAME ||= 'di-graph-check'
 process.env.TELEGRAM_WEBHOOK_SECRET ||= 'di-graph-check'

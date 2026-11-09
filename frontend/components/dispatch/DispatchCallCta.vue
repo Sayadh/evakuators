@@ -54,8 +54,10 @@ interface Props {
    *
    * - `header` — icon + number in the top bar, on every page.
    * - `hero`   — under the homepage search, on the dark gradient.
-   * - `banner` — a card in the reading flow of a listing page.
    * - `bar`    — the floating call button on listing pages, phones only.
+   *              The listing pages used to carry a `banner` card as well,
+   *              «Չգիտե՞ք որ մեքենան ընտրել»; it was removed so the button is
+   *              the one offer there, shown from the first screen.
    * - `empty`  — the bare dial link, for an `EmptyState`'s actions slot: the
    *              card around it is the empty state's own, so this variant
    *              brings no chrome of its own, only the button.
@@ -63,7 +65,7 @@ interface Props {
    *              that is deliberately filled and first (see its rule in the
    *              stylesheet for why that does not contradict the hero's).
    */
-  variant: 'header' | 'hero' | 'banner' | 'bar' | 'empty' | 'links'
+  variant: 'header' | 'hero' | 'bar' | 'empty' | 'links'
 }
 
 const props = defineProps<Props>()
@@ -187,26 +189,8 @@ function onClick(): void {
   </a>
 
   <div v-else class="dispatch-cta" :class="`dispatch-cta--${variant}`">
-    <!-- Not on the hero. There the block sits directly under the page's own
-         «Ընտրեք մարզը կամ քաղաքը…» line, and two sentences of instruction
-         stacked on each other is one more thing to read before the first
-         thing to do. On a listing page the heading is doing different work —
-         it is what tells a visitor scrolling past a wall of drivers that they
-         do not have to pick one — so it stays there.
-
-         Not rendered rather than hidden in CSS: the `aria-label` on the link
-         below already says «Զանգահարել մեզ՝ +374…», so nothing is lost by
-         leaving the markup out, and hidden markup is markup that comes back. -->
-    <div v-if="variant !== 'hero'" class="dispatch-cta__text">
-      <strong class="dispatch-cta__title">{{ t('dispatch.bannerTitle') }}</strong>
-      <span class="dispatch-cta__subtitle">
-        {{ t('dispatch.bannerText') }}
-      </span>
-    </div>
-
-    <!-- The number IS the label. «Զանգահարել մեզ» was already said one line
-         above it, in the subtitle, and a button that repeats the sentence
-         above it reads as filler; the number reads as a phone call. -->
+    <!-- The number IS the label: it reads as a phone call, and the
+         aria-label still says «Զանգահարել մեզ՝ +374…» for a screen reader. -->
     <a
       :href="phoneHref"
       class="dispatch-cta__call"
@@ -224,17 +208,6 @@ function onClick(): void {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-
-  &__text {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-  }
-
-  &__title {
-    font-size: 1.05rem;
-    font-weight: 700;
-  }
 
   &__subtitle {
     font-size: 0.9rem;
@@ -279,39 +252,6 @@ function onClick(): void {
       }
     }
   }
-
-  /* ---- banner: a card inside a listing page ---- */
-  &--banner {
-    padding: var(--space-4);
-    border-radius: var(--radius-lg, var(--radius-md));
-    background: var(--color-surface);
-    border: 1px solid var(--color-border, rgba(16, 30, 46, 0.1));
-    box-shadow: var(--shadow-sm);
-
-    .dispatch-cta__subtitle {
-      color: var(--color-text-secondary);
-    }
-
-    .dispatch-cta__call {
-      background: var(--color-success);
-      color: #fff;
-
-      &:hover {
-        background: #178a49;
-        color: #fff;
-      }
-    }
-
-    /* Side by side once there is width for it, so the block costs one row of
-       vertical space on a desktop listing instead of three. */
-    @media (min-width: 768px) {
-      flex-direction: row;
-      align-items: center;
-      justify-content: space-between;
-      gap: var(--space-5);
-    }
-  }
-
 }
 
 /**
@@ -354,7 +294,7 @@ function onClick(): void {
   }
 }
 
-/* Same green as the banner's and the dialog's: this is the same offer, and
+/* Same green as the floating button's and the dialog's: this is the same offer, and
    the only thing that changes between placements is what surrounds it. Base
    layout (inline-flex, padding, radius, weight) already comes from
    `.dispatch-cta__call`, which is a standalone class, not a descendant. */
@@ -454,7 +394,7 @@ function onClick(): void {
     color: #fff;
   }
 
-  /* Desktop has the header number and the banner; a floating button there
+  /* Desktop has the header number always in view; a floating button there
      would cover a listing nobody is scrolling with one hand. Matches the driver
      profile's own sticky bar breakpoint. */
   @media (min-width: 1024px) {

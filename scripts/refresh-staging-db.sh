@@ -229,10 +229,10 @@ log "frontend too if you want its SSR cache/warm state reset: pm2 restart evakua
 
 # ── What this does NOT do ────────────────────────────────────────────────
 #
-# It does not touch Supabase Storage. Copied TowTruck/RegistrationRequest
-# rows keep pointing at production's real, public, read-only image URLs —
-# see SUPABASE_STORAGE_READ_ONLY in docs/deployment.md for why staging's own
-# backend cannot write new ones there.
+# It does not copy any photos. Copied TowTruck/RegistrationRequest rows keep
+# pointing at production's public https://evakuators.am/media/ URLs — see
+# MEDIA_READ_ONLY in docs/deployment.md for why staging's own backend cannot
+# write or delete any.
 #
 # It does not touch the Telegram webhook — no `setWebhook`/`deleteWebhook`
 # call exists anywhere in this codebase; the webhook is a one-time manual

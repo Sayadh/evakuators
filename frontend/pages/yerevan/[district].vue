@@ -80,12 +80,6 @@ useJsonLd([
 
     <NearestTowTrucksCta class="district-page__nearest" />
 
-    <!-- Beside the «մոտակա» shortcut, both answering the same question a
-         stranded visitor arrives with — "I don't know which one to pick".
-         Above the listing but below the page heading on purpose: it must not
-         be the first thing read on a page whose job is to show drivers. -->
-    <DispatchCallCta variant="banner" class="district-page__dispatch" />
-
     <div class="district-page__toolbar">
       <AppButton v-if="!isDesktop" variant="outline" size="sm" @click="openDrawer">
         <AppIcon name="filter" :size="16" />
@@ -185,11 +179,6 @@ useJsonLd([
 
   &__nearest {
     margin-bottom: var(--space-4);
-  }
-
-  &__dispatch {
-    margin-top: var(--space-5);
-    margin-bottom: var(--space-5);
   }
 
   &__stats {

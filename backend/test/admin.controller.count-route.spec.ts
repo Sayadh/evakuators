@@ -11,7 +11,7 @@ import { AdminController } from '../src/admin/admin.controller'
  *
  * ## Why metadata and not an HTTP request
  *
- * Booting the app would need Postgres, Supabase credentials and a Telegram
+ * Booting the app would need Postgres, a media directory and a Telegram
  * token — three external systems, to answer questions that are fully decided
  * at class-definition time. What an end-to-end request WOULD additionally
  * prove (that the guard rejects a bad token) belongs with the guard's own

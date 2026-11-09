@@ -21,20 +21,14 @@ const seoParagraphs = computed(() => buildHomeParagraphs(locale.value))
 
 <template>
   <div>
+    <!-- Three ways in, in the order someone with a stopped car needs them:
+         a person now (hero buttons), their area in one tap (cards), and the
+         two specialist trucks the area listings deliberately leave out. The
+         FAQ and the SEO text stay last — they are what search engines read,
+         and nobody in a hurry has to scroll past them to reach a driver. -->
     <HeroSection />
-
-    <!-- Immediately under the hero: someone landing on the homepage with a
-         broken car should not have to pick a marz first. The hero's own search
-         stays where it is — this is the shortcut for visitors who do not know
-         which city they are technically in. -->
-    <div class="container home-page__nearest">
-      <NearestTowTrucksCta />
-    </div>
-
-    <PopularLocations />
     <RegionsSection />
-    <HowItWorksSection />
-    <BenefitsSection />
+    <SpecialVehiclesSection />
 
     <div class="container">
       <FaqSection :items="faqItems" class="home-page__section" />
@@ -51,9 +45,5 @@ const seoParagraphs = computed(() => buildHomeParagraphs(locale.value))
 .home-page__section {
   margin-top: var(--space-6);
   margin-bottom: var(--space-6);
-}
-
-.home-page__nearest {
-  margin-top: var(--space-6);
 }
 </style>

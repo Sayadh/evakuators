@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { showsDispatchBar } from '~/utils/showsDispatchBar'
 
 /**
  * The «Զանգահարեք մեզ» button, pinned as source text.
@@ -109,7 +110,10 @@ describe('DispatchCallCta placements', () => {
     // the first thing to do. A listing page's heading does different work —
     // it tells someone scrolling past a wall of drivers that they need not
     // pick one — so the banner keeps it.
-    expect(component).toContain(`<div v-if="variant !== 'hero'" class="dispatch-cta__text">`)
+    // The listing banner that carried a heading is gone, so no placement in the
+    // shared block renders one any more.
+    expect(component).not.toContain('dispatch-cta__text')
+    expect(component).not.toContain("t('dispatch.bannerTitle')")
     // Left out, not hidden: the link's own aria-label still says «Զանգահարել
     // մեզ՝ +374…», so nothing is lost — and hidden markup is markup that
     // comes back.
@@ -120,7 +124,8 @@ describe('DispatchCallCta placements', () => {
     // The other half of the same decision. Moving it above the search made it
     // the first thing offered; filling it would also make it the loudest, and
     // the listings below are what drivers pay to be found through.
-    const heroRule = component.slice(component.indexOf('&--hero {'), component.indexOf('&--banner {'))
+    const start = component.indexOf('&--hero {')
+    const heroRule = component.slice(start, component.indexOf('\n  }\n', start))
     expect(heroRule).toContain('border: 2px solid')
     expect(heroRule).not.toContain('background: var(--color-accent)')
   })
@@ -155,14 +160,16 @@ describe('DispatchCallCta placements', () => {
     expect(layout).toContain('<DispatchCallCta v-if="showDispatchBar" variant="bar" />')
   })
 
-  it('holds the floating button back until the visitor has scrolled', () => {
-    // Both offers in the first viewport is the message twice, and a strip of
-    // the listing covered for nothing.
-    expect(layout).toContain('y.value > DISPATCH_BAR_SCROLL_THRESHOLD')
+  it('shows the floating button from the first screen', () => {
+    // It waited for ~600px of scrolling while the listing pages also carried a
+    // banner with the same offer. The banner is gone; waiting would now mean
+    // the first screen of a listing has no way to reach a person at all.
+    expect(layout).not.toContain('DISPATCH_BAR_SCROLL_THRESHOLD')
+    expect(layout).not.toContain('useWindowScroll')
   })
 })
 
-describe('DispatchCallCta on the listing pages', () => {
+describe('the listing pages', () => {
   const PAGES = [
     'pages/regions/index.vue',
     'pages/regions/[region]/index.vue',
@@ -171,12 +178,21 @@ describe('DispatchCallCta on the listing pages', () => {
     'pages/yerevan/[district].vue',
   ]
 
-  it.each(PAGES)('%s carries the banner', (page) => {
-    expect(readFileSync(`${ROOT}${page}`, 'utf8')).toContain('<DispatchCallCta variant="banner"')
+  it.each(PAGES)('%s has no in-page banner — the floating button is the offer', (page) => {
+    // Removed on purpose: the banner and the floating button were the same
+    // offer twice. If it comes back, the layout's "from the first screen" rule
+    // above has to be revisited with it.
+    expect(readFileSync(`${ROOT}${page}`, 'utf8')).not.toContain('<DispatchCallCta')
   })
 
-  it.each(PAGES)('%s keeps it below the page heading', (page) => {
-    const source = readFileSync(`${ROOT}${page}`, 'utf8')
-    expect(source.indexOf('<h1')).toBeLessThan(source.indexOf('<DispatchCallCta'))
+  it.each(PAGES)('%s is covered by the floating button', (page) => {
+    const path = page
+      .replace(/^pages/, '')
+      .replace(/\/index\.vue$/, '')
+      .replace(/\.vue$/, '')
+      .replace('[region]', 'kotayk')
+      .replace('[city]', 'abovyan')
+      .replace('[district]', 'arabkir')
+    expect(showsDispatchBar(path)).toBe(true)
   })
 })

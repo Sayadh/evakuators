@@ -554,9 +554,9 @@ model TowTruck {
 
 model TowTruckImage {
   id        Int      @id @default(autoincrement())
-  /// Storage object path inside the Supabase bucket
+  /// File path relative to MEDIA_DIR, e.g. `uploads/<uuid>.webp` — what deletion uses
   path      String   @unique
-  /// Public URL served by Supabase Storage
+  /// Public URL (MEDIA_PUBLIC_URL + path), served by nginx from the VPS disk
   url       String
   width     Int
   height    Int

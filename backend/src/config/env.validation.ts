@@ -2,16 +2,19 @@ import { z } from 'zod'
 
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
-  SUPABASE_URL: z.string().url('SUPABASE_URL must be a valid URL'),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, 'SUPABASE_SERVICE_ROLE_KEY is required'),
-  SUPABASE_STORAGE_BUCKET: z.string().min(1, 'SUPABASE_STORAGE_BUCKET is required'),
-  // Blocks every write (upload, remove) at SupabaseStorageService — see that
+  // Image files — see MediaStorageService. Absolute so the directory never
+  // depends on which folder PM2 happened to start the process from.
+  MEDIA_DIR: z
+    .string()
+    .min(1, 'MEDIA_DIR is required')
+    .refine((value) => value.startsWith('/'), 'MEDIA_DIR must be an absolute path'),
+  MEDIA_PUBLIC_URL: z.string().url('MEDIA_PUBLIC_URL must be a valid URL'),
+  // Blocks every write (upload, remove) at MediaStorageService — see that
   // class for the full reasoning. String rather than z.coerce.boolean()
   // deliberately: coerce.boolean() treats the STRING "false" as truthy (any
-  // non-empty string is), which would make "false" mean "true" — the exact
-  // footgun this variable exists to prevent one level up. Compared literally
-  // against 'true' in configuration.ts instead.
-  SUPABASE_STORAGE_READ_ONLY: z.string().optional().default('false'),
+  // non-empty string is), which would make "false" mean "true". Compared
+  // literally against 'true' in configuration.ts instead.
+  MEDIA_READ_ONLY: z.string().optional().default('false'),
   PORT: z.coerce.number().int().positive().default(4002),
   // Loopback by default: nginx is the only intended entry point (see main.ts).
   // Set 0.0.0.0 only if the API must be reachable without nginx.

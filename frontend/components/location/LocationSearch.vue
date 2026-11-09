@@ -2,6 +2,19 @@
 
 /** Static copy lives in i18n/locales */
 const { t } = useI18n()
+
+interface Props {
+  /**
+   * The marz → city selects under the search box. The homepage turns them off:
+   * its region cards sit directly below the hero and answer the same question
+   * («show me everything in Kotayk») with one tap instead of three, so the
+   * selects were a second copy of the cards. The text search stays everywhere,
+   * because it is the only way to a village that is in neither.
+   */
+  cascade?: boolean
+}
+
+withDefaults(defineProps<Props>(), { cascade: true })
 const {
   regionOptions,
   cityOptions,
@@ -21,6 +34,7 @@ const {
          the name a stranded driver actually knows. -->
     <LocationAutocomplete class="location-search__autocomplete" />
 
+    <template v-if="cascade">
     <p class="location-search__divider"><span>{{ t('search.divider') }}</span></p>
 
     <form class="location-search" @submit.prevent="submit">
@@ -50,6 +64,7 @@ const {
         {{ t('search.submit') }}
       </AppButton>
     </form>
+    </template>
   </div>
 </template>
 

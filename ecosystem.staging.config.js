@@ -68,10 +68,10 @@ module.exports = {
       name: 'evakuators-backend-staging',
       cwd: './backend',
       script: 'dist/main.js',
-      // Secrets (DATABASE_URL, SUPABASE_*, PORT, JWT secrets, Telegram
+      // Secrets (DATABASE_URL, MEDIA_*, PORT, JWT secrets, Telegram
       // config) come from backend/.env in THIS checkout — never from this
       // file, and never copied from production's .env verbatim except where
-      // docs/deployment.md explicitly says to (the Telegram and Supabase
+      // docs/deployment.md explicitly says to (the Telegram
       // values, by deliberate choice — see that section for why DATABASE_URL
       // and the JWT secrets must NOT be copied the same way).
       env: {

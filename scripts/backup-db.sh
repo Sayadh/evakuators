@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Evakuators.am — PostgreSQL backup.
+# Evakuators.am — PostgreSQL + photo backup.
 #
 # Postgres runs on the same single VPS as the app, so without this a disk
 # failure or one bad DELETE loses every registration, review and analytics
@@ -17,6 +17,8 @@
 #   RETENTION_DAYS   how long to keep them          (default 14)
 #   ENV_FILE         where to read DATABASE_URL from (default <repo>/backend/.env)
 #   OFFSITE_CMD      command to copy the dump off this machine — see below
+#   MEDIA_DIR        the photos directory           (default: read from ENV_FILE)
+#   MEDIA_OFFSITE_CMD  same as OFFSITE_CMD, for the photo snapshot DIRECTORY
 #
 set -euo pipefail
 
@@ -41,6 +43,12 @@ fi
 
 command -v pg_dump >/dev/null || fail "pg_dump not found (apt install postgresql-client)"
 
+# DATABASE_URL is written for Prisma, which accepts a `schema=` query parameter
+# that libpq does not: pg_dump refuses the whole URL with `invalid URI query
+# parameter: "schema"`, and this script failed on every run until this line
+# existed. Strip that one parameter and keep any others (sslmode, ...).
+PG_URL="$(printf '%s' "$DATABASE_URL" | sed -E 's/([?&])schema=[^&]*(&|$)/\1/; s/[?&]$//')"
+
 mkdir -p "$BACKUP_DIR"
 TARGET="$BACKUP_DIR/db-$(date +%F-%H%M).sql.gz"
 
@@ -48,7 +56,7 @@ TARGET="$BACKUP_DIR/db-$(date +%F-%H%M).sql.gz"
 # halfway through would otherwise leave a truncated .sql.gz that looks like a
 # valid backup until the day someone tries to restore it.
 log "dumping to $TARGET"
-if ! pg_dump --no-owner --no-privileges "$DATABASE_URL" | gzip -9 > "$TARGET.partial"; then
+if ! pg_dump --no-owner --no-privileges "$PG_URL" | gzip -9 > "$TARGET.partial"; then
   rm -f "$TARGET.partial"
   fail "pg_dump failed — NO backup was written"
 fi
@@ -73,6 +81,53 @@ else
   log "WARNING: OFFSITE_CMD is not set — this backup lives on the same disk as the database"
 fi
 
+# ── Photos ───────────────────────────────────────────────────────────────────
+#
+# Tow truck photos live on this disk (MEDIA_DIR, see docs/deployment.md § "Image
+# storage"), so they need a backup exactly like the database: a dump restores
+# rows that point at files, not the files.
+#
+# Each run is a full, browsable snapshot directory, but costs only the photos
+# added since the previous one: unchanged files are hard links into the last
+# snapshot (rsync --link-dest). Photos are never modified after upload, so this
+# is cheap even with daily runs and 14 days of retention.
+MEDIA_DIR="${MEDIA_DIR:-$( [[ -f "$ENV_FILE" ]] && sed -n 's/^MEDIA_DIR=//p' "$ENV_FILE" | tr -d "\"'" || true)}"
+
+if [[ -n "$MEDIA_DIR" && -d "$MEDIA_DIR" ]]; then
+  command -v rsync >/dev/null || fail "rsync not found (apt install rsync)"
+
+  MEDIA_TARGET="$BACKUP_DIR/media-$(date +%F-%H%M)"
+  PREVIOUS="$(find "$BACKUP_DIR" -maxdepth 1 -type d -name 'media-*' ! -name '*.partial' | sort | tail -n 1)"
+  LINK_DEST=()
+  [[ -n "$PREVIOUS" ]] && LINK_DEST=(--link-dest="$PREVIOUS")
+
+  log "snapshotting photos to $MEDIA_TARGET"
+  rm -rf "$MEDIA_TARGET.partial"
+  if ! rsync -a --exclude='*.tmp' "${LINK_DEST[@]}" "$MEDIA_DIR"/ "$MEDIA_TARGET.partial"/; then
+    rm -rf "$MEDIA_TARGET.partial"
+    fail "photo snapshot failed — the database dump above WAS written"
+  fi
+  mv "$MEDIA_TARGET.partial" "$MEDIA_TARGET"
+  # rsync -a copies MEDIA_DIR's own mtime onto the snapshot directory, which
+  # can be weeks old — the prune below would then delete the snapshot it just
+  # made. Stamp it with now.
+  touch "$MEDIA_TARGET"
+  log "wrote $MEDIA_TARGET ($(find "$MEDIA_TARGET" -type f | wc -l) photos)"
+
+  if [[ -n "${MEDIA_OFFSITE_CMD:-}" ]]; then
+    # e.g. MEDIA_OFFSITE_CMD='rclone sync "$1" remote:evakuators-media'
+    log "copying photos off-site"
+    bash -c "$MEDIA_OFFSITE_CMD" _ "$MEDIA_TARGET" || log "WARNING: off-site photo copy failed — local snapshot kept"
+  else
+    log "WARNING: MEDIA_OFFSITE_CMD is not set — photos are backed up on the same disk only"
+  fi
+
+  PRUNED_MEDIA="$(find "$BACKUP_DIR" -maxdepth 1 -type d -name 'media-*' -mtime "+$RETENTION_DAYS" -print -exec rm -rf {} + | wc -l)"
+  log "pruned $PRUNED_MEDIA photo snapshot(s) older than $RETENTION_DAYS days"
+else
+  log "WARNING: MEDIA_DIR is not set or does not exist — photos were NOT backed up"
+fi
+
 # Prune old dumps last, so a failure above never deletes the previous good copy.
 DELETED="$(find "$BACKUP_DIR" -name 'db-*.sql.gz' -mtime "+$RETENTION_DAYS" -print -delete | wc -l)"
 log "pruned $DELETED dump(s) older than $RETENTION_DAYS days"
@@ -89,6 +144,8 @@ log "done"
 #   psql evakuators_restore_test -c 'SELECT count(*) FROM "TowTruck";'
 #   dropdb evakuators_restore_test
 #
-# Note: this dumps PostgreSQL only. Tow truck photos live in Supabase Storage,
-# which is a separate system with its own retention — a dump contains the rows
-# that point at the images, not the images.
+# Photos: a snapshot is a plain directory tree — restore is a copy back:
+#
+#   rsync -a /var/backups/evakuators/media-YYYY-MM-DD-HHMM/ /var/www/evakuators-media/
+#
+# Restore the dump and the snapshot from the SAME run, so every row's file exists.

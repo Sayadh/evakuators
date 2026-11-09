@@ -308,7 +308,7 @@ that legacy data to upload order, which is the order the driver submitted.
 
 **Orphan cleanup (`ImagesService.purgeOrphanedImages`, daily 03:00).** Two kinds
 of row belong to nothing a user can reach, and until this job existed neither was
-ever deleted — from the database *or* from Supabase Storage:
+ever deleted — from the database *or* from disk:
 
 - **Never attached.** `POST /images` inserts the row before the registration form
   is submitted, so an abandoned upload leaves both FKs null forever. That endpoint
@@ -330,9 +330,9 @@ When a driver drops a photo from their gallery, `MyTowTruckService` only
 *detaches* the row (`ImagesRepository.detachFromTowTruck` clears both FKs), which
 makes it match the "never attached" branch above and get cleaned up on the next
 nightly run. It used to delete the row and then call Storage itself — the wrong
-order, so a transient Supabase failure discarded `path` while the file was still
-in the bucket and leaked it with nothing left to find it by. The trade-off is
-that a removed photo sits in the bucket for up to ~24h; it is unreferenced by
+order, so a transient storage failure discarded `path` while the file was still
+on disk and leaked it with nothing left to find it by. The trade-off is
+that a removed photo stays on disk for up to ~24h; it is unreferenced by
 then, and it is the same window abandoned uploads already have.
 
 The one remaining exception is `AdminService.deleteTowTruck()`, which removes the

@@ -1,24 +1,17 @@
 <script setup lang="ts">
-import { useWindowScroll } from '@vueuse/core'
 import { showsDispatchBar } from '~/utils/showsDispatchBar'
 
 const route = useRoute()
-const { y } = useWindowScroll()
 
 /**
- * How far down before the floating call button appears.
+ * The floating call button, from the first screen.
  *
- * Not zero, on purpose. Every page that shows it already carries the same offer
- * as a banner near the top, so having both in the first viewport is the message
- * twice. By roughly one screen down the visitor has read the banner, scrolled
- * past the first few drivers and is still looking — which is the moment the
- * offer is worth repeating, and the moment the banner has scrolled away.
+ * It used to appear only after ~600px of scrolling, because every listing page
+ * also carried the same offer as a banner near the top and both together were
+ * the message twice. The banner is gone, so the button is now the one offer on
+ * those pages and has no reason to wait.
  */
-const DISPATCH_BAR_SCROLL_THRESHOLD = 600
-
-const showDispatchBar = computed(
-  () => showsDispatchBar(route.path) && y.value > DISPATCH_BAR_SCROLL_THRESHOLD,
-)
+const showDispatchBar = computed(() => showsDispatchBar(route.path))
 </script>
 
 <template>
@@ -29,11 +22,12 @@ const showDispatchBar = computed(
     </main>
     <AppFooter />
     <CookieConsentBanner />
+    <!-- Asks a visitor who landed on a Russian/English page whether they
+         would rather read in Armenian. Once per browser; see the component. -->
+    <LanguagePrompt />
 
     <!-- Rendered here rather than per page so the "which pages" rule lives in
-         one tested function — see utils/showsDispatchBar.ts. Client-only in
-         effect: `y` is 0 during SSR and on the first client tick, so it mounts
-         after hydration instead of flashing into place. -->
+         one tested function — see utils/showsDispatchBar.ts. -->
     <DispatchCallCta v-if="showDispatchBar" variant="bar" />
   </div>
 </template>

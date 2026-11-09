@@ -513,8 +513,8 @@ them will break the site:
 
 | Setting | Why not the default |
 | --- | --- |
-| `crossOriginEmbedderPolicy: 'unsafe-none'` | The default `require-corp` refuses any cross-origin resource that doesn't send CORP. Supabase Storage doesn't, so **every photo on the site** disappears. Nothing here needs cross-origin isolation. |
-| `crossOriginResourcePolicy: 'cross-origin'` | Same reason — the photos are served from Supabase on purpose. |
+| `crossOriginEmbedderPolicy: 'unsafe-none'` | The default `require-corp` refuses any cross-origin resource that doesn't send CORP. Staging loads production's photos from `https://evakuators.am/media/` cross-origin, so **every photo there** would disappear. Nothing here needs cross-origin isolation. |
+| `crossOriginResourcePolicy: 'cross-origin'` | Same reason — the photos are public and embedded across origins on purpose. |
 | `style-src: 'unsafe-inline'` | Vue writes inline `style` attributes for transitions and dynamic values. An injected style cannot execute, so this is not the risk the script-side `'unsafe-inline'` would have been. |
 
 `img-src` includes `blob:` for a non-obvious reason: the registration and

@@ -171,10 +171,43 @@ export default defineNuxtConfig({
   },
 
   image: {
-    // picsum.photos is only used by local mock data. The real domain is your
-    // Supabase project's storage host (from backend/.env SUPABASE_URL) — without
-    // it listed here, @nuxt/image's IPX provider won't optimize production photos.
-    domains: ['picsum.photos', 'xmdgvutudwciacyfnzat.supabase.co'],
+    /**
+     * Hosts IPX (`/_ipx/...`) may fetch an original from. Each entry is a
+     * permission for our server to make an outbound request, so it is the
+     * smallest list that works:
+     *
+     * - `evakuators.am` — every real photo, served by nginx from the VPS disk
+     *   at `/media/` (backend MEDIA_PUBLIC_URL). Staging lists it too, because
+     *   its rows are copies of production's and point here.
+     * - `picsum.photos` — mock-mode data only (frontend/mocks).
+     * - `localhost` — `npm run dev` only, for a local backend with uploads
+     *   enabled (`MEDIA_PUBLIC_URL=http://localhost:4002/media`). Never in a
+     *   build: a production IPX that can fetch from localhost is an SSRF.
+     *
+     * The photos are immutable (a fresh UUID per upload) and nginx serves them
+     * with a one-year Cache-Control, which IPX copies onto its own response,
+     * so nginx's `/_ipx/` cache keeps each resized variant indefinitely — see
+     * nginx/evakuators.am.conf.
+     */
+    domains: [
+      'evakuators.am',
+      'picsum.photos',
+      ...(process.env.NODE_ENV === 'development' ? ['localhost'] : []),
+    ],
+    /**
+     * How long a resized variant may be cached — by browsers, and by nginx's
+     * `/_ipx/` cache, which obeys this header over its own `proxy_cache_valid`.
+     *
+     * Set explicitly because IPX does not inherit it from the original: its
+     * HTTP storage only reads the source's Cache-Control when
+     * `ignoreCacheControl` is TRUE (an inverted condition in ipx 3), so it
+     * fell back to 300 s and every variant was recomputed every five minutes.
+     * A year is safe for the same reason it is on `/media/`: a photo's URL is
+     * a fresh UUID per upload, so a changed photo is always a new URL.
+     */
+    ipx: {
+      http: { maxAge: 31536000 },
+    },
   },
 
   /**
@@ -249,16 +282,16 @@ export default defineNuxtConfig({
 
       /**
        * `require-corp` is the module's default and it would break every photo
-       * on the site: Supabase Storage does not send `Cross-Origin-Resource-
-       * Policy`, so a cross-origin image without CORP is refused under COEP.
+       * on staging, which loads production's `/media/` files cross-origin, and
+       * any third-party image without a `Cross-Origin-Resource-Policy` header.
        * Nothing here needs cross-origin isolation (no SharedArrayBuffer, no
        * high-resolution timers), so the correct value is off.
        */
       crossOriginEmbedderPolicy: 'unsafe-none',
 
       /**
-       * Also relaxed from the module default (`same-origin`): tow truck photos
-       * are served from Supabase and are meant to be embeddable by us.
+       * Also relaxed from the module default (`same-origin`): staging embeds
+       * production's photos, and they are public by design.
        */
       crossOriginResourcePolicy: 'cross-origin',
 
@@ -329,7 +362,10 @@ export default defineNuxtConfig({
           "'self'",
           'data:',
           'blob:',
-          'https://xmdgvutudwciacyfnzat.supabase.co',
+          // Production's photo origin (`/media/`). Redundant with 'self' on
+          // production itself; staging needs it, because its rows are copies
+          // of production's and the admin pages load the originals directly.
+          'https://evakuators.am',
           'https://www.google.com',
           'https://www.google.am',
           'https://ad.doubleclick.net',

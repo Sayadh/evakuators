@@ -13,7 +13,7 @@ import { IMAGE_ORDER } from '../images/image-order'
 import { PrismaService } from '../prisma/prisma.service'
 import { PrivacyConsentService } from '../privacy-consent/privacy-consent.service'
 import { ReviewsRepository, ReviewWithTruck } from '../reviews/reviews.repository'
-import { SupabaseStorageService } from '../storage/supabase-storage.service'
+import { MediaStorageService } from '../storage/media-storage.service'
 import { SubscriptionsRepository } from '../subscriptions/subscriptions.repository'
 import { telegramTokenFingerprint } from '../telegram/token-fingerprint'
 import { TelegramService } from '../telegram/telegram.service'
@@ -63,7 +63,7 @@ export class AdminService {
     private readonly reviewsRepository: ReviewsRepository,
     private readonly towTrucksRepository: TowTrucksRepository,
     private readonly telegram: TelegramService,
-    private readonly storage: SupabaseStorageService,
+    private readonly storage: MediaStorageService,
     // Only to re-point a registration's consent at the truck approval creates
     // — see the call inside approve()'s transaction. No consent is ever
     // created here: an admin cannot consent on a driver's behalf.
@@ -1278,7 +1278,7 @@ export class AdminService {
 
   /**
    * Permanently deletes a tow truck and everything that belongs to it:
-   * images (DB row + the actual Supabase Storage files), reviews, and any
+   * images (DB row + the actual files on disk), reviews, and any
    * pending driver-login OTPs. DB-side relations cascade automatically
    * (see schema.prisma), Storage does not — we clean that up explicitly here.
    * Irreversible. Prefer setTowTruckActive(id, false) unless the admin
@@ -1293,7 +1293,7 @@ export class AdminService {
         await this.storage.remove(towTruck.images.map((image) => image.path))
       } catch (error) {
         // Don't let a Storage hiccup block a deletion the admin explicitly
-        // requested — worst case a handful of orphan files sit in the bucket,
+        // requested — worst case a handful of orphan files sit on disk,
         // which is far better than a truck the admin can't get rid of.
         this.logger.warn(
           `Failed to remove Storage objects for TowTruck ${id}, continuing with DB delete: ${String(error)}`,

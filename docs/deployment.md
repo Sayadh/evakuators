@@ -3,7 +3,7 @@
 Single VPS, PM2 for process management, nginx as reverse proxy + TLS
 termination. No containers, no CI/CD pipeline — deploys are manual `git
 pull` + rebuild on the server. This doc is the practical runbook; see
-`README.md` for the first-time setup checklist (Supabase project creation,
+`README.md` for the first-time setup checklist (database, media directory,
 initial nginx/certbot setup, etc.) which isn't repeated here.
 
 ## Routine deploy (most common case)
@@ -174,7 +174,7 @@ first thing to check, before assuming the schema change itself is wrong.
   way `backend/.env` is read; PM2's `env` block is what's injected).
 - `evakuators-backend` — `cwd: backend/`, runs `dist/main.js`, only sets
   `NODE_ENV: production` here — every other secret (`DATABASE_URL`,
-  `SUPABASE_*`, `PORT`, JWT secrets, Telegram config) comes from
+  `MEDIA_*`, `PORT`, JWT secrets, Telegram config) comes from
   `backend/.env`, deliberately kept out of the (version-controlled)
   ecosystem file.
 
@@ -207,6 +207,99 @@ example wholesale**, it would delete certbot's actual `ssl_certificate`
 directives; add the missing redirect block by hand, then `nginx -t` before
 reloading.
 
+## Image storage
+
+Tow truck photos are files on the VPS's own disk. The backend writes them to
+`MEDIA_DIR` (`MediaStorageService`, the only code that writes or deletes one)
+and nginx serves that directory at `https://evakuators.am/media/`
+(`MEDIA_PUBLIC_URL`). Node never serves a photo in production.
+
+```
+upload → backend: Sharp → WebP → MEDIA_DIR/uploads/<uuid>.webp
+                                 row: path = uploads/<uuid>.webp
+                                      url  = MEDIA_PUBLIC_URL/uploads/<uuid>.webp
+page   → <NuxtImg> → /_ipx/s_800x450/https://evakuators.am/media/uploads/<uuid>.webp
+                     nginx /_ipx/ cache  ──miss──▶ Nuxt IPX ──▶ nginx /media/ (disk)
+```
+
+Three values must agree, and nothing checks it but you:
+
+| Where | Value |
+| --- | --- |
+| `backend/.env` `MEDIA_DIR` | `/var/www/evakuators-media` |
+| `backend/.env` `MEDIA_PUBLIC_URL` | `https://evakuators.am/media` |
+| nginx `location ~ ^/media/...` `alias` | `/var/www/evakuators-media/$1` |
+
+**Why not Supabase Storage any more.** Photos used to live there. In November
+2026 the free plan's cached-egress quota ran out and Supabase answered every
+photo with `402 Payment Required` (`exceed_cached_egress_quota`) — every image
+on the site went blank at once, and the fix on offer was a $25/month plan. The
+root cause was ours: nothing cached the resized `/_ipx/` variants, so every
+visitor made the server re-download the original from Supabase. Both halves
+are fixed now — files are local, and nginx caches every resized variant (the
+`proxy_cache_path` at the top of `nginx/evakuators.am.conf`). Photos are
+content-addressed (a fresh UUID per upload, never overwritten), which is what
+makes a one-year `immutable` cache safe.
+
+**What you now own.** The files are only as safe as the backup:
+`scripts/backup-db.sh` snapshots `MEDIA_DIR` next to every database dump
+(§ "Database backups") — set `MEDIA_OFFSITE_CMD`, or a dead disk takes the
+photos with it. Each photo is a WebP of at most 1600 px; check usage with
+`du -sh /var/www/evakuators-media` now and then.
+
+### One-time setup (and the move off Supabase)
+
+Do it in this order — each step is safe to repeat.
+
+```bash
+# 1. Directory: written by the backend's user, read by nginx (www-data)
+sudo mkdir -p /var/www/evakuators-media /var/cache/nginx/evakuators-ipx
+sudo chown "$(whoami)":www-data /var/www/evakuators-media
+sudo chmod 2755 /var/www/evakuators-media
+
+# 2. backend/.env — add the three MEDIA_* lines from backend/.env.example.
+#    Leave the old SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY lines in place
+#    until step 5 is done: the migration script uses them, the app ignores them.
+
+# 3. nginx — add BY HAND to the live server file (never copy the example over
+#    it, see § "nginx"): the proxy_cache_path line, and the /media/ and
+#    /_ipx/ location blocks inside the evakuators.am server block.
+sudo nginx -t && sudo systemctl reload nginx
+
+# 4. Deploy the code (§ "Routine deploy"). The backend now refuses to boot
+#    without MEDIA_DIR/MEDIA_PUBLIC_URL, which is why step 2 comes first.
+#    Photos stay blank until step 5 — they already are.
+
+# 5. Copy the photos and repoint the rows (backup first: it is an UPDATE)
+./scripts/backup-db.sh
+cd backend
+node scripts/migrate-images-to-disk.js            # downloads, DB untouched
+node scripts/migrate-images-to-disk.js --apply    # downloads the rest, rewrites URLs
+node scripts/migrate-images-to-disk.js --verify   # proof: every row ↔ its own file
+
+# 6. Check one: expect 200, Content-Type image/webp, Cache-Control immutable
+curl -sI "https://evakuators.am/media/uploads/$(ls /var/www/evakuators-media/uploads | head -n 1)"
+```
+
+**A photo cannot move to another driver's page.** The script writes one
+column, `url`; `towTruckId` and `position` (whose photo, and where it sits in the
+gallery) are never touched. And a file is accepted for a row only if its name is
+that row's own `path` (UNIQUE — no two rows share a file) and its byte length,
+width and height equal the `sizeBytes`/`width`/`height` the backend recorded when
+it stored that exact upload. A different photo, a truncated download or an error
+page fails that and is refused; the row keeps its old URL. `--verify` re-proves
+it for every migrated row and changes nothing. New uploads are published with
+`link()`, which fails rather than replace an existing file.
+
+Step 5 prints every photo it could not fetch. While Supabase still answers
+`402`, that is all of them that are not already on disk — the database keeps
+their old URLs (nothing is pointed at a missing file), and the script is safe to
+re-run. Supabase's quota resets at the start of the project's billing cycle;
+run step 5 again that day and the rest arrive. A photo that is truly gone stays
+blank until the driver re-uploads it from the dashboard. Once the script reports
+`failed 0`, delete the `SUPABASE_*` lines from `backend/.env` and the Supabase
+project itself.
+
 ## Staging environment
 
 A second, full copy of the stack on the same VPS — `staging.evakuators.am` /
@@ -222,9 +315,9 @@ checkout.
 see "Database: copy, not connection" below), its own ports, its own PM2
 process names, its own domain, its own JWT/webhook secrets. **Shared with
 production, by deliberate and specifically-guarded choice:** the Telegram
-driver bot's token and the Supabase Storage bucket. Both of the sections
-below explain exactly what makes each of those two safe to share rather than
-just "usually fine."
+driver bot's token, and production's photos (displayed, never written). Both
+of the sections below explain exactly what makes each of those two safe to
+share rather than just "usually fine."
 
 ### Database: copy, not connection
 
@@ -277,30 +370,23 @@ The admin 2FA bot is unaffected by any of this — it's a separate token
 `backend/.env.staging.example`), which keeps admin login single-factor there
 and means there is nothing to guard on that side at all.
 
-### Supabase Storage: same bucket, staging is read-only
+### Photos: production's, displayed read-only
 
-Staging shares production's real Supabase project and bucket rather than
-getting its own. This is why images "just work" on staging with zero setup:
-every copied `TowTruck`/`RegistrationRequest` row's image URL is an absolute,
-public Supabase Storage URL — Supabase serves it to any browser regardless of
-which app rendered the page linking to it, so nothing about the frontend or
-backend needs to know or care that the photo predates staging's existence.
+Staging has no photos of its own. Every copied `TowTruck`/`RegistrationRequest`
+row's image URL is an absolute `https://evakuators.am/media/...` URL, served by
+production's nginx to any browser — so images "just work" on staging with zero
+setup, and nothing is copied.
 
-What must never happen is staging **writing** into that bucket — a driver
-registering, editing a profile, or an admin approving a request on staging
-must not be able to create, replace or delete a real file in production's
-real Storage. `SUPABASE_STORAGE_READ_ONLY=true` enforces exactly that:
-`SupabaseStorageService` — the *only* place in the whole project that talks
-to Supabase — refuses every `uploadWebp()`/`remove()` call before it reaches
-the network, throwing a clear "read-only in this environment" error instead.
-Existing callers already wrap storage calls in `try/catch` for unrelated
-reasons (a Storage hiccup shouldn't block an admin's delete, an orphan-purge
-failure should just retry tomorrow), so this fails exactly as gracefully as
-any other storage error — nothing crashes, nothing silently half-succeeds.
-One consequence worth expecting, not a bug: the daily `purgeOrphanedImages`
-cron (`docs/deployment.md` § "Scheduled jobs") will log a skipped-write
-warning on staging every day it has something to purge; that's the same
-graceful "retry next run" path a real Supabase outage would take.
+What must never happen is staging **writing or deleting** a photo. Staging runs
+on the same VPS, so a `MEDIA_DIR` pointed at production's directory by mistake
+would let staging's nightly `purgeOrphanedImages` delete real drivers' photos
+for rows staging thinks are orphaned. `MEDIA_READ_ONLY=true` makes that
+impossible rather than unlikely: `MediaStorageService` refuses every
+`uploadWebp()`/`remove()` before touching the disk, with a clear "disabled in
+this environment" error. Existing callers already wrap storage calls in
+`try/catch` (an admin's delete is not blocked by a storage hiccup, a failed
+purge retries tomorrow), so this fails as gracefully as any other storage
+error. Expect the daily purge to log that refusal on staging; it is not a bug.
 
 Concretely, on staging: registration, dashboard photo edits, and admin image
 approval all still render and validate normally — they just fail at the
@@ -308,8 +394,7 @@ final "save the file" step with a clear error, instead of silently
 appearing to work. This is what "read-only" is expected to look like; it is
 not something to work around.
 
-See `backend/test/supabase-storage.service.read-only.spec.ts` for this
-pinned in a test.
+See `backend/test/media-storage.service.spec.ts` § "read-only mode".
 
 ### One-time setup
 
@@ -331,10 +416,10 @@ cd /var/www/evakuators-staging
 sudo -u postgres psql -c "CREATE DATABASE evakuators_staging OWNER evakuators;"
 
 cp backend/.env.staging.example backend/.env
-# Fill in: DATABASE_URL's password; SUPABASE_*/TELEGRAM_BOT_TOKEN/
+# Fill in: DATABASE_URL's password; TELEGRAM_BOT_TOKEN/
 # TELEGRAM_BOT_USERNAME/TELEGRAM_WEBHOOK_SECRET copied from production's
-# backend/.env verbatim; SUPABASE_STORAGE_READ_ONLY="true" (already the
-# template default — leave it); TELEGRAM_OUTBOUND_ALLOWED_CHAT_IDS set to
+# backend/.env verbatim; MEDIA_READ_ONLY="true" (already the template
+# default — leave it); TELEGRAM_OUTBOUND_ALLOWED_CHAT_IDS set to
 # YOUR OWN Telegram chat id; and fresh values (openssl rand -hex 32) for
 # DRIVER_JWT_SECRET / ADMIN_JWT_SECRET / ANALYTICS_VISITOR_PEPPER /
 # PRIVACY_CONSENT_IP_SECRET. See the
@@ -386,7 +471,7 @@ of both the production and staging `DATABASE_URL`s and **refuses to run at
 all if they're the same** — the single line standing between "refresh
 staging" and "wipe production" if a `.env` file is ever misconfigured.
 
-It does not touch Supabase Storage (nothing needs to — see above) or the
+It does not copy photos (nothing needs to — see above) or the
 Telegram webhook (nothing in this codebase ever touches that programmatically
 — see above).
 
@@ -511,9 +596,13 @@ Tunables via the environment: `BACKUP_DIR`, `RETENTION_DAYS`, `ENV_FILE`,
    dropdb evakuators_restore_test
    ```
 
-Supabase Storage (the tow truck photos) is a separate system with its own
-retention — a Postgres dump contains the rows that point at the images, not the
-images.
+The same run also snapshots the photos (`MEDIA_DIR`) to
+`media-YYYY-MM-DD-HHMM/` beside the dump. Each snapshot is a complete directory
+tree, but costs only the photos added since the previous run — unchanged files
+are hard links (`rsync --link-dest`). It needs `rsync` (`apt install rsync`),
+and its off-site copy is `MEDIA_OFFSITE_CMD` (it receives the snapshot
+**directory**, so use `rclone sync "$1" remote:...` or `scp -r`). Restore the
+dump and the snapshot **from the same run**, so every row's file exists.
 
 ## Log rotation
 
@@ -535,7 +624,7 @@ logging only when they actually changed something:
 | Job | Schedule | What it does |
 | --- | --- | --- |
 | `FreeRoutesService.cleanupExpiredRoutes` | every 10 min | `ACTIVE` → `FINISHED` at departure, hard-delete after a 24h grace period (`docs/free-routes.md`) |
-| `ImagesService.purgeOrphanedImages` | daily 03:00 | Deletes never-attached uploads (>24h) and rejected applications' photos (>7d) from **Supabase Storage and** the DB |
+| `ImagesService.purgeOrphanedImages` | daily 03:00 | Deletes never-attached uploads (>24h) and rejected applications' photos (>7d) from **disk (`MEDIA_DIR`) and** the DB |
 | `AnalyticsTrackingService.purgeExpiredVisitorDays` | daily 04:00 | Trims the visitor-dedup ledger past its retention window (`docs/analytics.md`) |
 | `DriverAuthService.purgeSpentLoginCodes` | daily 04:00 | Deletes driver + admin OTP rows older than 24h |
 
@@ -585,10 +674,9 @@ wrong link in Telegram messages.
 | Variable | Required | Notes |
 | --- | --- | --- |
 | `DATABASE_URL` | yes | PostgreSQL connection string |
-| `SUPABASE_URL` | yes | Storage only — never DB/Auth |
-| `SUPABASE_SERVICE_ROLE_KEY` | yes | |
-| `SUPABASE_STORAGE_BUCKET` | yes | Must be a **public** bucket |
-| `SUPABASE_STORAGE_READ_ONLY` | no, default `false` | `true` blocks every upload/delete at `SupabaseStorageService` before it reaches Supabase. Only ever `true` on a deploy sharing production's bucket read-only — staging, see § "Staging environment" |
+| `MEDIA_DIR` | yes, absolute | Where photos are written; created at boot if missing (the backend refuses to start if it cannot write there). Must match nginx's `/media/` alias — § "Image storage" |
+| `MEDIA_PUBLIC_URL` | yes | Public address of `MEDIA_DIR`, no trailing slash. Written into every new image row |
+| `MEDIA_READ_ONLY` | no, default `false` | `true` refuses every upload/delete before it touches the disk. Only ever `true` on a deploy whose database is a copy of production's — staging and local, see § "Staging environment" |
 | `PORT` | no, default `4002` | Never `3002` |
 | `HOST` | no, default `127.0.0.1` | Interface to bind. Loopback by default so nginx is the only way in — see "Why the API binds loopback" below. Set `0.0.0.0` only if something must reach the API without nginx |
 | `CORS_ORIGIN` | no, default `http://localhost:3002` | Comma-separated; a prod-only value silently blocks local dev — see `docs/local-development.md` |

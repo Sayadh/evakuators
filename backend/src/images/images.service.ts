@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { Cron, CronExpression } from '@nestjs/schedule'
 import type { TowTruckImage } from '@prisma/client'
-import { SupabaseStorageService } from '../storage/supabase-storage.service'
+import { MediaStorageService } from '../storage/media-storage.service'
 import { ImageProcessorService } from './image-processor.service'
 import { ImagesRepository } from './images.repository'
 
@@ -32,10 +32,10 @@ export class ImagesService {
   constructor(
     private readonly imagesRepository: ImagesRepository,
     private readonly processor: ImageProcessorService,
-    private readonly storage: SupabaseStorageService,
+    private readonly storage: MediaStorageService,
   ) {}
 
-  /** Full pipeline: validate → Sharp → WebP → Supabase Storage → DB record */
+  /** Full pipeline: validate → Sharp → WebP → media disk → DB record */
   async upload(file: Express.Multer.File): Promise<UploadedImageDto> {
     const processed = await this.processor.process(file)
     const stored = await this.storage.uploadWebp(processed.buffer, 'uploads')
@@ -61,7 +61,7 @@ export class ImagesService {
    * followed by a submitted and approved registration.
    *
    * Storage is deleted BEFORE the database rows, deliberately. The `path` column
-   * is the only record of which bucket object belongs to which row, so deleting
+   * is the only record of which file belongs to which row, so deleting
    * the row first would strand the file with no way left to find it. If the
    * Storage call fails, the rows stay and the next run retries them.
    */
@@ -78,7 +78,7 @@ export class ImagesService {
       await this.storage.remove(orphaned.map((image) => image.path))
     } catch (error) {
       // Leave the rows in place so the next run tries again — dropping them now
-      // would orphan the bucket objects permanently (nothing else records their
+      // would orphan the files permanently (nothing else records their
       // paths), which is the exact problem this job exists to fix.
       this.logger.warn(
         `Orphaned-image purge: Storage delete failed, keeping ${orphaned.length} rows for the next run: ${String(error)}`,

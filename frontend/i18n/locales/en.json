@@ -42,37 +42,10 @@
   "home": {
     "heroTitle": " — find a tow truck anywhere in Armenia",
     "heroSubtitle": "Pick your region or town, see the trucks available and call the driver straight away.",
-    "heroPointCountry": "Across Armenia",
     "heroPointHours": "24/7 service",
     "heroPointDirect": "Talk to the driver directly",
-    "howItWorks": "How it works",
-    "step1Title": "Choose your region or town",
-    "step1Text": "Find your area with the search box or from the list.",
-    "step2Title": "Compare the tow trucks",
-    "step2Text": "See photos of the vehicles, the prices and the services.",
-    "step3Title": "Call straight away",
-    "step3Text": "Reach the driver by phone or WhatsApp — no middleman.",
-    "whyTitle": "Why Evakuators.am",
-    "benefitCountryTitle": "Across Armenia",
-    "benefitCountryText": "Tow trucks in every region and in all of Yerevan's districts.",
-    "benefitDirectTitle": "Talk to the driver directly",
-    "benefitDirectText": "Call the driver yourself — no middleman, no markup.",
-    "benefitPhotosTitle": "Real photos",
-    "benefitPhotosText": "See the actual truck before you call.",
-    "benefitHoursTitle": "24/7 service",
-    "benefitHoursText": "Day or night, there is always a truck working around the clock.",
-    "benefitSearchTitle": "Simple search",
-    "benefitSearchText": "Search by region, town, service and load capacity.",
-    "benefitFreeTitle": "Free to use",
-    "benefitFreeText": "Finding a truck and calling the driver is completely free.",
+    "heroPointFree": "Free to use",
     "chooseArea": "Choose your area",
-    "yerevanTag": "The widest choice",
-    "yerevanSummary": {
-      "one": "{count} district · tow trucks across the city",
-      "many": "{count} districts · tow trucks across the city"
-    },
-    "truckBadge": "tow truck",
-    "popularTitle": "Frequently searched areas",
     "seoTitle": "Tow truck services across Armenia"
   },
   "nearest": {
@@ -85,8 +58,13 @@
     "permissionFallback": "Or carry on with the search by region and city below.",
     "cta": "Find the nearest tow trucks",
     "metaTitle": "Find the nearest tow truck",
-    "breadcrumb": "Nearest tow trucks",
     "intro": "Press the button and allow location access. We'll show you the nearest active tow trucks — with distance and estimated arrival time. Your location is not stored.",
+    "stepPress": "Press the button",
+    "stepAllow": "Allow location access",
+    "stepCall": "Call the nearest driver",
+    "stepHelpTouch": "Something not working? Tap the green button at the bottom right — we'll help",
+    "stepHelpDesktop": "Something not working? Call us — the number is at the top of the page",
+    "privacy": "Your location is not stored",
     "locating": "Determining your location…",
     "searching": "Searching…",
     "locateButton": "Determine my location",
@@ -112,8 +90,6 @@
     "mixedDistanceDisclaimer": "For drivers marked “Online now” the distance is from their phone’s current position; for everyone else, from the parking spot in their profile. Confirm the exact time with the driver by phone."
   },
   "dispatch": {
-    "bannerTitle": "Not sure which truck you need?",
-    "bannerText": "Call us — our dispatcher will pick the right tow truck for you",
     "callUs": "Call us",
     "callUsWithNumber": "Call us: {phone}",
     "modalText": "Our dispatcher will pick a suitable tow truck and put you in touch with the driver.",
@@ -168,10 +144,6 @@
   "list": {
     "emptyTitle": "No tow trucks found",
     "emptyText": "Try changing the filters, or look at the services in nearby areas."
-  },
-  "popular": {
-    "capital": "Capital",
-    "regionHint": "{region} region"
   },
   "regionsPage": {
     "title": "Regions of Armenia",

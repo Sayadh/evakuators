@@ -4,7 +4,7 @@
 
 ```
 ├── frontend/            Nuxt 3 (Vue 3, TypeScript, Pinia, SCSS)
-├── backend/             NestJS + Prisma + PostgreSQL + Supabase Storage
+├── backend/             NestJS + Prisma + PostgreSQL (photos on local disk)
 ├── nginx/               Example nginx configuration
 ├── ecosystem.config.js  PM2 process file
 └── README.md
@@ -18,8 +18,9 @@
 - **Dynamic data** (tow trucks, images, reviews, registration requests, users) lives in
   PostgreSQL, accessed only through Prisma inside the backend.
 - **Images**: frontend → NestJS → validation → Sharp (auto-rotate, resize, WebP) →
-  Supabase **Storage** (never Supabase DB/Auth) → record in PostgreSQL.
-  Only the backend talks to Supabase.
+  a file in `MEDIA_DIR` on the server → record in PostgreSQL. nginx serves the
+  files at `/media/` and caches every resized `/_ipx/` variant — see
+  `docs/deployment.md` § "Image storage". No third-party storage service.
 - **Frontend API layer**: all HTTP goes through `frontend/repositories/`
   (`towTruckRepository`, `registrationRepository`, `imageRepository`).
   When `NUXT_PUBLIC_API_BASE_URL` is empty the app runs on local mock data
@@ -31,7 +32,7 @@
 
 - Node.js ≥ 20
 - PostgreSQL ≥ 14
-- A Supabase project (Storage only) with a **public bucket** (e.g. `tow-truck-images`)
+- A directory for photos on the server (`MEDIA_DIR`, e.g. `/var/www/evakuators-media`)
 - PM2 + nginx on the production server
 
 ## 1. Install
@@ -50,9 +51,8 @@ cp backend/.env.example backend/.env
 | Variable | Description |
 | --- | --- |
 | `DATABASE_URL` | PostgreSQL connection string |
-| `SUPABASE_URL` | `https://<project>.supabase.co` |
-| `SUPABASE_SERVICE_ROLE_KEY` | Service role key (Storage access, backend only) |
-| `SUPABASE_STORAGE_BUCKET` | Public bucket name for tow truck images |
+| `MEDIA_DIR` | Absolute directory photos are written to |
+| `MEDIA_PUBLIC_URL` | Its public address, e.g. `https://evakuators.am/media` |
 | `PORT` | Backend port — **reserved: `4002`**, never `3002` (that's the frontend) |
 | `CORS_ORIGIN` | Comma-separated allowed origins |
 
@@ -105,11 +105,11 @@ npx prisma generate
 
 For local development use `npm run prisma:migrate` (creates new migrations).
 
-## 5. Supabase Storage
+## 5. Photo storage
 
-1. Create a project at supabase.com (the database and auth of that project are NOT used).
-2. Storage → New bucket → name it (e.g. `tow-truck-images`), mark it **Public**.
-3. Copy the project URL and the `service_role` key into `backend/.env`.
+1. Create `MEDIA_DIR`, owned by the user PM2 runs as and readable by nginx.
+2. Add the `/media/` and `/_ipx/` blocks from `nginx/evakuators.am.conf`.
+3. Full steps, and how photos are backed up: `docs/deployment.md` § "Image storage".
 
 ## 6. Build
 
@@ -170,7 +170,7 @@ the table below is a summary.
 | `POST` | `/api/v1/nearest-tow-trucks` | Nearest drivers to `{ latitude, longitude }` — PostGIS prefilter + one route-matrix request, max 10 results. Position never stored — see `docs/nearest-search.md` |
 | `GET` | `/api/v1/tow-trucks/:id/reviews` | Approved reviews |
 | `POST` | `/api/v1/tow-trucks/:id/reviews` | Submit review (moderated) |
-| `POST` | `/api/v1/images` | Upload image (multipart `file`) → WebP → Supabase |
+| `POST` | `/api/v1/images` | Upload image (multipart `file`) → WebP → `MEDIA_DIR` |
 | `POST` | `/api/v1/registrations` | Submit driver registration |
 | `GET` | `/api/v1/admin/registration-requests` | List requests (`?status=PENDING`) |
 | `POST` | `/api/v1/admin/registration-requests/:id/approve` | Create TowTruck from request |

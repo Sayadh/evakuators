@@ -7,7 +7,7 @@ export interface UploadedImage {
   height: number
 }
 
-/** Uploads go to the backend only — the frontend never talks to Supabase */
+/** Uploads go to the backend only — the frontend never writes files itself */
 export const imageRepository = {
   upload(file: File): Promise<UploadedImage> {
     const body = new FormData()

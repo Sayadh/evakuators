@@ -1202,7 +1202,7 @@ async function removeServiceArea(truck: AdminTowTruck, area: AdminServiceArea): 
   }
 }
 
-/** Irreversible — deletes the truck, its images (DB + Supabase Storage) and reviews */
+/** Irreversible — deletes the truck, its images (DB row + file on disk) and reviews */
 async function deleteTowTruck(truck: AdminTowTruck): Promise<void> {
   const confirmed = confirm(
     `Ջնջե՞լ ${truck.driverName}-ի («${truck.slug}») ամբողջ պրոֆիլը։ Այս գործողությունը ՉԻ ՀԵՏԱՐԿՎՈՒՄ. ` +

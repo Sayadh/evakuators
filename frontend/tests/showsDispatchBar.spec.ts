@@ -25,8 +25,26 @@ describe('showsDispatchBar', () => {
     expect(showsDispatchBar('/yerevan/arabkir/')).toBe(true)
   })
 
-  it('stays off the homepage, whose hero already carries the same offer', () => {
-    expect(showsDispatchBar('/')).toBe(false)
+  it('shows on the homepage and on the nearest search', () => {
+    expect(showsDispatchBar('/')).toBe(true)
+    expect(showsDispatchBar('/evakuator')).toBe(true)
+    expect(showsDispatchBar('/ru/evakuator')).toBe(true)
+  })
+
+  it('shows on the Russian and English versions of the same pages', () => {
+    for (const prefix of ['/ru', '/en']) {
+      expect(showsDispatchBar(prefix)).toBe(true)
+      expect(showsDispatchBar(`${prefix}/`)).toBe(true)
+      expect(showsDispatchBar(`${prefix}/regions/kotayk/abovyan`)).toBe(true)
+      expect(showsDispatchBar(`${prefix}/yerevan/arabkir`)).toBe(true)
+      expect(showsDispatchBar(`${prefix}/tow-trucks/some-driver`)).toBe(false)
+      expect(showsDispatchBar(`${prefix}/register`)).toBe(false)
+    }
+  })
+
+  it('does not mistake a page that merely starts with a locale code for a prefix', () => {
+    expect(showsDispatchBar('/russia')).toBe(false)
+    expect(showsDispatchBar('/english')).toBe(false)
   })
 
   it('stays off a driver profile, which has its own sticky bar', () => {

@@ -6,7 +6,7 @@ and what auth (if any) gates it.
 
 | Route | File | Purpose | Data source | Auth |
 | --- | --- | --- | --- | --- |
-| `/` | `pages/index.vue` | Homepage — hero, popular locations, region picker, how-it-works, benefits, featured trucks | Mock or API | Public |
+| `/` | `pages/index.vue` | Homepage — hero (nearest + call us + text search), area cards (Yerevan + every marz, each listing all its towns/districts as links, ordered by list length), specialist-vehicle links, FAQ, SEO text | Mock or API | Public |
 | `/regions` | `pages/regions/index.vue` | List of Armenia's 10 marzes + Yerevan entry | Static geography + truck counts | Public |
 | `/regions/[region]` | `pages/regions/[region]/index.vue` | Cities within one marz | Static geography + truck counts | Public |
 | `/regions/[region]/[city]` | `pages/regions/[region]/[city].vue` | Tow trucks serving one city | Mock or API | Public |

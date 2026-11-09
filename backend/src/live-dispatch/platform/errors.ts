@@ -40,7 +40,6 @@ export const DISPATCH_ERRORS = {
   APP_ACCOUNT_PENDING: { status: 403, message: 'Ձեր հայտը դեռ ստուգվում է։ Ադմինիստրատորը կկապվի ձեզ հետ' },
   APP_ACCOUNT_REJECTED: { status: 403, message: 'Ձեր հայտը մերժվել է։ Դիմեք ադմինիստրատորին' },
   APP_ACCESS_SUSPENDED: { status: 403, message: 'Հավելվածից օգտվելու ձեր հասանելիությունը կասեցված է։ Դիմեք ադմինիստրատորին' },
-  SITE_PROFILE_INACTIVE: { status: 403, message: 'Ձեր կայքի պրոֆիլն ապաակտիվացված է։ Դիմեք ադմինիստրատորին' },
   PHONE_BELONGS_TO_SITE_DRIVER: { status: 409, message: 'Այս համարով վարորդ արդեն կա կայքում։ Մուտք գործեք կայքի գաղտնաբառով, իսկ եթե հավելվածը հասանելի չէ՝ դիմեք ադմինիստրատորին' },
   PHONE_ALREADY_REGISTERED: { status: 409, message: 'Այս համարով արդեն գրանցված հաշիվ կա' },
   REGISTRATION_ALREADY_PENDING: { status: 409, message: 'Այս համարով հայտն արդեն ստուգման մեջ է' },

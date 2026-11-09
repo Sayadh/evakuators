@@ -172,7 +172,10 @@ export interface FleetDriver {
   manipulator: boolean
   wheelSkates: boolean
   vehicleDescription: string | null
+  /** May receive orders: app access ACTIVE. The website status plays no part */
   isActive: boolean
+  /** Shown on the website right now — informational, no effect on the app */
+  siteListed: boolean
   statusReason: string | null
   statusChangedAt: string
   createdAt: string

@@ -10,6 +10,10 @@
  *
  * Taking access away logs every device out at once and is refused while the
  * driver holds an order (release the order first).
+ *
+ * The website listing and app access are INDEPENDENT: a driver taken off the
+ * site keeps working in the app while access is ACTIVE, and suspending app
+ * access never touches the website.
  */
 import { computed, onMounted, ref } from 'vue'
 import { VEHICLE_TYPE_LABELS } from '~/constants/vehicles'
@@ -149,7 +153,8 @@ useSeoMetaData({ title: 'Հավելվածի վարորդներ', description: '�
     <h1>Հավելվածի վարորդներ</h1>
     <p class="muted">
       Կայքի վարորդը հավելված է մտնում կայքի նույն հեռախոսահամարով և գաղտնաբառով, բայց միայն այն բանից հետո, երբ այստեղ նրան
-      հասանելիություն տաք։ Հավելվածում գրանցված վարորդները կայքում չեն երևում։
+      հասանելիություն տաք։ Հավելվածում գրանցված վարորդները կայքում չեն երևում։ Կայքն ու հավելվածը իրարից անկախ են․ կայքում
+      անջատվածը հավելվածով պատվերներ ստանում է, իսկ այստեղ կասեցնելը կայքի վրա չի ազդում։
     </p>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <p v-if="notice" class="ok" role="status">{{ notice }}</p>
@@ -186,7 +191,7 @@ useSeoMetaData({ title: 'Հավելվածի վարորդներ', description: '�
           <tr v-for="c in siteResults" :key="c.towTruckId">
             <td>
               <NuxtLink :to="`/tow-trucks/${c.slug}`" target="_blank">{{ c.driverName }}</NuxtLink>
-              <span v-if="!c.isActive" class="tag tag--muted">կայքում անջատված</span>
+              <span v-if="!c.isActive" class="tag tag--muted">կայքում անջատված (հասանելիություն տալ կարելի է)</span>
             </td>
             <td>{{ c.phone }}</td>
             <td>{{ vehicleLabel(c.vehicleType) }}</td>
@@ -240,7 +245,7 @@ useSeoMetaData({ title: 'Հավելվածի վարորդներ', description: '�
               <td>{{ vehicleLabel(d.vehicleType) }}<div class="muted small">{{ capacity(d) }}</div></td>
               <td>
                 {{ STATUS_LABEL[d.status] }}
-                <div v-if="d.status === 'ACTIVE' && !d.isActive" class="muted small">կայքում անջատված — պատվերներ չի ստանում</div>
+                <div v-if="d.kind === 'SITE_LINKED' && !d.siteListed" class="muted small">կայքում անջատված է (հավելվածի վրա չի ազդում)</div>
                 <div v-if="d.statusReason" class="muted small">{{ d.statusReason }}</div>
               </td>
               <td class="fleet__actions">

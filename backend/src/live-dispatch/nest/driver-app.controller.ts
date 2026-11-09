@@ -1,17 +1,18 @@
 /**
  * Driver mobile app API — `/api/v1/driver-app/*`.
  *
- * Login reuses the EXISTING driver credential check (DriverAuthService.login:
- * phone + password, bcrypt, the same deactivation rules), so there is one
- * account per driver and no second password. The app then gets its own token
- * bound to a revocable device session.
+ * Login (FleetAccess.authenticate): a website driver signs in with the SAME
+ * website password — one account, no second password — but whether they may
+ * use the app is decided ONLY by their app access, never by the website
+ * status (a driver taken off the site can still work in the app, and vice
+ * versa). App-only drivers sign in with their own password. The app then gets
+ * its own token bound to a revocable device session.
  */
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query, Req, Res, UseFilters, UseGuards } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
 import { ConfigService } from '@nestjs/config'
 import { Throttle } from '@nestjs/throttler'
 import type { Request, Response } from 'express'
-import { DriverAuthService } from '../../driver-auth/driver-auth.service'
 import { DispatchError } from '../platform/errors'
 import { DRIVER_APP_AUDIENCE, DriverAppGuard, type DriverAppRequest } from './auth'
 import { DispatchErrorFilter, intParam, mutationContext, send } from './http'
@@ -24,7 +25,6 @@ const APP_TOKEN_TTL = '30d'
 export class DriverAppController {
   constructor(
     private readonly holder: LiveDispatchRuntimeHolder,
-    private readonly driverAuth: DriverAuthService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
   ) {}
@@ -38,16 +38,9 @@ export class DriverAppController {
     if (typeof body?.phone !== 'string' || typeof body.password !== 'string') throw new DispatchError('VALIDATION_FAILED', { field: 'phone/password' })
     if (typeof body.deviceId !== 'string' || body.deviceId.length < 8 || body.deviceId.length > 128) throw new DispatchError('VALIDATION_FAILED', { field: 'deviceId' })
     if (body.platform !== 'ios' && body.platform !== 'android') throw new DispatchError('VALIDATION_FAILED', { field: 'platform' })
-    // The website is asked first: a number listed on the site signs in ONLY
-    // with the site password (DriverAuthService, unchanged — same 401/403).
-    // Then app ACCESS is checked: listed on the site is not the same as
-    // allowed in the app. A number not on the site is an app-only account.
-    let web: Awaited<ReturnType<DriverAuthService['login']>> | null = null
-    const identity = await this.holder.runtime.access.authenticate(body.phone, body.password, async (phone, password) => {
-      web = await this.driverAuth.login(phone, password)
-      return { towTruckId: web.towTruckId }
-    })
-    const site = web as Awaited<ReturnType<DriverAuthService['login']>> | null
+    // The website row is checked first (its password only — not its status),
+    // then app ACCESS. A number not on the site is an app-only account.
+    const identity = await this.holder.runtime.access.authenticate(body.phone, body.password)
     const { session } = await this.holder.runtime.fleet.createSession({
       driverId: identity.driverId,
       deviceId: body.deviceId,
@@ -63,9 +56,9 @@ export class DriverAppController {
       sessionId: session.id,
       driverId: identity.driverId,
       kind: identity.kind,
-      // Website-account facts; always false for an app-only driver.
-      mustChangePassword: site?.mustChangePassword ?? false,
-      requiresPrivacyConsent: site?.requiresPrivacyConsent ?? false,
+      // The website password is still the one we generated: the app may
+      // remind the driver to change it on the website. Always false for app-only.
+      mustChangePassword: identity.mustChangePassword,
     }
   }
 

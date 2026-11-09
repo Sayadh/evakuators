@@ -2,9 +2,9 @@
  * App access (FleetDriver): who may use the driver app, on a real Postgres.
  *
  * Website drivers get access only when an admin grants it and then sign in
- * with the SAME site password; app-only drivers register, wait for approval,
- * and never appear on the website. The website's own credential check is
- * represented by a stub with the same contract (throw on failure).
+ * with the SAME site password (the TowTruck.passwordHash); app-only drivers
+ * register, wait for approval, and never appear on the website. The website
+ * STATUS and app access are independent in both directions.
  */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -19,7 +19,6 @@ import {
   FleetAccess,
   parseRegistration,
   type PasswordHasher,
-  type SiteCredentialCheck,
 } from '../src/live-dispatch/fleet/fleet-access'
 import { insertSiteDriver, insertTowTruck } from '../src/live-dispatch/test-support/test-db'
 import { integrationSkip, offset, useTestDatabase, YEREVAN } from './helpers'
@@ -43,19 +42,6 @@ function testHasher(): PasswordHasher & { compares: number } {
   return self
 }
 
-/** The website login, as DriverAuthService.login behaves: throws on a wrong password */
-function siteLogin(passwords: Map<string, string>): SiteCredentialCheck & { calls: number } {
-  const fn = Object.assign(
-    async (phone: string, password: string) => {
-      fn.calls++
-      if (passwords.get(phone) !== password) throw Object.assign(new Error('site 401'), { status: 401 })
-      return { towTruckId: 0 }
-    },
-    { calls: 0 },
-  )
-  return fn
-}
-
 const REGISTRATION = {
   password: 'app-password-1',
   driverName: '  Արամ   Պետրոսյան ',
@@ -77,39 +63,47 @@ describe('app access: site drivers and app-only drivers (real Postgres)', { skip
     return { hasher, access: new FleetAccess(dbCtx.get().pool, hasher) }
   }
 
+  /** A website profile whose (website) password is `password` */
+  async function siteTruck(hasher: PasswordHasher, password: string, extra: { isActive?: boolean } = {}) {
+    const phone = nextPhone()
+    const towTruckId = await insertTowTruck(dbCtx.get().pool, { phone, passwordHash: await hasher.hash(password), ...extra })
+    return { phone, towTruckId }
+  }
+
   async function adminId(): Promise<number> {
     const h = await harness(dbCtx.get())
     return h.adminId
   }
 
   it('a website driver WITHOUT a grant cannot use the app, even with the right site password', async () => {
-    const { access: a } = access()
-    const phone = nextPhone()
-    await insertTowTruck(dbCtx.get().pool, { phone })
-    const site = siteLogin(new Map([[phone, 'site-pass-1']]))
-    await assert.rejects(a.authenticate(phone, 'site-pass-1', site), (e: { code: string }) => e.code === 'APP_ACCESS_NOT_GRANTED')
-    assert.equal(site.calls, 1, 'the website check ran first')
+    const { access: a, hasher } = access()
+    const { phone } = await siteTruck(hasher, 'site-pass-1')
+    await assert.rejects(a.authenticate(phone, 'site-pass-1'), (e: { code: string }) => e.code === 'APP_ACCESS_NOT_GRANTED')
+    await assert.rejects(a.authenticate(phone, 'wrong-pass'), (e: { code: string }) => e.code === 'INVALID_CREDENTIALS', 'no access status without the password')
   })
 
-  it('grant → the SAME site password signs into the app; a wrong one is the website\'s own 401', async () => {
-    const { access: a } = access()
-    const phone = nextPhone()
-    const towTruckId = await insertTowTruck(dbCtx.get().pool, { phone })
+  it('grant → the SAME site password signs into the app; one row; idempotent', async () => {
+    const { access: a, hasher } = access()
+    const { phone, towTruckId } = await siteTruck(hasher, 'site-pass-1')
     const granted = await a.grantSiteAccess(towTruckId, await adminId())
     assert.equal(granted.kind, 'SITE_LINKED')
     assert.equal(granted.status, 'ACTIVE')
     assert.equal(granted.towTruckId, towTruckId)
     assert.equal(granted.phone, phone, 'profile data comes from the website row')
-    const site = siteLogin(new Map([[phone, 'site-pass-1']]))
-    const identity = await a.authenticate(phone, 'site-pass-1', site)
-    assert.deepEqual(identity, { driverId: granted.id, kind: 'SITE_LINKED' })
-    await assert.rejects(a.authenticate(phone, 'wrong', site), (e: { status: number }) => e.status === 401)
+    assert.deepEqual(await a.authenticate(phone, 'site-pass-1'), { driverId: granted.id, kind: 'SITE_LINKED', mustChangePassword: false })
+    await assert.rejects(a.authenticate(phone, 'wrong'), (e: { code: string }) => e.code === 'INVALID_CREDENTIALS')
+    await a.grantSiteAccess(towTruckId, await adminId())
     const [{ n }] = await dbCtx.get().pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM "FleetDriver" WHERE "towTruckId" = $1::int`, [towTruckId])
     assert.equal(n, 1)
-    // Granting again is idempotent (one row, still ACTIVE)
+  })
+
+  it('a website driver who has no password yet (Telegram handover pending) cannot sign in', async () => {
+    const { access: a, hasher } = access()
+    const phone = nextPhone()
+    const towTruckId = await insertTowTruck(dbCtx.get().pool, { phone, passwordHash: null })
     await a.grantSiteAccess(towTruckId, await adminId())
-    const [{ m }] = await dbCtx.get().pool.query<{ m: number }>(`SELECT count(*)::int AS m FROM "FleetDriver" WHERE "towTruckId" = $1::int`, [towTruckId])
-    assert.equal(m, 1)
+    await assert.rejects(a.authenticate(phone, ''), (e: { code: string }) => e.code === 'INVALID_CREDENTIALS')
+    assert.equal(hasher.compares, 1, 'still exactly one comparison (against the dummy)')
   })
 
   it('suspend → every device logged out, login refused, not eligible; reactivate restores', async () => {
@@ -122,10 +116,15 @@ describe('app access: site drivers and app-only drivers (real Postgres)', { skip
     const state = await h.rt.fleet.driverState(d.driverId)
     assert.equal(state!.isActive, false)
     assert.equal(state!.wantsOnline, false)
-    const [{ phone }] = await h.db.pool.query<{ phone: string }>(`SELECT "phone" FROM "TowTruck" WHERE "id" = $1::int`, [d.towTruckId])
-    await assert.rejects(a.authenticate(phone, 'p', siteLogin(new Map([[phone, 'p']]))), (e: { code: string }) => e.code === 'APP_ACCESS_SUSPENDED')
+    const [{ phone }] = await h.db.pool.query<{ phone: string }>(
+      `UPDATE "TowTruck" SET "passwordHash" = $2 WHERE "id" = $1::int RETURNING "phone"`,
+      [d.towTruckId, await access().hasher.hash('site-pw-1')],
+    )
+    await assert.rejects(a.authenticate(phone, 'site-pw-1'), (e: { code: string }) => e.code === 'APP_ACCESS_SUSPENDED')
+    const [tt] = await h.db.pool.query<{ isActive: boolean }>(`SELECT "isActive" FROM "TowTruck" WHERE "id" = $1::int`, [d.towTruckId])
+    assert.equal(tt.isActive, true, 'suspending APP access never touches the website listing')
     await a.reactivate(d.driverId, h.adminId)
-    assert.equal((await a.authenticate(phone, 'p', siteLogin(new Map([[phone, 'p']])))).driverId, d.driverId)
+    assert.equal((await a.authenticate(phone, 'site-pw-1')).driverId, d.driverId)
   })
 
   it('suspend is refused while the driver holds an order (an operator releases it first)', async () => {
@@ -160,14 +159,26 @@ describe('app access: site drivers and app-only drivers (real Postgres)', { skip
     assert.equal((refused.body as { code: string }).code, 'DRIVER_UNAVAILABLE')
   })
 
-  it('a website driver taken OFF the site keeps no back door: login says so, dispatch skips them', async () => {
+  it('website status and app access are INDEPENDENT: taken off the site, still signs in and gets orders — but is not on the public search', async () => {
     const h = await harness(dbCtx.get())
-    const { access: a } = access()
+    await h.db.pool.query(`TRUNCATE "DispatchOrder", "OrderOffer", "OutboxEvent" CASCADE`)
+    await h.db.pool.query(`UPDATE "DriverPresence" SET "wantsOnline" = false`)
+    const { access: a, hasher } = access()
     const d = await eligibleDriver(h, offset(YEREVAN, 300, 0))
-    await h.db.pool.query(`UPDATE "TowTruck" SET "isActive" = false WHERE "id" = $1::int`, [d.towTruckId])
-    const [{ phone }] = await h.db.pool.query<{ phone: string }>(`SELECT "phone" FROM "TowTruck" WHERE "id" = $1::int`, [d.towTruckId])
-    await assert.rejects(a.authenticate(phone, 'p', siteLogin(new Map([[phone, 'p']]))), (e: { code: string }) => e.code === 'SITE_PROFILE_INACTIVE')
-    assert.equal((await h.rt.fleet.driverState(d.driverId))!.isActive, false)
+    const [{ phone }] = await h.db.pool.query<{ phone: string }>(
+      `UPDATE "TowTruck" SET "isActive" = false, "deactivationReason" = 'UNPAID', "passwordHash" = $2 WHERE "id" = $1::int RETURNING "phone"`,
+      [d.towTruckId, await hasher.hash('site-pw-1')],
+    )
+    assert.equal((await a.authenticate(phone, 'site-pw-1')).driverId, d.driverId, 'the website deactivation does not block the app')
+    const view = await a.get(d.driverId)
+    assert.equal(view.isActive, true)
+    assert.equal(view.siteListed, false)
+    const order = await createOrder(h)
+    await startDispatch(h, order)
+    await drain(h)
+    assert.equal((await pendingOffer(h, order.id))?.driverId, d.driverId, 'still receives orders')
+    const [{ listed }] = await h.db.pool.query<{ listed: boolean }>(`SELECT "siteListed" AS "listed" FROM "FleetDriverProfile" WHERE "id" = $1::int`, [d.driverId])
+    assert.equal(listed, false, 'the public search reads siteListed, so they are not on the website')
   })
 
   it('app-only: register → PENDING (cannot sign in) → approve → signs in with ITS password', async () => {
@@ -180,20 +191,17 @@ describe('app access: site drivers and app-only drivers (real Postgres)', { skip
     assert.equal(view.driverName, 'Արամ Պետրոսյան', 'whitespace normalised')
     assert.equal(view.towTruckId, null)
     assert.equal(view.isActive, false)
-    const site = siteLogin(new Map())
-    await assert.rejects(a.authenticate(phone, REGISTRATION.password, site), (e: { code: string }) => e.code === 'APP_ACCOUNT_PENDING')
-    await assert.rejects(a.authenticate(phone, 'not-the-password', site), (e: { code: string }) => e.code === 'INVALID_CREDENTIALS', 'status is never revealed without the password')
+    await assert.rejects(a.authenticate(phone, REGISTRATION.password), (e: { code: string }) => e.code === 'APP_ACCOUNT_PENDING')
+    await assert.rejects(a.authenticate(phone, 'not-the-password'), (e: { code: string }) => e.code === 'INVALID_CREDENTIALS', 'status is never revealed without the password')
     await a.approve(registered.driverId, await adminId())
-    assert.deepEqual(await a.authenticate(phone, REGISTRATION.password, site), { driverId: registered.driverId, kind: 'APP_ONLY' })
-    assert.equal(site.calls, 0, 'a number not on the website never touches the website check')
+    assert.deepEqual(await a.authenticate(phone, REGISTRATION.password), { driverId: registered.driverId, kind: 'APP_ONLY', mustChangePassword: false })
     const [{ passwordHash }] = await dbCtx.get().pool.query<{ passwordHash: string }>(`SELECT "passwordHash" FROM "FleetDriver" WHERE "id" = $1::int`, [registered.driverId])
     assert.ok(!passwordHash.includes(REGISTRATION.password), 'stored hashed')
-    void hasher
   })
 
   it('an unknown number costs exactly one hash comparison (no timing hint) and is INVALID_CREDENTIALS', async () => {
     const { access: a, hasher } = access()
-    await assert.rejects(a.authenticate(nextPhone(), 'whatever-1', siteLogin(new Map())), (e: { code: string }) => e.code === 'INVALID_CREDENTIALS')
+    await assert.rejects(a.authenticate(nextPhone(), 'whatever-1'), (e: { code: string }) => e.code === 'INVALID_CREDENTIALS')
     assert.equal(hasher.compares, 1)
   })
 
@@ -211,7 +219,7 @@ describe('app access: site drivers and app-only drivers (real Postgres)', { skip
     await assert.rejects(a.register({ ...REGISTRATION, phone }), (e: { code: string }) => e.code === 'REGISTRATION_ALREADY_PENDING')
     await assert.rejects(a.reject(first.driverId, '', await adminId()), (e: { code: string }) => e.code === 'VALIDATION_FAILED', 'a reason is required')
     await a.reject(first.driverId, 'Չհաջողվեց կապ հաստատել', await adminId())
-    await assert.rejects(a.authenticate(phone, REGISTRATION.password, siteLogin(new Map())), (e: { code: string }) => e.code === 'APP_ACCOUNT_REJECTED')
+    await assert.rejects(a.authenticate(phone, REGISTRATION.password), (e: { code: string }) => e.code === 'APP_ACCOUNT_REJECTED')
     const again = await a.register({ ...REGISTRATION, phone, driverName: 'Արամ Պ.' })
     assert.equal(again.driverId, first.driverId)
     const [{ n }] = await dbCtx.get().pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM "FleetDriverEvent" WHERE "driverId" = $1::int`, [first.driverId])
@@ -242,7 +250,7 @@ describe('app access: site drivers and app-only drivers (real Postgres)', { skip
     const { access: a } = access()
     const phone = nextPhone()
     const appDriver = await eligibleAppOnlyDriver(h, offset(YEREVAN, 300, 0), { phone })
-    const towTruckId = await insertTowTruck(h.db.pool, { phone })
+    const towTruckId = await insertTowTruck(h.db.pool, { phone, passwordHash: await access().hasher.hash('site-pw-1') })
     await assert.rejects(a.grantSiteAccess(towTruckId, h.adminId), (e: { code: string }) => e.code === 'PHONE_HAS_APP_ONLY_ACCOUNT')
     const linked = await a.linkToSite(appDriver.driverId, towTruckId, h.adminId)
     assert.equal(linked.id, appDriver.driverId, 'same driver id — orders, offers and locations stay attached')
@@ -252,7 +260,7 @@ describe('app access: site drivers and app-only drivers (real Postgres)', { skip
     assert.equal(row.passwordHash, null, 'the app password is gone; the site password is the only one now')
     const [s] = await h.db.pool.query<{ revokedAt: Date | null }>(`SELECT "revokedAt" FROM "DriverDeviceSession" WHERE "id" = $1::uuid`, [appDriver.sessionId])
     assert.ok(s.revokedAt)
-    const identity = await a.authenticate(phone, 'site-pw', siteLogin(new Map([[phone, 'site-pw']])))
+    const identity = await a.authenticate(phone, 'site-pw-1')
     assert.equal(identity.driverId, appDriver.driverId)
     await assert.rejects(a.linkToSite(appDriver.driverId, towTruckId, h.adminId), (e: { code: string }) => e.code === 'INVALID_TRANSITION')
   })

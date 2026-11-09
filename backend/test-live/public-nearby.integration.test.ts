@@ -124,6 +124,15 @@ describe('public live nearby search (real Postgres)', { skip: integrationSkip },
     assert.deepEqual(result.results.map((r) => r.towTruck.id), [site.towTruckId])
   })
 
+  it('a driver taken OFF the website is not in the public search, even while working in the app', async () => {
+    const { h, service } = await setup()
+    const d = await eligibleDriver(h, offset(YEREVAN, 300, 0))
+    await h.db.pool.query(`UPDATE "TowTruck" SET "isActive" = false WHERE "id" = $1::int`, [d.towTruckId])
+    const result = await service.search(YEREVAN.latitude, YEREVAN.longitude, false)
+    assert.equal(result.liveCount, 0)
+    assert.equal((await h.rt.fleet.driverState(d.driverId))!.isActive, true, 'yet still eligible for app orders')
+  })
+
   it('a website driver whose app access was SUSPENDED is not shown as live', async () => {
     const { h, service } = await setup()
     const d = await eligibleDriver(h, offset(YEREVAN, 300, 0))

@@ -3,9 +3,11 @@
  *
  * Two kinds of app driver (see the "FleetDriver" comment in the migration):
  *
- * - SITE_LINKED: already listed on the website; an ADMIN grants access. Signs
- *   in with the website's phone + password (the TowTruck row stays the single
- *   credential — this module never stores or changes a site password).
+ * - SITE_LINKED: registered on the website; an ADMIN grants access. Signs in
+ *   with the website's phone + password (the TowTruck row stays the single
+ *   credential — this module never stores or changes a site password). Only
+ *   the password is shared: the website status (listed, unpaid, deactivated)
+ *   has no effect on the app, and app access has none on the website.
  * - APP_ONLY: registered in the app, never shown on the website. Starts
  *   PENDING_REVIEW; an ADMIN approves or rejects.
  *
@@ -45,12 +47,6 @@ export interface PasswordHasher {
   readonly dummyHash: string
 }
 
-/**
- * The website's own credential check (DriverAuthService.login in Nest). It
- * THROWS on a wrong password or a banned profile, with the website's messages.
- */
-export type SiteCredentialCheck = (phone: string, password: string) => Promise<{ towTruckId: number }>
-
 export interface FleetDriverView {
   id: number
   kind: FleetDriverKind
@@ -65,8 +61,10 @@ export interface FleetDriverView {
   manipulator: boolean
   wheelSkates: boolean
   vehicleDescription: string | null
-  /** May receive orders right now (access ACTIVE and, for site drivers, listed) */
+  /** May receive orders: app access ACTIVE (the website status plays no part) */
   isActive: boolean
+  /** Shown on the website right now (SITE_LINKED with an active card) — informational */
+  siteListed: boolean
   statusReason: string | null
   statusChangedAt: Date
   createdAt: Date
@@ -98,7 +96,7 @@ export interface SiteCandidate {
 
 const VIEW_SELECT = `
   v."id", v."kind", v."status", v."towTruckId", v."slug", v."driverName", v."phone", v."vehicleType",
-  v."capacityTons", v."maxLoadTons", v."manipulator", v."wheelSkates", v."isActive",
+  v."capacityTons", v."maxLoadTons", v."manipulator", v."wheelSkates", v."isActive", v."siteListed",
   d."vehicleDescription", d."statusReason", d."statusChangedAt", d."createdAt"`
 const VIEW_FROM = `FROM "FleetDriverProfile" v JOIN "FleetDriver" d ON d."id" = v."id"`
 
@@ -118,6 +116,7 @@ function mapView(row: Record<string, unknown>): FleetDriverView {
     wheelSkates: Boolean(row.wheelSkates),
     vehicleDescription: row.vehicleDescription == null ? null : String(row.vehicleDescription),
     isActive: Boolean(row.isActive),
+    siteListed: Boolean(row.siteListed),
     statusReason: row.statusReason == null ? null : String(row.statusReason),
     statusChangedAt: toNullableDate(row.statusChangedAt) ?? new Date(0),
     createdAt: toNullableDate(row.createdAt) ?? new Date(0),
@@ -218,26 +217,39 @@ export class FleetAccess {
   // ─── Driver side ────────────────────────────────────────────────────────
 
   /**
-   * Phone + password → FleetDriver id. The website is consulted FIRST: a
-   * number listed on the site can only ever sign in with the site password.
+   * Phone + password → FleetDriver id. The website row is consulted FIRST: a
+   * number listed on the site signs in ONLY with the site password (the same
+   * `TowTruck.passwordHash`, compared here with the same bcrypt).
+   *
+   * Only the PASSWORD is shared with the website — never its status. Whether
+   * the site currently shows the driver (unpaid, deactivated, …) does not
+   * matter to the app; only this driver's app access does. That is why the
+   * website's own login (DriverAuthService.login, which refuses deactivated
+   * profiles) is NOT called here.
+   *
    * Exactly one password hash comparison runs on every path.
    */
-  async authenticate(phone: unknown, password: unknown, siteCheck: SiteCredentialCheck): Promise<{ driverId: number; kind: FleetDriverKind }> {
+  async authenticate(phone: unknown, password: unknown): Promise<{ driverId: number; kind: FleetDriverKind; mustChangePassword: boolean }> {
     if (typeof phone !== 'string' || typeof password !== 'string' || !APP_PHONE_PATTERN.test(phone) || password.length > 200) {
       throw new DispatchError('INVALID_CREDENTIALS')
     }
-    const towTruckId = await siteTruckIdByPhone(this.db, phone)
-    if (towTruckId !== null) {
-      await siteCheck(phone, password) // throws the website's 401/403
-      const rows = await this.db.query<Record<string, unknown>>(
-        `SELECT v."id", v."status", v."isActive" FROM "FleetDriverProfile" v WHERE v."towTruckId" = $1::int`,
-        [towTruckId],
+    const site = await this.db.query<{ id: number; passwordHash: string | null; mustChangePassword: boolean }>(
+      `SELECT "id", "passwordHash", "mustChangePassword" FROM "TowTruck" WHERE "phone" = $1`,
+      [phone],
+    )
+    if (site[0]) {
+      const ok = await this.hasher.compare(password, site[0].passwordHash ?? this.hasher.dummyHash)
+      // Same single message as the website: never say which half was wrong,
+      // nor whether this number has a password yet.
+      if (!site[0].passwordHash || !ok) throw new DispatchError('INVALID_CREDENTIALS')
+      const rows = await this.db.query<{ id: number; status: FleetDriverStatus }>(
+        `SELECT "id", "status" FROM "FleetDriver" WHERE "towTruckId" = $1::int`,
+        [site[0].id],
       )
       const access = rows[0]
       if (!access) throw new DispatchError('APP_ACCESS_NOT_GRANTED')
       if (access.status !== 'ACTIVE') throw new DispatchError('APP_ACCESS_SUSPENDED')
-      if (!access.isActive) throw new DispatchError('SITE_PROFILE_INACTIVE')
-      return { driverId: toNumber(access.id), kind: 'SITE_LINKED' }
+      return { driverId: toNumber(access.id), kind: 'SITE_LINKED', mustChangePassword: Boolean(site[0].mustChangePassword) }
     }
 
     const rows = await this.db.query<{ id: number; status: FleetDriverStatus; passwordHash: string }>(
@@ -251,7 +263,7 @@ export class FleetAccess {
     if (row.status === 'PENDING_REVIEW') throw new DispatchError('APP_ACCOUNT_PENDING')
     if (row.status === 'REJECTED') throw new DispatchError('APP_ACCOUNT_REJECTED')
     if (row.status === 'SUSPENDED') throw new DispatchError('APP_ACCESS_SUSPENDED')
-    return { driverId: toNumber(row.id), kind: 'APP_ONLY' }
+    return { driverId: toNumber(row.id), kind: 'APP_ONLY', mustChangePassword: false }
   }
 
   /**

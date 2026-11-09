@@ -128,17 +128,24 @@ CREATE TABLE "FleetDriverEvent" (
 CREATE INDEX "FleetDriverEvent_driverId_id_idx" ON "FleetDriverEvent" ("driverId", "id");
 
 -- What dispatch reads about a driver, whichever kind: ONE shape, so the
--- eligibility SQL never branches on kind. `isActive` = may receive orders now:
--- access ACTIVE, and for a site driver also listed (TowTruck.isActive) — a
--- driver an admin took off the site does not keep getting orders through the
--- back door. `towTruckId` is non-NULL exactly for drivers with a public card.
+-- eligibility SQL never branches on kind.
+--
+-- `isActive` = may receive orders: app access ACTIVE — and NOTHING about the
+-- website. Being listed on the site and working through the app are
+-- independent by design: a driver taken off the site (unpaid, paused, …) can
+-- still take orders in the app if their access is ACTIVE, and only an admin's
+-- decision on THIS row stops them.
+--
+-- `siteListed` = has a public card shown on the website right now. Only the
+-- public search reads it; dispatch never does.
 CREATE VIEW "FleetDriverProfile" AS
 SELECT
   d."id",
   d."kind",
   d."status",
   d."towTruckId",
-  (d."status" = 'ACTIVE' AND (d."kind" = 'APP_ONLY' OR tt."isActive" IS TRUE)) AS "isActive",
+  (d."status" = 'ACTIVE') AS "isActive",
+  (d."kind" = 'SITE_LINKED' AND tt."isActive" IS TRUE) AS "siteListed",
   CASE WHEN d."kind" = 'SITE_LINKED' THEN tt."driverName"   ELSE d."driverName"   END AS "driverName",
   CASE WHEN d."kind" = 'SITE_LINKED' THEN tt."phone"        ELSE d."phone"        END AS "phone",
   CASE WHEN d."kind" = 'SITE_LINKED' THEN tt."vehicleType"  ELSE d."vehicleType"  END AS "vehicleType",

@@ -126,7 +126,6 @@
           "APP_ACCOUNT_PENDING",
           "APP_ACCOUNT_REJECTED",
           "APP_ACCESS_SUSPENDED",
-          "SITE_PROFILE_INACTIVE",
           "PHONE_BELONGS_TO_SITE_DRIVER",
           "PHONE_ALREADY_REGISTERED",
           "REGISTRATION_ALREADY_PENDING",
@@ -876,7 +875,7 @@
           },
           "isActive": {
             "type": "boolean",
-            "description": "May receive orders now (access ACTIVE and, for a website driver, listed on the site)"
+            "description": "May receive orders: app access ACTIVE. The website status plays no part"
           },
           "statusReason": {
             "type": [
@@ -891,6 +890,10 @@
           "createdAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "siteListed": {
+            "type": "boolean",
+            "description": "Shown on the website right now (informational; no effect on the app)"
           }
         }
       }
@@ -903,8 +906,8 @@
         "tags": [
           "driver-app"
         ],
-        "summary": "App login. A number listed on the website signs in ONLY with the website password, and only if an admin granted app access; any other number is an app-only account",
-        "description": "Throttled 10/min/IP. 401 INVALID_CREDENTIALS (or the website's own 401); 403 APP_ACCESS_NOT_GRANTED / APP_ACCOUNT_PENDING / APP_ACCOUNT_REJECTED / APP_ACCESS_SUSPENDED / SITE_PROFILE_INACTIVE (status only revealed after a correct password).",
+        "summary": "App login. A number registered on the website signs in with the website password (password only — the website status plays no part) and only if an admin granted app access; any other number is an app-only account",
+        "description": "Throttled 10/min/IP. 401 INVALID_CREDENTIALS; 403 APP_ACCESS_NOT_GRANTED / APP_ACCOUNT_PENDING / APP_ACCOUNT_REJECTED / APP_ACCESS_SUSPENDED (status only revealed after a correct password).",
         "requestBody": {
           "required": true,
           "content": {
@@ -965,9 +968,6 @@
                       "description": "FleetDriver.id (NOT TowTruck.id)"
                     },
                     "mustChangePassword": {
-                      "type": "boolean"
-                    },
-                    "requiresPrivacyConsent": {
                       "type": "boolean"
                     },
                     "kind": {

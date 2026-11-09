@@ -9,9 +9,10 @@
  *   profile — the existing search, unchanged;
  * - a driver is never listed twice: the live entry replaces the profile one.
  *
- * Who can appear: only drivers with a public website card. App-only drivers
- * (FleetDriver kind APP_ONLY) have no card and never appear on the website —
- * the query selects `towTruckId IS NOT NULL` before LIMIT.
+ * Who can appear: only drivers whose website card is shown right now
+ * (`siteListed`). App-only drivers have no card, and a driver taken off the
+ * site is not on it — even though both can still take orders in the app. The
+ * query filters on it before LIMIT.
  *
  * What this search does NOT do (and the tests assert it): it creates no order,
  * reserves no driver, asks no driver for a fix, sends no notification. Live
@@ -84,7 +85,9 @@ const PREFILTER = 25
 export const NEARBY_RESULT_LIMIT = 10
 
 function publicWhere(p: Params, settings: DispatchSettings): string {
-  return `t."towTruckId" IS NOT NULL
+  // siteListed: a public card shown on the website now. App-only drivers and
+  // drivers taken off the site never appear here, even while they work in the app.
+  return `t."siteListed"
           AND t."vehicleType" <> ALL(${p.add(pgArray([...SPECIALIST_VEHICLE_TYPES]))}::text[])
           AND ${availabilityPredicate(p, settings)}`
 }

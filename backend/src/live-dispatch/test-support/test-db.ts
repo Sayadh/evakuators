@@ -98,6 +98,7 @@ export async function insertTowTruck(
     wheelSkates: boolean
     isActive: boolean
     phone: string
+    passwordHash: string | null
   }> = {},
 ): Promise<number> {
   const suffix = randomBytes(4).toString('hex')
@@ -105,9 +106,9 @@ export async function insertTowTruck(
   const [row] = await pool.query<{ id: number }>(
     `INSERT INTO "TowTruck" ("slug", "driverName", "phone", "description", "vehicleBrand", "vehicleYear",
        "vehicleType", "capacityTons", "manipulator", "wheelSkates", "isActive", "locationName",
-       "services", "serviceAreas", "updatedAt")
+       "services", "serviceAreas", "passwordHash", "updatedAt")
      VALUES ($1, $2, $3, '', 'Test', 2015, $4, $5::float8, $6::boolean, $7::boolean, $8::boolean, 'Yerevan',
-       '{}'::text[], '[]'::jsonb, now())
+       '{}'::text[], '[]'::jsonb, $9, now())
      RETURNING "id"`,
     [
       `t-${suffix}`,
@@ -118,6 +119,7 @@ export async function insertTowTruck(
       overrides.manipulator ?? false,
       overrides.wheelSkates ?? false,
       overrides.isActive ?? true,
+      overrides.passwordHash ?? null,
     ],
   )
   return row.id

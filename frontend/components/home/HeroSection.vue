@@ -24,24 +24,36 @@ const { t } = useI18n()
           {{ t('home.heroSubtitle') }}
         </p>
       </div>
-      <!-- Above the search, not under it. Somebody whose car has just stopped
-           wants a person, not a list to work through, and the number is the
-           shortest path to one — so it is offered before the page asks them to
-           choose anything.
 
-           Still outlined rather than filled, and that is the balance this page
-           has to keep: the listings are what drivers pay to be in, so the
-           search stays the LOUDER of the two even though the phone now comes
-           first. Position says "start here"; weight still says "the drivers
-           are right below". -->
-      <DispatchCallCta variant="hero" class="hero__dispatch" />
+      <!-- The two ways to get a person on the phone fastest, side by side:
+           «nearest» (filled — it leads to the drivers) and our own number
+           (outlined). Both above the search, because somebody whose car has
+           just stopped wants a person before a list. The region cards right
+           under this hero are the third way in; there is no fourth. -->
+      <div class="hero__actions">
+        <NearestTowTrucksCta class="hero__nearest" />
+        <DispatchCallCta variant="hero" class="hero__dispatch" />
+      </div>
 
-      <LocationSearch class="hero__search" />
+      <!-- Text search only. The marz/city selects that used to sit under it
+           duplicated the region cards one scroll below. -->
+      <LocationSearch :cascade="false" class="hero__search" />
+
       <ul class="hero__points">
-        <li><AppIcon name="check" :size="16" /> {{ t('home.heroPointCountry') }}</li>
-        <li><AppIcon name="clock" :size="16" /> {{ t('home.heroPointHours') }}</li>
         <li><AppIcon name="phone" :size="16" /> {{ t('home.heroPointDirect') }}</li>
+        <li><AppIcon name="clock" :size="16" /> {{ t('home.heroPointHours') }}</li>
+        <li><AppIcon name="check" :size="16" /> {{ t('home.heroPointFree') }}</li>
       </ul>
+
+      <!-- The hero ends at the bottom of a phone screen, so nothing says the
+           region cards are right below it. A plain in-page link: works with no
+           JavaScript, and the page's global `scroll-behavior: smooth` animates
+           it. It lands on the section's heading, which carries a
+           `scroll-margin-top` that leaves the whole hero above the fold. -->
+      <a href="#areas-title" class="hero__more">
+        {{ t('home.chooseArea') }}
+        <AppIcon name="chevron-down" :size="30" class="hero__more-icon" />
+      </a>
     </div>
   </section>
 </template>
@@ -49,21 +61,21 @@ const { t } = useI18n()
 <style scoped lang="scss">
 .hero {
   background: linear-gradient(160deg, var(--color-primary-dark) 0%, var(--color-primary) 60%, var(--color-primary-light) 100%);
-  // Top and bottom split rather than a shorthand: the gap ABOVE the heading is
-  // dead air a phone can't spare above the fold, while the bottom padding still
-  // needs to breathe before the next section. `--space-7` on both was fine on
-  // desktop's slower scroll pace, too tall on a phone that opens straight into it.
-  padding: var(--space-5) 0 var(--space-7);
+  padding: var(--space-5) 0 var(--space-2);
   color: #fff;
 
   @media (min-width: 768px) {
-    padding: var(--space-8) 0;
+    padding: var(--space-7) 0 var(--space-3);
   }
 
   &__content {
-    max-width: 640px;
+    max-width: 860px;
     margin: 0 auto var(--space-5);
     text-align: center;
+
+    @media (max-width: 639px) {
+      margin-bottom: var(--space-4);
+    }
   }
 
   &__title {
@@ -93,11 +105,97 @@ const { t } = useI18n()
     @media (max-width: 767px) {
       font-size: 14px;
     }
+
+    // On a phone the H1 already says what this line says, and the three lines
+    // it wraps to are what pushed the region cards below the first screen.
+    // Hidden by CSS only — it stays in the markup for crawlers and wide screens.
+    @media (max-width: 639px) {
+      display: none;
+    }
+  }
+
+  &__actions {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+    max-width: 640px;
+    margin: 0 auto var(--space-5);
+
+    @media (max-width: 639px) {
+      gap: var(--space-2);
+      margin-bottom: var(--space-4);
+    }
+
+    @media (min-width: 640px) {
+      flex-direction: row;
+      justify-content: center;
+      align-items: center;
+    }
+
+    // Both buttons the same height and, on a phone, the same full width — two
+    // stacked buttons of different widths read as two different kinds of thing.
+    :deep(.app-button),
+    :deep(.dispatch-cta__call) {
+      min-height: 48px;
+      width: 100%;
+
+      @media (min-width: 640px) {
+        width: auto;
+      }
+    }
+  }
+
+  // The dispatch block carries vertical margins for its old solo position;
+  // two classes so this wins over the child's own scoped rule.
+  &__actions &__dispatch {
+    margin-block: 0;
   }
 
   &__search {
-    max-width: 860px;
+    max-width: 640px;
     margin: 0 auto;
+  }
+
+  // Text with the chevron under it, no frame: a hint, not a third button.
+  // Tight margins so the dark hero ends right after it.
+  &__more {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: fit-content;
+    margin: var(--space-5) auto 0;
+    padding: var(--space-1) var(--space-3) 0;
+    color: #fff;
+    font-weight: 600;
+    font-size: 0.95rem;
+    line-height: 1.3;
+    text-decoration: none;
+    border-radius: var(--radius-md);
+    // No background on hover, tap or focus: it stayed lit after a tap and
+    // read as a box around the hint. Keyboard users still get an outline.
+    -webkit-tap-highlight-color: transparent;
+
+    &:hover,
+    &:focus {
+      color: #fff;
+      text-decoration: none;
+      outline: none;
+    }
+
+    &:focus-visible {
+      outline: 2px solid rgba(255, 255, 255, 0.6);
+      outline-offset: 2px;
+    }
+  }
+
+  &__more-icon {
+    color: var(--color-accent);
+    animation: hero-more-bounce 1.8s ease-in-out infinite;
+
+    @media (prefers-reduced-motion: reduce) {
+      animation: none;
+    }
   }
 
   &__points {
@@ -105,20 +203,40 @@ const { t } = useI18n()
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: var(--space-3) var(--space-5);
-    margin-top: var(--space-5);
+    gap: var(--space-2) var(--space-5);
+    margin-top: var(--space-4);
+
+    @media (max-width: 639px) {
+      gap: var(--space-1) var(--space-3);
+      margin-top: var(--space-3);
+    }
 
     li {
       display: flex;
       align-items: center;
       gap: var(--space-2);
-      font-size: 0.92rem;
+      font-size: 0.9rem;
       color: rgba(255, 255, 255, 0.85);
+
+      @media (max-width: 639px) {
+        font-size: 0.8rem;
+      }
 
       svg {
         color: var(--color-accent);
       }
     }
+  }
+}
+
+@keyframes hero-more-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(3px);
   }
 }
 </style>

@@ -24,22 +24,34 @@
  *
  * ## What is intentionally NOT here
  *
- * - `/` — the homepage hero already carries the same call, in the first
- *   viewport. A sticky bar on top of it would be the same offer twice.
  * - `/tow-trucks/*` — the driver profile has its own sticky bar with THAT
  *   driver's number. Two fixed bars would stack, and the operator's number
  *   would be competing with the driver's on the driver's own page, which is
  *   exactly the thing the subscription is sold as not doing.
- * - `/free-routes`, `/evakuator`, `/manipulator/*`, `/tsanr-tehnika/*` — these
+ * - `/free-routes`, `/manipulator/*`, `/tsanr-tehnika/*` — these
  *   are listings too and may well earn the bar, but they are a separate
- *   decision from "the geography pages", and adding them here without the
- *   in-page banner would leave them with the loud half and not the quiet one.
+ *   decision from "the geography pages" — make it deliberately, not by
+ *   widening this function in passing.
  */
-const EXACT = new Set(['/regions', '/yerevan'])
+/**
+ * `/` included: the homepage is where most stranded visitors land, and once the
+ * hero has scrolled away its own call button is gone with it. `/evakuator` too:
+ * it is the page for someone stuck right now, and when location is refused a
+ * person on the phone is the fastest way out.
+ */
+const EXACT = new Set(['/', '/regions', '/yerevan', '/evakuator'])
+
+/**
+ * `/ru/...` and `/en/...` are the same pages (i18n `prefix_except_default`).
+ * Matched on the unprefixed path, or the Russian and English listings — the
+ * ones landed on from ads — silently had no button at all.
+ */
+const LOCALE_PREFIX = /^\/(ru|en)(?=\/|$)/
 
 export function showsDispatchBar(path: string): boolean {
   // Trailing slash is not a different page; Nuxt will serve both.
-  const normalized = path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path
+  const trimmed = path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path
+  const normalized = trimmed.replace(LOCALE_PREFIX, '') || '/'
 
   if (EXACT.has(normalized)) return true
 

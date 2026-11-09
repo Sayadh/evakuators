@@ -233,40 +233,68 @@ async function findNearest(): Promise<void> {
 
 <template>
   <div class="container nearest-page">
-    <AppBreadcrumbs :items="[{ label: t('nearest.breadcrumb') }]" />
+    <!-- One card holding everything needed before the press: what the page
+         does (the heading), how (three steps instead of a paragraph), the
+         button, and the two facts someone hesitating needs — how many detailed
+         searches are left and that their position is not kept. The longer
+         `nearest.intro` sentence is still the meta description. -->
+    <section class="nearest-hero">
+      <span class="nearest-hero__icon" aria-hidden="true">
+        <AppIcon name="map-pin" :size="28" />
+      </span>
+      <h1 class="nearest-hero__title">{{ t('nearest.cta') }}</h1>
 
-    <h1>{{ t('nearest.cta') }}</h1>
-    <p class="nearest-page__intro">
-      {{ t('nearest.intro') }}
-    </p>
+      <ol class="nearest-hero__steps">
+        <li><span class="nearest-hero__step-number">1</span>{{ t('nearest.stepPress') }}</li>
+        <li><span class="nearest-hero__step-number">2</span>{{ t('nearest.stepAllow') }}</li>
+        <li><span class="nearest-hero__step-number">3</span>{{ t('nearest.stepCall') }}</li>
+        <!-- Points at the floating green call button, which exists below
+             1024px only (DispatchCallCta's `bar`); on a desktop the operator's
+             number is in the header instead, so the step says that. Toggled by
+             CSS at the same breakpoint, and `display: none` keeps the hidden
+             half out of the accessibility tree too. -->
+        <li class="nearest-hero__step--help">
+          <span class="nearest-hero__step-number nearest-hero__step-number--help">
+            <AppIcon name="phone" :size="14" />
+          </span>
+          <span class="nearest-hero__help-touch">{{ t('nearest.stepHelpTouch') }}</span>
+          <span class="nearest-hero__help-desktop">{{ t('nearest.stepHelpDesktop') }}</span>
+        </li>
+      </ol>
 
-    <AppButton
-      variant="accent"
-      size="lg"
-      :disabled="busy"
-      class="nearest-page__locate"
-      @click="onLocatePress"
-    >
-      <AppIcon name="map-pin" :size="20" />
-      <template v-if="locationBlocked">{{ t('nearest.permissionHelp') }}</template>
-      <template v-else>
-        {{ locating ? t('nearest.locating') : searching ? t('nearest.searching') : t('nearest.locateButton') }}
-      </template>
-    </AppButton>
+      <AppButton
+        variant="accent"
+        size="lg"
+        :disabled="busy"
+        class="nearest-hero__locate"
+        @click="onLocatePress"
+      >
+        <AppIcon name="map-pin" :size="20" />
+        <template v-if="locationBlocked">{{ t('nearest.permissionHelp') }}</template>
+        <template v-else>
+          {{ locating ? t('nearest.locating') : searching ? t('nearest.searching') : t('nearest.locateButton') }}
+        </template>
+      </AppButton>
 
-    <!-- Gated on `restored` so the figure is never rendered before storage has
-         been read — see the composable. Both branches are deliberately about
-         road data rather than about searching: the search itself never runs
-         out, and copy implying it does would send someone away from a page
-         that still works. -->
-    <p v-if="NEAREST_SEARCH_ENABLED && restored" class="nearest-page__allowance">
-      <template v-if="limitReached">
-        {{ t('nearest.allowanceLimitReached', { limit: NEAREST_DAILY_SEARCH_LIMIT }) }}
-      </template>
-      <template v-else>
-        {{ t('nearest.allowanceRemaining', { left: searchesLeftToday, limit: NEAREST_DAILY_SEARCH_LIMIT }) }}
-      </template>
-    </p>
+      <!-- Gated on `restored` so the figure is never rendered before storage has
+           been read — see the composable. Both branches are deliberately about
+           road data rather than about searching: the search itself never runs
+           out, and copy implying it does would send someone away from a page
+           that still works. -->
+      <p v-if="NEAREST_SEARCH_ENABLED && restored" class="nearest-hero__allowance">
+        <template v-if="limitReached">
+          {{ t('nearest.allowanceLimitReached', { limit: NEAREST_DAILY_SEARCH_LIMIT }) }}
+        </template>
+        <template v-else>
+          {{ t('nearest.allowanceRemaining', { left: searchesLeftToday, limit: NEAREST_DAILY_SEARCH_LIMIT }) }}
+        </template>
+      </p>
+
+      <p class="nearest-hero__privacy">
+        <AppIcon name="check" :size="16" />
+        {{ t('nearest.privacy') }}
+      </p>
+    </section>
 
     <p v-if="shownError" class="nearest-page__error" role="alert">{{ shownError }}</p>
     <!-- The error says what happened; this is the only thing that can be done
@@ -376,6 +404,9 @@ async function findNearest(): Promise<void> {
          pointing at, and a visitor who has just been refused a permission
          should not have to go looking for it. -->
     <section class="nearest-page__fallback">
+      <span class="nearest-page__fallback-icon" aria-hidden="true">
+        <AppIcon name="map" :size="22" />
+      </span>
       <h2>{{ t('nearest.fallbackTitle') }}</h2>
       <p>
         {{ t('nearest.fallbackText') }}
@@ -394,11 +425,6 @@ async function findNearest(): Promise<void> {
   padding-bottom: var(--space-8);
   max-width: 860px;
 
-  &__intro {
-    color: var(--color-text-secondary);
-    max-width: 640px;
-    margin-bottom: var(--space-5);
-  }
 
   &__permission-help {
     margin-bottom: var(--space-4);
@@ -420,22 +446,41 @@ async function findNearest(): Promise<void> {
     color: var(--color-text-secondary);
   }
 
-  &__locate {
-    // Full width on a phone — this is the only action on the screen at that
-    // point, and it is being pressed by someone standing next to a broken car.
-    width: 100%;
 
-    // Same override, same reason as NearestTowTrucksCta: AppButton is
-    // `white-space: nowrap`, and «Որոշվում է տեղադրությունը…» is long enough to
-    // overflow a 320px screen. Scoped here so no other button changes.
-    white-space: normal;
-    line-height: 1.35;
-    text-align: center;
+  &__fallback {
+    margin-top: var(--space-6);
+    padding: var(--space-5);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
 
-    @media (min-width: 640px) {
-      width: auto;
-      white-space: nowrap;
+    h2 {
+      margin: 0 0 var(--space-2);
+      font-size: 1.15rem;
     }
+
+    p {
+      margin: 0 0 var(--space-4);
+      color: var(--color-text-secondary);
+    }
+  }
+
+  &__fallback-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    margin-bottom: var(--space-3);
+    border-radius: var(--radius-md);
+    background: rgba(246, 168, 33, 0.15);
+    color: var(--color-accent-dark);
+  }
+
+  &__fallback-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
   }
 
   &__error {
@@ -448,13 +493,6 @@ async function findNearest(): Promise<void> {
     line-height: 1.55;
   }
 
-  &__allowance {
-    margin-top: var(--space-3);
-    margin-bottom: 0;
-    font-size: 0.85rem;
-    line-height: 1.55;
-    color: var(--color-text-muted);
-  }
 
   &__summary {
     margin-top: var(--space-6);
@@ -495,26 +533,159 @@ async function findNearest(): Promise<void> {
     margin-top: var(--space-4);
   }
 
-  &__fallback {
-    margin-top: var(--space-7);
-    padding-top: var(--space-5);
-    border-top: 1px solid var(--color-border);
 
-    h2 {
-      margin: 0 0 var(--space-2);
-      font-size: 1.15rem;
-    }
+}
 
-    p {
-      margin: 0 0 var(--space-4);
-      color: var(--color-text-secondary);
+/* The pre-press card: the page's one job, on the same gradient as the
+   homepage hero so the two read as one flow — a visitor arriving from the
+   homepage's «Գտնել մոտակա» button lands on the same surface they left. */
+.nearest-hero {
+  margin-top: 0;
+  padding: var(--space-5) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(160deg, var(--color-primary-dark) 0%, var(--color-primary) 60%, var(--color-primary-light) 100%);
+  color: #fff;
+  text-align: center;
+  box-shadow: var(--shadow-md);
+
+  @media (min-width: 640px) {
+    padding: var(--space-6) var(--space-6);
+  }
+
+  &__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    margin-bottom: var(--space-3);
+    border-radius: 50%;
+    background: rgba(246, 168, 33, 0.18);
+    color: var(--color-accent);
+  }
+
+  &__title {
+    color: #fff;
+    margin: 0 0 var(--space-4);
+
+    @media (max-width: 767px) {
+      font-size: 23px;
     }
   }
 
-  &__fallback-actions {
+  &__steps {
+    list-style: none;
+    margin: 0 auto var(--space-5);
+    padding: 0;
     display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-3);
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+    width: fit-content;
+    text-align: left;
+
+    // Three columns from tablet width up, number over text — a row of
+    // number-beside-text did not fit the card and wrapped mid-step.
+    @media (min-width: 640px) {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      align-items: start;
+      gap: var(--space-4);
+      width: 100%;
+      max-width: 760px;
+      text-align: center;
+    }
+
+    li {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      font-size: 0.95rem;
+      line-height: 1.35;
+      color: rgba(255, 255, 255, 0.9);
+
+      @media (min-width: 640px) {
+        flex-direction: column;
+        gap: var(--space-2);
+        font-size: 0.9rem;
+      }
+    }
+  }
+
+  &__step-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--color-accent);
+    color: var(--color-primary-dark);
+    font-size: 0.85rem;
+    font-weight: 700;
+  }
+
+  &__step-number--help {
+    background: var(--color-success);
+    color: #fff;
+  }
+
+  &__help-desktop {
+    display: none;
+  }
+
+  // Same breakpoint at which DispatchCallCta hides its floating button
+  @media (min-width: 1024px) {
+    &__help-touch {
+      display: none;
+    }
+
+    &__help-desktop {
+      display: inline;
+    }
+  }
+
+  &__locate {
+    // Full width on a phone — this is the only action on the screen at that
+    // point, and it is being pressed by someone standing next to a broken car.
+    width: 100%;
+    min-height: 56px;
+
+    // Same override, same reason as NearestTowTrucksCta: AppButton is
+    // `white-space: nowrap`, and «Որոշվում է տեղադրությունը…» is long enough to
+    // overflow a 320px screen. Scoped here so no other button changes.
+    white-space: normal;
+    line-height: 1.35;
+    text-align: center;
+
+    @media (min-width: 640px) {
+      width: auto;
+      min-width: 320px;
+      white-space: nowrap;
+    }
+  }
+
+  &__allowance {
+    max-width: 520px;
+    margin: var(--space-3) auto 0;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.65);
+  }
+
+  &__privacy {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    margin: var(--space-3) 0 0;
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.85);
+
+    svg {
+      color: var(--color-accent);
+    }
   }
 }
 </style>

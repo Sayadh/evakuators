@@ -194,6 +194,20 @@ export default defineNuxtConfig({
       'picsum.photos',
       ...(process.env.NODE_ENV === 'development' ? ['localhost'] : []),
     ],
+    /**
+     * How long a resized variant may be cached — by browsers, and by nginx's
+     * `/_ipx/` cache, which obeys this header over its own `proxy_cache_valid`.
+     *
+     * Set explicitly because IPX does not inherit it from the original: its
+     * HTTP storage only reads the source's Cache-Control when
+     * `ignoreCacheControl` is TRUE (an inverted condition in ipx 3), so it
+     * fell back to 300 s and every variant was recomputed every five minutes.
+     * A year is safe for the same reason it is on `/media/`: a photo's URL is
+     * a fresh UUID per upload, so a changed photo is always a new URL.
+     */
+    ipx: {
+      http: { maxAge: 31536000 },
+    },
   },
 
   /**

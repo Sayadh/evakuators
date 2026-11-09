@@ -7,7 +7,7 @@ import { MyTowTruckController } from './my-tow-truck.controller'
 import { MyTowTruckService } from './my-tow-truck.service'
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module'
 
-// No StorageModule: this module no longer touches Supabase Storage directly —
+// No StorageModule: this module no longer touches media storage directly —
 // ImagesService's nightly purge is the single owner of object deletion.
 @Module({
   // forwardRef: the driver's controller queues an edit through

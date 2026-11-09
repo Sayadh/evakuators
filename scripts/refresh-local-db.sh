@@ -17,7 +17,8 @@
 # ## What "identical to staging" does and does not mean
 #
 #   Same:      every row, the schema, the PostGIS extension, the images
-#              (they are absolute Supabase URLs, so they render from any host)
+#              (they are absolute https://evakuators.am/media/ URLs, so they
+#              render from any host)
 #   Different: ports (3002/4002 locally vs 3003/4003 on staging — both are
 #              reserved, see CLAUDE.md), and DATABASE_URL, which necessarily
 #              points at your own machine

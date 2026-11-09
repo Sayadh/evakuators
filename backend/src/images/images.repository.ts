@@ -17,13 +17,13 @@ export class ImagesRepository {
    *
    * 1. **Never attached.** `POST /images` creates a row before the registration
    *    form is submitted, so an abandoned (or malicious) upload leaves a row and
-   *    a Supabase object with both foreign keys null, forever. The public upload
+   *    a media file with both foreign keys null, forever. The public upload
    *    endpoint accepts 30MB files, so this is the one place in the system where
    *    an anonymous request permanently costs money.
    * 2. **Attached to a rejected registration.** `AdminService.reject()`
    *    deliberately keeps the RegistrationRequest row as an audit trail, but the
    *    photos are of no further use — and nothing was deleting them, so every
-   *    rejected application's images stayed in the bucket indefinitely.
+   *    rejected application's images stayed on disk indefinitely.
    *
    * The age cutoff protects an in-progress registration: a driver may sit on the
    * form for a while between uploading and submitting.
@@ -47,7 +47,7 @@ export class ImagesRepository {
           {
             // A DECIDED edit's leftover photos, on the same delay a refused
             // registration's get: long enough that a moderator who rejected by
-            // mistake can still change their mind, short enough that a bucket
+            // mistake can still change their mind, short enough that the media directory
             // does not accumulate them.
             //
             // `not: PENDING` rather than `REJECTED`, and the difference is a
@@ -178,9 +178,9 @@ export class ImagesRepository {
    *
    * Both foreign keys are cleared, which is what makes the row match
    * `findOrphaned()`'s "never attached" branch on the next nightly run — that
-   * job is the single owner of Supabase Storage deletion and already handles a
+   * job is the single owner of media file deletion and already handles a
    * failed delete correctly (keeps the rows, retries tomorrow). Deleting the
-   * rows here instead would throw away `path`, the only record of which bucket
+   * rows here instead would throw away `path`, the only record of which file
    * object belongs to which row, and leak the file forever if Storage happened
    * to be unreachable at that moment.
    */

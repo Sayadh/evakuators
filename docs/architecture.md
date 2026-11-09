@@ -16,7 +16,7 @@ Nuxt 3 frontend (SSR, port 3002)
                                                                       │
                                                                       ▼
                                                                 PostgreSQL
-                                                     (+ Supabase Storage for images only)
+                                                     (+ photo files on the same VPS disk)
 ```
 
 Two independent Node processes in production, run under PM2
@@ -200,7 +200,7 @@ Global pipes/guards set up in `main.ts` / `app.module.ts`:
 ```
 Frontend upload form → POST /api/v1/images (multipart, field "file")
   → ImageProcessorService (Sharp: auto-rotate, resize, re-encode WebP)
-  → SupabaseStorageService.uploadWebp() (Supabase Storage bucket, NOT Supabase DB/Auth)
+  → MediaStorageService.uploadWebp() (a file in MEDIA_DIR on the VPS disk)
   → TowTruckImage row created (path, url, width, height, sizeBytes), unattached
   → id returned to frontend
   → frontend includes that id in registration submission (imageIds[])
@@ -208,10 +208,10 @@ Frontend upload form → POST /api/v1/images (multipart, field "file")
   → on approval, images are re-pointed from registrationRequestId to towTruckId
 ```
 
-Supabase is used **exclusively** for Storage. Its own database and auth
-products are explicitly not used — `backend/src/prisma/*` talks to a plain
-PostgreSQL instance (can be self-hosted, RDS, anything), completely separate
-from Supabase's own Postgres offering if you happened to provision one.
+No third-party storage service: nginx serves `MEDIA_DIR` at `/media/`, and
+`<NuxtImg>` resizes through `/_ipx/`, which nginx caches. Photos used to be in
+Supabase Storage until its egress quota blanked the whole site — see
+`docs/deployment.md` § "Image storage" for the layout, the cache, and backups.
 
 ## SEO / rendering
 

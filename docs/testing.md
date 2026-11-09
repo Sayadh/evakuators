@@ -18,7 +18,7 @@ npm run test:watch
 ## What is, and is not, covered
 
 Both suites are **unit tests over pure logic and metadata**. Nothing here
-opens a real database connection, calls the real Supabase Storage API, hits
+opens a real database connection, hits
 Telegram, or boots a Nest application with real providers. That is a
 deliberate boundary, not a gap that happened by accident:
 
@@ -48,8 +48,8 @@ What this does **not** replace:
 If you're an AI agent about to change backend or frontend logic: run the
 relevant suite before and after your change, but do not treat a green suite
 as proof the change is safe end-to-end. It proves the pure logic you touched
-still does what its test says it should. Anything that talks to Postgres,
-Supabase, or Telegram still needs a real local backend run (or explicit
+still does what its test says it should. Anything that talks to Postgres
+or Telegram still needs a real local backend run (or explicit
 user approval to touch production, per the standing rule in CLAUDE.md-style
 instructions for this repo).
 
@@ -108,8 +108,8 @@ test, without the build-time cost.
 
 ### Testing routes without booting the app
 
-Booting a real Nest app needs a live Postgres connection, Supabase
-credentials and a Telegram bot token — three external systems, to answer a
+Booting a real Nest app needs a live Postgres connection, a writable media
+directory and a Telegram bot token — three pieces of environment, to answer a
 question (which method handles which path, in what order, behind which
 guard) that is fully decided at class-definition time. So route tests read
 the same metadata Nest itself reads, off the raw class:
@@ -131,7 +131,7 @@ the declared route order does.
 | `test/tow-trucks.repository.count.spec.ts` | `TowTrucksRepository.countForAdmin()` — `inactive = total - active` always holds, the total query has no `where` (counts every row, not just active ones), the two counts run concurrently |
 | `test/admin.controller.count-route.spec.ts` | `GET /admin/tow-trucks/count` is mounted correctly, sits behind `AdminJwtGuard`, is declared before any route that could shadow it, and the shadowing detector itself is tested against known true/false cases |
 | `test/telegram.service.outbound-allowlist.spec.ts` | `TELEGRAM_OUTBOUND_ALLOWED_CHAT_IDS` — a chat id not on the list never reaches `fetch()` at all, a listed one does, an empty list is unrestricted (production's real behaviour). See `docs/deployment.md` § "Staging environment" for what this exists to prevent |
-| `test/supabase-storage.service.read-only.spec.ts` | `SUPABASE_STORAGE_READ_ONLY` — `uploadWebp()`/`remove()` refuse before the Supabase client is ever called, an empty `remove([])` stays a no-op regardless, the flag is unrestricted when false |
+| `test/media-storage.service.spec.ts` | `MediaStorageService` against a real temp directory: an upload lands at `<root>/<folder>/<uuid>.webp` with a URL that mirrors the path (nginx's `/media/` alias depends on it), no temp file survives, removal is idempotent and refuses a `../` path, raw `fs` errors never reach a driver, and `MEDIA_READ_ONLY` refuses both writes without touching the disk |
 | `test/nearest.spec.ts` | The nearest-search logic that is decided in code: the cache's rounded keys (~110 m — the only form a visitor's position takes on the server), TTL expiry, the size cap that keeps it from being an unbounded write primitive; `RouteMatrixService` returning **null** rather than throwing on every failure path, sending `[longitude, latitude]` origin-first, and dropping a destination with a distance but no duration; and that the endpoint is a POST with a throttle stricter than the global default. **The PostGIS query itself is not tested here** — it needs a real database with the extension, which this suite deliberately excludes (see above); it is a documented manual check against staging |
 | `test/coordinates.spec.ts` | `SetCoordinatesDto` (range, `NaN`/`Infinity`, non-numbers), `assertWithinArmenia` (including a swapped pair and the padded box edges), `decimalToNumber` (null → undefined, never 0), and that both coordinate endpoints are mounted behind their auth guard with no tamperable id on the driver's route |
 

@@ -1,8 +1,8 @@
 # Evakuators.am — orientation for AI agents
 
 Full-stack monorepo for a tow-truck (evacuator) discovery platform in Armenia.
-Nuxt 3 frontend, NestJS backend, PostgreSQL via Prisma, Supabase Storage for
-images. Content and UI are Armenian (`hy`); code, comments and identifiers are
+Nuxt 3 frontend, NestJS backend, PostgreSQL via Prisma, images as files on the
+VPS disk served by nginx. Content and UI are Armenian (`hy`); code, comments and identifiers are
 English.
 
 Read this file first. It orients you and points to `docs/*.md` for depth —
@@ -23,7 +23,7 @@ number in this codebase, it is not arbitrary. Staging (see
 
 ```
 frontend/     Nuxt 3, Vue 3 Composition API, TypeScript, Pinia, SCSS — port 3002
-backend/      NestJS, Prisma, PostgreSQL, Supabase Storage — port 4002, routes under /api/v1
+backend/      NestJS, Prisma, PostgreSQL, photos in MEDIA_DIR — port 4002, routes under /api/v1
 nginx/        Example reverse-proxy config for production
 scripts/      Ops scripts run on the VPS (backup-db.sh)
 ecosystem.config.js   PM2 process definitions for both apps
@@ -257,6 +257,7 @@ assume one is unused:
 | Add a marz (or change how one is named on a vehicle-type page) | `VEHICLE_TYPE_GEOS` + `REGION_LOCATIVES` in `frontend/constants/vehicleTypePages.ts`. The list is derived from `staticRegions`, so a new marz appears automatically — but its **locative** («Լոռու մարզում», not «Լոռիի») is hand-written, and a missing entry silently falls back to concatenation in an `<h1>`. Guarded by `tests/vehicleTypeGeoPages.spec.ts` |
 | Add a vehicle-type area page, or work out why one is `noindex` | `docs/pages-and-routes.md` § "The area pages" — an area with no drivers is `noindex, follow` and absent from the sitemap, same thin-page rule as the landing settlements; the sitemap decides from the listing walk it already does, never from `/tow-trucks/coverage` (which excludes these trucks by construction) |
 | Add or change a vehicle-type landing page (`/manipulator`, `/tsanr-tehnika`) | `docs/pages-and-routes.md` § "Vehicle-type landing pages" — slug, nav label, SEO copy and sitemap entry all come from one entry in `frontend/constants/vehicleTypePages.ts`; these pages show the cards and, below them, an FAQ — and nothing else (no filters, no sort, no CTA, no intro prose — the URL is the filter); the FAQ is there purely for search, so it stays below the listing and its `FAQPage` JSON-LD comes from the same array `FaqSection` renders; the backend filter is `?vehicleType=` on the existing listing endpoint and it must AND with the geography, never join its `OR` |
+| Touch photo upload/storage/serving, `MEDIA_*`, or the `/media/` and `/_ipx/` nginx blocks | `docs/deployment.md` § "Image storage" — `MediaStorageService` is the only code that writes or deletes a file; nginx (never Node) serves them; the `/_ipx/` cache is what keeps resizing from re-fetching originals, and losing it is how the old Supabase egress quota ran out and blanked every photo. `MEDIA_READ_ONLY=true` on staging/local, always |
 | Run the app on a local machine | `docs/local-development.md` |
 | Make local behave exactly like staging | `docs/local-development.md` § "Mirroring staging locally" — `scripts/refresh-local-db.sh` copies staging (never production), `backend/.env.local.example` lists the four variables that must differ and why |
 | Deploy to the VPS | `docs/deployment.md` |
@@ -301,7 +302,7 @@ npm run admin:create -- <email> <password>   # create/reset an admin login
 Both apps have independent lint/build/test — always verify all three after a
 cross-cutting change (e.g. anything touching `serviceAreas`, `capacityRange`,
 or a Prisma model) even if you only edited one side. Neither test suite talks
-to a real database, Supabase, or Telegram — see `docs/testing.md` for what
+to a real database or Telegram — see `docs/testing.md` for what
 that does and doesn't prove before you rely on a green run.
 
 ## A listing is not a profile

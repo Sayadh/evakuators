@@ -44,7 +44,7 @@ differently-configured role.
 ```bash
 cd backend
 cp .env.example .env
-# fill in DATABASE_URL, SUPABASE_*, generate secrets:
+# fill in DATABASE_URL, MEDIA_DIR/MEDIA_PUBLIC_URL (see the comment there), generate secrets:
 #   openssl rand -hex 32   (for TELEGRAM_WEBHOOK_SECRET, DRIVER_JWT_SECRET, ADMIN_JWT_SECRET)
 npx prisma migrate deploy
 npx prisma generate
@@ -91,7 +91,7 @@ Then log in at `localhost:3002/admin`.
 
 The two paths above give you a working local stack with *your own* data. This
 one gives you a local stack that behaves like staging — same rows, same schema,
-same extensions, same Supabase bucket, same bot — so a bug that reproduces on
+same extensions, same photos, same bot — so a bug that reproduces on
 one reproduces on the other, and "it works locally" stops being a different
 claim from "it works on staging".
 
@@ -129,9 +129,10 @@ requires ownership for `ALTER TABLE` — so without that step the next
 | JWT secrets / analytics pepper | fresh | staging's | A token minted in a local experiment must not work against staging. |
 | Everything else | — | — | Copied verbatim. |
 
-`SUPABASE_STORAGE_READ_ONLY="true"` is **not** optional here. Your local database
-now holds copies of production's rows, so an upload or a delete from a local
-dashboard would write into production's real bucket. Expect registration,
+`MEDIA_READ_ONLY="true"` is **not** optional here. Your local database now holds
+copies of production's rows (their photos load from `https://evakuators.am/media/`),
+and the nightly orphan purge would otherwise start deleting files for rows it
+thinks are unreferenced. Expect registration,
 dashboard photo edits and admin image approval to render and validate normally
 and then fail at the final save with a clear read-only error — that is the flag
 working, not a bug.
@@ -368,9 +369,9 @@ realistic data, either register fresh test entries through the local
 production — and so never touches production at all.
 
 Whichever you choose, a local database holding copies of real rows inherits
-staging's two guards along with the data: `SUPABASE_STORAGE_READ_ONLY="true"`
+staging's two guards along with the data: `MEDIA_READ_ONLY="true"`
 and `TELEGRAM_OUTBOUND_ALLOWED_CHAT_IDS` set to your own chat id. Real rows mean
-real phone numbers, real Telegram chat ids and real Storage objects; the data
+real phone numbers, real Telegram chat ids and real photos; the data
 being on your laptop changes none of that.
 
 ## Common mistakes seen in practice

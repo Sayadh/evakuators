@@ -943,7 +943,7 @@ export const adminRepository = {
     })
   },
 
-  /** Permanent — deletes the truck, its images (DB + Supabase Storage), reviews and OTPs */
+  /** Permanent — deletes the truck, its images (DB row + file on disk), reviews and OTPs */
   deleteTowTruck(id: number): Promise<{ id: number }> {
     return apiFetch<{ id: number }>(`/admin/tow-trucks/${id}`, {
       method: 'DELETE',

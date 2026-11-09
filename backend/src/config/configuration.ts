@@ -7,16 +7,15 @@ export interface AppConfig {
   host: string
   corsOrigins: string[]
   frontendUrl: string
-  supabase: {
-    url: string
-    serviceRoleKey: string
-    bucket: string
+  media: {
+    /** Absolute directory the image files are written to — see MediaStorageService */
+    dir: string
+    /** Public URL prefix of that directory, no trailing slash */
+    publicUrl: string
     /**
-     * When true, `SupabaseStorageService` refuses every upload/remove call
-     * before it reaches the network — see that class for why. False (the
-     * default) everywhere except a deployment deliberately configured this
-     * way, e.g. staging sharing production's bucket for read-only display
-     * (see docs/deployment.md § "Staging environment").
+     * When true, `MediaStorageService` refuses every upload/remove call before
+     * touching the disk. Only ever true on a deploy whose database is a copy
+     * of production's (staging, local) — see that class for why.
      */
     writesDisabled: boolean
   }
@@ -138,13 +137,12 @@ export default (): AppConfig => ({
     .filter(Boolean),
   // Used to build the "Login" button link sent in Telegram messages.
   frontendUrl: (process.env.FRONTEND_URL ?? 'https://evakuators.am').replace(/\/$/, ''),
-  supabase: {
-    url: process.env.SUPABASE_URL ?? '',
-    serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
-    bucket: process.env.SUPABASE_STORAGE_BUCKET ?? '',
+  media: {
+    dir: process.env.MEDIA_DIR ?? '',
+    publicUrl: (process.env.MEDIA_PUBLIC_URL ?? '').replace(/\/+$/, ''),
     // Literal comparison, not Boolean(...) — see the env.validation.ts comment
-    // on SUPABASE_STORAGE_READ_ONLY for why that distinction matters here.
-    writesDisabled: process.env.SUPABASE_STORAGE_READ_ONLY === 'true',
+    // on MEDIA_READ_ONLY for why that distinction matters here.
+    writesDisabled: process.env.MEDIA_READ_ONLY === 'true',
   },
   telegram: {
     botToken: process.env.TELEGRAM_BOT_TOKEN ?? '',

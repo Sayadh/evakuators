@@ -50,7 +50,7 @@ module.exports = {
       name: 'evakuators-backend',
       cwd: './backend',
       script: 'dist/main.js',
-      // Secrets (DATABASE_URL, SUPABASE_*, PORT) come from backend/.env — never from this file
+      // Secrets (DATABASE_URL, MEDIA_*, PORT) come from backend/.env — never from this file
       env: {
         NODE_ENV: 'production',
       },

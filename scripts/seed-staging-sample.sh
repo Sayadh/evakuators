@@ -53,9 +53,9 @@
 #     traffic totals (and their row in the admin CSV export) will read 0.
 #     Known limitation, not a bug; extend the TABLE list below if a test
 #     needs real numbers there too.
-#   - Supabase Storage: nothing to do — copied rows keep pointing at
-#     production's real, public, read-only image URLs (see
-#     SUPABASE_STORAGE_READ_ONLY in docs/deployment.md).
+#   - Photos: nothing to do — copied rows keep pointing at production's
+#     public https://evakuators.am/media/ URLs (see MEDIA_READ_ONLY in
+#     docs/deployment.md).
 #
 set -euo pipefail
 

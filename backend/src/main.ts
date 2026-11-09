@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core'
 import type { NestExpressApplication } from '@nestjs/platform-express'
 import helmet from 'helmet'
 import { AppModule } from './app.module'
+import type { AppConfig } from './config/configuration'
 import { AllExceptionsFilter } from './common/all-exceptions.filter'
 import { buildValidationException } from './common/validation-exception.factory'
 
@@ -39,6 +40,25 @@ async function bootstrap(): Promise<void> {
   // Baseline security headers (HSTS, X-Content-Type-Options, X-Frame-Options,
   // etc.) — nginx sits in front but the app shouldn't rely on that alone.
   app.use(helmet())
+
+  /**
+   * Image files (see MediaStorageService). In production nginx serves
+   * `/media/` straight from MEDIA_DIR and no request ever reaches this; it
+   * exists so a deploy without that nginx block — local development — still
+   * shows uploaded photos. Outside the `api/v1` prefix on purpose: the URL is
+   * the same shape as production's. Every file name is a fresh UUID that is
+   * never overwritten, hence `immutable`. CORP is relaxed here only: Helmet's
+   * default `same-origin` would hide the photo from the frontend on :3002.
+   */
+  const media = config.getOrThrow<AppConfig['media']>('media')
+  app.useStaticAssets(media.dir, {
+    prefix: '/media/',
+    index: false,
+    dotfiles: 'deny',
+    immutable: true,
+    maxAge: '365d',
+    setHeaders: (response) => response.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'),
+  })
 
   // Every route is served under /api/v1 — the frontend's NUXT_PUBLIC_API_BASE_URL
   // already includes this prefix (e.g. https://api.evakuators.am/api/v1), so

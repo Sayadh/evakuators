@@ -33,7 +33,7 @@ import { DispatchController } from '../src/dispatch/dispatch.controller'
  * ## Metadata, not an HTTP request
  *
  * Same reasoning as `admin.controller.count-route.spec.ts`: booting the app
- * needs Postgres, Supabase and Telegram to answer a question that is fully
+ * needs Postgres and Telegram to answer a question that is fully
  * decided at class-definition time. That `AdminJwtGuard` rejects a bad token
  * is the guard's own test's job, not this one's.
  */

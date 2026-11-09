@@ -962,7 +962,7 @@ export class TowTrucksRepository {
   /**
    * Hard delete. `TowTruckImage` and `Review` cascade at the DB level (see
    * schema.prisma onDelete: Cascade) — this only removes the
-   * TowTruck row and everything FK-linked to it. Supabase Storage objects are
+   * TowTruck row and everything FK-linked to it. Image files on disk are
    * NOT covered by that cascade (they live outside Postgres) — the caller
    * (AdminService) is responsible for removing those first.
    */

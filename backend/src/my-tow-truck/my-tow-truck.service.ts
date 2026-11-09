@@ -12,8 +12,8 @@ import type { UpdateMyTowTruckDto } from './dto/update-my-tow-truck.dto'
 import { assertServiceAreasWithinLimit } from '../tow-trucks/service-area-limits'
 
 /**
- * Note there is no SupabaseStorageService here any more. This service used to
- * delete bucket objects itself when a driver removed a photo; it now only
+ * Note there is no MediaStorageService here any more. This service used to
+ * delete files itself when a driver removed a photo; it now only
  * detaches the row and lets `ImagesService.purgeOrphanedImages` do the actual
  * deletion, so Storage has exactly one owner instead of two with different
  * failure handling. See the comment in updateMine().
@@ -139,8 +139,8 @@ export class MyTowTruckService {
       // Detach, NOT delete. The nightly orphan purge (ImagesService) owns
       // Storage deletion and is the only place that gets the ordering right —
       // Storage object first, DB row only after it succeeded. Deleting the row
-      // here would discard `path` while the file is still in the bucket, and a
-      // transient Supabase failure would then leak it permanently with nothing
+      // here would discard `path` while the file is still on disk, and a
+      // transient storage failure would then leak it permanently with nothing
       // left to find it by. This is the exact leak that used to happen here.
       await this.imagesRepository.detachFromTowTruck(removedIds)
       await this.imagesRepository.applyGallery(imageIds, towTruckId)

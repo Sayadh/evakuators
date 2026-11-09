@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common'
-import { SupabaseStorageService } from './supabase-storage.service'
+import { MediaStorageService } from './media-storage.service'
 
 @Module({
-  providers: [SupabaseStorageService],
-  exports: [SupabaseStorageService],
+  providers: [MediaStorageService],
+  exports: [MediaStorageService],
 })
 export class StorageModule {}

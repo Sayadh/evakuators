@@ -10,6 +10,7 @@
  */
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import OpsDriverMap from '~/components/ops/OpsDriverMap.vue'
+import { SHOW_OPS_DRIVER_MAP } from '~/constants/admin'
 import { isApiEnabled } from '~/repositories'
 import { newIdempotencyKey, opsDispatchRepository } from '~/repositories/opsDispatch.repository'
 import { useAdminAuthStore } from '~/stores/adminAuth'
@@ -149,6 +150,9 @@ const form = reactive({
   steeringLocked: null as boolean | null,
   gearboxLocked: null as boolean | null,
   needsManipulator: null as boolean | null,
+  needsWheelSkates: null as boolean | null,
+  /** '' = not stated; only sent when skates are needed */
+  wheelSkatesCount: '' as '' | '1' | '2' | '3' | '4',
   pricingMode: 'FIXED' as 'FIXED' | 'NEGOTIATION_REQUIRED',
   quotedPriceAmd: '' as string,
   internalNote: '',
@@ -169,25 +173,36 @@ function quickPassengerCar() {
 
 async function createOrder() {
   formError.value = null
-  const pickup = parseCoordinates(form.pickupCoords)
-  if (!pickup.ok) {
-    formError.value = `Pickup՝ ${pickup.error}`
+  // Only the pickup address and the phone are mandatory (2026-11). Without
+  // pickup coordinates the order can still be created and sent to a driver
+  // manually; only the automatic search needs them.
+  const parsedPickup = form.pickupCoords.trim() ? parseCoordinates(form.pickupCoords) : null
+  if (parsedPickup && !parsedPickup.ok) {
+    formError.value = `Վերցնելու կետ՝ ${parsedPickup.error}`
     return
   }
+  const pickup = parsedPickup && parsedPickup.ok ? parsedPickup : null
   const parsedDestination = form.destinationCoords.trim() ? parseCoordinates(form.destinationCoords) : null
   if (parsedDestination && !parsedDestination.ok) {
-    formError.value = `Destination՝ ${parsedDestination.error}`
+    formError.value = `Հասցման կետ՝ ${parsedDestination.error}`
     return
   }
   const destination = parsedDestination && parsedDestination.ok ? parsedDestination : null
   const body: Record<string, unknown> = {
     customerPhone: form.customerPhone,
     customerName: form.customerName || null,
-    pickup: { latitude: pickup.latitude, longitude: pickup.longitude, address: form.pickupAddress },
+    pickup: { latitude: pickup?.latitude ?? null, longitude: pickup?.longitude ?? null, address: form.pickupAddress },
     destination: destination ? { latitude: destination.latitude, longitude: destination.longitude, address: form.destinationAddress || '—' } : null,
     vehicle: { make: form.make || null, model: form.model || null, plate: form.plate || null, weightKg: form.weightKg ? Number(form.weightKg) : null },
     problemDescription: form.problemDescription,
-    requirements: { wheelsRoll: form.wheelsRoll, steeringLocked: form.steeringLocked, gearboxLocked: form.gearboxLocked, needsManipulator: form.needsManipulator },
+    requirements: {
+      wheelsRoll: form.wheelsRoll,
+      steeringLocked: form.steeringLocked,
+      gearboxLocked: form.gearboxLocked,
+      needsManipulator: form.needsManipulator,
+      needsWheelSkates: form.needsWheelSkates,
+      wheelSkatesCount: form.needsWheelSkates === true && form.wheelSkatesCount ? Number(form.wheelSkatesCount) : null,
+    },
     pricing: { mode: form.pricingMode, quotedPriceAmd: form.quotedPriceAmd ? Number(form.quotedPriceAmd) : null },
     internalNote: form.internalNote || null,
   }
@@ -257,14 +272,14 @@ useSeoMetaData({ title: 'Պատվերներ', description: 'Պատվերների
               <label>Անուն<input v-model="form.customerName" autocomplete="off" /></label>
             </div>
             <div class="row">
-              <label>Pickup կոորդինատներ*<input v-model="form.pickupCoords" required placeholder="40.1772, 44.5126" /></label>
-              <label>Pickup հասցե/նկարագրություն*<input v-model="form.pickupAddress" required minlength="2" /></label>
+              <label>Վերցնելու կետի կոորդինատներ (եթե կա)<input v-model="form.pickupCoords" placeholder="40.1772, 44.5126" /></label>
+              <label>Վերցնելու հասցե/նկարագրություն*<input v-model="form.pickupAddress" required minlength="2" /></label>
             </div>
             <div class="row">
-              <label>Destination կոորդինատներ<input v-model="form.destinationCoords" placeholder="Եթե հայտնի է" /></label>
-              <label>Destination նկարագրություն<input v-model="form.destinationAddress" /></label>
+              <label>Հասցման կետի կոորդինատներ (եթե կա)<input v-model="form.destinationCoords" placeholder="Եթե հայտնի է" /></label>
+              <label>Հասցման կետի նկարագրություն<input v-model="form.destinationAddress" /></label>
             </div>
-            <p class="ops__hint">Կոորդինատները պատճենեք Google Maps-ից (երկար սեղմում կետի վրա)։ Հասցեի որոնման provider դեռ ընտրված չէ։</p>
+            <p class="ops__hint">Կոորդինատները պատճենեք Google Maps-ից (երկար սեղմում կետի վրա)։ Առանց վերցնելու կետի կոորդինատների ավտոմատ որոնումը չի աշխատի․ պատվերը կուղարկեք կոնկրետ վարորդի ձեռքով։</p>
             <div class="row">
               <label>Մակնիշ<input v-model="form.make" /></label>
               <label>Մոդել<input v-model="form.model" /></label>
@@ -274,13 +289,23 @@ useSeoMetaData({ title: 'Պատվերներ', description: 'Պատվերների
             <button type="button" class="ops__chip" @click="quickPassengerCar">Սովորական մարդատար ≈ 2000 կգ</button>
             <label>Խնդիրը<textarea v-model="form.problemDescription" rows="2" /></label>
             <fieldset class="ops__tri">
-              <legend>Տեխնիկական վիճակ (անհայտը չի համարվում «համապատասխանում է»)</legend>
-              <div v-for="field in (['wheelsRoll', 'steeringLocked', 'gearboxLocked', 'needsManipulator'] as const)" :key="field" class="ops__tri-row">
-                <span>{{ { wheelsRoll: 'Անիվները պտտվում են', steeringLocked: 'Ղեկն արգելափակված է', gearboxLocked: 'Տուփն արգելափակված է', needsManipulator: 'Պետք է մանիպուլյատոր' }[field] }}</span>
+              <legend>Տեխնիկական վիճակ (ըստ ցանկության)</legend>
+              <div v-for="field in (['wheelsRoll', 'steeringLocked', 'gearboxLocked', 'needsManipulator', 'needsWheelSkates'] as const)" :key="field" class="ops__tri-row">
+                <span>{{ { wheelsRoll: 'Անիվները պտտվում են', steeringLocked: 'Ղեկն արգելափակված է', gearboxLocked: 'Տուփն արգելափակված է', needsManipulator: 'Պետք է մանիպուլյատոր', needsWheelSkates: 'Պետք են անիվային ռոլիկներ' }[field] }}</span>
                 <label v-for="option in TRI" :key="String(option.value)" class="ops__radio">
                   <input v-model="form[field]" type="radio" :name="field" :value="option.value" /> {{ option.label }}
                 </label>
               </div>
+              <div v-if="form.needsWheelSkates === true" class="ops__tri-row">
+                <span>Ռոլիկների քանակ (ըստ ցանկության)</span>
+                <select v-model="form.wheelSkatesCount">
+                  <option value="">— նշված չէ —</option>
+                  <option v-for="n in ['1', '2', '3', '4']" :key="n" :value="n">{{ n }}</option>
+                </select>
+              </div>
+              <p v-if="form.needsWheelSkates === true" class="ops__hint">
+                Պատվերը կառաջարկվի միայն անիվային ռոլիկներ ունեցող վարորդներին։ Քանակը կտեսնի վարորդը. ըստ քանակի ֆիլտր չկա, որովհետև պրոֆիլներում ռոլիկների թիվը նշված չէ։
+              </p>
             </fieldset>
             <div class="row">
               <label>
@@ -290,7 +315,7 @@ useSeoMetaData({ title: 'Պատվերներ', description: 'Պատվերների
                   <option value="NEGOTIATION_REQUIRED">Համաձայնեցվելու է ընդունելուց հետո</option>
                 </select>
               </label>
-              <label v-if="form.pricingMode === 'FIXED'">Գին (֏)*<input v-model="form.quotedPriceAmd" type="number" min="0" step="500" required /></label>
+              <label v-if="form.pricingMode === 'FIXED'">Գին (֏)<input v-model="form.quotedPriceAmd" type="number" min="0" step="500" /></label>
             </div>
             <label>Ներքին նշում (վարորդը չի տեսնում)<textarea v-model="form.internalNote" rows="2" /></label>
             <p v-if="formError" class="ops__error" role="alert">{{ formError }}</p>
@@ -303,7 +328,7 @@ useSeoMetaData({ title: 'Պատվերներ', description: 'Պատվերների
               <tr>
                 <th>Համար</th>
                 <th>Վիճակ</th>
-                <th>Pickup</th>
+                <th>Վերցնելու հասցե</th>
                 <th>Հաճախորդ</th>
                 <th>Գին</th>
                 <th>Ստեղծված</th>
@@ -336,6 +361,7 @@ useSeoMetaData({ title: 'Պատվերներ', description: 'Պատվերների
           <h2 class="ops__h2">Վարորդներ</h2>
           <label class="ops__radio"><input v-model="onlyOnline" type="checkbox" @change="loadSide" /> Միայն պատվերներ ընդունողները</label>
           <OpsDriverMap
+            v-if="SHOW_OPS_DRIVER_MAP"
             :drivers="drivers"
             :gps-max-age-seconds="gpsMaxAgeSeconds"
             :selected-id="selectedDriver"
@@ -348,8 +374,16 @@ useSeoMetaData({ title: 'Պատվերներ', description: 'Պատվերների
               <span :class="`tone-${availabilitySummary(d.availability).tone}`">{{ availabilitySummary(d.availability).text }}</span>
               <span class="ops__muted">GPS {{ formatAge(d.availability.gpsAgeSeconds) }}<template v-if="d.position?.accuracyM"> · ±{{ Math.round(d.position.accuracyM) }} մ</template></span>
               <NuxtLink v-if="d.activeOrderId" :to="`/admin/orders/${d.activeOrderId}`">պատվեր #{{ d.activeOrderId }}</NuxtLink>
+              <a
+                v-if="d.position"
+                :href="`https://maps.google.com/?q=${d.position.latitude},${d.position.longitude}`"
+                target="_blank"
+                rel="noopener"
+                @click.stop
+              >Google Maps</a>
             </li>
           </ul>
+          <p v-if="!drivers.length" class="ops__muted">{{ onlyOnline ? 'Հիմա պատվերներ ընդունող վարորդ չկա։' : 'Վարորդներ չկան։' }}</p>
         </aside>
       </div>
     </template>

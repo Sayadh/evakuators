@@ -4,7 +4,8 @@
  * - The token comes from secure storage, never from AsyncStorage.
  * - Every call has a timeout. A timeout on a MUTATION is reported as
  *   `uncertain` (it may have reached the server), never as success or failure.
- * - 401 SESSION_REVOKED (other device logged in, admin revoked) → logout.
+ * - 401 SESSION_REVOKED (other device logged in, admin revoked) → logout;
+ *   401 INVALID_CREDENTIALS (wrong password on a re-auth) is NOT a logout.
  */
 import type { RegistrationPayload } from '../domain/registration'
 import Constants from 'expo-constants'
@@ -14,6 +15,10 @@ import type { Fix } from '../location/buffer'
 import type { TrackingPolicyDto } from './types'
 
 export const API_BASE: string = (Constants.expoConfig?.extra as { apiBaseUrl?: string } | undefined)?.apiBaseUrl ?? ''
+const WEBSITE_URL: string = (Constants.expoConfig?.extra as { websiteUrl?: string } | undefined)?.websiteUrl || 'https://evakuators.am'
+/** The app's privacy policy and the out-of-app deletion page (store requirements: reachable from inside the app) */
+export const PRIVACY_POLICY_URL = `${WEBSITE_URL}/driver-app/privacy`
+export const DELETE_ACCOUNT_URL = `${WEBSITE_URL}/driver-app/delete-account`
 
 export class ApiError extends Error {
   constructor(
@@ -63,7 +68,10 @@ async function request<T>(method: string, path: string, body?: unknown, options:
   const data = (await response.json().catch(() => ({}))) as { code?: string; message?: string }
   if (!response.ok) {
     const code = data.code ?? (response.status === 401 ? 'SESSION_REVOKED' : `HTTP_${response.status}`)
-    if (response.status === 401) onSessionRevoked()
+    // 401 means "this device is signed out" — EXCEPT a wrong password typed
+    // while signed in (Settings → Delete account re-asks it): that must show
+    // "wrong password", not throw the driver out of the app.
+    if (response.status === 401 && code !== 'INVALID_CREDENTIALS') onSessionRevoked()
     throw new ApiError(response.status, code, data.message ?? code)
   }
   return data as T
@@ -77,6 +85,10 @@ export const api = {
   register: (body: RegistrationPayload) => request<{ driverId: number; status: 'PENDING_REVIEW' }>('POST', '/driver-app/registrations', body, { timeoutMs: 15_000 }),
   logout: () => request<void>('DELETE', '/driver-app/sessions/current'),
   consent: (version: number) => request<void>('POST', '/driver-app/consent/tracking', { version }),
+  /** Withdraws location consent and goes offline (refused during an active order) */
+  withdrawConsent: () => request<void>('DELETE', '/driver-app/consent/tracking'),
+  /** Deletes the driver's own app account — irreversible; the password is asked again */
+  deleteAccount: (password: string) => request<void>('POST', '/driver-app/me/delete', { password }, { timeoutMs: 20_000 }),
   snapshot: () => request<Snapshot>('GET', '/driver-app/me'),
   setAvailability: (change: { wantsOnline?: boolean; externalBusy?: boolean }) => request<Snapshot>('PUT', '/driver-app/me/availability', change),
   heartbeat: () => request<{ serverTime: string }>('POST', '/driver-app/me/heartbeat', {}, { timeoutMs: 8000 }),
@@ -89,10 +101,13 @@ export const api = {
     ),
   pushToken: (token: string) => request<void>('POST', '/driver-app/me/push-token', { token }),
   accept: (offerId: string, idempotencyKey: string) => request<{ orderId: number; status: string }>('POST', `/driver-app/offers/${offerId}/accept`, {}, { idempotencyKey, mutation: true }),
-  reject: (offerId: string, idempotencyKey: string) => request<unknown>('POST', `/driver-app/offers/${offerId}/reject`, {}, { idempotencyKey, mutation: true }),
+  reject: (offerId: string, idempotencyKey: string, reason: string | null = null) =>
+    request<unknown>('POST', `/driver-app/offers/${offerId}/reject`, reason ? { reason } : {}, { idempotencyKey, mutation: true }),
   ack: (offerId: string, channel: 'PUSH' | 'REALTIME') => request<void>('POST', `/driver-app/offers/${offerId}/ack`, { channel }),
   progress: (orderId: number, action: ProgressAction, idempotencyKey: string) =>
     request<unknown>('POST', `/driver-app/orders/${orderId}/progress`, { action }, { idempotencyKey, mutation: true }),
+  confirmPrice: (orderId: number, agreedPriceAmd: number, idempotencyKey: string) =>
+    request<unknown>('POST', `/driver-app/orders/${orderId}/price`, { agreedPriceAmd }, { idempotencyKey, mutation: true }),
   request: (orderId: number, body: { kind: 'CANCEL' | 'PROBLEM'; reason: string; comment: string | null }, idempotencyKey: string) =>
     request<unknown>('POST', `/driver-app/orders/${orderId}/requests`, body, { idempotencyKey, mutation: true }),
   history: (before?: string) => request<HistoryItem[]>('GET', `/driver-app/orders/history${before ? `?before=${encodeURIComponent(before)}` : ''}`),

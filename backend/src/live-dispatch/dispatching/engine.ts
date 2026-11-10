@@ -69,30 +69,47 @@ export class DispatchEngine {
    * Builds the next batch: nearest eligible drivers not yet considered in
    * this attempt, widening the radius stage by stage; then ONE matrix call
    * for the whole batch; then rank by ETA. Returns how many were added.
+   *
+   * Stages run over the radius ladder TWICE: first by live GPS, then — only
+   * once every GPS stage came up empty — by base location (connected drivers
+   * whose GPS is stale; product decision 2026-11). A driver with real GPS is
+   * therefore always offered before anyone measured from a base. `searchStage`
+   * counts across both passes (0…2n-1).
    */
   private async expand(orderId: number, attemptId: number, settings: DispatchSettings): Promise<number> {
     const order = await readOrder(this.db, orderId)
     const attempt = await openAttempt(this.db, orderId, false)
     if (!order || order.status !== 'SEARCHING' || !attempt || attempt.id !== attemptId) return 0
+    // Unreachable in practice: automatic search refuses an order without
+    // pickup coordinates (assertAutoDispatchable). Kept as a real guard.
+    if (order.pickupLatitude === null || order.pickupLongitude === null) return 0
 
     const pickup = { latitude: order.pickupLatitude, longitude: order.pickupLongitude }
     const radii = searchRadii(
       haversineMeters(pickup.latitude, pickup.longitude, YEREVAN_CENTRE.latitude, YEREVAN_CENTRE.longitude),
       settings,
     )
+    const stages = radii.length * 2
     let stage = attempt.searchStage
     let found: Awaited<ReturnType<CandidateFinder['find']>> = []
-    while (stage < radii.length) {
+    while (stage < stages) {
       found = await this.finder.find(
         this.db,
-        { pickup, radiusMeters: radii[stage], limit: settings.candidateBatchSize, requirements: requirementsOf(order), excludeAttemptId: attemptId },
+        {
+          pickup,
+          radiusMeters: radii[stage % radii.length],
+          limit: settings.candidateBatchSize,
+          requirements: requirementsOf(order),
+          excludeAttemptId: attemptId,
+          source: stage < radii.length ? 'GPS' : 'BASE',
+        },
         settings,
       )
       if (found.length > 0) break
       stage++
     }
     if (found.length === 0) {
-      await this.offers.addCandidates(orderId, attemptId, Math.min(stage, radii.length), [], { provider: this.routing.providerName, computedAt: new Date() })
+      await this.offers.addCandidates(orderId, attemptId, Math.min(stage, stages), [], { provider: this.routing.providerName, computedAt: new Date() })
       return 0
     }
 
@@ -106,6 +123,7 @@ export class DispatchEngine {
         straightLineMeters: c.straightLineMeters,
         route: matrix.entries[i] ?? null,
         availableSince: c.availableSince,
+        source: c.source,
       })),
       settings.etaTieSeconds,
     )
@@ -119,7 +137,7 @@ export class DispatchEngine {
   /** Drivers move: queued candidates whose road figures are too old are re-routed from their CURRENT fix */
   private async refresh(orderId: number, attemptId: number): Promise<void> {
     const order = await readOrder(this.db, orderId)
-    if (!order) return
+    if (!order || order.pickupLatitude === null || order.pickupLongitude === null) return
     const settings = await this.loadSettings()
     const rows = await this.offers.queuedForRefresh(attemptId)
     if (rows.length === 0) return

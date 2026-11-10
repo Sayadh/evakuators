@@ -41,6 +41,12 @@ export interface OrderRequirements {
   steeringLocked: boolean | null
   gearboxLocked: boolean | null
   needsManipulator: boolean | null
+  /**
+   * The operator asked for wheel skates explicitly (2026-11). TRUE → only a
+   * truck WITH skates (no crane substitute). Optional so older literals stay
+   * valid; absent/NULL = not asked.
+   */
+  needsWheelSkates?: boolean | null
   /** An operator explicitly accepted the unknowns (audited) */
   overridden: boolean
 }
@@ -70,7 +76,7 @@ export function needsLockedWheelEquipment(order: OrderRequirements): boolean {
   return order.wheelsRoll === false || order.steeringLocked === true || order.gearboxLocked === true
 }
 
-export type CapabilityMismatch = 'CAPACITY' | 'MANIPULATOR' | 'LOCKED_WHEEL_EQUIPMENT' | 'SPECIALIST_TYPE'
+export type CapabilityMismatch = 'CAPACITY' | 'MANIPULATOR' | 'LOCKED_WHEEL_EQUIPMENT' | 'WHEEL_SKATES' | 'SPECIALIST_TYPE'
 
 export function capabilityMismatches(order: OrderRequirements, truck: TruckCapabilities): CapabilityMismatch[] {
   const mismatches: CapabilityMismatch[] = []
@@ -84,6 +90,7 @@ export function capabilityMismatches(order: OrderRequirements, truck: TruckCapab
   if (needsLockedWheelEquipment(order) && !truck.wheelSkates && !hasCrane) {
     mismatches.push('LOCKED_WHEEL_EQUIPMENT')
   }
+  if (order.needsWheelSkates === true && !truck.wheelSkates) mismatches.push('WHEEL_SKATES')
   if (truck.vehicleType === HEAVY_DUTY_VEHICLE_TYPE && !(order.vehicleWeightKg !== null && order.vehicleWeightKg > HEAVY_VEHICLE_KG)) {
     mismatches.push('SPECIALIST_TYPE')
   }
@@ -96,17 +103,19 @@ export function capabilityMismatches(order: OrderRequirements, truck: TruckCapab
 /**
  * The same rules as SQL, for the candidate query and the in-transaction
  * re-check. Parameters: $W weight kg (int or NULL), $M needs crane (bool),
- * $L needs locked-wheel equipment (bool). `t` is the TowTruck alias.
+ * $L needs locked-wheel equipment (bool), $S skates explicitly required
+ * (bool). `t` is the TowTruck alias.
  *
  * Kept next to the TypeScript twin on purpose; `test-live/requirements-parity`
  * runs both over the same matrix of trucks and orders.
  */
-export function capabilitySqlPredicate(weightParam: string, craneParam: string, lockedParam: string): string {
+export function capabilitySqlPredicate(weightParam: string, craneParam: string, lockedParam: string, skatesParam: string): string {
   const hasCrane = `(t."manipulator" OR t."vehicleType" = '${MANIPULATOR_VEHICLE_TYPE}')`
   return `(
     (${weightParam}::int IS NULL OR COALESCE(t."maxLoadTons", t."capacityTons") * 1000 >= ${weightParam}::int)
     AND (NOT ${craneParam}::boolean OR ${hasCrane})
     AND (NOT ${lockedParam}::boolean OR t."wheelSkates" OR ${hasCrane})
+    AND (NOT ${skatesParam}::boolean OR t."wheelSkates")
     AND (t."vehicleType" <> '${HEAVY_DUTY_VEHICLE_TYPE}' OR (${weightParam}::int IS NOT NULL AND ${weightParam}::int > ${HEAVY_VEHICLE_KG}))
     AND (t."vehicleType" <> '${MANIPULATOR_VEHICLE_TYPE}' OR ${craneParam}::boolean)
   )`

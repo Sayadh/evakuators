@@ -49,6 +49,7 @@ export const CANCEL_REASON_LABEL: Record<CancelReason, string> = {
   PRICE_NOT_AGREED: 'Գինը չի համաձայնեցվել',
   TECHNICAL_PROBLEM: 'Տեխնիկական խնդիր',
   OTHER: 'Այլ (մեկնաբանությամբ)',
+  NOT_SPECIFIED: 'Պատճառը չնշվեց',
 }
 
 export const PAYMENT_LABEL: Record<PaymentStatus, string> = {
@@ -86,6 +87,7 @@ export const ALERT_LABEL: Record<string, string> = {
   ACTIVE_GPS_LOST: 'Ակտիվ պատվերի վարորդի GPS-ը կորել է',
   DRIVER_NOT_MOVING: 'Վարորդը չի սեղմել «Շարժվում եմ»',
   DRIVER_CANCEL_REQUEST: 'Վարորդը խնդրում է չեղարկել',
+  DRIVER_CANCELLED_REDISPATCHED: 'Վարորդը հրաժարվեց, պատվերն ավտոմատ փոխանցվեց այլ վարորդի',
   DRIVER_PROBLEM: 'Վարորդը խնդիր է հայտնել',
 }
 
@@ -93,6 +95,7 @@ export const ERROR_LABEL: Record<string, string> = {
   VERSION_CONFLICT: 'Պատվերն արդեն փոխվել է մեկ ուրիշի կողմից։ Էջը թարմացվեց — ստուգեք և կրկնեք։',
   REQUIREMENTS_UNCONFIRMED: 'Տեխնիկական պահանջները ճշտված չեն։ Լրացրեք կամ հաստատեք override-ով։',
   PRICE_REQUIRED: 'Ֆիքսված գնով պատվերի համար գինը պարտադիր է։',
+  PICKUP_LOCATION_REQUIRED: 'Ավտոմատ որոնման համար պետք են վերցնելու կետի կոորդինատները։ Առանց կոորդինատների պատվերն ուղարկեք կոնկրետ վարորդի ձեռքով։',
   DRIVER_BUSY: 'Վարորդն արդեն ունի ակտիվ պատվեր։',
   DRIVER_RESERVED: 'Վարորդն այս պահին այլ առաջարկ է դիտում։',
   DRIVER_UNAVAILABLE: 'Վարորդը հասանելի չէ։',

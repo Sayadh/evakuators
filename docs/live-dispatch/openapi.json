@@ -92,47 +92,49 @@
       "ErrorCode": {
         "type": "string",
         "enum": [
-          "VALIDATION_FAILED",
-          "SESSION_REVOKED",
-          "FORBIDDEN",
+          "ACTIVE_ORDER_IN_PROGRESS",
+          "APP_ACCESS_NOT_GRANTED",
+          "APP_ACCESS_SUSPENDED",
+          "APP_ACCOUNT_PENDING",
+          "APP_ACCOUNT_REJECTED",
+          "CAPABILITY_MISMATCH",
+          "DRIVER_BUSY",
+          "DRIVER_RESERVED",
+          "DRIVER_UNAVAILABLE",
           "FEATURE_DISABLED",
-          "ORDER_NOT_FOUND",
-          "OFFER_NOT_FOUND",
-          "OFFER_EXPIRED",
-          "OFFER_REVOKED",
+          "FLEET_DRIVER_NOT_FOUND",
+          "FORBIDDEN",
+          "IDEMPOTENCY_IN_PROGRESS",
+          "IDEMPOTENCY_KEY_REUSED",
+          "INVALID_CREDENTIALS",
+          "INVALID_TRANSITION",
+          "LOCATION_REJECTED",
+          "NO_OPEN_REQUEST",
           "OFFER_ALREADY_RESPONDED",
+          "OFFER_EXPIRED",
+          "OFFER_NOT_FOUND",
+          "OFFER_REVOKED",
           "OFFER_TERMS_CHANGED",
           "ORDER_ALREADY_ASSIGNED",
           "ORDER_CANCELLED",
+          "ORDER_NOT_FOUND",
           "ORDER_NOT_SEARCHING",
-          "INVALID_TRANSITION",
-          "VERSION_CONFLICT",
-          "DRIVER_UNAVAILABLE",
-          "DRIVER_BUSY",
-          "DRIVER_RESERVED",
-          "CAPABILITY_MISMATCH",
-          "REQUIREMENTS_UNCONFIRMED",
-          "PRICE_REQUIRED",
-          "PRICE_NOT_CONFIRMED",
-          "REQUEST_ALREADY_OPEN",
-          "NO_OPEN_REQUEST",
-          "LOCATION_REJECTED",
-          "TRACKING_CONSENT_REQUIRED",
-          "IDEMPOTENCY_KEY_REUSED",
-          "IDEMPOTENCY_IN_PROGRESS",
-          "RATE_LIMITED",
-          "INVALID_CREDENTIALS",
-          "APP_ACCESS_NOT_GRANTED",
-          "APP_ACCOUNT_PENDING",
-          "APP_ACCOUNT_REJECTED",
-          "APP_ACCESS_SUSPENDED",
-          "PHONE_BELONGS_TO_SITE_DRIVER",
           "PHONE_ALREADY_REGISTERED",
-          "REGISTRATION_ALREADY_PENDING",
+          "PHONE_BELONGS_TO_SITE_DRIVER",
           "PHONE_HAS_APP_ONLY_ACCOUNT",
-          "FLEET_DRIVER_NOT_FOUND",
+          "PICKUP_LOCATION_REQUIRED",
+          "PRICE_NOT_CONFIRMED",
+          "PRICE_REQUIRED",
+          "RATE_LIMITED",
+          "REGISTRATION_ALREADY_PENDING",
+          "REQUEST_ALREADY_OPEN",
+          "REQUIREMENTS_UNCONFIRMED",
+          "SESSION_REVOKED",
+          "TOW_TRUCK_ALREADY_LINKED",
           "TOW_TRUCK_NOT_FOUND",
-          "TOW_TRUCK_ALREADY_LINKED"
+          "TRACKING_CONSENT_REQUIRED",
+          "VALIDATION_FAILED",
+          "VERSION_CONFLICT"
         ]
       },
       "Error": {
@@ -198,8 +200,10 @@
           "WRONG_DATA",
           "PRICE_NOT_AGREED",
           "TECHNICAL_PROBLEM",
-          "OTHER"
-        ]
+          "OTHER",
+          "NOT_SPECIFIED"
+        ],
+        "description": "NOT_SPECIFIED: only in a driver CANCEL request, sent by the app when the driver picked no reason in time. An operator cancel requires a real reason."
       },
       "Point": {
         "type": "object",
@@ -228,7 +232,7 @@
       },
       "Requirements": {
         "type": "object",
-        "description": "null = not asked yet. Dispatch refuses to start while any is null (or weight unknown) unless an operator recorded an override.",
+        "description": "null = not asked. Since 2026-11 unknowns no longer block dispatch (assertDispatchable is a no-op); a known value still filters trucks.",
         "properties": {
           "wheelsRoll": {
             "type": [
@@ -253,6 +257,22 @@
               "boolean",
               "null"
             ]
+          },
+          "needsWheelSkates": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Operator asked for wheel skates (2026-11). true → only trucks WITH wheel skates (no crane substitute)."
+          },
+          "wheelSkatesCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 4,
+            "description": "How many skates — shown to the driver; never a filter (no profile records a count)."
           }
         }
       },
@@ -318,7 +338,32 @@
             "maxLength": 120
           },
           "pickup": {
-            "$ref": "#/components/schemas/Point"
+            "type": "object",
+            "required": [
+              "latitude",
+              "longitude",
+              "address"
+            ],
+            "description": "Only `address` is mandatory (2026-11). latitude/longitude may both be null — such an order cannot start automatic search (PICKUP_LOCATION_REQUIRED), only a manual offer.",
+            "properties": {
+              "latitude": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "longitude": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "address": {
+                "type": "string",
+                "minLength": 2,
+                "maxLength": 500
+              }
+            }
           },
           "destination": {
             "oneOf": [
@@ -460,7 +505,32 @@
             }
           },
           "pickup": {
-            "$ref": "#/components/schemas/Point"
+            "type": "object",
+            "required": [
+              "latitude",
+              "longitude",
+              "address"
+            ],
+            "description": "Only `address` is mandatory (2026-11). latitude/longitude may both be null — such an order cannot start automatic search (PICKUP_LOCATION_REQUIRED), only a manual offer.",
+            "properties": {
+              "latitude": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "longitude": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "address": {
+                "type": "string",
+                "minLength": 2,
+                "maxLength": 500
+              }
+            }
           },
           "destination": {
             "oneOf": [
@@ -738,7 +808,7 @@
               "object",
               "null"
             ],
-            "description": "The assigned order, WITH customer contact and `allowedActions` (server-computed; the app only renders them)."
+            "description": "The assigned order, WITH customer contact. `allowedActions`, `canCancel` (cancel request allowed: only before EN_ROUTE) and `canSetPrice` (driver may record the agreed price) are server-computed; the app only renders them."
           },
           "tracking": {
             "$ref": "#/components/schemas/TrackingPolicy"
@@ -1037,6 +1107,25 @@
         "responses": {
           "204": {
             "description": "Recorded"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "driver-app"
+        ],
+        "security": [
+          {
+            "driverApp": []
+          }
+        ],
+        "summary": "Withdraw location consent; the driver goes offline and tracking stops",
+        "responses": {
+          "204": {
+            "description": "Withdrawn"
+          },
+          "409": {
+            "description": "ACTIVE_ORDER_IN_PROGRESS — open assignment or pending offer"
           }
         }
       }
@@ -1443,6 +1532,54 @@
         }
       }
     },
+    "/driver-app/orders/{orderId}/price": {
+      "post": {
+        "tags": [
+          "driver-app"
+        ],
+        "security": [
+          {
+            "driverApp": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/OrderId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "summary": "The assigned driver records the price he agreed with the customer by phone (NEGOTIATION_REQUIRED, not yet confirmed). Same effect as an operator's confirm-price; enabled when activeOrder.canSetPrice.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "agreedPriceAmd"
+                ],
+                "properties": {
+                  "agreedPriceAmd": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 10000000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated active order"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/driver-app/orders/{orderId}/requests": {
       "post": {
         "tags": [
@@ -1461,7 +1598,7 @@
             "$ref": "#/components/parameters/IdempotencyKey"
           }
         ],
-        "summary": "CANCEL (asks out — assignment is KEPT until an operator releases it) or PROBLEM",
+        "summary": "CANCEL (only before EN_ROUTE). Reason other than CUSTOMER_DECLINED and the pickup has coordinates → the driver is released and a new automatic search starts without him (response {released:true}); CUSTOMER_DECLINED → assignment KEPT until an operator decides. PROBLEM: any active status, an alert only.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3290,6 +3427,92 @@
             }
           }
         }
+      }
+    },
+    "/driver-app/me/delete": {
+      "post": {
+        "tags": [
+          "driver-app"
+        ],
+        "security": [
+          {
+            "driverApp": []
+          }
+        ],
+        "summary": "The driver deletes his own app account (store requirement). APP_ONLY: personal data cleared, status DELETED, phone free again. SITE_LINKED: app access ends; the website profile is untouched. Location history, presence, sessions and push tokens deleted for both; order records kept without personal data.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "password"
+                ],
+                "properties": {
+                  "password": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Deleted; every session ended"
+          },
+          "401": {
+            "description": "INVALID_CREDENTIALS"
+          },
+          "409": {
+            "description": "ACTIVE_ORDER_IN_PROGRESS"
+          }
+        }
+      }
+    },
+    "/ops/dispatch/fleet/{id}/delete-account": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "summary": "Admin-only: delete a driver app account on the driver's request (the no-app path of /driver-app/delete-account). Same erase as the in-app deletion.",
+        "responses": {
+          "200": {
+            "description": "Updated driver",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetDriver"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
       }
     }
   }

@@ -11,6 +11,7 @@
  */
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import OpsDriverMap from '~/components/ops/OpsDriverMap.vue'
+import { SHOW_OPS_DRIVER_MAP } from '~/constants/admin'
 import { newIdempotencyKey, opsDispatchRepository } from '~/repositories/opsDispatch.repository'
 import { useAdminAuthStore } from '~/stores/adminAuth'
 import { useOpsRealtime } from '~/composables/useOpsRealtime'
@@ -204,7 +205,13 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
             <dt>Հաճախորդ</dt>
             <dd><a :href="`tel:${order.customer.phone}`">{{ formatArmenianPhone(order.customer.phone) }}</a> {{ order.customer.name }}</dd>
             <dt>Pickup</dt>
-            <dd>{{ order.pickup.address }} · <a :href="`https://maps.google.com/?q=${order.pickup.latitude},${order.pickup.longitude}`" target="_blank" rel="noopener">քարտեզ</a></dd>
+            <dd>
+              {{ order.pickup.address }}
+              <template v-if="order.pickup.latitude !== null && order.pickup.longitude !== null">
+                · <a :href="`https://maps.google.com/?q=${order.pickup.latitude},${order.pickup.longitude}`" target="_blank" rel="noopener">քարտեզ</a>
+              </template>
+              <template v-else> · <span class="muted">կոորդինատները հայտնի չեն</span></template>
+            </dd>
             <dt>Destination</dt>
             <dd>
               <template v-if="order.destination">{{ order.destination.address }} · <a :href="`https://maps.google.com/?q=${order.destination.latitude},${order.destination.longitude}`" target="_blank" rel="noopener">քարտեզ</a></template>
@@ -233,7 +240,8 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
             <dt>Պահանջներ</dt>
             <dd>
               Անիվները պտտվում են՝ {{ tri(order.requirements.wheelsRoll) }} · Ղեկ արգելափակված՝ {{ tri(order.requirements.steeringLocked) }} ·
-              Տուփ արգելափակված՝ {{ tri(order.requirements.gearboxLocked) }} · Մանիպուլյատոր՝ {{ tri(order.requirements.needsManipulator) }}
+              Տուփ արգելափակված՝ {{ tri(order.requirements.gearboxLocked) }} · Մանիպուլյատոր՝ {{ tri(order.requirements.needsManipulator) }} ·
+              Անիվային ռոլիկներ՝ {{ tri(order.requirements.needsWheelSkates ?? null) }}<template v-if="order.requirements.needsWheelSkates && order.requirements.wheelSkatesCount"> ({{ order.requirements.wheelSkatesCount }} հատ)</template>
               <div v-if="order.requirements.overridden" class="muted">Override՝ «{{ order.requirements.overrideNote }}»</div>
             </dd>
             <dt>Գին</dt>
@@ -335,7 +343,7 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
             <label>
               Չեղարկման պատճառ
               <select v-model="cancelReason">
-                <option v-for="(label, key) in CANCEL_REASON_LABEL" :key="key" :value="key">{{ label }}</option>
+                <template v-for="(label, key) in CANCEL_REASON_LABEL" :key="key"><option v-if="key !== 'NOT_SPECIFIED'" :value="key">{{ label }}</option></template>
               </select>
             </label>
             <label v-if="cancelReason === 'OTHER'">Մեկնաբանություն* <input v-model="cancelComment" /></label>
@@ -344,7 +352,7 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
         </section>
       </div>
 
-      <section class="card">
+      <section v-if="SHOW_OPS_DRIVER_MAP" class="card">
         <h2>Քարտեզ</h2>
         <OpsDriverMap :drivers="drivers" :gps-max-age-seconds="gpsMaxAgeSeconds" :pickup="order.pickup" :selected-id="order.assignedDriverId" />
       </section>
@@ -372,7 +380,7 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
             <tbody>
               <tr v-for="c in detail.candidates" :key="c.driverId">
                 <td>{{ c.rank >= 0 ? c.rank % 1000 + 1 : '—' }}</td>
-                <td>{{ c.driverName }}</td>
+                <td>{{ c.driverName }}<span v-if="c.locationSource === 'BASE'" class="muted" title="GPS-ը հին էր. հեռավորությունը հաշվված է վարորդի կայանատեղիից"> · ըստ կայանատեղիի</span></td>
                 <td>{{ c.routeOk ? `${formatMeters(c.roadMeters)}, ${formatSeconds(c.etaSeconds)}` : `չհաշվարկվեց (${c.routeError ?? '—'})` }}</td>
                 <td>{{ formatMeters(c.straightLineMeters) }}</td>
                 <td>{{ c.status }}<span v-if="c.skipReason" class="muted"> · {{ c.skipReason }}</span></td>

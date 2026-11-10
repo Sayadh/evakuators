@@ -44,6 +44,14 @@ export class NearbyLiveProvider {
         baseBackoffMs: 250,
         maxConcurrent: 2,
         dailyElementBudget: () => Number(process.env.PUBLIC_NEARBY_DAILY_ELEMENT_BUDGET ?? 5000),
+        // With ORS this search would be a THIRD consumer of the shared key,
+        // outside both shares (site 100 / dispatch): no ORS requests unless
+        // PUBLIC_NEARBY_DAILY_REQUESTS is set (and taken from another share).
+        // Live entries then show straight-line distance, labelled as such.
+        dailyRequestBudget:
+          process.env.PUBLIC_NEARBY_DAILY_REQUESTS || rt.routing.providerName === 'openrouteservice'
+            ? () => Number(process.env.PUBLIC_NEARBY_DAILY_REQUESTS ?? 0)
+            : undefined,
         budgetKey: `${rt.routing.providerName}:public`,
         rejectWhenBusy: true,
       },

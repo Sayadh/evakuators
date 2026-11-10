@@ -95,7 +95,7 @@ export const opsDispatchRepository = {
   grantSiteAccess(towTruckId: number) {
     return apiFetch<FleetDriver>(`${base}/fleet/grant`, { method: 'POST', headers: auth(), body: { towTruckId } })
   },
-  fleetAction(id: number, action: 'approve' | 'reactivate') {
+  fleetAction(id: number, action: 'approve' | 'reactivate' | 'delete-account') {
     return apiFetch<FleetDriver>(`${base}/fleet/${id}/${action}`, { method: 'POST', headers: auth() })
   },
   fleetActionWithReason(id: number, action: 'reject' | 'suspend', reason: string) {

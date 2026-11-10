@@ -47,6 +47,8 @@ export type FixRejection =
   | 'FROM_THE_FUTURE'
   | 'TOO_OLD'
   | 'DUPLICATE_IN_BATCH'
+  /** No (or withdrawn) location consent: nothing is stored, the app drops the fixes */
+  | 'NO_CONSENT'
 
 export interface AcceptedFix {
   seq: number
@@ -200,6 +202,13 @@ export function suspiciousJump(
  * is a request, never a promise (iOS in particular coalesces background
  * updates). Returned with every ingest/heartbeat response so the policy can
  * change without an app release.
+ *
+ * `distanceFilterMeters` is 0 in every mode, and must stay so: a distance
+ * gate means a driver standing still — the most common state of someone
+ * WAITING for an order — gets no fix at all on iOS or Android, goes GPS-stale
+ * after `gpsMaxAgeSeconds` and silently stops receiving offers. The app thins
+ * the OS's fixes by time (`locationIntervalSeconds`) instead. Every interval
+ * plus its jitter is ≤ 60 s (product requirement, 2026-11).
  */
 export type TrackingMode = 'OFF' | 'IDLE_STATIONARY' | 'IDLE_MOVING' | 'ACTIVE_ORDER'
 
@@ -221,7 +230,7 @@ export function trackingPolicy(input: {
       mode: 'ACTIVE_ORDER',
       locationIntervalSeconds: 12,
       heartbeatIntervalSeconds: 30,
-      distanceFilterMeters: 25,
+      distanceFilterMeters: 0,
       jitterSeconds: 3,
     }
   }
@@ -231,17 +240,17 @@ export function trackingPolicy(input: {
   if (input.lastSpeedMps !== null && input.lastSpeedMps > 1.5) {
     return {
       mode: 'IDLE_MOVING',
-      locationIntervalSeconds: 40,
+      locationIntervalSeconds: 30,
       heartbeatIntervalSeconds: 45,
-      distanceFilterMeters: 100,
-      jitterSeconds: 8,
+      distanceFilterMeters: 0,
+      jitterSeconds: 5,
     }
   }
   return {
     mode: 'IDLE_STATIONARY',
-    locationIntervalSeconds: 90,
+    locationIntervalSeconds: 55,
     heartbeatIntervalSeconds: 45,
-    distanceFilterMeters: 150,
-    jitterSeconds: 10,
+    distanceFilterMeters: 0,
+    jitterSeconds: 5,
   }
 }

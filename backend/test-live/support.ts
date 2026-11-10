@@ -26,6 +26,7 @@ export const TEST_CONFIG: LiveDispatchConfig = {
   routingTimeoutMs: 2000,
   routingRetries: 1,
   routingMaxConcurrent: 4,
+  routingDailyRequests: null,
   pushProvider: 'recording',
   fcmServiceAccount: null,
   redisUrl: '',

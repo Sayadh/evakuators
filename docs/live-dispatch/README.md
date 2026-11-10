@@ -13,6 +13,7 @@
 | [05-security-and-privacy.md](05-security-and-privacy.md) | Դերեր, rate limits, գաղտնիքներ, retention, դիտարկում, alerts |
 | [06-mobile.md](06-mobile.md) | Հավելված, build/signing, real-device checklist |
 | [11-driver-access.md](11-driver-access.md) | **Ով կարող է օգտվել հավելվածից**․ կայքի վարորդներ (ադմինը տալիս է հասանելիություն, նույն գաղտնաբառ) և միայն-հավելվածի վարորդներ (ինքնագրանցում + հաստատում), մեկ ցուցակ `/evakuator`-ում |
+| [12-store-submission.md](12-store-submission.md) | **Google Play / App Store**․ գաղտնիության պահանջներ, ինչ է արված կոդում, ինչ պետք է լրացնել console-ներում |
 | [07-admin-console.md](07-admin-console.md) | Օպերատորի վահանակ |
 | [08-testing.md](08-testing.md) | Թեստեր, արդյունքներ, ինչ չի ստուգվել |
 | [09-rollout-and-rollback.md](09-rollout-and-rollback.md) | Staging, migration plan, backup, rollback, flags |

@@ -5,10 +5,11 @@
  * server refuses their number and says to use the site password).
  */
 import React, { useState } from 'react'
-import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native'
-import { api, ApiError } from '../api/client'
-import { EMPTY_REGISTRATION, validateRegistration, type RegistrationField, type RegistrationForm } from '../domain/registration'
-import { VEHICLE_TYPES } from '../domain/vehicleTypes'
+import { Linking, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native'
+import * as Location from 'expo-location'
+import { api, ApiError, PRIVACY_POLICY_URL } from '../api/client'
+import { formatCoordinates, isWithinArmenia } from '../domain/coordinates'
+import { EMPTY_REGISTRATION, REGISTRATION_VEHICLE_TYPES, validateRegistration, type RegistrationField, type RegistrationForm } from '../domain/registration'
 import { useT } from '../i18n'
 import { Button, Card, colors, Note, Screen } from '../ui/kit'
 
@@ -19,6 +20,31 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
   const [busy, setBusy] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
   const [sent, setSent] = useState(false)
+  const [locating, setLocating] = useState(false)
+  const [locateError, setLocateError] = useState<string | null>(null)
+
+  /** "Use where I am now" — asks for location permission only when the driver taps it */
+  async function useCurrentLocation() {
+    setLocateError(null)
+    setLocating(true)
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync()
+      if (!permission.granted) {
+        setLocateError(t('register.baseNoPermission'))
+        return
+      }
+      const here = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High })
+      if (!isWithinArmenia(here.coords.latitude, here.coords.longitude)) {
+        setLocateError(t('register.invalid.baseCoords'))
+        return
+      }
+      set('baseCoords', formatCoordinates(here.coords))
+    } catch {
+      setLocateError(t('register.baseFailed'))
+    } finally {
+      setLocating(false)
+    }
+  }
 
   const set = <K extends keyof RegistrationForm>(key: K, value: RegistrationForm[K]) => setForm((f) => ({ ...f, [key]: value }))
 
@@ -83,7 +109,7 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
         </Card>
         <Card>
           <Text style={styles.label}>{t('register.vehicleType')}</Text>
-          {VEHICLE_TYPES.map((type) => (
+          {REGISTRATION_VEHICLE_TYPES.map((type) => (
             <Pressable
               key={type}
               accessibilityRole="radio"
@@ -95,19 +121,23 @@ export function RegisterScreen({ onBack }: { onBack: () => void }) {
             </Pressable>
           ))}
           {errors.vehicleType ? <Text style={styles.error}>{t('register.invalid.vehicleType')}</Text> : null}
-          {field('capacityTons', { keyboardType: 'decimal-pad' })}
-          {field('maxLoadTons', { keyboardType: 'decimal-pad' })}
-          <View style={styles.switchRow}>
-            <Text style={styles.switchLabel}>{t('register.manipulator')}</Text>
-            <Switch value={form.manipulator} onValueChange={(v) => set('manipulator', v)} accessibilityLabel={t('register.manipulator')} />
-          </View>
           <View style={styles.switchRow}>
             <Text style={styles.switchLabel}>{t('register.wheelSkates')}</Text>
             <Switch value={form.wheelSkates} onValueChange={(v) => set('wheelSkates', v)} accessibilityLabel={t('register.wheelSkates')} />
           </View>
+          <Note>{t('register.wheelSkatesHint')}</Note>
           {field('vehicleDescription')}
         </Card>
+        <Card>
+          <Text style={{ fontWeight: '600', color: colors.text }}>{t('register.baseTitle')}</Text>
+          <Note>{t('register.baseHint')}</Note>
+          {field('baseCoords', { keyboardType: 'numbers-and-punctuation', placeholder: '40.177200, 44.512600', autoCorrect: false })}
+          <Button variant="outline" label={locating ? t('common.loading') : t('register.baseUseCurrent')} busy={locating} onPress={() => void useCurrentLocation()} />
+          {locateError ? <Text style={styles.error}>{locateError}</Text> : null}
+        </Card>
         {serverError ? <Note tone="danger">{serverError}</Note> : null}
+        <Note>{t('privacy.registerNote')}</Note>
+        <Button variant="outline" label={t('privacy.policy')} onPress={() => void Linking.openURL(PRIVACY_POLICY_URL)} />
         <Button label={t('register.submit')} onPress={() => void submit()} busy={busy} />
         <Button label={t('register.backToLogin')} onPress={onBack} variant="outline" />
     </Screen>

@@ -26,6 +26,7 @@ export const DISPATCH_ERRORS = {
   CAPABILITY_MISMATCH: { status: 409, message: 'Մեքենան չի համապատասխանում պատվերի պահանջներին' },
   REQUIREMENTS_UNCONFIRMED: { status: 422, message: 'Պատվերի տեխնիկական պահանջները ճշտված չեն' },
   PRICE_REQUIRED: { status: 422, message: 'Ֆիքսված գնով պատվերի համար գինը պարտադիր է' },
+  PICKUP_LOCATION_REQUIRED: { status: 422, message: 'Ավտոմատ որոնման համար պետք են վերցնելու կետի կոորդինատները. ուղարկեք կոնկրետ վարորդի ձեռքով' },
   PRICE_NOT_CONFIRMED: { status: 409, message: 'Գինը դեռ հաստատված չէ, տեղափոխումը չի կարող սկսվել' },
   REQUEST_ALREADY_OPEN: { status: 409, message: 'Այս պատվերի համար արդեն կա բաց հարցում' },
   NO_OPEN_REQUEST: { status: 409, message: 'Բաց հարցում չկա' },
@@ -46,6 +47,7 @@ export const DISPATCH_ERRORS = {
   PHONE_HAS_APP_ONLY_ACCOUNT: { status: 409, message: 'Այս համարով կա միայն հավելվածի հաշիվ․ միացրեք այն կայքի պրոֆիլին, նոր հասանելիություն մի ստեղծեք' },
   FLEET_DRIVER_NOT_FOUND: { status: 404, message: 'Վարորդը չի գտնվել' },
   TOW_TRUCK_NOT_FOUND: { status: 404, message: 'Կայքի պրոֆիլը չի գտնվել' },
+  ACTIVE_ORDER_IN_PROGRESS: { status: 409, message: 'Ունեք ակտիվ պատվեր կամ սպասող առաջարկ. նախ ավարտեք կամ մերժեք այն' },
   TOW_TRUCK_ALREADY_LINKED: { status: 409, message: 'Այս կայքի պրոֆիլն արդեն կապված է հավելվածի վարորդի հետ' },
 } as const
 

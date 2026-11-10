@@ -6,14 +6,19 @@
  * `DriverLocationCurrent.location`, ordered by the `<->` KNN operator, bounded
  * by LIMIT — the same shape as `NearestRepository` (docs/nearest-search.md).
  *
- * The registered base or city of a driver is NEVER used here: only the live
- * fix. A driver without a fresh fix is simply not a candidate.
+ * `source: 'GPS'` (the normal case) uses only the live fix. `source: 'BASE'`
+ * is the fallback (product decision, 2026-11) the engine reaches only after
+ * every radius found no driver with a usable fix: connected drivers whose GPS
+ * is stale or missing, measured from their base location (the website
+ * profile's parking for SITE_LINKED, the app sign-up's optional base for
+ * APP_ONLY). No spatial index on that point — the fallback set is small (it
+ * is already filtered to online, connected, idle drivers).
  */
 import { Params, toDate, toNullableDate, toNumber } from '../platform/params'
 import type { DispatchSettings } from '../platform/settings'
 import type { Sql } from '../platform/sql'
 import type { OrderRequirements } from '../orders/domain/requirements'
-import { availabilityPredicate, capabilityPredicate, ELIGIBLE_FROM } from './eligibility-sql'
+import { availabilityPredicate, capabilityPredicate, eligibleFrom, type LocationSource } from './eligibility-sql'
 
 export interface FoundCandidate {
   driverId: number
@@ -22,6 +27,7 @@ export interface FoundCandidate {
   longitude: number
   availableSince: Date | null
   measuredAt: Date
+  source: LocationSource
 }
 
 export interface CandidateQuery {
@@ -31,14 +37,28 @@ export interface CandidateQuery {
   requirements: OrderRequirements
   /** Drivers already considered in this attempt */
   excludeAttemptId: number | null
+  /** Live fix (default) or the base-location fallback */
+  source?: LocationSource
+}
+
+/** Where a candidate is, per source — SQL expressions over t (profile) and lc (live fix) */
+function position(source: LocationSource): { lat: string; lng: string; point: string; measuredAt: string } {
+  if (source === 'GPS') return { lat: 'lc."latitude"', lng: 'lc."longitude"', point: 'lc."location"', measuredAt: 'lc."measuredAt"' }
+  return {
+    lat: 't."baseLatitude"',
+    lng: 't."baseLongitude"',
+    point: 'ST_SetSRID(ST_MakePoint(t."baseLongitude"::double precision, t."baseLatitude"::double precision), 4326)::geography',
+    measuredAt: 'COALESCE(lc."measuredAt", now())',
+  }
 }
 
 export interface CandidateFinder {
   find(db: Sql, query: CandidateQuery, settings: DispatchSettings): Promise<FoundCandidate[]>
 }
 
-function mapFound(row: Record<string, unknown>): FoundCandidate {
+function mapFound(row: Record<string, unknown>, source: LocationSource): FoundCandidate {
   return {
+    source,
     driverId: toNumber(row.driverId),
     straightLineMeters: Math.round(toNumber(row.straightLineMeters)),
     latitude: toNumber(row.latitude),
@@ -55,6 +75,8 @@ function exclusion(p: Params, attemptId: number | null): string {
 
 export class PostgisCandidateFinder implements CandidateFinder {
   async find(db: Sql, query: CandidateQuery, settings: DispatchSettings): Promise<FoundCandidate[]> {
+    const source = query.source ?? 'GPS'
+    const at = position(source)
     const p = new Params()
     // ST_MakePoint(X, Y) — LONGITUDE FIRST.
     const lng = p.add(query.pickup.longitude)
@@ -63,18 +85,18 @@ export class PostgisCandidateFinder implements CandidateFinder {
       `WITH origin AS (
          SELECT ST_SetSRID(ST_MakePoint(${lng}::double precision, ${lat}::double precision), 4326)::geography AS point
        )
-       SELECT t."id" AS "driverId", ST_Distance(lc."location", o.point) AS "straightLineMeters",
-              lc."latitude", lc."longitude", p."availableSince", lc."measuredAt"
-         FROM ${ELIGIBLE_FROM}, origin o
-        WHERE ST_DWithin(lc."location", o.point, ${p.add(query.radiusMeters)}::double precision)
-          AND ${availabilityPredicate(p, settings)}
+       SELECT t."id" AS "driverId", ST_Distance(${at.point}, o.point) AS "straightLineMeters",
+              ${at.lat} AS "latitude", ${at.lng} AS "longitude", p."availableSince", ${at.measuredAt} AS "measuredAt"
+         FROM ${eligibleFrom(source)}, origin o
+        WHERE ${availabilityPredicate(p, settings, source)}
+          AND ST_DWithin(${at.point}, o.point, ${p.add(query.radiusMeters)}::double precision)
           AND ${capabilityPredicate(p, query.requirements)}
           AND ${exclusion(p, query.excludeAttemptId)}
-        ORDER BY lc."location" <-> o.point
+        ORDER BY ${at.point} <-> o.point
         LIMIT ${p.add(query.limit)}::int`,
       p.values,
     )
-    return rows.map(mapFound)
+    return rows.map((row) => mapFound(row, source))
   }
 }
 
@@ -88,19 +110,21 @@ export class PostgisCandidateFinder implements CandidateFinder {
  */
 export class PlainSqlCandidateFinder implements CandidateFinder {
   async find(db: Sql, query: CandidateQuery, settings: DispatchSettings): Promise<FoundCandidate[]> {
+    const source = query.source ?? 'GPS'
+    const at = position(source)
     const p = new Params()
     const lat = p.add(query.pickup.latitude)
     const lng = p.add(query.pickup.longitude)
     const distance = `(2 * 6371008.8 * asin(least(1, sqrt(
-        power(sin(radians(lc."latitude"::float8 - ${lat}::float8) / 2), 2)
-        + cos(radians(${lat}::float8)) * cos(radians(lc."latitude"::float8))
-        * power(sin(radians(lc."longitude"::float8 - ${lng}::float8) / 2), 2)))))`
+        power(sin(radians(${at.lat}::float8 - ${lat}::float8) / 2), 2)
+        + cos(radians(${lat}::float8)) * cos(radians(${at.lat}::float8))
+        * power(sin(radians(${at.lng}::float8 - ${lng}::float8) / 2), 2)))))`
     const rows = await db.query<Record<string, unknown>>(
       `SELECT * FROM (
          SELECT t."id" AS "driverId", ${distance} AS "straightLineMeters",
-                lc."latitude", lc."longitude", p."availableSince", lc."measuredAt"
-           FROM ${ELIGIBLE_FROM}
-          WHERE ${availabilityPredicate(p, settings)}
+                ${at.lat} AS "latitude", ${at.lng} AS "longitude", p."availableSince", ${at.measuredAt} AS "measuredAt"
+           FROM ${eligibleFrom(source)}
+          WHERE ${availabilityPredicate(p, settings, source)}
             AND ${capabilityPredicate(p, query.requirements)}
             AND ${exclusion(p, query.excludeAttemptId)}
        ) d
@@ -109,6 +133,6 @@ export class PlainSqlCandidateFinder implements CandidateFinder {
        LIMIT ${p.add(query.limit)}::int`,
       p.values,
     )
-    return rows.map(mapFound)
+    return rows.map((row) => mapFound(row, source))
   }
 }

@@ -30,6 +30,29 @@ const config: ExpoConfig = {
       NSLocationWhenInUseUsageDescription: LOCATION_WHEN_IN_USE,
       NSLocationAlwaysAndWhenInUseUsageDescription: LOCATION_ALWAYS,
     },
+    /**
+     * Apple privacy manifest (required since 2024). React Native and Expo
+     * modules use these "required reason" APIs; the codes are Apple's
+     * documented reasons for app-internal use. No tracking, no tracking
+     * domains. What data is collected is declared separately in App Store
+     * Connect (App Privacy) — see docs/live-dispatch/12-store-submission.md.
+     * Apple emails the exact missing entries after a TestFlight upload, if any.
+     */
+    privacyManifests: {
+      NSPrivacyTracking: false,
+      NSPrivacyTrackingDomains: [],
+      NSPrivacyAccessedAPITypes: [
+        { NSPrivacyAccessedAPIType: 'NSPrivacyAccessedAPICategoryUserDefaults', NSPrivacyAccessedAPITypeReasons: ['CA92.1'] },
+        { NSPrivacyAccessedAPIType: 'NSPrivacyAccessedAPICategoryFileTimestamp', NSPrivacyAccessedAPITypeReasons: ['C617.1', '0A2A.1', '3B52.1'] },
+        { NSPrivacyAccessedAPIType: 'NSPrivacyAccessedAPICategorySystemBootTime', NSPrivacyAccessedAPITypeReasons: ['35F9.1'] },
+        { NSPrivacyAccessedAPIType: 'NSPrivacyAccessedAPICategoryDiskSpace', NSPrivacyAccessedAPITypeReasons: ['E174.1', '85F4.1'] },
+      ],
+    },
+  },
+  /** iOS permission texts in other languages (Armenian is the base, above). App Review reads English. */
+  locales: {
+    en: './locales/en.json',
+    ru: './locales/ru.json',
   },
   android: {
     package: 'am.evakuators.driver',
@@ -41,6 +64,16 @@ const config: ExpoConfig = {
       'android.permission.FOREGROUND_SERVICE',
       'android.permission.FOREGROUND_SERVICE_LOCATION',
       'android.permission.POST_NOTIFICATIONS',
+    ],
+    /**
+     * Added by templates/libraries, unused by this app — and SYSTEM_ALERT_WINDOW
+     * is a sensitive permission Play reviewers ask about. Data minimisation:
+     * request only what the app uses (Play & App Store policy).
+     */
+    blockedPermissions: [
+      'android.permission.SYSTEM_ALERT_WINDOW',
+      'android.permission.READ_EXTERNAL_STORAGE',
+      'android.permission.WRITE_EXTERNAL_STORAGE',
     ],
   },
   plugins: [
@@ -57,11 +90,16 @@ const config: ExpoConfig = {
     ['expo-notifications', { color: '#14304f' }],
     '@react-native-firebase/app',
     '@react-native-firebase/messaging',
-    // React Native Firebase on iOS requires static frameworks.
-    ['expo-build-properties', { ios: { useFrameworks: 'static' } }],
+    // React Native Firebase resolves Firebase via SPM on iOS; its Swift Package
+    // products are automatic (non-dynamic) libraries, so static pod linkage
+    // makes every react-native-firebase pod embed its own copy and collide at
+    // link time. Dynamic linkage is the supported combination (rnfirebase.io/ios-spm).
+    ['expo-build-properties', { ios: { useFrameworks: 'dynamic' } }],
   ],
   extra: {
     apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL ?? '',
+    /** The website: privacy policy and account-deletion pages live there (/driver-app/…) */
+    websiteUrl: process.env.EXPO_PUBLIC_WEBSITE_URL ?? 'https://evakuators.am',
   },
 }
 

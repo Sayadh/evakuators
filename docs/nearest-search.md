@@ -185,7 +185,7 @@ They are easiest to keep straight by who they are keyed on:
 | Remembered answer | one browser | **1 hour** | "has *this person* just asked this?" |
 | Daily allowance | one browser | **2 / day** | "how many *road-distance* answers does a person get?" |
 | Per-minute throttle | IP | 10 / min | burst control |
-| ORS daily budget | platform-wide | **480 matrix calls / day** | "is today's shared routing budget gone?" |
+| ORS daily budget | platform-wide | **100 matrix calls / day** (the website's share of the key) | "is today's shared routing budget gone?" |
 
 ### The allowance takes away road data, not the search
 
@@ -245,6 +245,18 @@ the per-IP number small enough to actually bound that risk (closer to
 `NEAREST_DAILY_SEARCH_LIMIT`) would have re-created the CGNAT problem instead:
 Armenian mobile carriers share one public address across many phones, so a
 low per-IP number refuses real people, not abusers.
+
+### The key is split with live dispatch (2026-11)
+
+The same ORS key also serves live dispatch once `DISPATCH_ROUTING_PROVIDER=ors`.
+The 500 are split in ONE place, `backend/src/routing/routing.constants.ts`:
+`ROUTE_ORS_SITE_DAILY_SHARE = 100` for this page and the admin coordinate
+search (`RouteQuotaService`, in memory), `ROUTE_ORS_DISPATCH_DAILY_SHARE = 380`
+for dispatch (`GuardedRouting.dailyRequestBudget`, counted per request —
+retries included — in `RoutingUsageDay`), and the 20-call safety margin.
+`test/route-quota.spec.ts` asserts the three add up to the quota. The public
+live search (`LIVE_NEARBY_ENABLED`) gets 0 ORS requests unless
+`PUBLIC_NEARBY_DAILY_REQUESTS` takes some from another share.
 
 `ROUTE_ORS_DAILY_QUOTA = 500` and `ROUTE_ORS_DAILY_SAFETY_MARGIN = 20`
 

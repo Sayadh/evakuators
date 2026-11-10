@@ -29,13 +29,34 @@ const point = z
   })
   .refine((p) => isWithinArmenia(p.latitude, p.longitude), { message: 'outside Armenia' })
 
+/**
+ * Pickup, relaxed (product decision, 2026-11): only the address is required —
+ * coordinates may be omitted ("phone it in" orders the operator will assign
+ * manually). An order with no pickup coordinates can never enter automatic
+ * dispatch (DispatchEngine's radius search needs a point to search from) —
+ * see `assertAutoDispatchable` in dispatching/offers.repository.ts — but a
+ * manual offer to a specific driver does not need one.
+ */
+const pickupPoint = z
+  .object({
+    latitude: z.number().finite().min(-90).max(90).nullable(),
+    longitude: z.number().finite().min(-180).max(180).nullable(),
+    address: z.string().trim().min(2).max(500),
+  })
+  .refine((p) => (p.latitude === null) === (p.longitude === null), {
+    message: 'latitude and longitude must both be given or both omitted',
+  })
+  .refine((p) => p.latitude === null || p.longitude === null || isWithinArmenia(p.latitude, p.longitude), { message: 'outside Armenia' })
+
 const triState = z.boolean().nullable()
+/** How many wheel skates the job needs — for the driver to read, never a filter */
+const skatesCount = z.number().int().min(1).max(4).nullable()
 
 export const createOrderSchema = z
   .object({
     customerPhone: z.string().transform(normaliseArmenianPhone).pipe(z.string().regex(ARMENIAN_PHONE)),
     customerName: z.string().trim().max(120).nullable().optional(),
-    pickup: point,
+    pickup: pickupPoint,
     destination: point.nullable().optional(),
     vehicle: z
       .object({
@@ -52,6 +73,8 @@ export const createOrderSchema = z
         steeringLocked: triState.optional(),
         gearboxLocked: triState.optional(),
         needsManipulator: triState.optional(),
+        needsWheelSkates: triState.optional(),
+        wheelSkatesCount: skatesCount.optional(),
       })
       .default({}),
     pricing: z.object({
@@ -69,7 +92,7 @@ export const updateOrderSchema = z
     expectedVersion: z.number().int().min(1),
     customerPhone: z.string().transform(normaliseArmenianPhone).pipe(z.string().regex(ARMENIAN_PHONE)).optional(),
     customerName: z.string().trim().max(120).nullable().optional(),
-    pickup: point.optional(),
+    pickup: pickupPoint.optional(),
     destination: point.nullable().optional(),
     vehicle: z
       .object({
@@ -86,6 +109,8 @@ export const updateOrderSchema = z
         steeringLocked: triState.optional(),
         gearboxLocked: triState.optional(),
         needsManipulator: triState.optional(),
+        needsWheelSkates: triState.optional(),
+        wheelSkatesCount: skatesCount.optional(),
       })
       .optional(),
     pricing: z
@@ -133,6 +158,8 @@ export function updateColumns(input: UpdateOrderInput): { columns: Record<string
     set('steeringLocked', input.requirements.steeringLocked, true)
     set('gearboxLocked', input.requirements.gearboxLocked, true)
     set('needsManipulator', input.requirements.needsManipulator, true)
+    set('needsWheelSkates', input.requirements.needsWheelSkates, true)
+    set('wheelSkatesCount', input.requirements.wheelSkatesCount, true)
   }
   if (input.pricing) {
     set('pricingMode', input.pricing.mode, true)
@@ -161,6 +188,8 @@ export const COLUMN_CASTS: Record<string, string> = {
   steeringLocked: 'boolean',
   gearboxLocked: 'boolean',
   needsManipulator: 'boolean',
+  needsWheelSkates: 'boolean',
+  wheelSkatesCount: 'smallint',
   pricingMode: '"OrderPricingMode"',
   quotedPriceAmd: 'int',
   internalNote: 'text',
@@ -175,11 +204,17 @@ export const cancelSchema = z
   .strict()
   .refine((v) => v.reason !== 'OTHER' || (v.comment ?? '').length > 0, { message: 'comment required for OTHER', path: ['comment'] })
 
+/**
+ * NOT_SPECIFIED is the driver app's answer when a driver who asked to cancel
+ * picked no reason within the time limit — only valid for a CANCEL, never
+ * for an operator's cancel (`cancelSchema`).
+ */
 export const driverRequestSchema = z
   .object({
     kind: z.enum(['CANCEL', 'PROBLEM']),
-    reason: z.enum(['DRIVER_CANNOT_PERFORM', 'CUSTOMER_DECLINED', 'WRONG_DATA', 'PRICE_NOT_AGREED', 'TECHNICAL_PROBLEM', 'OTHER']),
+    reason: z.enum(['DRIVER_CANNOT_PERFORM', 'CUSTOMER_DECLINED', 'WRONG_DATA', 'PRICE_NOT_AGREED', 'TECHNICAL_PROBLEM', 'OTHER', 'NOT_SPECIFIED']),
     comment: z.string().trim().max(1000).nullable().optional(),
   })
   .strict()
   .refine((v) => v.reason !== 'OTHER' || (v.comment ?? '').length > 0, { message: 'comment required for OTHER', path: ['comment'] })
+  .refine((v) => v.reason !== 'NOT_SPECIFIED' || v.kind === 'CANCEL', { message: 'NOT_SPECIFIED only for a cancel', path: ['reason'] })

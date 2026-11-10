@@ -217,6 +217,13 @@ export class OpsDispatchController {
     return this.holder.runtime.access.reactivate(intParam(id, 'id'), req.adminUserId)
   }
 
+  /** A driver asked (by phone etc.) to delete his app account — see /driver-app/delete-account */
+  @AdminOnly()
+  @Post('fleet/:id/delete-account')
+  deleteAccount(@Req() req: Req2, @Param('id') id: string) {
+    return this.holder.runtime.access.deleteAccountOnRequest(intParam(id, 'id'), req.adminUserId)
+  }
+
   @AdminOnly()
   @Post('fleet/:id/link-site')
   linkSite(@Req() req: Req2, @Param('id') id: string, @Body() body: { towTruckId?: unknown }) {

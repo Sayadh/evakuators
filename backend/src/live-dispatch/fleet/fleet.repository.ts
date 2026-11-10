@@ -56,6 +56,8 @@ export interface DriverStateRow {
   availableSince: Date | null
   latitude: number | null
   longitude: number | null
+  /** Has a base location — the dispatch fallback when GPS is stale (optional: older callers/tests omit it) */
+  hasBase?: boolean
   accuracyM: number | null
   speedMps: number | null
   measuredAt: Date | null
@@ -72,6 +74,7 @@ export const DRIVER_STATE_SELECT = `
   p."trackingConsentVersion", p."availableSince",
   lc."latitude", lc."longitude", lc."accuracyM", lc."speedMps", lc."measuredAt",
   COALESCE(lc."suspicious", false) AS "suspicious",
+  (t."baseLatitude" IS NOT NULL AND t."baseLongitude" IS NOT NULL) AS "hasBase",
   EXISTS (SELECT 1 FROM "OrderOffer" o WHERE o."driverId" = t."id" AND o."status" = 'PENDING') AS "hasPendingOffer",
   (SELECT a."orderId" FROM "OrderAssignment" a WHERE a."driverId" = t."id" AND a."endedAt" IS NULL) AS "activeOrderId",
   now() AS "now"`
@@ -86,9 +89,10 @@ export function mapDriverState(row: Record<string, unknown>): DriverStateRow {
     driverId: toNumber(row.driverId),
     kind: row.kind === 'APP_ONLY' ? 'APP_ONLY' : 'SITE_LINKED',
     towTruckId: toNullableNumber(row.towTruckId),
+    hasBase: row.hasBase === true,
     slug: row.slug == null ? null : String(row.slug),
-    driverName: String(row.driverName),
-    phone: String(row.phone),
+    driverName: String(row.driverName ?? ''),
+    phone: String(row.phone ?? ''),
     vehicleType: String(row.vehicleType),
     isActive: Boolean(row.isActive),
     dispatchSuspendedAt: toNullableDate(row.dispatchSuspendedAt),
@@ -277,6 +281,27 @@ export class FleetRepository {
   }
 
   /**
+   * The driver withdraws location-tracking consent (App Store 5.1.1(ii): an
+   * easy way to withdraw). Also takes him offline, so tracking stops: the
+   * policy is OFF without "wantsOnline" and an active order. Refused during
+   * an active order or a pending offer — tracking IS that job; finish it.
+   */
+  async withdrawTrackingConsent(driverId: number): Promise<void> {
+    const busy = await this.db.query(
+      `SELECT 1 FROM "OrderAssignment" WHERE "driverId" = $1::int AND "endedAt" IS NULL
+       UNION ALL SELECT 1 FROM "OrderOffer" WHERE "driverId" = $1::int AND "status" = 'PENDING' LIMIT 1`,
+      [driverId],
+    )
+    if (busy.length > 0) throw new DispatchError('ACTIVE_ORDER_IN_PROGRESS')
+    await this.db.query(
+      `UPDATE "DriverPresence" SET "trackingConsentVersion" = NULL, "trackingConsentAt" = NULL,
+              "wantsOnline" = false, "availableSince" = NULL, "updatedAt" = now()
+        WHERE "driverId" = $1::int`,
+      [driverId],
+    )
+  }
+
+  /**
    * The driver's own switches. Going offline during an active order only
    * stops NEW offers; the order itself is untouched.
    */
@@ -347,6 +372,27 @@ export class FleetRepository {
       await this.assertActiveSession(tx, sessionId, driverId)
       const [{ now }] = await tx.query<{ now: Date }>(`SELECT now() AS "now"`)
       const receivedAt = toDate(now)
+
+      // Withdrawn (or never given) consent means NOTHING is stored — not even
+      // fixes the phone buffered before the withdrawal and sends afterwards.
+      // Answered as rejections (not an error) so the app drops them instead
+      // of retrying forever; the OFF policy stops its tracking.
+      const [consent] = await tx.query<{ version: number | null; orderId: number | null }>(
+        `SELECT (SELECT "trackingConsentVersion" FROM "DriverPresence" WHERE "driverId" = $1::int) AS "version",
+                (SELECT a."orderId" FROM "OrderAssignment" a WHERE a."driverId" = $1::int AND a."endedAt" IS NULL) AS "orderId"`,
+        [driverId],
+      )
+      if ((toNullableNumber(consent?.version) ?? 0) < TRACKING_CONSENT_VERSION) {
+        return {
+          serverTime: receivedAt.toISOString(),
+          accepted: 0,
+          rejected: fixes.map((f) => ({ seq: typeof f?.seq === 'number' ? f.seq : null, reason: 'NO_CONSENT' as const })),
+          currentUpdated: false,
+          suspicious: false,
+          policy: trackingPolicy({ wantsOnline: false, hasActiveOrder: consent?.orderId != null, lastSpeedMps: null }),
+        }
+      }
+
       const batch = classifyBatch(fixes, receivedAt, settings)
 
       const [context] = await tx.query<{ orderId: number | null }>(

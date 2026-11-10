@@ -20,7 +20,8 @@ export type AttentionKind =
   | 'DRIVER_PROBLEM'
   | 'OPERATOR_FLAG'
 
-export type CancelReason = 'DRIVER_CANNOT_PERFORM' | 'CUSTOMER_DECLINED' | 'WRONG_DATA' | 'PRICE_NOT_AGREED' | 'TECHNICAL_PROBLEM' | 'OTHER'
+/** NOT_SPECIFIED only ever comes from a driver who picked no reason in time — an operator cannot choose it */
+export type CancelReason = 'DRIVER_CANNOT_PERFORM' | 'CUSTOMER_DECLINED' | 'WRONG_DATA' | 'PRICE_NOT_AGREED' | 'TECHNICAL_PROBLEM' | 'OTHER' | 'NOT_SPECIFIED'
 export type PaymentStatus = 'UNKNOWN' | 'UNPAID' | 'PAID'
 export type PricingMode = 'FIXED' | 'NEGOTIATION_REQUIRED'
 export type ProgressAction = 'EN_ROUTE' | 'ARRIVED' | 'START_TRANSPORT' | 'COMPLETE'
@@ -28,6 +29,13 @@ export type ProgressAction = 'EN_ROUTE' | 'ARRIVED' | 'START_TRANSPORT' | 'COMPL
 export interface OpsPoint {
   latitude: number
   longitude: number
+  address: string
+}
+
+/** Pickup only (product decision, 2026-11): coordinates may be unknown — a "phone it in" order, manual-assign only. */
+export interface OpsPickupPoint {
+  latitude: number | null
+  longitude: number | null
   address: string
 }
 
@@ -41,7 +49,7 @@ export interface OpsOrder {
   version: number
   termsVersion: number
   customer: { phone: string; name: string | null }
-  pickup: OpsPoint
+  pickup: OpsPickupPoint
   destination: OpsPoint | null
   vehicle: { make: string | null; model: string | null; plate: string | null; weightKg: number | null }
   problemDescription: string
@@ -50,6 +58,8 @@ export interface OpsOrder {
     steeringLocked: boolean | null
     gearboxLocked: boolean | null
     needsManipulator: boolean | null
+    needsWheelSkates?: boolean | null
+    wheelSkatesCount?: number | null
     overridden: boolean
     overrideNote: string | null
   }
@@ -88,6 +98,8 @@ export interface OpsCandidate {
   routedAt: string | null
   status: 'QUEUED' | 'OFFERED' | 'SKIPPED'
   skipReason: string | null
+  /** BASE = no usable GPS; distance measured from the driver's base (dispatch fallback) */
+  locationSource?: 'GPS' | 'BASE'
 }
 
 export interface OpsTimelineEvent {
@@ -156,7 +168,8 @@ export interface OpsApiError {
  * website password. APP_ONLY — registered in the app, never on the website.
  */
 export type FleetDriverKind = 'SITE_LINKED' | 'APP_ONLY'
-export type FleetDriverStatus = 'PENDING_REVIEW' | 'ACTIVE' | 'SUSPENDED' | 'REJECTED'
+/** DELETED: the driver deleted his own app account; personal data cleared */
+export type FleetDriverStatus = 'PENDING_REVIEW' | 'ACTIVE' | 'SUSPENDED' | 'REJECTED' | 'DELETED'
 
 export interface FleetDriver {
   id: number

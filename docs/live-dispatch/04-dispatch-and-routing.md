@@ -32,7 +32,7 @@ RECONCILER (3 s): overdue offers, stuck searches, slow-search alerts, GPS-lost /
 | `candidateBatchSize` | 10 |
 | `yerevanRadiiMeters` | 8 / 20 / 40 կմ (pickup-ը Երևանի կենտրոնից ≤ 15 կմ) |
 | `regionRadiiMeters` | 25 / 60 / 120 կմ |
-| `offerTimeoutSeconds` | 30 |
+| `offerTimeoutSeconds` | 45 |
 | `searchAlertSeconds` | 90 → `SEARCH_SLOW` alert |
 | `searchMaxSeconds` | 600 → `NEEDS_ATTENTION (SEARCH_TIMEOUT)` |
 | `maxOffersPerAttempt` | 25 → `NEEDS_ATTENTION (SEARCH_EXHAUSTED)` |
@@ -42,6 +42,16 @@ RECONCILER (3 s): overdue offers, stuck searches, slow-search alerts, GPS-lost /
 Batch-ը սպառվելիս վերցվում է հաջորդ batch-ը նույն շառավղում, հետո՝ ավելի մեծ
 շառավիղ։ Նույն փորձում նույն վարորդին կրկին չի առաջարկվում (`DispatchCandidate`
 unique)։ Երբ շառավիղները սպառված են → `NEEDS_ATTENTION`, ոչ անվերջ շրջան։
+
+## Կայանատեղիով պահուստային որոնում (2026-11)
+
+Եթե շառավիղների ամբողջ սանդուղքով **թարմ GPS-ով** ոչ մի վարորդ չի գտնվել, engine-ը նույն սանդուղքով անցնում է երկրորդ անգամ՝ `source: 'BASE'`։ Թեկնածու են այն վարորդները, որոնք միացված են («Ընդունում եմ պատվերներ»), **հավելվածը կապված է** (heartbeat ≤ `heartbeatMaxAgeSeconds`), բայց GPS-ը հին է, անճշգրիտ, կասկածելի կամ բացակայում է, և ունեն կայանատեղի։ Հեռավորությունը հաշվվում է կայանատեղիից։
+
+- Կայանատեղին՝ SITE_LINKED-ի համար `TowTruck.latitude/longitude` (կայքի գրանցումից), APP_ONLY-ի համար `FleetDriver.baseLatitude/baseLongitude` (հավելվածի գրանցման ժամանակ ըստ ցանկության)։ Միավորված է `FleetDriverProfile` view-ում։
+- Թարմ GPS-ով վարորդը **միշտ** առաջարկվում է կայանատեղիով վարորդից առաջ. `searchStage`-ը 0…n-1 GPS է, n…2n-1՝ BASE։
+- `DispatchCandidate.locationSource`-ը պահում է, թե ինչով է գտնվել թեկնածուն. առաջարկի պահին նույն կանոնով է կրկին ստուգվում (`eligibleAmong(…, source)`), route refresh-ը՝ կայանատեղիից։
+- Հաճախորդին երևացող «Հիմա առցանց մոտակայքում» (`nearby-live`) ցուցակը **միայն GPS** է, երբեք կայանատեղի։
+- Վարորդի հավելվածում `availability.baseFallback`-ը ցույց է տալիս «Պատվերներ՝ միայն ըստ կայանատեղիի»՝ «պատվերներ չեք ստանա»-ի փոխարեն։
 
 ## Տեխնիկական համապատասխանություն
 
@@ -54,6 +64,8 @@ unique)։ Երբ շառավիղները սպառված են → `NEEDS_ATTENTION
 2. Բեռնատարողություն → `maxLoadTons ?? capacityTons` (band-ի ներկայացուցչական արժեքը)։
 3. `heavy-duty` տեսակը սովորական պատվերի համար չի առաջարկվում (միայն > 3500 կգ)։
 4. `manipulator` տեսակը՝ միայն երբ crane է պետք։
+
+- **Անիվային ռոլիկներ (2026-11).** Օպերատորը կարող է նշել «Պետք են անիվային ռոլիկներ» (`needsWheelSkates`) և ըստ ցանկության քանակը 1–4 (`wheelSkatesCount`)։ `true`-ի դեպքում թեկնածու են **միայն** `wheelSkates`-ով մեքենաները. կռունկը այստեղ չի փոխարինում (ի տարբերություն «անիվները չեն պտտվում» կանոնի)։ Քանակը միայն վարորդի համար է. պրոֆիլներում ռոլիկների թիվ չկա, ուստի ըստ քանակի ֆիլտր չկա։
 
 ## Routing provider
 
@@ -69,6 +81,8 @@ Google Routes API-ի փաստերը (ստուգված 2026-11-08 պաշտոնա�
 սխալ element-ները OK են թվում), ≤ 625 element/request (100՝ `TRAFFIC_AWARE_OPTIMAL`),
 3000 EPM, billing՝ ըստ element-ի (origins × destinations)։ proto3 JSON-ը բաց է թողնում
 զրոյական index-ները — adapter-ը `originIndex ?? 0` է կարդում (թեստավորված)։
+
+**ORS key-ը կիսված է կայքի հետ (2026-11).** ORS-ը հաշվում է **հարցումները**, ոչ element-ները, իսկ key-ը մեկն է կայքի `/evakuator` որոնման հետ։ Բաժանումը մեկ տեղում է՝ `backend/src/routing/routing.constants.ts`. կայք՝ 100/օր, բաշխում՝ 380/օր (`DISPATCH_ROUTING_DAILY_REQUESTS`-ով կարելի է փոխել), 20՝ պահուստ։ Ամեն փորձ (retry-ն էլ) նախօրոք ամրագրվում է `RoutingUsageDay.requests`-ում. սահմանից հետո՝ ուղիղ գիծ, պատվերը չի կանգնում։ Հանրային live որոնումը ORS-ով 0 հարցում ունի, մինչև `PUBLIC_NEARBY_DAILY_REQUESTS`-ը չտրվի։
 
 **Ինչ չենք անում.**
 

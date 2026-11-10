@@ -17,7 +17,12 @@ describe('realtime WebSocket gateway (real ws server)', () => {
   const acks: string[] = []
   let driver7Valid = true
 
+  // Node 22+ has a global WebSocket client; older Node (e.g. 20) does not, so
+  // fall back to the `ws` package (already installed as a dependency of the
+  // server side). Same API surface used below: addEventListener/send/close.
+  let WebSocketClient: typeof WebSocket
   before(async () => {
+    WebSocketClient = globalThis.WebSocket ?? ((await import('ws')).default as unknown as typeof WebSocket)
     server = createServer((_, res) => res.end('ok'))
     gateway = new RealtimeGateway(server, bus, {
       path: '/api/v1/realtime',
@@ -42,7 +47,7 @@ describe('realtime WebSocket gateway (real ws server)', () => {
   })
 
   function connect(token: string, role: 'driver' | 'ops') {
-    const socket = new WebSocket(url)
+    const socket = new WebSocketClient(url)
     const messages: Record<string, unknown>[] = []
     const closed = new Promise<number>((resolve) => socket.addEventListener('close', (e) => resolve(e.code)))
     const ready = new Promise<void>((resolve, reject) => {
@@ -76,7 +81,7 @@ describe('realtime WebSocket gateway (real ws server)', () => {
   it('a bad token or no auth frame is closed with 4401', async () => {
     const bad = connect('forged', 'ops')
     assert.equal(await bad.closed, 4401)
-    const silent = new WebSocket(url)
+    const silent = new WebSocketClient(url)
     const code = await new Promise<number>((resolve) => silent.addEventListener('close', (e) => resolve(e.code)))
     assert.equal(code, 4401)
   })

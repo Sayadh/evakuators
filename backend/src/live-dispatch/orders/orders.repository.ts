@@ -17,6 +17,7 @@ import { Params, toDate, toNumber } from '../platform/params'
 import type { DispatchSettings } from '../platform/settings'
 import type { Sql, SqlDatabase } from '../platform/sql'
 import {
+  assertAutoDispatchable,
   assertDispatchable,
   bumpOrder,
   createAttempt,
@@ -88,7 +89,7 @@ export class OrdersRepository {
           "pickupLatitude", "pickupLongitude", "pickupAddress",
           "destinationLatitude", "destinationLongitude", "destinationAddress",
           "vehicleMake", "vehicleModel", "vehiclePlate", "vehicleWeightKg", "problemDescription",
-          "wheelsRoll", "steeringLocked", "gearboxLocked", "needsManipulator",
+          "wheelsRoll", "steeringLocked", "gearboxLocked", "needsManipulator", "needsWheelSkates", "wheelSkatesCount",
           "pricingMode", "quotedPriceAmd", "internalNote")
        VALUES ('ADMIN', ${p.add(adminUserId)}::int, ${p.add(input.customerPhone)}, ${p.add(input.customerName ?? null)},
           ${p.add(input.pickup.latitude)}::numeric, ${p.add(input.pickup.longitude)}::numeric, ${p.add(input.pickup.address)},
@@ -98,6 +99,8 @@ export class OrdersRepository {
           ${p.add(input.vehicle.weightKg ?? null)}::int, ${p.add(input.problemDescription)},
           ${p.add(input.requirements.wheelsRoll ?? null)}::boolean, ${p.add(input.requirements.steeringLocked ?? null)}::boolean,
           ${p.add(input.requirements.gearboxLocked ?? null)}::boolean, ${p.add(input.requirements.needsManipulator ?? null)}::boolean,
+          ${p.add(input.requirements.needsWheelSkates ?? null)}::boolean,
+          ${p.add(input.requirements.needsWheelSkates === true ? (input.requirements.wheelSkatesCount ?? null) : null)}::smallint,
           ${p.add(input.pricing.mode)}::"OrderPricingMode", ${p.add(input.pricing.quotedPriceAmd ?? null)}::int,
           ${p.add(input.internalNote ?? null)})
        RETURNING ${ORDER_COLUMNS}`,
@@ -223,6 +226,7 @@ export class OrdersRepository {
     checkVersion(order, expectedVersion)
     planTransition('START_DISPATCH', snapshotOf(order), 'ADMIN')
     assertDispatchable(order)
+    assertAutoDispatchable(order)
     const attemptId = await createAttempt(tx, orderId, 'AUTO', adminUserId, settings)
     const p = new Params()
     await bumpOrder(
@@ -284,13 +288,20 @@ export class OrdersRepository {
 
   // ─── Price & payment ──────────────────────────────────────────────────────
 
-  async confirmPrice(tx: Sql, orderId: number, agreedPriceAmd: number, expectedVersion: number, adminUserId: number): Promise<OrderRow> {
+  /**
+   * Records the agreed price. An operator (actor ADMIN) or — since 2026-11 —
+   * the assigned driver himself, who agrees it with the customer by phone.
+   * `priceConfirmedBy` stays an admin user id (null when the driver set it);
+   * who did it is always in the audit event's actor.
+   */
+  async confirmPrice(tx: Sql, orderId: number, agreedPriceAmd: number, expectedVersion: number | undefined, actor: ActorRef): Promise<OrderRow> {
     if (!Number.isSafeInteger(agreedPriceAmd) || agreedPriceAmd < 0 || agreedPriceAmd > 10_000_000) {
       throw new DispatchError('VALIDATION_FAILED', { field: 'agreedPriceAmd' })
     }
     const order = await lockOrder(tx, orderId)
+    if (actor.type === 'DRIVER' && order.assignedDriverId !== actor.id) throw new DispatchError('ORDER_NOT_FOUND')
     checkVersion(order, expectedVersion)
-    const planned = planTransition('CONFIRM_PRICE', snapshotOf(order), 'ADMIN')
+    const planned = planTransition('CONFIRM_PRICE', snapshotOf(order), actor.type)
     const p = new Params()
     await bumpOrder(
       tx,
@@ -299,13 +310,14 @@ export class OrdersRepository {
         `"status" = ${p.add(planned.to)}::"DispatchOrderStatus"`,
         `"agreedPriceAmd" = ${p.add(agreedPriceAmd)}::int`,
         `"priceConfirmedAt" = now()`,
-        `"priceConfirmedBy" = ${p.add(adminUserId)}::int`,
+        `"priceConfirmedBy" = ${p.add(actor.type === 'ADMIN' ? actor.id : null)}::int`,
       ],
       p,
     )
-    await recordEvent(tx, orderId, 'PRICE_CONFIRMED', { type: 'ADMIN', id: adminUserId }, { agreedPriceAmd, quotedPriceAmd: order.quotedPriceAmd })
+    await recordEvent(tx, orderId, 'PRICE_CONFIRMED', actor, { agreedPriceAmd, quotedPriceAmd: order.quotedPriceAmd })
     const updated = await lockOrder(tx, orderId)
-    if (updated.assignedDriverId) await pushToDriver(tx, updated, updated.assignedDriverId, 'PRICE_CONFIRMED')
+    const driverId = updated.assignedDriverId
+    if (actor.type === 'ADMIN' && driverId) await pushToDriver(tx, updated, driverId, 'PRICE_CONFIRMED')
     await notifyOrderChanged(tx, updated, 'PRICE_CONFIRMED')
     return updated
   }
@@ -362,21 +374,32 @@ export class OrdersRepository {
   }
 
   /**
-   * The driver asks out (CANCEL) or reports a PROBLEM. A cancel request puts
-   * the order in NEEDS_ATTENTION and KEEPS the assignment: nothing is
-   * re-dispatched, no second truck is sent, until an operator decides.
+   * The driver asks out (CANCEL, only before setting off) or reports a PROBLEM.
+   *
+   * CANCEL (product decision, 2026-11):
+   * - reason CUSTOMER_DECLINED → NEEDS_ATTENTION and the assignment is KEPT:
+   *   the whole order may be off, an operator confirms with the customer.
+   * - any other reason (incl. NOT_SPECIFIED, sent by the app when the driver
+   *   picked none in time) → the driver is released and a new automatic
+   *   search starts without him, in this same transaction; the operator gets
+   *   an informational alert. Falls back to the operator when an automatic
+   *   search is impossible (no pickup coordinates).
+   * PROBLEM never changes the order: an alert, and the operator decides.
    */
   async driverRequest(
     tx: Sql,
     orderId: number,
     driverId: number,
     input: { kind: 'CANCEL' | 'PROBLEM'; reason: string; comment?: string | null },
+    settings: DispatchSettings,
   ): Promise<OrderRow> {
     const order = await lockOrder(tx, orderId)
     if (order.assignedDriverId !== driverId) throw new DispatchError('ORDER_NOT_FOUND')
     const driver: ActorRef = { type: 'DRIVER', id: driverId }
+    const redispatch =
+      input.kind === 'CANCEL' && input.reason !== 'CUSTOMER_DECLINED' && order.pickupLatitude !== null && order.pickupLongitude !== null
     // Decide BEFORE writing anything: a refused request leaves no trace.
-    const planned = input.kind === 'CANCEL' ? planTransition('DRIVER_CANCEL_REQUEST', snapshotOf(order), 'DRIVER') : null
+    const planned = input.kind === 'CANCEL' ? planTransition('DRIVER_CANCEL_REQUEST', snapshotOf(order), 'DRIVER', { redispatch }) : null
     if (order.status === 'COMPLETED' || order.status === 'CANCELLED') throw new DispatchError('INVALID_TRANSITION', { action: 'DRIVER_REQUEST', status: order.status })
     const open = await tx.query(`SELECT 1 FROM "OrderDriverRequest" WHERE "orderId" = $1::int AND "status" = 'OPEN'`, [orderId])
     if (open.length > 0) throw new DispatchError('REQUEST_ALREADY_OPEN')
@@ -386,8 +409,30 @@ export class OrdersRepository {
        VALUES ($1::int, $2::int, $3, $4::"OrderCancelReason", $5) RETURNING "id"`,
       [orderId, driverId, input.kind, input.reason, input.comment ?? null],
     )
+    const requestId = toNumber(request.id)
+    await recordEvent(tx, orderId, input.kind === 'CANCEL' ? 'DRIVER_CANCEL_REQUESTED' : 'DRIVER_PROBLEM_REPORTED', driver, {
+      requestId,
+      reason: input.reason,
+      comment: input.comment ?? null,
+      redispatch,
+    })
+
+    if (planned && redispatch) {
+      // The request is answered by the system right away (resolution below);
+      // the operator is told, not asked.
+      await raiseAlert(tx, orderId, 'DRIVER_CANCELLED_REDISPATCHED', `driver-request:${requestId}`, { reason: input.reason, driverId })
+      return this.release(tx, order, {
+        to: planned.to,
+        actor: driver,
+        reason: `DRIVER_CANCELLED: ${input.reason}`,
+        restartSearch: true,
+        resolution: 'AUTO_REDISPATCHED',
+        settings,
+      })
+    }
+
+    const p = new Params()
     if (planned) {
-      const p = new Params()
       await bumpOrder(
         tx,
         orderId,
@@ -399,21 +444,16 @@ export class OrdersRepository {
         p,
       )
     } else {
-      const p = new Params()
       await bumpOrder(tx, orderId, [], p)
     }
-    await recordEvent(tx, orderId, input.kind === 'CANCEL' ? 'DRIVER_CANCEL_REQUESTED' : 'DRIVER_PROBLEM_REPORTED', driver, {
-      requestId: toNumber(request.id),
-      reason: input.reason,
-      comment: input.comment ?? null,
-    })
-    await raiseAlert(tx, orderId, input.kind === 'CANCEL' ? 'DRIVER_CANCEL_REQUEST' : 'DRIVER_PROBLEM', `driver-request:${request.id}`, {
+    await raiseAlert(tx, orderId, input.kind === 'CANCEL' ? 'DRIVER_CANCEL_REQUEST' : 'DRIVER_PROBLEM', `driver-request:${requestId}`, {
       reason: input.reason,
     })
     const updated = await lockOrder(tx, orderId)
     await notifyOrderChanged(tx, updated, `DRIVER_${input.kind}`)
     return updated
   }
+
 
   async flagAttention(tx: Sql, orderId: number, kind: AttentionKind, note: string, expectedVersion: number, adminUserId: number): Promise<OrderRow> {
     const order = await lockOrder(tx, orderId)
@@ -473,13 +513,40 @@ export class OrdersRepository {
     const order = await lockOrder(tx, orderId)
     checkVersion(order, input.expectedVersion)
     const planned = planTransition('RELEASE_ASSIGNMENT', snapshotOf(order), 'ADMIN', { restartSearch: input.restartSearch })
-    if (input.restartSearch) assertDispatchable(order)
-    const admin: ActorRef = { type: 'ADMIN', id: adminUserId }
+    if (input.restartSearch) {
+      assertDispatchable(order)
+      assertAutoDispatchable(order)
+    }
+    return this.release(tx, order, {
+      to: planned.to,
+      actor: { type: 'ADMIN', id: adminUserId },
+      reason: input.reason,
+      restartSearch: input.restartSearch,
+      resolution: 'ASSIGNMENT_RELEASED',
+      settings,
+    })
+  }
+
+  /**
+   * Ends the active assignment and (optionally) starts a new automatic search
+   * — ONE transaction, so there is never a moment with two trucks on the
+   * order or none and no search. Shared by the operator's release and the
+   * driver's own cancel (`driverRequest`, redispatch path). The new search
+   * never re-offers the order to the driver who just left it, nor to anyone
+   * who already REJECTED it.
+   */
+  private async release(
+    tx: Sql,
+    order: OrderRow,
+    input: { to: OrderStatus; actor: ActorRef; reason: string; restartSearch: boolean; resolution: string; settings: DispatchSettings },
+  ): Promise<OrderRow> {
+    const orderId = order.id
+    const adminUserId = input.actor.type === 'ADMIN' ? input.actor.id : null
     const releasedDriverId = await endActiveAssignment(tx, order, `RELEASED: ${input.reason}`, adminUserId)
-    await resolveOpenRequest(tx, orderId, adminUserId, 'ASSIGNMENT_RELEASED')
+    await resolveOpenRequest(tx, orderId, adminUserId, input.resolution)
     const p = new Params()
     const sets = [
-      `"status" = ${p.add(planned.to)}::"DispatchOrderStatus"`,
+      `"status" = ${p.add(input.to)}::"DispatchOrderStatus"`,
       `"attentionKind" = NULL`,
       `"statusBeforeAttention" = NULL`,
       `"activeAssignmentId" = NULL`,
@@ -492,23 +559,29 @@ export class OrdersRepository {
       `"termsVersion" = "termsVersion" + 1`,
     ]
     await bumpOrder(tx, orderId, sets, p)
-    await recordEvent(tx, orderId, 'ASSIGNMENT_RELEASED', admin, {
+    await recordEvent(tx, orderId, 'ASSIGNMENT_RELEASED', input.actor, {
       releasedDriverId,
       reason: input.reason,
       restartSearch: input.restartSearch,
     })
     if (input.restartSearch) {
-      const attemptId = await createAttempt(tx, orderId, 'AUTO', adminUserId, settings)
-      if (releasedDriverId !== null) {
-        // The driver who just left this job is not offered it again in the
-        // new search (they are free for OTHER orders immediately).
-        await tx.query(
-          `INSERT INTO "DispatchCandidate" ("attemptId", "driverId", "batch", "rank", "straightLineMeters", "status", "skipReason")
-           VALUES ($1::int, $2::int, -1, -1, 0, 'SKIPPED', 'RELEASED_FROM_THIS_ORDER')`,
-          [attemptId, releasedDriverId],
-        )
-      }
-      await recordEvent(tx, orderId, 'DISPATCH_STARTED', admin, { attemptId, afterRelease: true })
+      const attemptId = await createAttempt(tx, orderId, 'AUTO', adminUserId, input.settings)
+      // Not offered again in the new search: the driver who just left this
+      // job (he is free for OTHER orders immediately), and drivers who
+      // already said no to it.
+      await tx.query(
+        `INSERT INTO "DispatchCandidate" ("attemptId", "driverId", "batch", "rank", "straightLineMeters", "status", "skipReason")
+         SELECT $1::int, x."driverId", -1, -1, 0, 'SKIPPED', x."why"
+           FROM (
+             SELECT $3::int AS "driverId", 'RELEASED_FROM_THIS_ORDER' AS "why" WHERE $3::int IS NOT NULL
+             UNION
+             SELECT DISTINCT f."driverId", 'REJECTED_THIS_ORDER' FROM "OrderOffer" f
+              WHERE f."orderId" = $2::int AND f."status" = 'REJECTED' AND f."driverId" IS DISTINCT FROM $3::int
+           ) x
+         ON CONFLICT DO NOTHING`,
+        [attemptId, orderId, releasedDriverId],
+      )
+      await recordEvent(tx, orderId, 'DISPATCH_STARTED', input.actor, { attemptId, afterRelease: true })
       await enqueue(tx, { topic: 'dispatch.advance', payload: { orderId, attemptId }, dedupeKey: `advance:${attemptId}:start` })
     }
     const updated = await lockOrder(tx, orderId)
@@ -516,6 +589,7 @@ export class OrdersRepository {
     await notifyOrderChanged(tx, updated, 'ASSIGNMENT_RELEASED', releasedDriverId ? [releasedDriverId] : [])
     return updated
   }
+
 
   /** Pickup → destination road figures (computed, or typed by an operator — marked as such) */
   async setRoute(

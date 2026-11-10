@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { measureClock, secondsLeft } from '../src/domain/countdown'
 import { addFixes, nextChunk, removeSent, MAX_FIXES_PER_REQUEST, type Fix } from '../src/location/buffer'
-import { jittered, needsRestart, DEFAULT_POLICY } from '../src/location/policy'
+import { fixIsDue, jittered, keepFix, needsRestart, DEFAULT_POLICY } from '../src/location/policy'
 import { reconcile, type PendingAction } from '../src/state/pendingActions'
 
 describe('countdown uses the server clock', () => {
@@ -50,6 +50,21 @@ describe('tracking policy', () => {
     assert.equal(needsRestart(null, DEFAULT_POLICY), true)
     assert.equal(needsRestart(DEFAULT_POLICY, { ...DEFAULT_POLICY }), false)
     assert.equal(needsRestart(DEFAULT_POLICY, { ...DEFAULT_POLICY, mode: 'ACTIVE_ORDER', locationIntervalSeconds: 12 }), true)
+  })
+  it('never gates on distance, and reports at least once a minute', () => {
+    assert.equal(DEFAULT_POLICY.distanceFilterMeters, 0)
+    assert.ok(DEFAULT_POLICY.locationIntervalSeconds! + DEFAULT_POLICY.jitterSeconds <= 60)
+  })
+  it('thins the OS fixes by time: one per interval, an early-ish one still counts', () => {
+    assert.equal(keepFix(null, 1_000, 55), true)
+    assert.equal(keepFix(0, 1_000, 55), false) // the OS repeating every second
+    assert.equal(keepFix(0, 44_000, 55), true) // 0.8 × 55 s
+    assert.equal(keepFix(0, 43_000, 55), false)
+  })
+  it('asks the OS for a fix in the foreground once the newest is a full interval old', () => {
+    assert.equal(fixIsDue(null, 0, 55), true)
+    assert.equal(fixIsDue(0, 54_000, 55), false)
+    assert.equal(fixIsDue(0, 55_000, 55), true)
   })
 })
 

@@ -1,6 +1,6 @@
-import React, { useState } from 'react'
-import { Text, TextInput, StyleSheet } from 'react-native'
-import { ApiError, NetworkError } from '../api/client'
+import { useState } from 'react'
+import { Linking, Text, TextInput, StyleSheet } from 'react-native'
+import { ApiError, NetworkError, PRIVACY_POLICY_URL } from '../api/client'
 import { loginErrorKey } from '../domain/registration'
 import { useT } from '../i18n'
 import { useApp } from '../state/AppState'
@@ -39,6 +39,7 @@ export function LoginScreen({ onRegister }: { onRegister: () => void }) {
         <Note>{t('login.otherDevice')}</Note>
       </Card>
       <Button label={t('login.noAccount')} onPress={onRegister} variant="outline" />
+      <Button label={t('privacy.policy')} onPress={() => void Linking.openURL(PRIVACY_POLICY_URL)} variant="outline" />
     </Screen>
   )
 }

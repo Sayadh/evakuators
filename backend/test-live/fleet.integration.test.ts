@@ -35,6 +35,21 @@ describe('fleet: sessions, presence, location (real Postgres)', { skip: integrat
     )
   })
 
+  it('withdrawn consent: buffered fixes sent afterwards are NOT stored, the app is told to drop them and stop', async () => {
+    const { driverId, sessionId } = await onlineDriver()
+    await fleet().ingestLocations(driverId, sessionId, [fix(1, 3)], settings())
+    await fleet().withdrawTrackingConsent(driverId)
+    const late = await fleet().ingestLocations(driverId, sessionId, [fix(2, 2), fix(3, 1)], settings())
+    assert.equal(late.accepted, 0)
+    assert.deepEqual(late.rejected.map((r) => r.reason), ['NO_CONSENT', 'NO_CONSENT'])
+    assert.equal(late.currentUpdated, false)
+    assert.equal(late.policy.mode, 'OFF')
+    const [{ n }] = await ctx.get().pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM "DriverLocationHistory" WHERE "driverId" = $1::int AND "seq" > 1`, [driverId])
+    assert.equal(n, 0, 'nothing after the withdrawal reached history')
+    const state = await fleet().driverState(driverId)
+    assert.equal(state!.wantsOnline, false)
+  })
+
   it('a fresh fix makes an online driver eligible', async () => {
     const { driverId, sessionId } = await onlineDriver()
     const result = await fleet().ingestLocations(driverId, sessionId, [fix(1, 3)], settings())

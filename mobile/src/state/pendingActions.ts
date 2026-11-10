@@ -9,7 +9,7 @@
  * reconnect, never by assuming success. Nothing is shown as accepted until
  * the server said so.
  */
-export type PendingKind = 'ACCEPT' | 'REJECT' | 'PROGRESS' | 'REQUEST'
+export type PendingKind = 'ACCEPT' | 'REJECT' | 'PROGRESS' | 'PRICE' | 'REQUEST'
 export type PendingStatus = 'SENDING' | 'CONFIRMED' | 'FAILED' | 'UNCERTAIN'
 
 export interface PendingAction {

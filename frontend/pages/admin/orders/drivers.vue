@@ -31,6 +31,7 @@ const STATUS_LABEL: Record<FleetDriverStatus, string> = {
   ACTIVE: 'Ակտիվ',
   SUSPENDED: 'Կասեցված',
   REJECTED: 'Մերժված',
+  DELETED: 'Վարորդը ջնջել է հաշիվը',
 }
 const KIND_LABEL: Record<FleetDriverKind, string> = {
   SITE_LINKED: 'Կայքի վարորդ',
@@ -61,7 +62,7 @@ const linkResults = ref<FleetSiteCandidate[]>([])
 const vehicleLabel = (type: string) => VEHICLE_TYPE_LABELS[type as VehicleType] ?? type
 
 function capacity(d: FleetDriver): string {
-  const parts = [d.capacityTons !== null ? `${d.capacityTons} տ` : null, d.manipulator ? 'կռունկ' : null, d.wheelSkates ? 'սայլակներ' : null]
+  const parts = [d.capacityTons !== null ? `${d.capacityTons} տ` : null, d.manipulator ? 'կռունկ' : null, d.wheelSkates ? 'անիվային ռոլիկներ' : null]
   return parts.filter(Boolean).join(' · ')
 }
 
@@ -120,6 +121,12 @@ const grant = (c: FleetSiteCandidate) =>
   run(`grant-${c.towTruckId}`, () => opsDispatchRepository.grantSiteAccess(c.towTruckId), (d) => `${d.driverName}-ին տրվեց հավելվածի հասանելիություն։ Մուտքը՝ կայքի գաղտնաբառով։`)
 const approve = (d: FleetDriver) =>
   run(`approve-${d.id}`, () => opsDispatchRepository.fleetAction(d.id, 'approve'), (x) => `${x.driverName}-ի հայտը հաստատվեց։`)
+/** Deleting is irreversible: the first click only arms the button for this driver */
+const deleteArmed = ref<number | null>(null)
+const deleteOnRequest = (d: FleetDriver) => {
+  deleteArmed.value = null
+  return run(`delete-${d.id}`, () => opsDispatchRepository.fleetAction(d.id, 'delete-account'), () => 'Հաշիվը ջնջվեց (անձնական տվյալներն ու տեղադրության պատմությունը)։')
+}
 const reactivate = (d: FleetDriver) =>
   run(`reactivate-${d.id}`, () => opsDispatchRepository.fleetAction(d.id, 'reactivate'), (x) => `${x.driverName}-ի հասանելիությունը վերականգնվեց։`)
 
@@ -252,7 +259,18 @@ useSeoMetaData({ title: 'Հավելվածի վարորդներ', description: '�
                 <AppButton v-if="d.status === 'ACTIVE'" size="sm" variant="outline" :disabled="busyId !== null" @click="reasonFor = { id: d.id, action: 'suspend' }">Կասեցնել</AppButton>
                 <AppButton v-if="d.status === 'SUSPENDED'" size="sm" :disabled="busyId !== null" @click="reactivate(d)">Վերականգնել</AppButton>
                 <AppButton v-if="d.status === 'PENDING_REVIEW'" size="sm" :disabled="busyId !== null" @click="approve(d)">Հաստատել</AppButton>
-                <AppButton v-if="d.kind === 'APP_ONLY'" size="sm" variant="ghost" :disabled="busyId !== null" @click="linkFor = linkFor === d.id ? null : d.id">Կապել կայքի պրոֆիլին</AppButton>
+                <AppButton v-if="d.kind === 'APP_ONLY' && d.status !== 'DELETED'" size="sm" variant="ghost" :disabled="busyId !== null" @click="linkFor = linkFor === d.id ? null : d.id">Կապել կայքի պրոֆիլին</AppButton>
+                <template v-if="d.status !== 'DELETED'">
+                  <AppButton
+                    v-if="deleteArmed !== d.id"
+                    size="sm"
+                    variant="ghost"
+                    :disabled="busyId !== null"
+                    title="Վարորդի խնդրանքով (առանց հավելվածի). նախ համոզվեք, որ խնդրողը հենց նա է"
+                    @click="deleteArmed = d.id"
+                  >Ջնջել հաշիվը</AppButton>
+                  <AppButton v-else size="sm" variant="danger" :disabled="busyId !== null" @click="deleteOnRequest(d)">Հաստատել ջնջումը</AppButton>
+                </template>
               </td>
             </tr>
             <tr v-if="reasonFor?.id === d.id && reasonFor.action === 'suspend'">

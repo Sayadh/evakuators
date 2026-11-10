@@ -16,7 +16,7 @@ import { api, ApiError, configureClient, newKey, UncertainError } from '../api/c
 import type { ProgressAction, Snapshot } from '../api/types'
 import { deviceId, getToken, setToken } from '../auth/session'
 import { measureClock, type ServerClock } from '../domain/countdown'
-import { applyPolicy, bindSession, flush, stopTracking } from '../location/tracking'
+import { applyPolicy, bindSession, ensureFreshFix, flush, stopTracking } from '../location/tracking'
 import { registerPushToken, subscribePush } from '../push/push'
 import { connectRealtime } from '../realtime/socket'
 import { reconcile, type PendingAction, type PendingKind } from './pendingActions'
@@ -38,9 +38,15 @@ interface Ctx {
   setOnline(value: boolean): Promise<void>
   setExternalBusy(value: boolean): Promise<void>
   consent(): Promise<void>
+  /** Withdraw location consent: offline, tracking stops (throws ApiError when refused) */
+  withdrawConsent(): Promise<void>
+  /** Delete the app account, then sign out on this device (throws ApiError when refused) */
+  deleteAccount(password: string): Promise<void>
   accept(offerId: string): Promise<void>
-  reject(offerId: string): Promise<void>
+  reject(offerId: string, reason?: string | null): Promise<void>
   progress(orderId: number, action: ProgressAction): Promise<void>
+  /** The price agreed with the customer by phone; true when the server took it */
+  setPrice(orderId: number, agreedPriceAmd: number): Promise<boolean>
   sendRequest(orderId: number, body: { kind: 'CANCEL' | 'PROBLEM'; reason: string; comment: string | null }): Promise<boolean>
 }
 
@@ -119,8 +125,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     })
     const sub = RNAppState.addEventListener('change', (state) => {
       if (state === 'active') {
-        void flush()
-        void refresh()
+        // Back in the app: a fix now, not up to one interval later.
+        void ensureFreshFix().finally(() => void flush().finally(() => void refresh()))
       }
     })
     // Foreground heartbeat (background heartbeats ride on the location task)
@@ -132,7 +138,11 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     const safetyNet = setInterval(() => {
       if (RNAppState.currentState !== 'active') return
       const s = snapshotRef.current
-      if (s && (s.switches.wantsOnline || s.currentOffer || s.activeOrder)) void refresh()
+      if (s && (s.switches.wantsOnline || s.currentOffer || s.activeOrder)) {
+        // GPS floor first (no-op unless the newest fix is older than the
+        // policy interval), so the re-read already shows the fresh position.
+        void ensureFreshFix().finally(() => void refresh())
+      }
     }, SAFETY_REFRESH_MS)
     return () => {
       stopRealtime()
@@ -154,8 +164,9 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     setPending((list) => [...list.filter((a) => a.id !== action.id), { ...action, status: 'SENDING' }])
     try {
       if (action.kind === 'ACCEPT') await api.accept(action.targetId, action.idempotencyKey)
-      else if (action.kind === 'REJECT') await api.reject(action.targetId, action.idempotencyKey)
+      else if (action.kind === 'REJECT') await api.reject(action.targetId, action.idempotencyKey, (action.payload.reason as string | null) ?? null)
       else if (action.kind === 'PROGRESS') await api.progress(Number(action.targetId), action.payload.action as ProgressAction, action.idempotencyKey)
+      else if (action.kind === 'PRICE') await api.confirmPrice(Number(action.targetId), action.payload.agreedPriceAmd as number, action.idempotencyKey)
       else await api.request(Number(action.targetId), action.payload as never, action.idempotencyKey)
       setPending((list) => list.map((a) => (a.id === action.id ? { ...a, status: 'CONFIRMED' } : a)))
       await refresh()
@@ -210,9 +221,20 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         await api.consent(1)
         await refresh()
       },
+      async withdrawConsent() {
+        await api.withdrawConsent()
+        await stopTracking()
+        await refresh()
+      },
+      async deleteAccount(password) {
+        await api.deleteAccount(password)
+        // The server already ended every session; this clears the device.
+        await forceLogout()
+      },
       accept: async (offerId) => void (await start('ACCEPT', offerId)),
-      reject: async (offerId) => void (await start('REJECT', offerId)),
+      reject: async (offerId, reason = null) => void (await start('REJECT', offerId, { reason })),
       progress: async (orderId, action) => void (await start('PROGRESS', String(orderId), { action })),
+      setPrice: (orderId, agreedPriceAmd) => start('PRICE', String(orderId), { agreedPriceAmd }),
       sendRequest: (orderId, body) => start('REQUEST', String(orderId), body),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps

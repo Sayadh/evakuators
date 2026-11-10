@@ -14,12 +14,12 @@
 | `STOP_DISPATCH` | `SEARCHING` | DRAFT | ADMIN | pending offer is revoked in the same transaction |
 | `OFFER_ACCEPTED` | `SEARCHING` | ASSIGNED (FIXED) \| PRICE_CONFIRMATION_PENDING (NEGOTIATION_REQUIRED) | DRIVER | offer PENDING, before deadline (DB clock), terms version current, order and driver have no active assignment |
 | `SEARCH_FAILED` | `SEARCHING` | NEEDS_ATTENTION | SYSTEM | candidates exhausted, attempt limit or max duration reached, no pending offer |
-| `CONFIRM_PRICE` | `PRICE_CONFIRMATION_PENDING`, `EN_ROUTE_TO_PICKUP`, `ARRIVED_AT_PICKUP` | ASSIGNED from PRICE_CONFIRMATION_PENDING, otherwise unchanged | ADMIN | NEGOTIATION_REQUIRED and not yet confirmed; agreed price ≥ 0 |
+| `CONFIRM_PRICE` | `PRICE_CONFIRMATION_PENDING`, `EN_ROUTE_TO_PICKUP`, `ARRIVED_AT_PICKUP` | ASSIGNED from PRICE_CONFIRMATION_PENDING, otherwise unchanged | ADMIN, DRIVER | NEGOTIATION_REQUIRED and not yet confirmed; agreed price ≥ 0; a driver only on their own order (he agrees it with the customer by phone — 2026-11) |
 | `EN_ROUTE` | `ASSIGNED`, `PRICE_CONFIRMATION_PENDING` | EN_ROUTE_TO_PICKUP | DRIVER, ADMIN | driver may head out while the price is being agreed |
 | `ARRIVED` | `ASSIGNED`, `PRICE_CONFIRMATION_PENDING`, `EN_ROUTE_TO_PICKUP` | ARRIVED_AT_PICKUP | DRIVER, ADMIN | — |
 | `START_TRANSPORT` | `ARRIVED_AT_PICKUP` | TRANSPORTING | DRIVER, ADMIN | price FIXED or confirmed (PRICE_NOT_CONFIRMED otherwise) |
 | `COMPLETE` | `TRANSPORTING` | COMPLETED | DRIVER, ADMIN | ends the assignment; does NOT change payment status |
-| `DRIVER_CANCEL_REQUEST` | `PRICE_CONFIRMATION_PENDING`, `ASSIGNED`, `EN_ROUTE_TO_PICKUP`, `ARRIVED_AT_PICKUP`, `TRANSPORTING` | NEEDS_ATTENTION (DRIVER_CANCEL_REQUEST) | DRIVER | assignment is KEPT; nothing is re-dispatched until an operator releases it |
+| `DRIVER_CANCEL_REQUEST` | `PRICE_CONFIRMATION_PENDING`, `ASSIGNED` | SEARCHING (redispatch) or NEEDS_ATTENTION (DRIVER_CANCEL_REQUEST) | DRIVER | not yet EN_ROUTE (2026-11 — once en route a driver can only report a PROBLEM). Reason other than CUSTOMER_DECLINED (incl. NOT_SPECIFIED, sent when the driver picks none in 45 s) and the pickup has coordinates → the driver is released and a new automatic search starts without him (nor anyone who already rejected the order), same transaction. CUSTOMER_DECLINED → assignment KEPT until an operator decides |
 | `FLAG_ATTENTION` | `PRICE_CONFIRMATION_PENDING`, `ASSIGNED`, `EN_ROUTE_TO_PICKUP`, `ARRIVED_AT_PICKUP`, `TRANSPORTING` | NEEDS_ATTENTION (OPERATOR_FLAG \| DRIVER_PROBLEM) | ADMIN | assignment is kept |
 | `RESUME_FROM_ATTENTION` | `NEEDS_ATTENTION` | statusBeforeAttention | ADMIN | only when a driver is still attached; open driver request is resolved |
 | `RELEASE_ASSIGNMENT` | `NEEDS_ATTENTION`, `PRICE_CONFIRMATION_PENDING`, `ASSIGNED`, `EN_ROUTE_TO_PICKUP`, `ARRIVED_AT_PICKUP` | DRAFT, or SEARCHING when restartSearch=true | ADMIN | explicit operator confirmation; ends the assignment, resolves the open request; one transaction |
@@ -48,9 +48,8 @@ stateDiagram-v2
   TRANSPORTING --> COMPLETED: COMPLETE
   PRICE_CONFIRMATION_PENDING --> NEEDS_ATTENTION: DRIVER_CANCEL_REQUEST
   ASSIGNED --> NEEDS_ATTENTION: DRIVER_CANCEL_REQUEST
-  EN_ROUTE_TO_PICKUP --> NEEDS_ATTENTION: DRIVER_CANCEL_REQUEST
-  ARRIVED_AT_PICKUP --> NEEDS_ATTENTION: DRIVER_CANCEL_REQUEST
-  TRANSPORTING --> NEEDS_ATTENTION: DRIVER_CANCEL_REQUEST
+  ASSIGNED --> SEARCHING: DRIVER_CANCEL_REQUEST (redispatch)
+  PRICE_CONFIRMATION_PENDING --> SEARCHING: DRIVER_CANCEL_REQUEST (redispatch)
   PRICE_CONFIRMATION_PENDING --> NEEDS_ATTENTION: FLAG_ATTENTION
   ASSIGNED --> NEEDS_ATTENTION: FLAG_ATTENTION
   EN_ROUTE_TO_PICKUP --> NEEDS_ATTENTION: FLAG_ATTENTION

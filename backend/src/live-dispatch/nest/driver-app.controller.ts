@@ -82,6 +82,8 @@ export class DriverAppController {
       manipulator: body?.manipulator,
       wheelSkates: body?.wheelSkates,
       vehicleDescription: body?.vehicleDescription,
+      baseLatitude: body?.baseLatitude,
+      baseLongitude: body?.baseLongitude,
     })
   }
 
@@ -97,6 +99,25 @@ export class DriverAppController {
   @HttpCode(204)
   async consent(@Req() req: DriverAppRequest, @Body() body: { version?: number }): Promise<void> {
     await this.holder.runtime.fleet.recordTrackingConsent(req.driverId, Number(body?.version))
+  }
+
+  /** Withdraws location consent (and goes offline) — see FleetRepository.withdrawTrackingConsent */
+  @UseGuards(DriverAppGuard)
+  @Delete('consent/tracking')
+  @HttpCode(204)
+  async withdrawConsent(@Req() req: DriverAppRequest): Promise<void> {
+    await this.holder.runtime.fleet.withdrawTrackingConsent(req.driverId)
+  }
+
+  /** The driver deletes his own app account; the password is asked again. See FleetAccess.deleteOwnAccount */
+  @UseGuards(DriverAppGuard)
+  // Re-asks the password: throttled like login, so a stolen token cannot be
+  // used to guess it.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('me/delete')
+  @HttpCode(204)
+  async deleteAccount(@Req() req: DriverAppRequest, @Body() body: { password?: unknown }): Promise<void> {
+    await this.holder.runtime.access.deleteOwnAccount(req.driverId, body?.password)
   }
 
   @UseGuards(DriverAppGuard)
@@ -171,6 +192,12 @@ export class DriverAppController {
       throw new DispatchError('VALIDATION_FAILED', { field: 'action' })
     }
     send(res, await this.holder.service.driverProgress(req.driverId, intParam(orderId, 'orderId'), action, mutationContext(req, body)))
+  }
+
+  @UseGuards(DriverAppGuard)
+  @Post('orders/:orderId/price')
+  async price(@Req() req: DriverAppRequest & Request, @Param('orderId') orderId: string, @Body() body: { agreedPriceAmd?: unknown }, @Res() res: Response) {
+    send(res, await this.holder.service.driverConfirmPrice(req.driverId, intParam(orderId, 'orderId'), Number(body?.agreedPriceAmd), mutationContext(req, body)))
   }
 
   @UseGuards(DriverAppGuard)

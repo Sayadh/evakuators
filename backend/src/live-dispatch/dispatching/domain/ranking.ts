@@ -24,6 +24,8 @@ export interface RankInput {
   straightLineMeters: number
   route: RouteEntry | null
   availableSince: Date | null
+  /** Found by live GPS (default) or by the base-location fallback — carried, never ranked on */
+  source?: 'GPS' | 'BASE'
 }
 
 export interface Ranked extends RankInput {

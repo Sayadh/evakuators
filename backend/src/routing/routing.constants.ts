@@ -45,7 +45,19 @@ export const ROUTE_ORS_DAILY_SAFETY_MARGIN = 20
  * refused. There is deliberately no 429 for this: unlike the per-minute
  * throttle, running out of ORS budget is not the visitor's doing.
  */
-export const ROUTE_ORS_DAILY_CALL_LIMIT = ROUTE_ORS_DAILY_QUOTA - ROUTE_ORS_DAILY_SAFETY_MARGIN
+/**
+ * How the ONE key's daily quota is split (2026-11). The website (`/evakuator`
+ * + the admin coordinate search, counted here by `RouteQuotaService`) gets
+ * 100; live dispatch gets the rest minus the safety margin, counted in the
+ * database by `GuardedRouting.dailyRequestBudget` (`RoutingUsageDay`).
+ * Two counters, one key — so the shares must add up to at most the quota;
+ * `test/route-quota.spec.ts` asserts it. Change the split here, nowhere else.
+ */
+export const ROUTE_ORS_SITE_DAILY_SHARE = 100
+export const ROUTE_ORS_DISPATCH_DAILY_SHARE = ROUTE_ORS_DAILY_QUOTA - ROUTE_ORS_SITE_DAILY_SHARE - ROUTE_ORS_DAILY_SAFETY_MARGIN
+
+/** The website's own daily matrix-call limit — its share of the key */
+export const ROUTE_ORS_DAILY_CALL_LIMIT = ROUTE_ORS_SITE_DAILY_SHARE
 
 /** Timeout for the matrix call — past this the straight-line fallback is better than waiting */
 export const ROUTE_MATRIX_TIMEOUT_MS = 4000

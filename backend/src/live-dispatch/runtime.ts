@@ -24,6 +24,7 @@ import { SettingsRepository } from './platform/settings.repository'
 import type { SqlDatabase } from './platform/sql'
 import { createRoutingProvider, FakeRoutingProvider } from './routing/providers'
 import { GuardedRouting, type RoutingProvider } from './routing/routing-provider'
+import { ROUTE_ORS_DISPATCH_DAILY_SHARE } from '../routing/routing.constants'
 
 export interface LiveDispatchConfig {
   enabled: boolean
@@ -36,6 +37,8 @@ export interface LiveDispatchConfig {
   routingTimeoutMs: number
   routingRetries: number
   routingMaxConcurrent: number
+  /** Provider requests per day for dispatch; null = no request cap (see GuardOptions.dailyRequestBudget) */
+  routingDailyRequests: number | null
   pushProvider: 'fcm' | 'recording'
   fcmServiceAccount: ServiceAccount | null
   redisUrl: string
@@ -63,6 +66,13 @@ export function readLiveDispatchConfig(env: NodeJS.ProcessEnv): LiveDispatchConf
     routingTimeoutMs: Number(env.DISPATCH_ROUTING_TIMEOUT_MS ?? 4000),
     routingRetries: Number(env.DISPATCH_ROUTING_RETRIES ?? 1),
     routingMaxConcurrent: Number(env.DISPATCH_ROUTING_MAX_CONCURRENT ?? 4),
+    // ORS bills per request and its key is shared with the website: dispatch
+    // keeps to its share unless the env says otherwise.
+    routingDailyRequests: env.DISPATCH_ROUTING_DAILY_REQUESTS
+      ? Number(env.DISPATCH_ROUTING_DAILY_REQUESTS)
+      : (env.DISPATCH_ROUTING_PROVIDER ?? 'fake') === 'ors'
+        ? ROUTE_ORS_DISPATCH_DAILY_SHARE
+        : null,
     pushProvider,
     fcmServiceAccount,
     redisUrl: env.REDIS_URL ?? '',
@@ -134,6 +144,7 @@ export function createRuntime(
     baseBackoffMs: 250,
     maxConcurrent: config.routingMaxConcurrent,
     dailyElementBudget: () => budget,
+    dailyRequestBudget: config.routingDailyRequests === null ? undefined : () => config.routingDailyRequests as number,
   })
   const loadSettings = async () => {
     const value = await settings.get()

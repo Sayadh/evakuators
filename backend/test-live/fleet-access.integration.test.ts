@@ -82,6 +82,36 @@ describe('app access: site drivers and app-only drivers (real Postgres)', { skip
     await assert.rejects(a.authenticate(phone, 'wrong-pass'), (e: { code: string }) => e.code === 'INVALID_CREDENTIALS', 'no access status without the password')
   })
 
+  it('app-only: the driver deletes his own account — personal data cleared, number free again', async () => {
+    const { access: a } = access()
+    const phone = nextPhone()
+    const { driverId } = await a.register({ ...REGISTRATION, phone, baseLatitude: 40.18, baseLongitude: 44.51 })
+    await a.approve(driverId, await adminId())
+    await assert.rejects(a.deleteOwnAccount(driverId, 'not-the-password'), (e: { code: string }) => e.code === 'INVALID_CREDENTIALS')
+    await a.deleteOwnAccount(driverId, REGISTRATION.password)
+    const [row] = await dbCtx.get().pool.query<Record<string, unknown>>(
+      `SELECT "status", "phone", "passwordHash", "driverName", "baseLatitude" FROM "FleetDriver" WHERE "id" = $1::int`,
+      [driverId],
+    )
+    assert.deepEqual(row, { status: 'DELETED', phone: null, passwordHash: null, driverName: null, baseLatitude: null })
+    await assert.rejects(a.authenticate(phone, REGISTRATION.password), (e: { code: string }) => e.code === 'INVALID_CREDENTIALS')
+    // the number may register again — a new account, not the old one
+    const again = await a.register({ ...REGISTRATION, phone })
+    assert.notEqual(again.driverId, driverId)
+  })
+
+  it('a site driver deleting his app account ends app access only; an admin may grant it again', async () => {
+    const { access: a, hasher } = access()
+    const { phone, towTruckId } = await siteTruck(hasher, 'site-pass-del')
+    const granted = await a.grantSiteAccess(towTruckId, await adminId())
+    await a.deleteOwnAccount(granted.id, 'site-pass-del')
+    await assert.rejects(a.authenticate(phone, 'site-pass-del'), (e: { code: string }) => e.code === 'APP_ACCESS_NOT_GRANTED')
+    const [{ n }] = await dbCtx.get().pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM "TowTruck" WHERE "id" = $1::int`, [towTruckId])
+    assert.equal(n, 1, 'the website profile is untouched')
+    await a.grantSiteAccess(towTruckId, await adminId())
+    assert.equal((await a.authenticate(phone, 'site-pass-del')).driverId, granted.id)
+  })
+
   it('grant → the SAME site password signs into the app; one row; idempotent', async () => {
     const { access: a, hasher } = access()
     const { phone, towTruckId } = await siteTruck(hasher, 'site-pass-1')
@@ -315,6 +345,14 @@ describe('registration validation (pure)', () => {
     const r = parseRegistration(ok)
     assert.equal(r.driverName, 'Արամ Պետրոսյան')
     assert.equal(r.maxLoadTons, null)
+    assert.equal(r.baseLatitude, null)
+  })
+  it('accepts an optional base location inside Armenia, both coordinates or neither', () => {
+    const r = parseRegistration({ ...ok, baseLatitude: 40.1792, baseLongitude: '44.4991' })
+    assert.deepEqual([r.baseLatitude, r.baseLongitude], [40.1792, 44.4991])
+    for (const bad of [{ baseLatitude: 40.18 }, { baseLatitude: 48.85, baseLongitude: 2.35 }, { baseLatitude: 'x', baseLongitude: 44.5 }]) {
+      assert.throws(() => parseRegistration({ ...ok, ...bad }), (e: { code: string; details: { field: string } }) => e.details.field === 'baseLocation')
+    }
   })
   for (const [field, value] of [
     ['phone', '091000001'],

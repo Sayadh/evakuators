@@ -11,7 +11,7 @@ import {
 } from '../src/live-dispatch/orders/domain/order-state'
 import { capabilityMismatches, unconfirmedRequirements } from '../src/live-dispatch/orders/domain/requirements'
 import { DispatchError } from '../src/live-dispatch/platform/errors'
-import { resolveSettings, validateSetting } from '../src/live-dispatch/platform/settings'
+import { DEFAULT_DISPATCH_SETTINGS, resolveSettings, validateSetting } from '../src/live-dispatch/platform/settings'
 import { isoSecondsAgo, settings, YEREVAN } from './helpers'
 
 const NOW = new Date('2026-11-08T10:00:00.000Z')
@@ -104,9 +104,13 @@ describe('GPS validation', () => {
     assert.ok(active.locationIntervalSeconds! <= 15 && active.locationIntervalSeconds! >= 10)
     assert.ok(moving.locationIntervalSeconds! >= 30 && moving.locationIntervalSeconds! <= 60)
     assert.ok(still.locationIntervalSeconds! > moving.locationIntervalSeconds!)
-    // every interval plus its jitter stays inside the default GPS freshness window
+    // every interval plus its jitter stays inside the default GPS freshness window,
+    // and inside one minute (product requirement)
     for (const policy of [active, moving, still]) {
       assert.ok(policy.locationIntervalSeconds! + policy.jitterSeconds < settings().gpsMaxAgeSeconds)
+      assert.ok(policy.locationIntervalSeconds! + policy.jitterSeconds <= 60)
+      // a distance gate starves a driver who is standing still of fixes
+      assert.equal(policy.distanceFilterMeters, 0)
     }
   })
 })
@@ -186,6 +190,15 @@ describe('requirements', () => {
     assert.deepEqual(capabilityMismatches({ ...order, needsManipulator: true, wheelsRoll: false }, { ...flatbed, manipulator: true }), [])
   })
 
+  it('wheel skates asked for explicitly: only a truck that HAS them (a crane does not substitute)', () => {
+    const skates = { ...order, needsWheelSkates: true }
+    assert.deepEqual(capabilityMismatches(skates, flatbed), ['WHEEL_SKATES'])
+    assert.deepEqual(capabilityMismatches(skates, { ...flatbed, wheelSkates: true }), [])
+    assert.deepEqual(capabilityMismatches(skates, { ...flatbed, manipulator: true }), ['WHEEL_SKATES'])
+    // not asked / answered no: no restriction
+    assert.deepEqual(capabilityMismatches({ ...order, needsWheelSkates: false }, flatbed), [])
+  })
+
   it('specialist types are not sent to ordinary jobs', () => {
     assert.deepEqual(capabilityMismatches(order, { ...flatbed, vehicleType: 'heavy-duty', capacityTons: 20 }), ['SPECIALIST_TYPE'])
     assert.deepEqual(capabilityMismatches({ ...order, vehicleWeightKg: 9000 }, { ...flatbed, vehicleType: 'heavy-duty', capacityTons: 20 }), [])
@@ -241,16 +254,48 @@ describe('order state machine', () => {
   })
 
   it('a driver cancel request KEEPS the assignment and blocks progress until an operator acts', () => {
-    const active = snap({ status: 'EN_ROUTE_TO_PICKUP', hasActiveAssignment: true })
+    const active = snap({ status: 'ASSIGNED', hasActiveAssignment: true })
     const planned = planTransition('DRIVER_CANCEL_REQUEST', active, 'DRIVER')
-    assert.deepEqual(planned, { to: 'NEEDS_ATTENTION', statusBeforeAttention: 'EN_ROUTE_TO_PICKUP', attentionKind: 'DRIVER_CANCEL_REQUEST' })
-    const attention = snap({ status: 'NEEDS_ATTENTION', attentionKind: 'DRIVER_CANCEL_REQUEST', statusBeforeAttention: 'EN_ROUTE_TO_PICKUP', hasActiveAssignment: true })
+    assert.deepEqual(planned, { to: 'NEEDS_ATTENTION', statusBeforeAttention: 'ASSIGNED', attentionKind: 'DRIVER_CANCEL_REQUEST' })
+    const attention = snap({ status: 'NEEDS_ATTENTION', attentionKind: 'DRIVER_CANCEL_REQUEST', statusBeforeAttention: 'ASSIGNED', hasActiveAssignment: true })
     assert.deepEqual(allowedDriverActions(attention), [])
     // restarting the search is impossible while a driver is attached…
     assert.throws(() => planTransition('START_DISPATCH', attention, 'ADMIN'), DispatchError)
     // …the operator must release first (which can restart the search in one step)
     assert.equal(planTransition('RELEASE_ASSIGNMENT', attention, 'ADMIN', { restartSearch: true }).to, 'SEARCHING')
-    assert.equal(planTransition('RESUME_FROM_ATTENTION', attention, 'ADMIN').to, 'EN_ROUTE_TO_PICKUP')
+    assert.equal(planTransition('RESUME_FROM_ATTENTION', attention, 'ADMIN').to, 'ASSIGNED')
+  })
+
+  it('a driver cancel for any reason but «customer declined» goes straight back to search', () => {
+    const accepted = snap({ status: 'ASSIGNED', hasActiveAssignment: true })
+    assert.deepEqual(planTransition('DRIVER_CANCEL_REQUEST', accepted, 'DRIVER', { redispatch: true }), {
+      to: 'SEARCHING',
+      statusBeforeAttention: null,
+      attentionKind: null,
+    })
+    // still only before setting off
+    assert.throws(
+      () => planTransition('DRIVER_CANCEL_REQUEST', snap({ status: 'EN_ROUTE_TO_PICKUP', hasActiveAssignment: true }), 'DRIVER', { redispatch: true }),
+      DispatchError,
+    )
+  })
+
+  it('a driver may ask to cancel only before setting off; afterwards only a PROBLEM report', () => {
+    for (const status of ['ASSIGNED', 'PRICE_CONFIRMATION_PENDING'] as const) {
+      assert.equal(planTransition('DRIVER_CANCEL_REQUEST', snap({ status, hasActiveAssignment: true }), 'DRIVER').to, 'NEEDS_ATTENTION')
+    }
+    for (const status of ['EN_ROUTE_TO_PICKUP', 'ARRIVED_AT_PICKUP', 'TRANSPORTING'] as const) {
+      assert.throws(() => planTransition('DRIVER_CANCEL_REQUEST', snap({ status, hasActiveAssignment: true }), 'DRIVER'), DispatchError)
+    }
+  })
+
+  it('the driver records a negotiated price himself, which unblocks transport', () => {
+    const arrived = snap({ status: 'ARRIVED_AT_PICKUP', pricingMode: 'NEGOTIATION_REQUIRED', hasActiveAssignment: true })
+    assert.equal(planTransition('CONFIRM_PRICE', arrived, 'DRIVER').to, 'ARRIVED_AT_PICKUP')
+    assert.equal(planTransition('CONFIRM_PRICE', { ...arrived, status: 'PRICE_CONFIRMATION_PENDING' }, 'DRIVER').to, 'ASSIGNED')
+    // nothing to record for a fixed price, or twice
+    assert.throws(() => planTransition('CONFIRM_PRICE', { ...arrived, pricingMode: 'FIXED' }, 'DRIVER'), DispatchError)
+    assert.throws(() => planTransition('CONFIRM_PRICE', { ...arrived, priceConfirmed: true }, 'DRIVER'), DispatchError)
   })
 
   it('a failed search can be restarted; drivers cannot act on admin-only transitions', () => {
@@ -278,7 +323,7 @@ describe('settings', () => {
   it('a bad stored row falls back to the default instead of breaking dispatch', () => {
     const invalid: string[] = []
     const resolved = resolveSettings([{ key: 'offerTimeoutSeconds', value: 'thirty' }, { key: 'gpsMaxAgeSeconds', value: 180 }], (key) => invalid.push(key))
-    assert.equal(resolved.offerTimeoutSeconds, 30)
+    assert.equal(resolved.offerTimeoutSeconds, DEFAULT_DISPATCH_SETTINGS.offerTimeoutSeconds)
     assert.equal(resolved.gpsMaxAgeSeconds, 180)
     assert.deepEqual(invalid, ['offerTimeoutSeconds'])
   })

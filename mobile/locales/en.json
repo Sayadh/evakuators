@@ -1,0 +1,4 @@
+{
+  "NSLocationWhenInUseUsageDescription": "Evakuators Driver uses your location to offer you nearby tow-truck orders.",
+  "NSLocationAlwaysAndWhenInUseUsageDescription": "Evakuators Driver uses your location while you have \"Accept orders\" switched on or an active order — also when the app is closed or not in use — to offer you nearby orders and to show the dispatcher your route to the customer. It is not used for ads and not shared with data brokers."
+}

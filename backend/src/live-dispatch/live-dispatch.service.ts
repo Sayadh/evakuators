@@ -64,6 +64,12 @@ export class LiveDispatchService {
     const state = await this.rt.fleet.driverState(driverId)
     if (!state) throw new DispatchError('FORBIDDEN')
     const availability = availabilityOf(state, settings)
+    // Not eligible by GPS alone, but connected with a base location: dispatch
+    // may still reach him via the base fallback (eligibility-sql.ts, source
+    // BASE) — the app says so instead of a flat "you will not get orders".
+    const gpsOnly = ['GPS_MISSING', 'GPS_STALE', 'GPS_INACCURATE', 'GPS_SUSPICIOUS']
+    const baseFallback =
+      !availability.eligible && state.hasBase === true && availability.reasons.length > 0 && availability.reasons.every((r) => gpsOnly.includes(r))
     const offer = await this.rt.offers.currentOfferFor(driverId)
     let currentOffer: Record<string, unknown> | null = null
     if (offer && offer.beforeDeadline) {
@@ -90,7 +96,7 @@ export class LiveDispatchService {
     return {
       serverTime: state.now.toISOString(),
       driver: { name: state.driverName, kind: state.kind },
-      availability,
+      availability: { ...availability, baseFallback },
       switches: { wantsOnline: state.wantsOnline, externalBusy: state.externalBusy },
       trackingConsentVersion: state.trackingConsentVersion,
       currentOffer,
@@ -133,10 +139,29 @@ export class LiveDispatchService {
     )
   }
 
+  /** The driver records the price he agreed with the customer by phone */
+  async driverConfirmPrice(driverId: number, orderId: number, agreedPriceAmd: number, ctx: MutationContext) {
+    return this.mutate(`driver:${driverId}:order`, ctx, (tx) =>
+      asResponse(tx, async () =>
+        driverActiveOrderView(await this.rt.orders.confirmPrice(tx, orderId, agreedPriceAmd, undefined, { type: 'DRIVER', id: driverId })),
+      ),
+    )
+  }
+
   async driverRequest(driverId: number, orderId: number, body: unknown, ctx: MutationContext) {
     const input = parse(driverRequestSchema, body)
+    const settings = await this.rt.settings.get()
     return this.mutate(`driver:${driverId}:order`, ctx, (tx) =>
-      asResponse(tx, async () => driverActiveOrderView(await this.rt.orders.driverRequest(tx, orderId, driverId, input)), 201),
+      asResponse(
+        tx,
+        async () => {
+          const order = await this.rt.orders.driverRequest(tx, orderId, driverId, input, settings)
+          // A redispatched cancel leaves the order without this driver: answer
+          // with what is still his to see — nothing (the app re-reads /me).
+          return order.assignedDriverId === driverId ? driverActiveOrderView(order) : { released: true, orderId: order.id }
+        },
+        201,
+      ),
     )
   }
 
@@ -195,7 +220,7 @@ export class LiveDispatchService {
 
   async confirmPrice(adminUserId: number, orderId: number, agreedPriceAmd: number, expectedVersion: number, ctx: MutationContext) {
     return this.mutate(`admin:${adminUserId}:order`, ctx, (tx) =>
-      asResponse(tx, async () => adminOrderView(await this.rt.orders.confirmPrice(tx, orderId, agreedPriceAmd, expectedVersion, adminUserId))),
+      asResponse(tx, async () => adminOrderView(await this.rt.orders.confirmPrice(tx, orderId, agreedPriceAmd, expectedVersion, { type: 'ADMIN', id: adminUserId }))),
     )
   }
 
@@ -252,7 +277,7 @@ export class LiveDispatchService {
     if (!order) throw new DispatchError('ORDER_NOT_FOUND')
     const state = await this.rt.fleet.driverState(body.driverId)
     let route: { meters: number; seconds: number; computedAt: Date } | null = null
-    if (state?.latitude != null && state.longitude != null) {
+    if (state?.latitude != null && state.longitude != null && order.pickupLatitude !== null && order.pickupLongitude !== null) {
       const matrix = await this.rt.routing.matrix([{ latitude: state.latitude, longitude: state.longitude }], {
         latitude: order.pickupLatitude,
         longitude: order.pickupLongitude,
@@ -280,6 +305,9 @@ export class LiveDispatchService {
     if (!order) throw new DispatchError('ORDER_NOT_FOUND')
     if (order.destinationLatitude === null || order.destinationLongitude === null) {
       return { computed: false, reason: 'NO_DESTINATION' }
+    }
+    if (order.pickupLatitude === null || order.pickupLongitude === null) {
+      return { computed: false, reason: 'NO_PICKUP' }
     }
     const matrix = await this.rt.routing.matrix([{ latitude: order.pickupLatitude, longitude: order.pickupLongitude }], {
       latitude: order.destinationLatitude,
@@ -317,7 +345,7 @@ export class LiveDispatchService {
       this.rt.orders.timeline(orderId),
       this.rt.db.query<Record<string, unknown>>(
         `SELECT c."driverId", c."batch", c."rank", c."straightLineMeters", c."roadMeters", c."etaSeconds", c."routeOk",
-                c."routeError", c."routedAt", c."status", c."skipReason", t."driverName"
+                c."routeError", c."routedAt", c."status", c."skipReason", c."locationSource", t."driverName"
            FROM "DispatchCandidate" c JOIN "DispatchAttempt" a ON a."id" = c."attemptId" JOIN "FleetDriverProfile" t ON t."id" = c."driverId"
           WHERE a."orderId" = $1::int AND a."id" = (SELECT max("id") FROM "DispatchAttempt" WHERE "orderId" = $1::int)
           ORDER BY c."rank"`,
@@ -351,6 +379,7 @@ export class LiveDispatchService {
         routedAt: c.routedAt ? toDate(c.routedAt).toISOString() : null,
         status: String(c.status),
         skipReason: c.skipReason ?? null,
+        locationSource: c.locationSource === 'BASE' ? 'BASE' : 'GPS',
       })),
       timeline,
     }

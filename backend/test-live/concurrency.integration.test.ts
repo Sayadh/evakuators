@@ -371,27 +371,34 @@ describe('races and failures (real Postgres)', { skip: integrationSkip }, () => 
     assert.equal(priceEvents.length, 1)
   })
 
-  it('#18 cancel request racing a progress update, 15 rounds: one consistent outcome, assignment kept', async () => {
+  it('#18 cancel request racing a progress update, 15 rounds: exactly one wins, assignment kept', async () => {
     await fresh()
     for (let round = 0; round < 15; round++) {
       await fresh()
       const { driver, order, offer } = await offeredOrder(offset(YEREVAN, 300 + round, 0))
       await h.service.driverAccept(driver.driverId, offer.id, ctx())
       const [request, progress] = await Promise.all([
-        h.service.driverRequest(driver.driverId, order.id, { kind: 'CANCEL', reason: 'DRIVER_CANNOT_PERFORM' }, ctx({ r: round })),
+        // CUSTOMER_DECLINED keeps the assignment (a person decides); a
+        // cancel is only allowed BEFORE en route (2026-11), so the two race.
+        h.service.driverRequest(driver.driverId, order.id, { kind: 'CANCEL', reason: 'CUSTOMER_DECLINED' }, ctx({ r: round })),
         h.service.driverProgress(driver.driverId, order.id, 'EN_ROUTE', ctx({ p: round })),
       ])
       const row = await orderRow(h, order.id)
-      assert.equal(request.status, 201, 'the request always lands')
-      assert.equal(row.status, 'NEEDS_ATTENTION')
       assert.equal(await activeAssignments(order.id), 1, 'assignment kept')
-      if (progress.status === 200) {
-        assert.equal(row.statusBeforeAttention, 'EN_ROUTE_TO_PICKUP', 'progress first, then the request')
-      } else {
+      const openRequests = await count(h, `SELECT count(*)::int AS n FROM "OrderDriverRequest" WHERE "orderId" = $1::int AND "status" = 'OPEN'`, [order.id])
+      if (request.status === 201) {
+        // request first: the order waits for an operator, progress refused
         assert.equal((progress.body as { code: string }).code, 'INVALID_TRANSITION')
-        assert.equal(row.statusBeforeAttention, 'ASSIGNED', 'request first, progress refused')
+        assert.equal(row.status, 'NEEDS_ATTENTION')
+        assert.equal(row.statusBeforeAttention, 'ASSIGNED')
+        assert.equal(openRequests, 1)
+      } else {
+        // progress first: en route, the cancel is refused and leaves no trace
+        assert.equal(progress.status, 200)
+        assert.equal((request.body as { code: string }).code, 'INVALID_TRANSITION')
+        assert.equal(row.status, 'EN_ROUTE_TO_PICKUP')
+        assert.equal(openRequests, 0)
       }
-      assert.equal(await count(h, `SELECT count(*)::int AS n FROM "OrderDriverRequest" WHERE "orderId" = $1::int AND "status" = 'OPEN'`, [order.id]), 1)
     }
   })
 

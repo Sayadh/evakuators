@@ -106,6 +106,14 @@ export interface GuardOptions {
   maxConcurrent: number
   dailyElementBudget: () => number
   /**
+   * Optional cap on provider REQUESTS per Armenia day (every attempt, retries
+   * included). OpenRouteService bills per matrix request, not per element, and
+   * one ORS key is shared with the website's /evakuator search — this is what
+   * keeps dispatch inside its share (ROUTE_ORS_DISPATCH_DAILY_SHARE).
+   * Undefined = no request cap (Google bills per element; fake costs nothing).
+   */
+  dailyRequestBudget?: () => number
+  /**
    * Usage row key. Defaults to the provider name; the public nearby search
    * uses its own key so visitors can never spend the dispatch budget.
    */
@@ -165,19 +173,27 @@ export class GuardedRouting {
     }
 
     const day = armeniaDateKey(new Date())
-    // Reserve the elements BEFORE the call, atomically against the budget: a
-    // request that times out has usually still been billed.
-    const reserved = await this.db.query(
-      `INSERT INTO "RoutingUsageDay" ("day", "provider", "requests", "elements")
-       VALUES ($1, $2, 1, $3::int)
-       ON CONFLICT ("day", "provider") DO UPDATE
-         SET "requests" = "RoutingUsageDay"."requests" + 1,
-             "elements" = "RoutingUsageDay"."elements" + EXCLUDED."elements"
-       WHERE "RoutingUsageDay"."elements" + EXCLUDED."elements" <= $4::int
-       RETURNING 1`,
-      [day, this.usageKey, origins.length, this.options.dailyElementBudget()],
-    )
-    if (reserved.length === 0 || origins.length > this.options.dailyElementBudget()) {
+    const elementBudget = this.options.dailyElementBudget()
+    const requestBudget = this.options.dailyRequestBudget?.() ?? null
+    // Reserve BEFORE each attempt (retries too), atomically against both
+    // budgets: a request that times out has usually still been billed, and
+    // ORS counts every request against the key's daily quota.
+    const reserve = async (): Promise<boolean> => {
+      if (origins.length > elementBudget || (requestBudget !== null && requestBudget < 1)) return false
+      const reserved = await this.db.query(
+        `INSERT INTO "RoutingUsageDay" ("day", "provider", "requests", "elements")
+         VALUES ($1, $2, 1, $3::int)
+         ON CONFLICT ("day", "provider") DO UPDATE
+           SET "requests" = "RoutingUsageDay"."requests" + 1,
+               "elements" = "RoutingUsageDay"."elements" + EXCLUDED."elements"
+         WHERE "RoutingUsageDay"."elements" + EXCLUDED."elements" <= $4::int
+           AND ($5::int IS NULL OR "RoutingUsageDay"."requests" + 1 <= $5::int)
+         RETURNING 1`,
+        [day, this.usageKey, origins.length, elementBudget, requestBudget],
+      )
+      return reserved.length > 0
+    }
+    if (!(await reserve())) {
       this.metrics.budgetRefusals++
       return failedAll(this.provider.name, origins.length, 'BUDGET_EXHAUSTED')
     }
@@ -188,6 +204,11 @@ export class GuardedRouting {
         if (attempt > 0) {
           const jitter = Math.random() * this.options.baseBackoffMs
           await this.sleep(this.options.baseBackoffMs * 2 ** (attempt - 1) + jitter)
+          // A retry is another billed request: no budget left → stop here.
+          if (!(await reserve())) {
+            this.metrics.budgetRefusals++
+            break
+          }
         }
         const controller = new AbortController()
         const timer = setTimeout(() => controller.abort(), this.options.timeoutMs)

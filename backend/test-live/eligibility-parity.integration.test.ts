@@ -68,6 +68,7 @@ describe('eligibility parity: TypeScript ≡ SQL (real Postgres)', { skip: integ
       { vehicleWeightKg: 1500, wheelsRoll: true, steeringLocked: false, gearboxLocked: false, needsManipulator: true, overridden: false },
       { vehicleWeightKg: 9000, wheelsRoll: true, steeringLocked: true, gearboxLocked: false, needsManipulator: false, overridden: false },
       { vehicleWeightKg: null, wheelsRoll: null, steeringLocked: null, gearboxLocked: null, needsManipulator: null, overridden: true },
+      { vehicleWeightKg: 1500, wheelsRoll: true, steeringLocked: false, gearboxLocked: false, needsManipulator: false, needsWheelSkates: true, overridden: false },
     ]
 
     const { FleetRepository } = await import('../src/live-dispatch/fleet/fleet.repository')

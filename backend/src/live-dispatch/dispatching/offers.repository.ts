@@ -16,7 +16,7 @@
  */
 import { MANUAL_OVERRIDABLE } from '../fleet/domain/availability'
 import { availabilityOf, DRIVER_STATE_FROM, DRIVER_STATE_SELECT, mapDriverState } from '../fleet/fleet.repository'
-import { capabilityMismatches, unconfirmedRequirements } from '../orders/domain/requirements'
+import { capabilityMismatches } from '../orders/domain/requirements'
 import { planTransition, SEARCH_ATTENTION_KINDS, type AttentionKind } from '../orders/domain/order-state'
 import { lockOrder, requirementsOf, snapshotOf, type OrderRow } from '../orders/order-row'
 import { enqueue, enqueueRealtime } from '../notify/outbox'
@@ -25,7 +25,7 @@ import { DispatchError, refuse, type Refusal } from '../platform/errors'
 import { Params, toDate, toNullableDate, toNullableNumber, toNumber } from '../platform/params'
 import type { DispatchSettings } from '../platform/settings'
 import { isUniqueViolation, pgArray, SqlError, withRetryingTransaction, type Sql, type SqlDatabase } from '../platform/sql'
-import { availabilityPredicate, capabilityPredicate, ELIGIBLE_FROM } from './eligibility-sql'
+import { availabilityPredicate, capabilityPredicate, eligibleFrom, type LocationSource } from './eligibility-sql'
 import type { Ranked } from './domain/ranking'
 import type { RouteEntry } from '../routing/routing-provider'
 
@@ -229,7 +229,7 @@ export class OffersRepository {
       }
 
       const queued = await tx.query<Record<string, unknown>>(
-        `SELECT "id", "driverId", "roadMeters", "etaSeconds", "routeOk", "straightLineMeters", "routedAt",
+        `SELECT "id", "driverId", "roadMeters", "etaSeconds", "routeOk", "straightLineMeters", "routedAt", "locationSource",
                 ("routedAt" IS NOT NULL AND "routedAt" < now() - make_interval(secs => $2::int)) AS "stale"
            FROM "DispatchCandidate" WHERE "attemptId" = $1::int AND "status" = 'QUEUED'
           ORDER BY "rank" LIMIT 50`,
@@ -238,12 +238,15 @@ export class OffersRepository {
       if (queued.length === 0) return { kind: 'need-candidates', attemptId: attempt.id, searchStage: attempt.searchStage }
       if (queued.some((row) => row.stale === true)) return { kind: 'need-refresh', attemptId: attempt.id }
 
-      const eligibleIds = await this.eligibleAmong(
-        tx,
-        queued.map((row) => toNumber(row.driverId)),
-        order,
-        settings,
-      )
+      // Each candidate is re-checked by the rule it was FOUND by: a driver
+      // found by his base must still be connected with no usable GPS fix;
+      // one found by GPS must still have a fresh one.
+      const bySource = (source: LocationSource) =>
+        queued.filter((row) => (row.locationSource ?? 'GPS') === source).map((row) => toNumber(row.driverId))
+      const eligibleIds = new Set([
+        ...(await this.eligibleAmong(tx, bySource('GPS'), order, settings, 'GPS')),
+        ...(await this.eligibleAmong(tx, bySource('BASE'), order, settings, 'BASE')),
+      ])
 
       for (const row of queued) {
         const driverId = toNumber(row.driverId)
@@ -320,13 +323,13 @@ export class OffersRepository {
   }
 
   /** The availability + capability predicate, re-evaluated now, inside the caller's transaction */
-  async eligibleAmong(tx: Sql, driverIds: number[], order: OrderRow, settings: DispatchSettings): Promise<Set<number>> {
+  async eligibleAmong(tx: Sql, driverIds: number[], order: OrderRow, settings: DispatchSettings, source: LocationSource = 'GPS'): Promise<Set<number>> {
     if (driverIds.length === 0) return new Set()
     const p = new Params()
     const rows = await tx.query<{ id: number }>(
-      `SELECT t."id" FROM ${ELIGIBLE_FROM}
+      `SELECT t."id" FROM ${eligibleFrom(source)}
         WHERE t."id" = ANY(${p.add(pgArray(driverIds))}::int[])
-          AND ${availabilityPredicate(p, settings)}
+          AND ${availabilityPredicate(p, settings, source)}
           AND ${capabilityPredicate(p, requirementsOf(order))}`,
       p.values,
     )
@@ -363,11 +366,11 @@ export class OffersRepository {
           ${p.add(c.straightLineMeters)}::int, ${p.add(ok ? Math.round((route as { meters: number }).meters) : null)}::int,
           ${p.add(ok ? Math.round((route as { seconds: number }).seconds) : null)}::int, ${p.add(ok)}::boolean,
           ${p.add(ok || !route ? null : (route as { error: string }).error)}, ${p.add(route ? routeMeta.computedAt : null)}::timestamptz,
-          ${p.add(routeMeta.provider)})`
+          ${p.add(routeMeta.provider)}, ${p.add(c.source ?? 'GPS')})`
       })
       const inserted = await tx.query(
         `INSERT INTO "DispatchCandidate" ("attemptId", "driverId", "batch", "rank", "straightLineMeters", "roadMeters",
-           "etaSeconds", "routeOk", "routeError", "routedAt", "routeProvider")
+           "etaSeconds", "routeOk", "routeError", "routedAt", "routeProvider", "locationSource")
          VALUES ${tuples.join(', ')}
          ON CONFLICT ("attemptId", "driverId") DO NOTHING
          RETURNING 1`,
@@ -380,17 +383,31 @@ export class OffersRepository {
         count: inserted.length,
         routed: ranked.filter((c) => c.route?.ok).length,
         provider: routeMeta.provider,
+        byBaseLocation: ranked.filter((c) => c.source === 'BASE').length,
       })
       return inserted.length
     })
   }
 
-  /** Queued candidates of an attempt with their CURRENT fix, for a route refresh */
+  /**
+   * Queued candidates of an attempt with their CURRENT position, for a route
+   * refresh: the live fix, or the base for a candidate found by its base
+   * (whose live fix is stale by definition). Skipped when neither exists.
+   */
   async queuedForRefresh(attemptId: number): Promise<{ id: number; driverId: number; batch: number; latitude: number; longitude: number; straightLineMeters: number }[]> {
     const rows = await this.db.query<Record<string, unknown>>(
-      `SELECT c."id", c."driverId", c."batch", c."straightLineMeters", lc."latitude", lc."longitude"
-         FROM "DispatchCandidate" c JOIN "DriverLocationCurrent" lc ON lc."driverId" = c."driverId"
-        WHERE c."attemptId" = $1::int AND c."status" = 'QUEUED' ORDER BY c."rank" LIMIT 25`,
+      `SELECT * FROM (
+         SELECT c."id", c."driverId", c."batch", c."straightLineMeters",
+                CASE WHEN c."locationSource" = 'BASE' THEN t."baseLatitude" ELSE lc."latitude" END AS "latitude",
+                CASE WHEN c."locationSource" = 'BASE' THEN t."baseLongitude" ELSE lc."longitude" END AS "longitude",
+                c."rank"
+           FROM "DispatchCandidate" c
+           JOIN "FleetDriverProfile" t ON t."id" = c."driverId"
+           LEFT JOIN "DriverLocationCurrent" lc ON lc."driverId" = c."driverId"
+          WHERE c."attemptId" = $1::int AND c."status" = 'QUEUED'
+       ) q
+       WHERE q."latitude" IS NOT NULL AND q."longitude" IS NOT NULL
+       ORDER BY q."rank" LIMIT 25`,
       [attemptId],
     )
     return rows.map((row) => ({
@@ -766,10 +783,29 @@ export class OffersRepository {
   }
 }
 
-export function assertDispatchable(order: OrderRow): void {
-  const missing = unconfirmedRequirements(requirementsOf(order))
-  if (missing.length > 0) throw new DispatchError('REQUIREMENTS_UNCONFIRMED', { missing })
-  if (order.pricingMode === 'FIXED' && order.quotedPriceAmd === null) throw new DispatchError('PRICE_REQUIRED')
+/**
+ * Product decision, 2026-11: unconfirmed technical requirements and a missing
+ * fixed price no longer block dispatch — an operator can still see and fill
+ * them in (`unconfirmedRequirements` stays, for display), but neither is
+ * required any more to start a search or send a manual offer. This reverses
+ * the original deliberate safety rule in requirements.ts's docstring ("Unknown
+ * is never 'fits'") — kept as a no-op rather than deleted so the history and
+ * the reasoning stay visible if this needs revisiting before go-live.
+ */
+export function assertDispatchable(_order: OrderRow): void {
+  // intentionally empty
+}
+
+/**
+ * Automatic radius search needs a pickup point to search from
+ * (DispatchEngine.expand/refresh compute straight-line and routed distance
+ * FROM it) — an order created with no pickup coordinates ("phone it in") can
+ * only ever be sent to a driver manually (`manualOffer`, which does not call
+ * this). Call this only at the two entry points into automatic SEARCHING:
+ * `startDispatch` and `releaseAssignment` with `restartSearch: true`.
+ */
+export function assertAutoDispatchable(order: OrderRow): void {
+  if (order.pickupLatitude === null || order.pickupLongitude === null) throw new DispatchError('PICKUP_LOCATION_REQUIRED')
 }
 
 export async function createAttempt(

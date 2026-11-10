@@ -58,7 +58,7 @@ export const DEFAULT_DISPATCH_SETTINGS: DispatchSettings = {
   gpsMaxHistoryAgeHours: 24,
   gpsSuspiciousSpeedMps: 70,
 
-  offerTimeoutSeconds: 30,
+  offerTimeoutSeconds: 45,
   searchAlertSeconds: 90,
   searchMaxSeconds: 600,
   maxOffersPerAttempt: 25,

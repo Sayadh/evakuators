@@ -21,6 +21,7 @@
  * app-only account), the site account wins and the admin console offers
  * `linkToSite` to merge them without losing order history.
  */
+import { isWithinArmenia } from '../../common/armenia-bounds'
 import { DispatchError } from '../platform/errors'
 import { Params, toNullableDate, toNullableNumber, toNumber } from '../platform/params'
 import { withRetryingTransaction, type Sql, type SqlDatabase } from '../platform/sql'
@@ -38,7 +39,8 @@ export const APP_VEHICLE_TYPES = ['flatbed', 'sliding-platform', 'manipulator', 
 export type AppVehicleType = (typeof APP_VEHICLE_TYPES)[number]
 
 export type FleetDriverKind = 'SITE_LINKED' | 'APP_ONLY'
-export type FleetDriverStatus = 'PENDING_REVIEW' | 'ACTIVE' | 'SUSPENDED' | 'REJECTED'
+/** DELETED: the driver deleted his own app account (2026-11); personal fields cleared, order records kept */
+export type FleetDriverStatus = 'PENDING_REVIEW' | 'ACTIVE' | 'SUSPENDED' | 'REJECTED' | 'DELETED'
 
 export interface PasswordHasher {
   hash(password: string): Promise<string>
@@ -80,6 +82,9 @@ export interface RegistrationInput {
   manipulator: unknown
   wheelSkates: unknown
   vehicleDescription?: unknown
+  /** Optional base (parking) location — the dispatch fallback when GPS is stale */
+  baseLatitude?: unknown
+  baseLongitude?: unknown
 }
 
 export interface SiteCandidate {
@@ -157,6 +162,7 @@ export function parseRegistration(input: RegistrationInput) {
     input.vehicleDescription === undefined || input.vehicleDescription === null || input.vehicleDescription === ''
       ? null
       : text(input.vehicleDescription, 'vehicleDescription', 1, 200)
+  const base = baseLocation(input.baseLatitude, input.baseLongitude)
   return {
     phone: input.phone,
     password: input.password,
@@ -167,7 +173,19 @@ export function parseRegistration(input: RegistrationInput) {
     manipulator: input.manipulator,
     wheelSkates: input.wheelSkates,
     vehicleDescription: description,
+    baseLatitude: base?.latitude ?? null,
+    baseLongitude: base?.longitude ?? null,
   }
+}
+
+/** Both or neither; a real point inside Armenia, rounded to the column's 6 decimals */
+function baseLocation(lat: unknown, lng: unknown): { latitude: number; longitude: number } | null {
+  const absent = (v: unknown) => v === undefined || v === null || v === ''
+  if (absent(lat) && absent(lng)) return null
+  const latitude = typeof lat === 'number' ? lat : Number(lat)
+  const longitude = typeof lng === 'number' ? lng : Number(lng)
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || !isWithinArmenia(latitude, longitude)) throw invalid('baseLocation')
+  return { latitude: Math.round(latitude * 1e6) / 1e6, longitude: Math.round(longitude * 1e6) / 1e6 }
 }
 
 async function lockPhone(tx: Sql, phone: string): Promise<void> {
@@ -247,7 +265,8 @@ export class FleetAccess {
         [site[0].id],
       )
       const access = rows[0]
-      if (!access) throw new DispatchError('APP_ACCESS_NOT_GRANTED')
+      // A deleted app account is "no access": an admin may grant it again.
+      if (!access || access.status === 'DELETED') throw new DispatchError('APP_ACCESS_NOT_GRANTED')
       if (access.status !== 'ACTIVE') throw new DispatchError('APP_ACCESS_SUSPENDED')
       return { driverId: toNumber(access.id), kind: 'SITE_LINKED', mustChangePassword: Boolean(site[0].mustChangePassword) }
     }
@@ -264,6 +283,94 @@ export class FleetAccess {
     if (row.status === 'REJECTED') throw new DispatchError('APP_ACCOUNT_REJECTED')
     if (row.status === 'SUSPENDED') throw new DispatchError('APP_ACCESS_SUSPENDED')
     return { driverId: toNumber(row.id), kind: 'APP_ONLY', mustChangePassword: false }
+  }
+
+  /**
+   * The driver deletes his own app account, from inside the app (App Store
+   * 5.1.1(v), Google Play account deletion). The password is asked again —
+   * deletion cannot be undone.
+   *
+   * Deleted at once: every device session (which logs out every device) and
+   * push token, presence, the live position and the whole location history.
+   * APP_ONLY: the row stays as DELETED with every personal field cleared —
+   * phone, password, name, vehicle description, base location — so the phone
+   * number can register again. SITE_LINKED: only app access ends; the website
+   * profile is a separate account, managed on the website.
+   *
+   * Kept (business records, disclosed in the app's privacy policy): orders he
+   * carried out, their offers and assignments, linked to the anonymised row.
+   * Refused while he has an active order or a pending offer — a customer is
+   * waiting on it.
+   */
+  async deleteOwnAccount(driverId: number, password: unknown): Promise<void> {
+    if (typeof password !== 'string' || password.length === 0 || password.length > 200) throw new DispatchError('INVALID_CREDENTIALS')
+    await withRetryingTransaction(this.db, async (tx) => {
+      const row = await this.lockForErase(tx, driverId)
+      const hash = row.kind === 'SITE_LINKED' ? row.sitePasswordHash : row.passwordHash
+      const ok = await this.hasher.compare(password, hash ?? this.hasher.dummyHash)
+      if (!hash || !ok) throw new DispatchError('INVALID_CREDENTIALS')
+      await this.erase(tx, driverId, row.kind, null)
+    })
+  }
+
+  /**
+   * The same deletion, done by an ADMIN for a driver who asked without the
+   * app (the web page /driver-app/delete-account promises it). The admin
+   * must have verified the request; recorded with his id.
+   */
+  async deleteAccountOnRequest(driverId: number, adminUserId: number): Promise<FleetDriverView> {
+    return withRetryingTransaction(this.db, async (tx) => {
+      const row = await this.lockForErase(tx, driverId)
+      await this.erase(tx, driverId, row.kind, adminUserId)
+      return this.get(driverId, tx)
+    })
+  }
+
+  private async lockForErase(tx: Sql, driverId: number) {
+    const rows = await tx.query<{ kind: FleetDriverKind; status: FleetDriverStatus; passwordHash: string | null; sitePasswordHash: string | null }>(
+      `SELECT d."kind", d."status", d."passwordHash", tt."passwordHash" AS "sitePasswordHash"
+         FROM "FleetDriver" d LEFT JOIN "TowTruck" tt ON tt."id" = d."towTruckId"
+        WHERE d."id" = $1::int FOR UPDATE OF d`,
+      [driverId],
+    )
+    const row = rows[0]
+    if (!row || row.status === 'DELETED') throw new DispatchError('FLEET_DRIVER_NOT_FOUND')
+    const busy = await tx.query(
+      `SELECT 1 FROM "OrderAssignment" WHERE "driverId" = $1::int AND "endedAt" IS NULL
+       UNION ALL SELECT 1 FROM "OrderOffer" WHERE "driverId" = $1::int AND "status" = 'PENDING' LIMIT 1`,
+      [driverId],
+    )
+    if (busy.length > 0) throw new DispatchError('ACTIVE_ORDER_IN_PROGRESS')
+    return row
+  }
+
+  /** See deleteOwnAccount: what is deleted, what is cleared, what is kept */
+  private async erase(tx: Sql, driverId: number, kind: FleetDriverKind, adminUserId: number | null): Promise<void> {
+    // Sessions cascade to push tokens; a deleted session fails the guard,
+    // so every device is signed out by this.
+    await tx.query(`DELETE FROM "DriverDeviceSession" WHERE "driverId" = $1::int`, [driverId])
+    await tx.query(`DELETE FROM "PushDeviceToken" WHERE "driverId" = $1::int`, [driverId])
+    await tx.query(`DELETE FROM "DriverLocationHistory" WHERE "driverId" = $1::int`, [driverId])
+    await tx.query(`DELETE FROM "DriverLocationCurrent" WHERE "driverId" = $1::int`, [driverId])
+    await tx.query(`DELETE FROM "DriverPresence" WHERE "driverId" = $1::int`, [driverId])
+    const reason = adminUserId === null ? 'DELETED_BY_DRIVER' : 'DELETED_ON_REQUEST'
+    if (kind === 'APP_ONLY') {
+      await tx.query(
+        `UPDATE "FleetDriver" SET "status" = 'DELETED', "phone" = NULL, "passwordHash" = NULL, "driverName" = NULL,
+                "vehicleDescription" = NULL, "baseLatitude" = NULL, "baseLongitude" = NULL,
+                "statusChangedAt" = now(), "statusChangedBy" = $2::int, "statusReason" = $3, "updatedAt" = now()
+          WHERE "id" = $1::int`,
+        [driverId, adminUserId, reason],
+      )
+    } else {
+      await tx.query(
+        `UPDATE "FleetDriver" SET "status" = 'DELETED', "statusChangedAt" = now(), "statusChangedBy" = $2::int,
+                "statusReason" = $3, "updatedAt" = now()
+          WHERE "id" = $1::int`,
+        [driverId, adminUserId, reason],
+      )
+    }
+    await recordFleetEvent(tx, driverId, adminUserId === null ? 'ACCOUNT_DELETED_BY_DRIVER' : 'ACCOUNT_DELETED_ON_REQUEST', adminUserId, { kind })
   }
 
   /**
@@ -284,6 +391,7 @@ export class FleetAccess {
       const values = [
         data.phone, passwordHash, data.driverName, data.vehicleType, data.capacityTons,
         data.maxLoadTons, data.manipulator, data.wheelSkates, data.vehicleDescription,
+        data.baseLatitude, data.baseLongitude,
       ]
       if (existing[0]) {
         if (existing[0].status === 'PENDING_REVIEW') throw new DispatchError('REGISTRATION_ALREADY_PENDING')
@@ -292,9 +400,9 @@ export class FleetAccess {
         await tx.query(
           `UPDATE "FleetDriver" SET "status" = 'PENDING_REVIEW', "phone" = $1, "passwordHash" = $2, "driverName" = $3,
                   "vehicleType" = $4, "capacityTons" = $5::float8, "maxLoadTons" = $6::float8, "manipulator" = $7::boolean,
-                  "wheelSkates" = $8::boolean, "vehicleDescription" = $9, "statusChangedAt" = now(), "statusChangedBy" = NULL,
-                  "statusReason" = NULL, "updatedAt" = now()
-            WHERE "id" = $10::int`,
+                  "wheelSkates" = $8::boolean, "vehicleDescription" = $9, "baseLatitude" = $10::numeric, "baseLongitude" = $11::numeric,
+                  "statusChangedAt" = now(), "statusChangedBy" = NULL, "statusReason" = NULL, "updatedAt" = now()
+            WHERE "id" = $12::int`,
           [...values, id],
         )
         await recordFleetEvent(tx, id, 'REGISTERED_AGAIN', null)
@@ -302,8 +410,8 @@ export class FleetAccess {
       }
       const [row] = await tx.query<{ id: number }>(
         `INSERT INTO "FleetDriver" ("kind", "status", "phone", "passwordHash", "driverName", "vehicleType", "capacityTons",
-                                    "maxLoadTons", "manipulator", "wheelSkates", "vehicleDescription")
-         VALUES ('APP_ONLY', 'PENDING_REVIEW', $1, $2, $3, $4, $5::float8, $6::float8, $7::boolean, $8::boolean, $9)
+                                    "maxLoadTons", "manipulator", "wheelSkates", "vehicleDescription", "baseLatitude", "baseLongitude")
+         VALUES ('APP_ONLY', 'PENDING_REVIEW', $1, $2, $3, $4, $5::float8, $6::float8, $7::boolean, $8::boolean, $9, $10::numeric, $11::numeric)
          RETURNING "id"`,
         values,
       )

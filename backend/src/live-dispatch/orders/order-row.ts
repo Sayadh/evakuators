@@ -13,6 +13,7 @@ import type { Sql } from '../platform/sql'
 import { DispatchError } from '../platform/errors'
 import {
   allowedDriverActions,
+  planTransition,
   type AttentionKind,
   type OrderStateSnapshot,
   type OrderStatus,
@@ -26,8 +27,9 @@ export interface OrderRow {
   createdByUserId: number | null
   customerPhone: string
   customerName: string | null
-  pickupLatitude: number
-  pickupLongitude: number
+  /** Null for a "phone it in" order with no coordinates yet — see assertAutoDispatchable */
+  pickupLatitude: number | null
+  pickupLongitude: number | null
   pickupAddress: string
   destinationLatitude: number | null
   destinationLongitude: number | null
@@ -41,6 +43,9 @@ export interface OrderRow {
   steeringLocked: boolean | null
   gearboxLocked: boolean | null
   needsManipulator: boolean | null
+  /** 2026-11: explicitly asked for wheel skates; count (1–4) is informational */
+  needsWheelSkates: boolean | null
+  wheelSkatesCount: number | null
   requirementsOverrideAt: Date | null
   requirementsOverrideBy: number | null
   requirementsOverrideNote: string | null
@@ -83,7 +88,7 @@ export const ORDER_COLUMNS = `
   o."pickupLatitude", o."pickupLongitude", o."pickupAddress",
   o."destinationLatitude", o."destinationLongitude", o."destinationAddress",
   o."vehicleMake", o."vehicleModel", o."vehiclePlate", o."vehicleWeightKg", o."problemDescription",
-  o."wheelsRoll", o."steeringLocked", o."gearboxLocked", o."needsManipulator",
+  o."wheelsRoll", o."steeringLocked", o."gearboxLocked", o."needsManipulator", o."needsWheelSkates", o."wheelSkatesCount",
   o."requirementsOverrideAt", o."requirementsOverrideBy", o."requirementsOverrideNote",
   o."pricingMode", o."currency", o."quotedPriceAmd", o."agreedPriceAmd", o."priceConfirmedAt", o."priceConfirmedBy",
   o."paymentStatus", o."paymentUpdatedAt",
@@ -104,8 +109,8 @@ export function mapOrder(row: Record<string, unknown>): OrderRow {
     createdByUserId: toNullableNumber(row.createdByUserId),
     customerPhone: String(row.customerPhone),
     customerName: s(row.customerName),
-    pickupLatitude: toNumber(row.pickupLatitude),
-    pickupLongitude: toNumber(row.pickupLongitude),
+    pickupLatitude: toNullableNumber(row.pickupLatitude),
+    pickupLongitude: toNullableNumber(row.pickupLongitude),
     pickupAddress: String(row.pickupAddress),
     destinationLatitude: toNullableNumber(row.destinationLatitude),
     destinationLongitude: toNullableNumber(row.destinationLongitude),
@@ -119,6 +124,8 @@ export function mapOrder(row: Record<string, unknown>): OrderRow {
     steeringLocked: b(row.steeringLocked),
     gearboxLocked: b(row.gearboxLocked),
     needsManipulator: b(row.needsManipulator),
+    needsWheelSkates: b(row.needsWheelSkates),
+    wheelSkatesCount: toNullableNumber(row.wheelSkatesCount),
     requirementsOverrideAt: toNullableDate(row.requirementsOverrideAt),
     requirementsOverrideBy: toNullableNumber(row.requirementsOverrideBy),
     requirementsOverrideNote: s(row.requirementsOverrideNote),
@@ -190,6 +197,7 @@ export function requirementsOf(order: OrderRow): OrderRequirements {
     steeringLocked: order.steeringLocked,
     gearboxLocked: order.gearboxLocked,
     needsManipulator: order.needsManipulator,
+    needsWheelSkates: order.needsWheelSkates,
     overridden: order.requirementsOverrideAt !== null,
   }
 }
@@ -222,6 +230,8 @@ function requirementsView(order: OrderRow) {
     steeringLocked: order.steeringLocked,
     gearboxLocked: order.gearboxLocked,
     needsManipulator: order.needsManipulator,
+    needsWheelSkates: order.needsWheelSkates,
+    wheelSkatesCount: order.wheelSkatesCount,
     overridden: order.requirementsOverrideAt !== null,
     overrideNote: order.requirementsOverrideNote,
   }
@@ -277,7 +287,7 @@ export function adminOrderView(order: OrderRow) {
   }
 }
 
-/** What an OFFERED (not yet assigned) driver may see */
+/** What an OFFERED (not yet assigned) driver may see — never the customer contact */
 export function driverOfferOrderView(order: OrderRow) {
   return {
     number: order.number,
@@ -294,6 +304,15 @@ export function driverOfferOrderView(order: OrderRow) {
   }
 }
 
+function driverMay(action: 'DRIVER_CANCEL_REQUEST' | 'CONFIRM_PRICE', order: OrderRow): boolean {
+  try {
+    planTransition(action, snapshotOf(order), 'DRIVER')
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** What the ASSIGNED driver sees: the offer view plus customer contact and allowed actions */
 export function driverActiveOrderView(order: OrderRow) {
   return {
@@ -304,6 +323,9 @@ export function driverActiveOrderView(order: OrderRow) {
     attentionKind: order.attentionKind,
     customer: { phone: order.customerPhone, name: order.customerName },
     allowedActions: allowedDriverActions(snapshotOf(order)),
+    /** Server-decided, like allowedActions: the app only renders these */
+    canCancel: driverMay('DRIVER_CANCEL_REQUEST', order),
+    canSetPrice: driverMay('CONFIRM_PRICE', order),
     timestamps: {
       assignedAt: iso(order.assignedAt),
       enRouteAt: iso(order.enRouteAt),

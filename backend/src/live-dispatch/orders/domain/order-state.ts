@@ -108,8 +108,10 @@ export const ORDER_TRANSITIONS: readonly TransitionRule[] = [
     action: 'CONFIRM_PRICE',
     from: ['PRICE_CONFIRMATION_PENDING', 'EN_ROUTE_TO_PICKUP', 'ARRIVED_AT_PICKUP'],
     to: 'ASSIGNED from PRICE_CONFIRMATION_PENDING, otherwise unchanged',
-    actors: ['ADMIN'],
-    preconditions: 'NEGOTIATION_REQUIRED and not yet confirmed; agreed price ≥ 0',
+    // The DRIVER agrees the price with the customer on the phone and records
+    // it himself (product decision, 2026-11) — an operator still can.
+    actors: ['ADMIN', 'DRIVER'],
+    preconditions: 'NEGOTIATION_REQUIRED and not yet confirmed; agreed price ≥ 0; a driver only on their own order',
   },
   { action: 'EN_ROUTE', from: ['ASSIGNED', 'PRICE_CONFIRMATION_PENDING'], to: 'EN_ROUTE_TO_PICKUP', actors: ['DRIVER', 'ADMIN'], preconditions: 'driver may head out while the price is being agreed' },
   { action: 'ARRIVED', from: ['ASSIGNED', 'PRICE_CONFIRMATION_PENDING', 'EN_ROUTE_TO_PICKUP'], to: 'ARRIVED_AT_PICKUP', actors: ['DRIVER', 'ADMIN'], preconditions: '—' },
@@ -117,10 +119,13 @@ export const ORDER_TRANSITIONS: readonly TransitionRule[] = [
   { action: 'COMPLETE', from: ['TRANSPORTING'], to: 'COMPLETED', actors: ['DRIVER', 'ADMIN'], preconditions: 'ends the assignment; does NOT change payment status' },
   {
     action: 'DRIVER_CANCEL_REQUEST',
-    from: ['PRICE_CONFIRMATION_PENDING', 'ASSIGNED', 'EN_ROUTE_TO_PICKUP', 'ARRIVED_AT_PICKUP', 'TRANSPORTING'],
-    to: 'NEEDS_ATTENTION (DRIVER_CANCEL_REQUEST)',
+    // Only before the driver set off (product decision, 2026-11). Once en
+    // route, a driver can only report a PROBLEM; the operator decides.
+    from: ['PRICE_CONFIRMATION_PENDING', 'ASSIGNED'],
+    to: 'SEARCHING (redispatch: reason is not CUSTOMER_DECLINED and the pickup has coordinates) | NEEDS_ATTENTION (DRIVER_CANCEL_REQUEST)',
     actors: ['DRIVER'],
-    preconditions: 'assignment is KEPT; nothing is re-dispatched until an operator releases it',
+    preconditions:
+      'not yet EN_ROUTE. Redispatch (2026-11): the driver is released and a new automatic search starts without him in the same transaction. Otherwise the assignment is KEPT until an operator decides — a customer who declined may mean the whole order is off',
   },
   {
     action: 'FLAG_ATTENTION',
@@ -159,7 +164,7 @@ export function planTransition(
   action: OrderAction,
   order: OrderStateSnapshot,
   actor: Actor,
-  extra: { attentionKind?: AttentionKind; restartSearch?: boolean } = {},
+  extra: { attentionKind?: AttentionKind; restartSearch?: boolean; redispatch?: boolean } = {},
 ): PlannedTransition {
   const rule = ORDER_TRANSITIONS.find((candidate) => candidate.action === action)
   if (!rule || !rule.actors.includes(actor)) throw invalid(action, order, actor)
@@ -202,6 +207,7 @@ export function planTransition(
     case 'COMPLETE':
       return plain('COMPLETED')
     case 'DRIVER_CANCEL_REQUEST':
+      if (extra.redispatch) return plain('SEARCHING')
       return { to: 'NEEDS_ATTENTION', statusBeforeAttention: order.status, attentionKind: 'DRIVER_CANCEL_REQUEST' }
     case 'FLAG_ATTENTION': {
       const kind = extra.attentionKind ?? 'OPERATOR_FLAG'

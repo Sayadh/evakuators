@@ -69,7 +69,8 @@ describe('E2E flows (real Postgres)', { skip: integrationSkip }, () => {
     // push went out with the offer deadline as TTL and no PII on the lock screen
     const pushed = h.push.sent.find((m) => m.data.type === 'offer')
     assert.ok(pushed)
-    assert.ok(pushed.ttlSeconds > 0 && pushed.ttlSeconds <= 30)
+    // TTL = the offer deadline, never longer than the offer timeout setting (45 s by default)
+    assert.ok(pushed.ttlSeconds > 0 && pushed.ttlSeconds <= (await h.rt.settings.get()).offerTimeoutSeconds)
     assert.ok(!`${pushed.title} ${pushed.body}`.includes('Հանրապետության'), 'no address on the lock screen')
   })
 
@@ -154,7 +155,7 @@ describe('E2E flows (real Postgres)', { skip: integrationSkip }, () => {
     assert.deepEqual(priceEvent?.data, { agreedPriceAmd: 18000, quotedPriceAmd: null })
   })
 
-  it('manual reassignment: driver asks out → stays assigned → operator releases + restarts in one step → another driver', async () => {
+  it('driver cancels with a reason (not "customer declined") → released and re-dispatched at once to another driver', async () => {
     await fresh()
     const first = await eligibleDriver(h, offset(YEREVAN, 400, 0))
     const second = await eligibleDriver(h, offset(YEREVAN, 3000, 0))
@@ -165,7 +166,32 @@ describe('E2E flows (real Postgres)', { skip: integrationSkip }, () => {
     assert.equal(offer?.driverId, first.driverId)
     await h.service.driverAccept(first.driverId, offer!.id, ctx())
 
-    const request = await h.service.driverRequest(first.driverId, order.id, { kind: 'CANCEL', reason: 'TECHNICAL_PROBLEM', comment: 'flat tyre' }, ctx({ r: 1 }))
+    // NOT_SPECIFIED = what the app sends when no reason was picked in 45 s
+    const request = await h.service.driverRequest(first.driverId, order.id, { kind: 'CANCEL', reason: 'NOT_SPECIFIED' }, ctx({ r: 1 }))
+    assert.equal(request.status, 201, JSON.stringify(request.body))
+    assert.deepEqual(request.body, { released: true, orderId: order.id }, 'the driver no longer sees the order')
+    const row = await orderRow(h, order.id)
+    assert.equal(row.status, 'SEARCHING')
+    assert.equal(row.activeAssignmentId, null, 'the cancelling driver is released')
+    await drain(h)
+    const next = await pendingOffer(h, order.id)
+    assert.equal(next?.driverId, second.driverId, 'the driver who cancelled is not offered the same job again')
+    assert.equal((await h.service.driverSnapshot(first.driverId)).activeOrder, null)
+  })
+
+  it('manual reassignment: customer declined → stays assigned → operator releases + restarts in one step → another driver', async () => {
+    await fresh()
+    const first = await eligibleDriver(h, offset(YEREVAN, 400, 0))
+    const second = await eligibleDriver(h, offset(YEREVAN, 3000, 0))
+    const order = await createOrder(h)
+    await startDispatch(h, order)
+    await drain(h)
+    const offer = await pendingOffer(h, order.id)
+    assert.equal(offer?.driverId, first.driverId)
+    await h.service.driverAccept(first.driverId, offer!.id, ctx())
+
+    // "Customer declined" may mean the whole order is off: a person decides.
+    const request = await h.service.driverRequest(first.driverId, order.id, { kind: 'CANCEL', reason: 'CUSTOMER_DECLINED', comment: 'customer found another truck' }, ctx({ r: 1 }))
     assert.equal(request.status, 201, JSON.stringify(request.body))
     let row = await orderRow(h, order.id)
     assert.equal(row.status, 'NEEDS_ATTENTION')
@@ -176,7 +202,7 @@ describe('E2E flows (real Postgres)', { skip: integrationSkip }, () => {
     const released = await h.service.releaseAssignment(
       h.adminId,
       order.id,
-      { confirm: true, reason: 'driver has a flat tyre', restartSearch: true, expectedVersion: Number(row.version) },
+      { confirm: true, reason: 'customer still needs a truck', restartSearch: true, expectedVersion: Number(row.version) },
       ctx({ release: 1 }),
     )
     assert.equal(released.status, 200, JSON.stringify(released.body))
@@ -226,13 +252,15 @@ describe('E2E flows (real Postgres)', { skip: integrationSkip }, () => {
     assert.equal(row.attentionKind, 'MANUAL_OFFER_FAILED')
   })
 
-  it('requirements: unknown blocks dispatch; capability filters candidates', async () => {
+  it('requirements: unknown ones do not block dispatch (optional since 2026-11); capability filters candidates', async () => {
     await fresh()
     const plain = await eligibleDriver(h, offset(YEREVAN, 300, 0))
     const skates = await eligibleDriver(h, offset(YEREVAN, 2000, 0), { wheelSkates: true })
     const unknown = await createOrder(h, { requirements: { wheelsRoll: null } })
-    const refused = await h.service.startDispatch(h.adminId, unknown.id, unknown.version, ctx({ u: 1 }))
-    assert.equal((refused.body as { code: string }).code, 'REQUIREMENTS_UNCONFIRMED')
+    const started = await h.service.startDispatch(h.adminId, unknown.id, unknown.version, ctx({ u: 1 }))
+    assert.equal(started.status, 200, JSON.stringify(started.body))
+    assert.equal((await orderRow(h, unknown.id)).status, 'SEARCHING')
+    await h.service.stopDispatch(h.adminId, unknown.id, Number((await orderRow(h, unknown.id)).version), ctx({ u: 2 }))
 
     const locked = await createOrder(h, { requirements: { wheelsRoll: false, steeringLocked: false, gearboxLocked: true, needsManipulator: false } })
     await startDispatch(h, locked)

@@ -1,11 +1,17 @@
 /**
- * The offer. Countdown from the server's deadline; customer contact is NOT
- * here (the API does not send it before acceptance). "Accepted" is shown only
- * after the server confirmed — a dropped connection shows "checking…", never
- * a local success.
+ * The offer. Two choices only — Accept or Reject — before the countdown from
+ * the server's deadline runs out. Customer contact is NOT here (the API does
+ * not send it before acceptance); calling the customer is the first step
+ * AFTER accepting (ActiveOrderScreen). "Accepted" is shown only after the
+ * server confirmed — a dropped connection shows "checking…", never a local
+ * success.
+ *
+ * Reject asks (optionally) for a reason first — PRICE / OTHER / unspecified —
+ * which is stored server-side on the offer; the dispatcher then moves on to
+ * the next driver as with any reject.
  */
-import React, { useEffect, useState } from 'react'
-import { Text, View } from 'react-native'
+import { useEffect, useState } from 'react'
+import { Pressable, Text, View } from 'react-native'
 import type { CurrentOffer } from '../api/types'
 import { secondsLeft } from '../domain/countdown'
 import { useT } from '../i18n'
@@ -16,10 +22,14 @@ function km(meters: number | null): string {
   return meters === null ? '—' : `${(meters / 1000).toFixed(1)}`
 }
 
+const REJECT_REASONS = ['PRICE_NOT_AGREED', 'OTHER'] as const
+
 export function OfferScreen({ offer }: { offer: CurrentOffer }) {
   const t = useT()
   const app = useApp()
   const [now, setNow] = useState(Date.now())
+  const [rejecting, setRejecting] = useState(false)
+  const [reason, setReason] = useState<(typeof REJECT_REASONS)[number] | null>(null)
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 250)
     return () => clearInterval(timer)
@@ -30,6 +40,8 @@ export function OfferScreen({ offer }: { offer: CurrentOffer }) {
   const uncertain = action?.status === 'UNCERTAIN'
   const failed = action?.status === 'FAILED'
   const o = offer.order
+
+  const choice = (selected: boolean) => ({ padding: 12, borderRadius: 10, borderWidth: 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? '#e8eef6' : '#fff' })
 
   return (
     <Screen title={t('offer.title')}>
@@ -56,6 +68,11 @@ export function OfferScreen({ offer }: { offer: CurrentOffer }) {
           .map((k) => (
             <Note key={k} tone="warn">• {t(`offer.requirements.${k}`)}</Note>
           ))}
+        {o.requirements.needsWheelSkates ? (
+          <Note tone="warn">
+            • {o.requirements.wheelSkatesCount ? t('offer.requirements.wheelSkatesCount', { n: o.requirements.wheelSkatesCount }) : t('offer.requirements.wheelSkates')}
+          </Note>
+        ) : null}
         {o.price.mode === 'FIXED' ? (
           <Row label={t('offer.price')} value={`${o.price.quotedAmd?.toLocaleString('hy-AM') ?? '—'} ${t('common.dram')}`} />
         ) : (
@@ -64,9 +81,37 @@ export function OfferScreen({ offer }: { offer: CurrentOffer }) {
       </Card>
       {uncertain ? <Note tone="warn">{t('offer.uncertain')}</Note> : null}
       {failed && action?.errorCode ? <Note tone="danger">{t(`errors.${action.errorCode}`)}</Note> : null}
+      {rejecting ? (
+        <Card>
+          <Text style={{ color: colors.muted }}>{t('offer.rejectReasonTitle')}</Text>
+          {REJECT_REASONS.map((r) => (
+            <Pressable key={r} accessibilityRole="radio" accessibilityState={{ selected: reason === r }} style={choice(reason === r)} onPress={() => setReason(r)}>
+              <Text>{t(`offer.rejectReason${r === 'PRICE_NOT_AGREED' ? 'Price' : 'Other'}`)}</Text>
+            </Pressable>
+          ))}
+          <Pressable accessibilityRole="radio" accessibilityState={{ selected: reason === null }} style={choice(reason === null)} onPress={() => setReason(null)}>
+            <Text>{t('offer.rejectReasonSkip')}</Text>
+          </Pressable>
+        </Card>
+      ) : null}
       <View style={{ gap: 10 }}>
-        <Button variant="success" label={sending ? t('offer.sending') : t('offer.accept')} busy={sending} disabled={left <= 0 || uncertain} onPress={() => void app.accept(offer.offerId)} />
-        <Button variant="outline" label={t('offer.reject')} disabled={left <= 0 || sending || uncertain} onPress={() => void app.reject(offer.offerId)} />
+        {rejecting ? (
+          <>
+            <Button
+              variant="danger"
+              label={sending ? t('offer.sending') : t('offer.rejectConfirm')}
+              busy={sending}
+              disabled={uncertain}
+              onPress={() => void app.reject(offer.offerId, reason)}
+            />
+            <Button variant="outline" label={t('offer.rejectCancel')} disabled={sending || uncertain} onPress={() => setRejecting(false)} />
+          </>
+        ) : (
+          <>
+            <Button variant="success" label={sending ? t('offer.sending') : t('offer.accept')} busy={sending} disabled={left <= 0 || uncertain} onPress={() => void app.accept(offer.offerId)} />
+            <Button variant="outline" label={t('offer.reject')} disabled={left <= 0 || sending || uncertain} onPress={() => setRejecting(true)} />
+          </>
+        )}
       </View>
     </Screen>
   )

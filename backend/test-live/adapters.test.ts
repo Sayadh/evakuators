@@ -186,6 +186,36 @@ describe('routing guard (real Postgres budget)', { skip: integrationSkip }, () =
     assert.ok((await restarted.matrix(six, YEREVAN)).entries.every((e) => !e.ok))
   })
 
+  it('caps provider REQUESTS per day (ORS bills per request; the key is shared with the website)', async () => {
+    await dbCtx.get().pool.query(`DELETE FROM "RoutingUsageDay"`)
+    const provider = new FakeRoutingProvider()
+    const guard = new GuardedRouting(provider, dbCtx.get().pool, {
+      timeoutMs: 1000, retries: 0, baseBackoffMs: 1, maxConcurrent: 2, dailyElementBudget: () => 1000, dailyRequestBudget: () => 2,
+    })
+    assert.ok((await guard.matrix([YEREVAN], YEREVAN)).entries[0].ok)
+    assert.ok((await guard.matrix([YEREVAN], YEREVAN)).entries[0].ok)
+    const refused = await guard.matrix([YEREVAN], YEREVAN)
+    assert.equal(refused.entries[0].ok, false)
+    assert.equal(provider.calls, 2, 'the third request never reached the provider')
+    const zero = new GuardedRouting(provider, dbCtx.get().pool, {
+      timeoutMs: 1000, retries: 0, baseBackoffMs: 1, maxConcurrent: 2, dailyElementBudget: () => 1000, dailyRequestBudget: () => 0, budgetKey: 'fake:zero',
+    })
+    assert.equal((await zero.matrix([YEREVAN], YEREVAN)).entries[0].ok, false, 'a zero cap makes no request at all, even on a new day row')
+    assert.equal(provider.calls, 2)
+  })
+
+  it('a retry is a billed request: it stops when the request cap is reached', async () => {
+    await dbCtx.get().pool.query(`DELETE FROM "RoutingUsageDay"`)
+    const slow = new FakeRoutingProvider({ latencyMs: 300 })
+    const guard = new GuardedRouting(slow, dbCtx.get().pool, {
+      timeoutMs: 50, retries: 3, baseBackoffMs: 5, maxConcurrent: 2, dailyElementBudget: () => 1000, dailyRequestBudget: () => 2,
+    })
+    await guard.matrix([YEREVAN], YEREVAN)
+    assert.equal(slow.calls, 2, '1 try + 1 retry, then the cap')
+    const [{ requests }] = await dbCtx.get().pool.query<{ requests: number }>(`SELECT "requests" FROM "RoutingUsageDay" WHERE "provider" = 'fake'`)
+    assert.equal(requests, 2)
+  })
+
   it('timeout with bounded retry, then every pair fails with TIMEOUT (no straight line passed off as a road)', async () => {
     await dbCtx.get().pool.query(`DELETE FROM "RoutingUsageDay"`)
     const slow = new FakeRoutingProvider({ latencyMs: 300 })

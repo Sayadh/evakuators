@@ -17,7 +17,7 @@ import { availabilitySummary, formatAge } from '~/utils/opsDispatchLabels'
 const props = defineProps<{
   drivers: OpsMapDriver[]
   gpsMaxAgeSeconds: number
-  pickup?: { latitude: number; longitude: number } | null
+  pickup?: { latitude: number | null; longitude: number | null } | null
   selectedId?: number | null
 }>()
 const emit = defineEmits<{ select: [driverId: number]; viewport: [bbox: string | null] }>()
@@ -52,7 +52,9 @@ const points = computed(() =>
     .filter((p) => p.x >= -10 && p.x <= W + 10 && p.y >= -10 && p.y <= H + 10),
 )
 
-const pickupPoint = computed(() => (props.pickup ? project(props.pickup.latitude, props.pickup.longitude) : null))
+const pickupPoint = computed(() =>
+  props.pickup && props.pickup.latitude !== null && props.pickup.longitude !== null ? project(props.pickup.latitude, props.pickup.longitude) : null,
+)
 
 function setView(next: keyof typeof VIEWS) {
   view.value = next

@@ -90,3 +90,9 @@ Tracking consent՝ app-ում պարզ բացատրություն + switch, պա
 **Չի իրականացվել**՝ Prometheus/OpenTelemetry exporter, API latency histogram
 (Nest-ի մակարդակում), event-loop lag metric։ Սրանք ավելացնելու տեղը
 `worker.ts`-ի metrics loop-ն է և Nest interceptor-ը։
+
+## Վարորդի գաղտնիության կառավարում (store-ի պահանջներ)
+
+- Համաձայնության հետ կանչում՝ `DELETE /driver-app/consent/tracking` — offline, tracking-ը կանգնում է; ակտիվ պատվերի կամ սպասող առաջարկի ժամանակ `409 ACTIVE_ORDER_IN_PROGRESS`։
+- Հաշվի ջնջում՝ `POST /driver-app/me/delete` (գաղտնաբառով) կամ ադմինից `POST /ops/dispatch/fleet/:id/delete-account` (վարորդի դիմումով)։ Ջնջվում են location history/current, presence, sessions, push tokens; APP_ONLY-ի դեպքում նաև phone/name/password/vehicle/base (status `DELETED`, համարը կրկին ազատ է)։ `FleetDriver` տողը **չի** ջնջվում, քանի որ FK-երը `ON DELETE CASCADE` են և կջնջեին պատվերների նշանակումները — փոխարենը անանունացվում է։ SITE_LINKED՝ ավարտվում է միայն app access-ը, կայքի պրոֆիլը անձեռնմխելի է։
+- Հրապարակային էջեր՝ `/driver-app/privacy`, `/driver-app/delete-account`։ Store checklist՝ `12-store-submission.md`։

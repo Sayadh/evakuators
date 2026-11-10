@@ -118,8 +118,11 @@ describe('createPayment while already covered', () => {
 
   it('names the date the driver is covered until', async () => {
     // "You already paid" without saying until when sends someone to the phone.
-    const { repository } = fakeRepository(new Date('2026-11-04T10:00:00.000Z'))
-    await expect(buildService(repository).createPayment(7, 'ONE_MONTH')).rejects.toThrow(/04\.11\.2026/)
+    // A fixed date far in the future: a near one (it was 2026-11-04) turns
+    // this test red the day the date passes — coverage has then run out and
+    // the payment is rightly allowed.
+    const { repository } = fakeRepository(new Date('2099-11-04T10:00:00.000Z'))
+    await expect(buildService(repository).createPayment(7, 'ONE_MONTH')).rejects.toThrow(/04\.11\.2099/)
   })
 
   it('lets a driver inside the warning window renew', async () => {

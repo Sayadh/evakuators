@@ -65,8 +65,11 @@ describe('live dispatch console', () => {
 
   it('the live nearby section is never written to storage (an old "online now" list is a lie)', () => {
     const page = read('pages/evakuator.vue')
-    expect(page).toContain('remember(fresh, !straightLineOnly)')
-    expect(page).toContain('fresh = combined.fallback')
+    // One merged list since the live/profile merge: what is remembered is
+    // that list WITHOUT its live entries (their distances were from a
+    // position that has since moved).
+    expect(page).toContain('remember(remembered ?? fresh, !straightLineOnly)')
+    expect(page).toContain('combined.results.filter((r) => !r.live)')
     expect(page).not.toContain('remember(combined')
     expect(page).not.toContain('remember(liveResult')
   })

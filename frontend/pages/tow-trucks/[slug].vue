@@ -7,6 +7,7 @@ import { getTowTruckRoute } from '~/utils/routeHelpers'
 import { buildTowTruckBusinessSchema } from '~/utils/schemaOrg'
 import { buildLocationSeo } from '~/utils/seoContent'
 import { localizedWherePhrase, type PlaceKind } from '~/i18n/placeNames'
+import { displayBaseName } from '~/utils/primaryArea'
 
 const route = useRoute()
 const slug = route.params.slug as string
@@ -31,9 +32,10 @@ const { capacityText, serviceLabel } = useCatalogLabels()
 
 const locationSlug = truck.location.districtSlug ?? truck.location.citySlug
 const locationKind: PlaceKind = truck.location.districtSlug ? 'district' : 'city'
+const baseName = displayBaseName(truck.location)
 const wherePhrase = locationSlug
-  ? localizedWherePhrase(locationKind, locationSlug, truck.location.name, locale.value)
-  : truck.location.name
+  ? localizedWherePhrase(locationKind, locationSlug, baseName, locale.value)
+  : baseName
 
 // Only append a real, driver-confirmed hours sentence — never a placeholder.
 // Working hours are driver-entered free text and stay untranslated, like the
@@ -56,7 +58,7 @@ useSeoMetaData({
     phone: truck.phone,
   }),
   keywords: locationSlug
-    ? buildLocationSeo(truck.location.name, locationSlug, locale.value, locationKind).keywords
+    ? buildLocationSeo(baseName, locationSlug, locale.value, locationKind).keywords
     : undefined,
   path: getTowTruckRoute(truck.slug),
   image: truck.images[0],

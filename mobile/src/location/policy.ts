@@ -32,14 +32,36 @@ export function shouldTrack(policy: TrackingPolicy): boolean {
   return policy.mode !== 'OFF' && policy.locationIntervalSeconds !== null
 }
 
+/**
+ * What the OS location task is started with. Only this decides a restart
+ * (2026-11): every restart re-posts Android's "Evakuators · Ընդունում եք
+ * պատվերներ" notification, and the server switches IDLE_STATIONARY ↔
+ * IDLE_MOVING with the driver's speed — it popped up after almost every fix.
+ * Both idle modes now share one OS request (the faster cadence, `IDLE_OS_SECONDS`)
+ * and the app keeps one fix per the CURRENT policy's interval (`keepFix`).
+ * A restart is left for going online/offline, an order starting or ending
+ * (other accuracy, other notification text) and GPS recovery.
+ */
+export type ServiceClass = 'OFF' | 'IDLE' | 'ACTIVE'
+
+/** The OS cadence for both idle modes: the shorter one (IDLE_MOVING, backend fleet/domain/gps.ts) */
+export const IDLE_OS_SECONDS = 30
+
+export function serviceClass(policy: TrackingPolicy): ServiceClass {
+  if (!shouldTrack(policy)) return 'OFF'
+  return policy.mode === 'ACTIVE_ORDER' ? 'ACTIVE' : 'IDLE'
+}
+
+/** The interval the OS is asked for: idle modes share one, so moving ↔ standing needs no restart */
+export function osIntervalSeconds(policy: TrackingPolicy): number {
+  const interval = policy.locationIntervalSeconds ?? DEFAULT_POLICY.locationIntervalSeconds!
+  return serviceClass(policy) === 'IDLE' ? Math.min(interval, IDLE_OS_SECONDS) : interval
+}
+
 /** Did the policy change enough to restart the OS location task? */
 export function needsRestart(previous: TrackingPolicy | null, next: TrackingPolicy): boolean {
   if (!previous) return true
-  return (
-    previous.mode !== next.mode ||
-    previous.locationIntervalSeconds !== next.locationIntervalSeconds ||
-    previous.distanceFilterMeters !== next.distanceFilterMeters
-  )
+  return serviceClass(previous) !== serviceClass(next) || previous.distanceFilterMeters !== next.distanceFilterMeters
 }
 
 /**

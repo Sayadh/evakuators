@@ -21,14 +21,16 @@ import { Linking, Switch, Text, View } from 'react-native'
 import { ApiError, PRIVACY_POLICY_URL } from '../api/client'
 import { useT } from '../i18n'
 import { requestPushPermission, setupChannels } from '../push/push'
+import { useNav } from '../navigation/Navigator'
 import { useApp } from '../state/AppState'
-import { Button, Card, colors, Note, Row, Screen } from '../ui/kit'
+import { Button, Card, colors, Header, Note, Row, Screen } from '../ui/kit'
 
 type Status = 'unknown' | 'granted' | 'denied'
 
-export function PermissionsScreen({ onDone, onSkip }: { onDone: () => void; onSkip: () => void }) {
+export function PermissionsScreen({ onDone, onSkip, onBack }: { onDone: () => void; onSkip: () => void; onBack?: () => void }) {
   const t = useT()
   const app = useApp()
+  const nav = useNav()
   const [consented, setConsented] = useState((app.snapshot?.trackingConsentVersion ?? 0) >= 1)
   const [foreground, setForeground] = useState<Status>('unknown')
   const [background, setBackground] = useState<Status>('unknown')
@@ -60,7 +62,7 @@ export function PermissionsScreen({ onDone, onSkip }: { onDone: () => void; onSk
   const label = (s: Status) => (s === 'granted' ? '✓' : s === 'denied' ? '✗' : '—')
 
   return (
-    <Screen title={t('permissions.title')}>
+    <Screen header={onBack ? <Header title={t('permissions.title')} onBack={onBack} /> : undefined} title={onBack ? undefined : t('permissions.title')}>
       <Card>
         <Text style={{ fontSize: 17, fontWeight: '700', color: colors.text }}>{t('permissions.headline')}</Text>
         <Note>{t('permissions.body1')}</Note>
@@ -98,6 +100,7 @@ export function PermissionsScreen({ onDone, onSkip }: { onDone: () => void; onSk
           </>
         ) : null}
       </Card>
+      <Button variant="outline" icon="alert" label={t('alerts.title')} onPress={() => nav.push('alertsSetup')} />
       <Button label={t('permissions.continue')} disabled={!consented || foreground !== 'granted'} onPress={onDone} />
       <Button variant="outline" label={t('permissions.notNow')} onPress={onSkip} />
       <Note>{t('permissions.notNowNote')}</Note>

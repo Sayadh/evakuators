@@ -13,7 +13,10 @@ export type OutboxTopic =
   | 'dispatch.advance'
   | 'offer.expire'
   | 'push.offer'
+  | 'push.offerClosed'
   | 'push.order'
+  | 'push.walletLow'
+  | 'push.walletCredited'
   | 'realtime'
 
 export interface OutboxMessage {

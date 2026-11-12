@@ -70,8 +70,8 @@ async function submit(): Promise<void> {
 
   submitting.value = true
   try {
-    await driverAuthRepository.changePassword(currentPassword.value, newPassword.value)
-    driverAuth.markPasswordChanged()
+    const { token } = await driverAuthRepository.changePassword(currentPassword.value, newPassword.value)
+    driverAuth.markPasswordChanged(token)
     currentPassword.value = ''
     newPassword.value = ''
     repeatPassword.value = ''

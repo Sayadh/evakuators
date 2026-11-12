@@ -10,7 +10,9 @@ import {
   type OrderStateSnapshot,
 } from '../src/live-dispatch/orders/domain/order-state'
 import { capabilityMismatches, unconfirmedRequirements } from '../src/live-dispatch/orders/domain/requirements'
+import { missedOutcome, missedReason } from '../src/live-dispatch/orders/domain/missed'
 import { DispatchError } from '../src/live-dispatch/platform/errors'
+import { freePriceAllowed, orderFeeAmd, feeRulesOf, requiredBalanceFor, topupBonusAmd, validTopupAmount } from '../src/live-dispatch/wallet/domain/fees'
 import { DEFAULT_DISPATCH_SETTINGS, resolveSettings, validateSetting } from '../src/live-dispatch/platform/settings'
 import { isoSecondsAgo, settings, YEREVAN } from './helpers'
 
@@ -246,11 +248,17 @@ describe('order state machine', () => {
     const order = snap({ status: 'ARRIVED_AT_PICKUP', pricingMode: 'NEGOTIATION_REQUIRED', hasActiveAssignment: true })
     assert.throws(() => planTransition('START_TRANSPORT', order, 'DRIVER'), (e: DispatchError) => e.code === 'PRICE_NOT_CONFIRMED')
     assert.equal(planTransition('START_TRANSPORT', { ...order, priceConfirmed: true }, 'DRIVER').to, 'TRANSPORTING')
-    // but the driver may head out and arrive while the price is being agreed
-    assert.deepEqual(
-      allowedDriverActions({ ...order, status: 'PRICE_CONFIRMATION_PENDING' }),
-      ['EN_ROUTE', 'ARRIVED'],
-    )
+    // 2026-11-12: the driver records the agreed price BEFORE setting off —
+    // no step forward until then (the price entry is all the app offers)…
+    const pending = { ...order, status: 'PRICE_CONFIRMATION_PENDING' as const }
+    assert.deepEqual(allowedDriverActions(pending), [])
+    assert.throws(() => planTransition('EN_ROUTE', pending, 'DRIVER'), (e: DispatchError) => e.code === 'PRICE_NOT_CONFIRMED')
+    assert.throws(() => planTransition('ARRIVED', pending, 'DRIVER'), (e: DispatchError) => e.code === 'PRICE_NOT_CONFIRMED')
+    // …then he goes on as usual; an operator is never blocked by it
+    assert.deepEqual(allowedDriverActions({ ...pending, priceConfirmed: true }), ['EN_ROUTE', 'ARRIVED'])
+    assert.equal(planTransition('EN_ROUTE', pending, 'ADMIN').to, 'EN_ROUTE_TO_PICKUP')
+    // an order already under way before this rule still arrives (transport needs the price)
+    assert.equal(planTransition('ARRIVED', { ...order, status: 'EN_ROUTE_TO_PICKUP' }, 'DRIVER').to, 'ARRIVED_AT_PICKUP')
   })
 
   it('a driver cancel request KEEPS the assignment and blocks progress until an operator acts', () => {
@@ -326,5 +334,85 @@ describe('settings', () => {
     assert.equal(resolved.offerTimeoutSeconds, DEFAULT_DISPATCH_SETTINGS.offerTimeoutSeconds)
     assert.equal(resolved.gpsMaxAgeSeconds, 180)
     assert.deepEqual(invalid, ['offerTimeoutSeconds'])
+  })
+
+  it('the delivery window plus the answer window must fit inside the search', () => {
+    assert.equal(DEFAULT_DISPATCH_SETTINGS.offerDeliverySeconds, 15)
+    assert.match(String(validateSetting('offerDeliverySeconds', 2)), /5–120/)
+    const invalid: string[] = []
+    const resolved = resolveSettings(
+      [{ key: 'searchMaxSeconds', value: 100 }, { key: 'offerTimeoutSeconds', value: 90 }, { key: 'offerDeliverySeconds', value: 20 }],
+      (key) => invalid.push(key),
+    )
+    assert.deepEqual(invalid, ['*'])
+    assert.equal(resolved.offerDeliverySeconds, DEFAULT_DISPATCH_SETTINGS.offerDeliverySeconds)
+  })
+})
+
+describe('missed offers (driver app «Բաց թողնված»)', () => {
+  it('why: never reached the phone / answered too late / no answer', () => {
+    assert.equal(missedReason(null, 'TIMEOUT'), 'NOT_DELIVERED')
+    assert.equal(missedReason(new Date(), 'DEADLINE_AT_ACCEPT'), 'TOO_LATE')
+    assert.equal(missedReason(new Date(), 'DEADLINE_AT_REJECT'), 'TOO_LATE')
+    assert.equal(missedReason(new Date(), 'TIMEOUT'), 'NO_ANSWER')
+  })
+  it('what became of the order — cancelled wins, then taken by another driver', () => {
+    assert.equal(missedOutcome('CANCELLED', true), 'CANCELLED')
+    assert.equal(missedOutcome('COMPLETED', true), 'TAKEN')
+    assert.equal(missedOutcome('COMPLETED', false), 'CLOSED')
+    assert.equal(missedOutcome('SEARCHING', false), 'OPEN')
+  })
+})
+
+describe('driver wallet fees (product decision 2026-11-12)', () => {
+  const rules = feeRulesOf(DEFAULT_DISPATCH_SETTINGS)
+  it('≤ 5 000 (minimum) → free; ≤ 15 000 → 1000; above → 7% of the whole price, rounded to 100, at most 6 000', () => {
+    const cases: [number | null, number][] = [
+      [null, 1000], [4000, 0], [5000, 0], [5001, 1000], [10000, 1000], [15000, 1000],
+      [15001, 1100], [20000, 1400], [25000, 1800], [30000, 2100], [50000, 3500],
+      [85700, 6000], [200000, 6000],
+    ]
+    for (const [price, fee] of cases) assert.equal(orderFeeAmd(price, rules), fee, `price ${price}`)
+  })
+  it('lines accepted under the first schedule (+1000 per started 10 000) settle by it', () => {
+    const legacy = { walletFeeBaseAmd: 1000, walletFeeBaseMaxPriceAmd: 18000, walletFeeStepPriceAmd: 10000, walletFeeStepAmd: 1000 }
+    assert.equal(orderFeeAmd(19000, legacy), 2000)
+    assert.equal(orderFeeAmd(28001, legacy), 3000)
+  })
+  it('the required balance follows the price the driver will be charged by; billing off → no requirement', () => {
+    const on = { ...DEFAULT_DISPATCH_SETTINGS, walletBillingEnabled: 1 }
+    assert.equal(requiredBalanceFor({ pricingMode: 'FIXED', quotedPriceAmd: 25000, agreedPriceAmd: null }, on), 1800)
+    assert.equal(requiredBalanceFor({ pricingMode: 'NEGOTIATION_REQUIRED', quotedPriceAmd: 40000, agreedPriceAmd: null }, on), 1000)
+    assert.equal(requiredBalanceFor({ pricingMode: 'NEGOTIATION_REQUIRED', quotedPriceAmd: null, agreedPriceAmd: 30000 }, on), 2100)
+    assert.equal(requiredBalanceFor({ pricingMode: 'FIXED', quotedPriceAmd: 25000, agreedPriceAmd: null }, DEFAULT_DISPATCH_SETTINGS), null)
+    // the minimum (free) order needs no balance at all
+    assert.equal(requiredBalanceFor({ pricingMode: 'FIXED', quotedPriceAmd: 5000, agreedPriceAmd: null }, on), null)
+  })
+  it('top-up amounts: whole drams within the configured bounds', () => {
+    assert.equal(validTopupAmount(5000, DEFAULT_DISPATCH_SETTINGS), true)
+    for (const bad of [0, 999, 200001, 1500.5, '5000', null]) assert.equal(validTopupAmount(bad, DEFAULT_DISPATCH_SETTINGS), false, String(bad))
+  })
+  it('billing is 0 or 1, never anything in between', () => {
+    assert.ok(validateSetting('walletBillingEnabled', 2))
+    assert.equal(validateSetting('walletBillingEnabled', 1), null)
+  })
+})
+
+describe('driver wallet — bonus and the minimum-price distance rule (2026-11-12)', () => {
+  it('bonus: the highest threshold reached decides the percent; off → none', () => {
+    const s = { walletTopupBonusEnabled: 1, walletTopupBonusThresholdsAmd: [20000, 50000], walletTopupBonusPercents: [5, 10] }
+    assert.equal(topupBonusAmd(19999, s), 0)
+    assert.equal(topupBonusAmd(20000, s), 1000)
+    assert.equal(topupBonusAmd(49999, s), 2499)
+    assert.equal(topupBonusAmd(50000, s), 5000)
+    assert.equal(topupBonusAmd(50000, { ...s, walletTopupBonusEnabled: 0 }), 0)
+  })
+  it('the minimum price is refused for a trip longer than 5 km; unknown distance → allowed (the review catches it)', () => {
+    const s = { walletFreeMaxRouteMeters: 5000 }
+    assert.equal(freePriceAllowed(4999, s), true)
+    assert.equal(freePriceAllowed(5000, s), true)
+    assert.equal(freePriceAllowed(5001, s), false)
+    assert.equal(freePriceAllowed(null, s), true)
+    assert.equal(freePriceAllowed(50_000, { walletFreeMaxRouteMeters: 0 }), true)
   })
 })

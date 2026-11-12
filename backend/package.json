@@ -18,12 +18,15 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "admin:create": "node scripts/create-admin-user.js",
+    "review:account": "node scripts/create-review-account.js",
     "admin:telegram-link": "node scripts/generate-admin-telegram-link.js",
+    "admin:accounts": "node scripts/admin-accounts.js",
     "driver:create-test": "node scripts/create-test-driver.js",
     "featured": "node scripts/featured.js",
     "media:migrate": "node scripts/migrate-images-to-disk.js",
     "start:worker": "node dist/worker.js",
     "test:live": "npx --yes tsx@4.19.2 --test test-live/*.test.ts",
+    "test:live:pglite": "LIVE_DISPATCH_TEST_DATABASE_URL=pglite npx --yes tsx@4.19.2 --test test-live/*.test.ts",
     "load:live": "npx --yes tsx@4.19.2 load-test/run.ts"
   },
   "dependencies": {

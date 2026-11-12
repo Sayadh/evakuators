@@ -27,10 +27,11 @@ export const DISPATCH_ERRORS = {
   REQUIREMENTS_UNCONFIRMED: { status: 422, message: 'Պատվերի տեխնիկական պահանջները ճշտված չեն' },
   PRICE_REQUIRED: { status: 422, message: 'Ֆիքսված գնով պատվերի համար գինը պարտադիր է' },
   PICKUP_LOCATION_REQUIRED: { status: 422, message: 'Ավտոմատ որոնման համար պետք են վերցնելու կետի կոորդինատները. ուղարկեք կոնկրետ վարորդի ձեռքով' },
-  PRICE_NOT_CONFIRMED: { status: 409, message: 'Գինը դեռ հաստատված չէ, տեղափոխումը չի կարող սկսվել' },
+  PRICE_NOT_CONFIRMED: { status: 409, message: 'Նախ գրեք հաճախորդի հետ համաձայնեցված գինը, հետո շարունակեք' },
   REQUEST_ALREADY_OPEN: { status: 409, message: 'Այս պատվերի համար արդեն կա բաց հարցում' },
   NO_OPEN_REQUEST: { status: 409, message: 'Բաց հարցում չկա' },
   LOCATION_REJECTED: { status: 422, message: 'Տեղադրությունը չի ընդունվել' },
+  DRIVER_BLOCKED: { status: 403, message: 'Ձեր հաշիվը արգելափակված է օպերատորի կողմից' },
   TRACKING_CONSENT_REQUIRED: { status: 409, message: 'Անհրաժեշտ է տեղադրության հետևման համաձայնություն' },
   IDEMPOTENCY_KEY_REUSED: { status: 422, message: 'Նույն Idempotency-Key-ը օգտագործվել է այլ հարցման համար' },
   IDEMPOTENCY_IN_PROGRESS: { status: 409, message: 'Նույն հարցումն արդեն մշակվում է' },
@@ -49,6 +50,11 @@ export const DISPATCH_ERRORS = {
   TOW_TRUCK_NOT_FOUND: { status: 404, message: 'Կայքի պրոֆիլը չի գտնվել' },
   ACTIVE_ORDER_IN_PROGRESS: { status: 409, message: 'Ունեք ակտիվ պատվեր կամ սպասող առաջարկ. նախ ավարտեք կամ մերժեք այն' },
   TOW_TRUCK_ALREADY_LINKED: { status: 409, message: 'Այս կայքի պրոֆիլն արդեն կապված է հավելվածի վարորդի հետ' },
+  SITE_PROFILE_REQUIRED: { status: 403, message: 'Այս բաժինը հասանելի է կայքում պրոֆիլ ունեցող վարորդներին' },
+  WALLET_TOPUP_UNAVAILABLE: { status: 409, message: 'Հաշվի համալրումը հիմա հասանելի չէ. դիմեք ադմինիստրատորին' },
+  WALLET_TOPUP_NOT_FOUND: { status: 404, message: 'Վճարումը չի գտնվել' },
+  PRICE_TOO_LOW_FOR_DISTANCE: { status: 409, message: 'Այս հեռավորության պատվերը չի կարող լինել նվազագույն գնով. գրեք իրական գինը' },
+  PRICE_REVIEW_NOT_FOUND: { status: 404, message: 'Գնի ստուգումը չի գտնվել կամ արդեն որոշված է' },
 } as const
 
 export type DispatchErrorCode = keyof typeof DISPATCH_ERRORS

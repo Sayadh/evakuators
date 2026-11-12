@@ -1,4 +1,6 @@
 {
   "NSLocationWhenInUseUsageDescription": "Evakuators Driver uses your location to offer you nearby tow-truck orders.",
-  "NSLocationAlwaysAndWhenInUseUsageDescription": "Evakuators Driver uses your location while you have \"Accept orders\" switched on or an active order — also when the app is closed or not in use — to offer you nearby orders and to show the dispatcher your route to the customer. It is not used for ads and not shared with data brokers."
+  "NSLocationAlwaysAndWhenInUseUsageDescription": "Evakuators Driver uses your location while you have \"Accept orders\" switched on or an active order — also when the app is closed or not in use — to offer you nearby orders and to show the dispatcher your route to the customer. It is not used for ads and not shared with data brokers.",
+  "NSCameraUsageDescription": "Evakuators Driver uses the camera only when you take a photo of your tow truck for your profile.",
+  "NSPhotoLibraryUsageDescription": "Evakuators Driver opens your photos only so you can choose pictures of your tow truck for your profile."
 }

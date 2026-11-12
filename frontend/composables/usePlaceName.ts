@@ -1,3 +1,4 @@
+import { displayBaseName } from '~/utils/primaryArea'
 import { localizedPlaceName, type PlaceKind } from '~/i18n/placeNames'
 
 /**
@@ -48,7 +49,7 @@ export function useLocationName(): (location: {
 }) => string {
   const placeName = usePlaceName()
   return (location) => {
-    if (location.districtSlug) return placeName('district', location.districtSlug, location.name)
+    if (location.districtSlug) return placeName('district', location.districtSlug, displayBaseName(location))
     if (location.citySlug) return placeName('city', location.citySlug, location.name)
     if (location.regionSlug) return placeName('region', location.regionSlug, location.name)
     return location.name

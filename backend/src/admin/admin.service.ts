@@ -418,6 +418,23 @@ export class AdminService {
             priceWaitingPerHour: dto.priceWaitingPerHour,
             priceNightSurchargePercent: dto.priceNightSurchargePercent,
             priceExtraLoading: dto.priceExtraLoading,
+            // An app sign-up carries the password the driver chose there (see
+            // CreateAppRegistrationDto). It moves onto the truck as an OWNED
+            // password — `mustChangePassword: false`, the third row of the
+            // handover table in docs/auth-and-security.md — so the Telegram
+            // link generated below touches nothing and sends nothing for this
+            // driver, exactly as for any driver who already chose their own.
+            // A website request has none and the truck starts at row one, as
+            // it always has.
+            ...(request.passwordHash ? { passwordHash: request.passwordHash, mustChangePassword: false } : {}),
+            // An APP sign-up is an app driver, not a website listing
+            // (2026-11-12): the profile exists — photos, prices, password —
+            // but stays off the site until the driver asks from the app and
+            // an admin publishes it (SiteListingService). Not a deactivation:
+            // `appOnly` says why it is hidden.
+            // A request an admin made from an existing app driver
+            // («Հրապարակել կայքում») is published on approval: that IS the decision.
+            ...(request.source === 'APP' && request.fleetDriverId === null ? { isActive: false, appOnly: true } : {}),
           },
         })
 
@@ -447,9 +464,37 @@ export class AdminService {
         // PrivacyConsentService.attachToTowTruck.
         await this.privacyConsent.attachToTowTruck(request.id, created.id, tx)
 
+        // Made from an app-only driver: that same app account now IS this
+        // truck's app access — same id (orders, wallet, sessions), and the
+        // password moved onto the truck above, so nobody is logged out.
+        // Mirrors FleetAccess.linkToSite, which cannot be called from here.
+        if (request.fleetDriverId !== null) {
+          const linked = await tx.$executeRaw`
+            UPDATE "FleetDriver"
+               SET "kind" = 'SITE_LINKED', "towTruckId" = ${created.id},
+                   "status" = CASE WHEN "status" = 'SUSPENDED' THEN 'SUSPENDED'::"FleetDriverStatus" ELSE 'ACTIVE'::"FleetDriverStatus" END,
+                   "phone" = NULL, "passwordHash" = NULL, "driverName" = NULL, "vehicleType" = NULL, "capacityTons" = NULL,
+                   "maxLoadTons" = NULL, "manipulator" = NULL, "wheelSkates" = NULL, "vehicleDescription" = NULL,
+                   "baseLatitude" = NULL, "baseLongitude" = NULL,
+                   "statusChangedAt" = now(), "statusReason" = NULL, "updatedAt" = now()
+             WHERE "id" = ${request.fleetDriverId} AND "kind" = 'APP_ONLY' AND "status" <> 'DELETED'`
+          if (linked === 1) {
+            await tx.$executeRaw`
+              INSERT INTO "FleetDriverEvent" ("driverId", "type", "actorUserId", "data")
+              VALUES (${request.fleetDriverId}, 'PUBLISHED_ON_SITE', NULL, ${JSON.stringify({ towTruckId: created.id, registrationRequestId: request.id })}::jsonb)`
+          }
+        }
+
         await tx.registrationRequest.update({
           where: { id: request.id },
-          data: { status: RegistrationStatus.APPROVED },
+          // The hash now lives on the truck; one row holds it, never two.
+          // `approvedTowTruckId` is what lets the driver app grant itself
+          // access on the first sign-in (FleetAccess.authenticate).
+          data: {
+            status: RegistrationStatus.APPROVED,
+            approvedTowTruckId: created.id,
+            ...(request.passwordHash ? { passwordHash: null } : {}),
+          },
         })
 
         return created

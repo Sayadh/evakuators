@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   basePlaceCandidates,
   composeLocationName,
+  displayBaseName,
   isRouteBase,
   placementFor,
   primaryPlaceOptions,
@@ -19,6 +20,17 @@ import {
  * is a separate concern: a driver states one base place, and that is both what
  * a city/district page's listing is scoped to AND what feeds the boost above.
  */
+
+describe('Yerevan bases (2026-11-12): brackets, not «գյուղ»', () => {
+  it('composes a district base with the spot in brackets', () => {
+    expect(composeLocationName('Ավան', 'Ծարավ Աղբյուր', 'avan')).toBe('Ավան (Ծարավ Աղբյուր)')
+  })
+  it('shows labels saved before in the new form, only for a district', () => {
+    expect(displayBaseName({ name: 'Ավան, գյուղ Ջրվեժ', districtSlug: 'avan' })).toBe('Ավան (Ջրվեժ)')
+    expect(displayBaseName({ name: 'Վարդենիս, գյուղ Շատվան', districtSlug: null })).toBe('Վարդենիս, գյուղ Շատվան')
+    expect(displayBaseName({ name: 'Ավան', districtSlug: 'avan' })).toBe('Ավան')
+  })
+})
 
 describe('composeLocationName', () => {
   it('is just the settlement when there is no village', () => {

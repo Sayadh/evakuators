@@ -19,7 +19,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Pressable, Text, TextInput } from 'react-native'
 import { useT } from '../i18n'
 import { useApp } from '../state/AppState'
-import { Button, Card, colors, Note, Screen } from '../ui/kit'
+import { Button, Card, colors, Header, Note, Screen } from '../ui/kit'
 
 export type RequestMode = 'CANCEL' | 'PROBLEM'
 
@@ -73,10 +73,10 @@ export function RequestScreen({ orderId, mode, onDone }: { orderId: number; mode
   const choice = (selected: boolean) => ({ padding: 12, borderRadius: 10, borderWidth: 1, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? '#e8eef6' : '#fff' })
 
   const outcome =
-    mode === 'PROBLEM' ? t('request.problemNote') : reason === 'CUSTOMER_DECLINED' ? t('request.cancelToOperator') : t('request.cancelRedispatch')
+    mode === 'PROBLEM' ? (reason === 'CUSTOMER_DECLINED' ? t('request.problemCustomerDeclined') : t('request.problemNote')) : reason === 'CUSTOMER_DECLINED' ? t('request.cancelToOperator') : t('request.cancelRedispatch')
 
   return (
-    <Screen title={mode === 'CANCEL' ? t('request.titleCancel') : t('request.titleProblem')}>
+    <Screen header={<Header title={mode === 'CANCEL' ? t('request.titleCancel') : t('request.titleProblem')} onBack={busy ? undefined : onDone} />}>
       {mode === 'CANCEL' ? (
         <Card style={{ borderColor: left > 10 ? colors.border : colors.danger, borderWidth: 2 }}>
           <Text style={{ fontSize: 22, fontWeight: '800', color: left > 10 ? colors.text : colors.danger }} accessibilityLiveRegion="polite">
@@ -109,7 +109,6 @@ export function RequestScreen({ orderId, mode, onDone }: { orderId: number; mode
         disabled={reason === null || needsComment || busy}
         onPress={() => reason !== null && void send(reason)}
       />
-      <Button variant="outline" label={t('common.back')} disabled={busy} onPress={onDone} />
     </Screen>
   )
 }

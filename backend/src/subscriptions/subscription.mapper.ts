@@ -68,7 +68,9 @@ export function toAdminPaymentSummaryApi(payment: SubscriptionPayment): AdminRev
     id: payment.id,
     towTruckId: payment.towTruckId,
     kind: payment.kind,
-    planTitle: promotionPaymentTitle(payment.promotionScope, payment.promotionDays),
+    // A driver-app wallet top-up (2026-11-12) is only an amount
+    planTitle:
+      payment.kind === 'WALLET_TOPUP' ? 'Հավելվածի հաշվի համալրում' : promotionPaymentTitle(payment.promotionScope, payment.promotionDays),
     amount: payment.amount,
     currency: payment.currency,
     status: payment.status,

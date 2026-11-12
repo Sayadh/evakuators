@@ -20,6 +20,7 @@ export function useLocationSearch() {
 
   const locationStore = useLocationStore()
   const router = useRouter()
+  const localePath = useLocalePath()
 
   const regionOptions = computed<SelectOption[]>(() => buildRegionOptions(locale.value))
 
@@ -63,7 +64,8 @@ export function useLocationSearch() {
   function submit(): void {
     if (!canSearch.value) return
     trackLocationSearch(selectedRegion.value, selectedCity.value || undefined)
-    router.push(getSearchRoute())
+    // localePath: keeps /ru or /en — a plain path sent a Russian visitor to the Armenian page
+    router.push(localePath(getSearchRoute()))
   }
 
   return {

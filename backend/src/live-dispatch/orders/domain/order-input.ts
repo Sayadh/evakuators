@@ -21,13 +21,22 @@ export function normaliseArmenianPhone(input: string): string {
   return digits
 }
 
-const point = z
+/**
+ * Destination (2026-11): a description alone is enough — the operator often
+ * knows only "Davtashen" when the call comes in. Coordinates, when given,
+ * come as a pair inside Armenia; they are what the route figures and the
+ * driver's navigation need.
+ */
+const destinationPoint = z
   .object({
-    latitude: z.number().finite().min(-90).max(90),
-    longitude: z.number().finite().min(-180).max(180),
+    latitude: z.number().finite().min(-90).max(90).nullable(),
+    longitude: z.number().finite().min(-180).max(180).nullable(),
     address: z.string().trim().min(2).max(500),
   })
-  .refine((p) => isWithinArmenia(p.latitude, p.longitude), { message: 'outside Armenia' })
+  .refine((p) => (p.latitude === null) === (p.longitude === null), {
+    message: 'latitude and longitude must both be given or both omitted',
+  })
+  .refine((p) => p.latitude === null || p.longitude === null || isWithinArmenia(p.latitude, p.longitude), { message: 'outside Armenia' })
 
 /**
  * Pickup, relaxed (product decision, 2026-11): only the address is required —
@@ -57,7 +66,7 @@ export const createOrderSchema = z
     customerPhone: z.string().transform(normaliseArmenianPhone).pipe(z.string().regex(ARMENIAN_PHONE)),
     customerName: z.string().trim().max(120).nullable().optional(),
     pickup: pickupPoint,
-    destination: point.nullable().optional(),
+    destination: destinationPoint.nullable().optional(),
     vehicle: z
       .object({
         make: z.string().trim().max(60).nullable().optional(),
@@ -93,7 +102,7 @@ export const updateOrderSchema = z
     customerPhone: z.string().transform(normaliseArmenianPhone).pipe(z.string().regex(ARMENIAN_PHONE)).optional(),
     customerName: z.string().trim().max(120).nullable().optional(),
     pickup: pickupPoint.optional(),
-    destination: point.nullable().optional(),
+    destination: destinationPoint.nullable().optional(),
     vehicle: z
       .object({
         make: z.string().trim().max(60).nullable().optional(),
@@ -200,6 +209,8 @@ export const cancelSchema = z
     expectedVersion: z.number().int().min(1),
     reason: z.enum(['DRIVER_CANNOT_PERFORM', 'CUSTOMER_DECLINED', 'WRONG_DATA', 'PRICE_NOT_AGREED', 'TECHNICAL_PROBLEM', 'OTHER']),
     comment: z.string().trim().max(1000).nullable().optional(),
+    /** After the driver arrived: return his fee anyway (the operator confirmed he came for nothing) */
+    refundDriverFee: z.boolean().optional(),
   })
   .strict()
   .refine((v) => v.reason !== 'OTHER' || (v.comment ?? '').length > 0, { message: 'comment required for OTHER', path: ['comment'] })

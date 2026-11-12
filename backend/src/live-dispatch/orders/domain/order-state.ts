@@ -113,8 +113,11 @@ export const ORDER_TRANSITIONS: readonly TransitionRule[] = [
     actors: ['ADMIN', 'DRIVER'],
     preconditions: 'NEGOTIATION_REQUIRED and not yet confirmed; agreed price ≥ 0; a driver only on their own order',
   },
-  { action: 'EN_ROUTE', from: ['ASSIGNED', 'PRICE_CONFIRMATION_PENDING'], to: 'EN_ROUTE_TO_PICKUP', actors: ['DRIVER', 'ADMIN'], preconditions: 'driver may head out while the price is being agreed' },
-  { action: 'ARRIVED', from: ['ASSIGNED', 'PRICE_CONFIRMATION_PENDING', 'EN_ROUTE_TO_PICKUP'], to: 'ARRIVED_AT_PICKUP', actors: ['DRIVER', 'ADMIN'], preconditions: '—' },
+  // 2026-11-12: a DRIVER records the agreed price BEFORE setting off — the
+  // fee (provisional 1000 ֏ at accept) is settled on it, so the job must not
+  // start on an unknown price. An operator may still move it (and set it).
+  { action: 'EN_ROUTE', from: ['ASSIGNED', 'PRICE_CONFIRMATION_PENDING'], to: 'EN_ROUTE_TO_PICKUP', actors: ['DRIVER', 'ADMIN'], preconditions: 'a driver: price FIXED or confirmed (PRICE_NOT_CONFIRMED otherwise)' },
+  { action: 'ARRIVED', from: ['ASSIGNED', 'PRICE_CONFIRMATION_PENDING', 'EN_ROUTE_TO_PICKUP'], to: 'ARRIVED_AT_PICKUP', actors: ['DRIVER', 'ADMIN'], preconditions: 'a driver from PRICE_CONFIRMATION_PENDING: price confirmed first' },
   { action: 'START_TRANSPORT', from: ['ARRIVED_AT_PICKUP'], to: 'TRANSPORTING', actors: ['DRIVER', 'ADMIN'], preconditions: 'price FIXED or confirmed (PRICE_NOT_CONFIRMED otherwise)' },
   { action: 'COMPLETE', from: ['TRANSPORTING'], to: 'COMPLETED', actors: ['DRIVER', 'ADMIN'], preconditions: 'ends the assignment; does NOT change payment status' },
   {
@@ -196,8 +199,11 @@ export function planTransition(
       if (order.pricingMode !== 'NEGOTIATION_REQUIRED' || order.priceConfirmed) throw invalid(action, order, actor)
       return plain(order.status === 'PRICE_CONFIRMATION_PENDING' ? 'ASSIGNED' : order.status)
     case 'EN_ROUTE':
+      if (actor === 'DRIVER' && order.pricingMode === 'NEGOTIATION_REQUIRED' && !order.priceConfirmed) throw new DispatchError('PRICE_NOT_CONFIRMED')
       return plain('EN_ROUTE_TO_PICKUP')
     case 'ARRIVED':
+      // Not from EN_ROUTE_TO_PICKUP: an order already under way before this rule keeps going (transport still needs the price)
+      if (actor === 'DRIVER' && order.status === 'PRICE_CONFIRMATION_PENDING' && !order.priceConfirmed) throw new DispatchError('PRICE_NOT_CONFIRMED')
       return plain('ARRIVED_AT_PICKUP')
     case 'START_TRANSPORT':
       if (order.pricingMode === 'NEGOTIATION_REQUIRED' && !order.priceConfirmed) {

@@ -21,6 +21,7 @@ import { NearestModule } from './nearest/nearest.module'
 import { PromotionsModule } from './promotions/promotions.module'
 import { PrivacyConsentModule } from './privacy-consent/privacy-consent.module'
 import { ProfileChangesModule } from './profile-changes/profile-changes.module'
+import { SiteListingModule } from './site-listing/site-listing.module'
 import { PrismaModule } from './prisma/prisma.module'
 import { RegistrationModule } from './registration/registration.module'
 import { ReviewsModule } from './reviews/reviews.module'
@@ -62,6 +63,7 @@ import { TowTrucksModule } from './tow-trucks/tow-trucks.module'
     NearestModule,
     PromotionsModule,
     ProfileChangesModule,
+    SiteListingModule,
     PrivacyConsentModule,
     DispatchModule,
     SubscriptionsModule,

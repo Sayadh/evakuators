@@ -28,6 +28,8 @@ import { isUniqueViolation, pgArray, SqlError, withRetryingTransaction, type Sql
 import { availabilityPredicate, capabilityPredicate, eligibleFrom, type LocationSource } from './eligibility-sql'
 import type { Ranked } from './domain/ranking'
 import type { RouteEntry } from '../routing/routing-provider'
+import { feePrice, requiredBalanceFor } from '../wallet/domain/fees'
+import { chargeOrderFee, walletOf, walletPredicate } from '../wallet/wallet-ledger'
 
 
 /**
@@ -65,6 +67,8 @@ export interface OfferRow {
   termsVersion: number
   createdAt: Date
   expiresAt: Date
+  /** When the driver's app first confirmed having the offer; the answer window runs from here */
+  deliveredAt: Date | null
   respondedAt: Date | null
   roadMeters: number | null
   etaSeconds: number | null
@@ -89,7 +93,7 @@ const ATTEMPT_COLUMNS = `"id", "orderId", "number", "mode", "maxOffers", "offers
   "startedAt", "alertAt", "deadlineAt", "endedAt", (now() >= "deadlineAt") AS "deadlinePassed"`
 
 const OFFER_COLUMNS = `"id"::text AS "id", "orderId", "attemptId", "driverId", "status", "manual", "termsVersion",
-  "createdAt", "expiresAt", "respondedAt", "roadMeters", "etaSeconds", "straightLineMeters", "routeComputedAt",
+  "createdAt", "expiresAt", "deliveredAt", "respondedAt", "roadMeters", "etaSeconds", "straightLineMeters", "routeComputedAt",
   "closeReason", (now() < "expiresAt") AS "beforeDeadline"`
 
 function mapAttempt(row: Record<string, unknown>): AttemptRow {
@@ -120,6 +124,7 @@ export function mapOffer(row: Record<string, unknown>): OfferRow {
     termsVersion: toNumber(row.termsVersion),
     createdAt: toDate(row.createdAt),
     expiresAt: toDate(row.expiresAt),
+    deliveredAt: toNullableDate(row.deliveredAt),
     respondedAt: toNullableDate(row.respondedAt),
     roadMeters: toNullableNumber(row.roadMeters),
     etaSeconds: toNullableNumber(row.etaSeconds),
@@ -179,6 +184,16 @@ export async function notifyOrderChanged(tx: Sql, order: OrderRow, reason: strin
   )
 }
 
+/**
+ * A silent push that stops the offer's ring on the phone (2026-11): the
+ * Android alarm notification rings until it is answered or cancelled, so an
+ * offer withdrawn or timed out while the phone is locked must be cancelled
+ * there too. Not sent when the driver answered — his app stopped it already.
+ */
+async function enqueueOfferClosedPush(tx: Sql, offerId: string): Promise<void> {
+  await enqueue(tx, { topic: 'push.offerClosed', payload: { offerId }, dedupeKey: `push-offer-closed:${offerId}`, maxAttempts: 3 })
+}
+
 /** Revokes the live offer of an order (if any). Caller holds the order lock. */
 export async function revokePendingOffer(tx: Sql, orderId: number, reason: string, actor: ActorRef): Promise<OfferRow | null> {
   const rows = await tx.query<Record<string, unknown>>(
@@ -195,6 +210,7 @@ export async function revokePendingOffer(tx: Sql, orderId: number, reason: strin
     status: 'REVOKED',
     reason,
   })
+  await enqueueOfferClosedPush(tx, offer.id)
   return offer
 }
 
@@ -268,7 +284,8 @@ export class OffersRepository {
             attempt.id,
             driverId,
             order.termsVersion,
-            settings.offerTimeoutSeconds,
+            // Delivery window; the answer window starts at markDelivered
+            settings.offerDeliverySeconds,
             routed ? toNullableNumber(row.roadMeters) : null,
             routed ? toNullableNumber(row.etaSeconds) : null,
             toNullableNumber(row.straightLineMeters),
@@ -330,7 +347,8 @@ export class OffersRepository {
       `SELECT t."id" FROM ${eligibleFrom(source)}
         WHERE t."id" = ANY(${p.add(pgArray(driverIds))}::int[])
           AND ${availabilityPredicate(p, settings, source)}
-          AND ${capabilityPredicate(p, requirementsOf(order))}`,
+          AND ${capabilityPredicate(p, requirementsOf(order))}
+          AND ${walletPredicate(p, requiredBalanceFor(order, settings))}`,
       p.values,
     )
     return new Set(rows.map((row) => toNumber(row.id)))
@@ -487,7 +505,7 @@ export class OffersRepository {
    * Accept: one transaction decides, and exactly one of accept / expire /
    * reject / revoke / cancel can win for a given offer.
    */
-  async accept(offerId: string, driverId: number, tx: Sql): Promise<AcceptResult> {
+  async accept(offerId: string, driverId: number, tx: Sql, settings?: DispatchSettings): Promise<AcceptResult> {
     const ref = await orderIdOfOffer(tx, offerId)
     // Someone else's offer is reported as not found: never confirm it exists.
     if (!ref || ref.driverId !== driverId) throw new DispatchError('OFFER_NOT_FOUND')
@@ -519,7 +537,7 @@ export class OffersRepository {
     // Serialises with an admin revoking/suspending access (which UPDATEs this row).
     await lockFleetDriver(tx, driverId)
     const [driver] = await tx.query<{ isActive: boolean; suspended: boolean; busy: boolean }>(
-      `SELECT t."isActive", (p."dispatchSuspendedAt" IS NOT NULL) AS "suspended",
+      `SELECT t."isActive", (p."dispatchSuspendedAt" IS NOT NULL AND (p."dispatchSuspendedUntil" IS NULL OR p."dispatchSuspendedUntil" > now())) AS "suspended",
               EXISTS (SELECT 1 FROM "OrderAssignment" a WHERE a."driverId" = t."id" AND a."endedAt" IS NULL) AS "busy"
          FROM "FleetDriverProfile" t LEFT JOIN "DriverPresence" p ON p."driverId" = t."id" WHERE t."id" = $1::int`,
       [driverId],
@@ -558,7 +576,10 @@ export class OffersRepository {
       `UPDATE "DriverPresence" SET "availableSince" = NULL, "updatedAt" = now() WHERE "driverId" = $1::int`,
       [driverId],
     )
-    await recordEvent(tx, order.id, 'OFFER_ACCEPTED', { type: 'DRIVER', id: driverId }, { offerId, assignmentId, status: planned.to })
+    // Driver wallet (2026-11-12): the fee is charged in THIS transaction —
+    // the order is his and the money is gone, or neither. Billing off → no-op.
+    const feeAmd = settings ? await chargeOrderFee(tx, { driverId, orderId: order.id, assignmentId, priceAmd: feePrice(order) }, settings) : null
+    await recordEvent(tx, order.id, 'OFFER_ACCEPTED', { type: 'DRIVER', id: driverId }, { offerId, assignmentId, status: planned.to, ...(feeAmd ? { feeAmd } : {}) })
     await notifyOrderChanged(tx, order, 'OFFER_ACCEPTED', [driverId])
     return { ok: true, orderId: order.id, status: planned.to, replayed: false }
   }
@@ -619,6 +640,9 @@ export class OffersRepository {
       offerId: offer.id,
       status,
     })
+    // The driver's own «Մերժել» was pressed in the app, which already stopped
+    // the ring; an expiry happened while he may not be looking.
+    if (status === 'EXPIRED') await enqueueOfferClosedPush(tx, offer.id)
 
     const attempt = await openAttempt(tx, order.id, true)
     if (!attempt || attempt.id !== offer.attemptId) return
@@ -687,7 +711,12 @@ export class OffersRepository {
     if (availability.reasons.includes('RESERVED')) throw new DispatchError('DRIVER_RESERVED')
     const hard = availability.reasons.filter((r) => !MANUAL_OVERRIDABLE.includes(r))
     if (hard.length > 0) throw new DispatchError('DRIVER_UNAVAILABLE', { reasons: hard })
-    const soft = availability.reasons.filter((r) => MANUAL_OVERRIDABLE.includes(r))
+    const soft: string[] = availability.reasons.filter((r) => MANUAL_OVERRIDABLE.includes(r))
+    // Driver wallet (2026-11-12): a balance that does not cover the fee is a
+    // SOFT reason for an operator — he may still send the order (audited); the
+    // fee is then charged at accept and the balance goes below zero.
+    const requiredAmd = requiredBalanceFor(order, settings)
+    if (requiredAmd !== null && (await walletOf(tx, input.driverId)).availableAmd < requiredAmd) soft.push('BALANCE_LOW')
     if (soft.length > 0 && !input.overrideReason?.trim()) {
       throw new DispatchError('DRIVER_UNAVAILABLE', { reasons: soft, overridable: true })
     }
@@ -725,7 +754,8 @@ export class OffersRepository {
           attemptId,
           input.driverId,
           order.termsVersion,
-          settings.offerTimeoutSeconds,
+          // Delivery window; the answer window starts at markDelivered
+          settings.offerDeliverySeconds,
           input.adminUserId,
           input.route ? Math.round(input.route.meters) : null,
           input.route ? Math.round(input.route.seconds) : null,
@@ -773,13 +803,70 @@ export class OffersRepository {
     return rows.map(mapOffer)
   }
 
-  /** The app reports that it rendered the offer — a delivery fact, never an acceptance */
-  async acknowledgeDelivery(offerId: string, driverId: number, channel: 'PUSH' | 'REALTIME'): Promise<void> {
+  /**
+   * The app reports that it has the offer — a delivery fact, never an
+   * acceptance. Also starts the driver's answer window (markDelivered).
+   */
+  async acknowledgeDelivery(offerId: string, driverId: number, channel: 'PUSH' | 'REALTIME', settings: DispatchSettings): Promise<{ expiresAt: string | null }> {
+    if (!/^[0-9a-f-]{36}$/i.test(offerId)) return { expiresAt: null }
     await this.db.query(
       `UPDATE "NotificationDelivery" SET "status" = 'APP_ACKNOWLEDGED', "acknowledgedAt" = COALESCE("acknowledgedAt", now()), "updatedAt" = now()
         WHERE "offerId" = $1::uuid AND "driverId" = $2::int AND "channel" = $3`,
       [offerId, driverId, channel],
     )
+    await this.markDelivered(offerId, driverId, settings)
+    // The deadline AFTER the answer window started — the phone's alarm rings
+    // until then (mobile/src/push/offerAlarm.ts), never past it.
+    const rows = await this.db.query<{ expiresAt: Date }>(
+      `SELECT "expiresAt" FROM "OrderOffer" WHERE "id" = $1::uuid AND "driverId" = $2::int AND "status" = 'PENDING'`,
+      [offerId, driverId],
+    )
+    return { expiresAt: rows[0] ? toDate(rows[0].expiresAt).toISOString() : null }
+  }
+
+  /**
+   * The offer has reached the driver's app: the answer window
+   * (offerTimeoutSeconds) starts NOW, replacing the delivery window it was
+   * created with. Once per offer, only while it is still PENDING and inside
+   * the delivery window — so it can never revive an expired offer, and a
+   * repeated ack never extends the deadline again. Row-level atomic: a
+   * concurrent expiry holds the row lock, and this UPDATE then re-checks its
+   * WHERE against the committed row and changes nothing.
+   *
+   * @returns true when this call started the window
+   */
+  async markDelivered(offerId: string, driverId: number, settings: DispatchSettings): Promise<boolean> {
+    return withRetryingTransaction(this.db, async (tx) => {
+      const rows = await tx.query<Record<string, unknown>>(
+        `UPDATE "OrderOffer"
+            SET "deliveredAt" = now(), "expiresAt" = now() + make_interval(secs => $3::int)
+          WHERE "id" = $1::uuid AND "driverId" = $2::int AND "status" = 'PENDING'
+            AND "deliveredAt" IS NULL AND now() < "expiresAt"
+          RETURNING ${OFFER_COLUMNS}`,
+        [offerId, driverId, settings.offerTimeoutSeconds],
+      )
+      if (rows.length === 0) return false
+      const offer = mapOffer(rows[0])
+      await recordEvent(tx, offer.orderId, 'OFFER_DELIVERED', { type: 'DRIVER', id: driverId }, {
+        offerId: offer.id,
+        expiresAt: offer.expiresAt.toISOString(),
+      })
+      // The delivery-window expiry job still runs and finds the deadline
+      // ahead (a no-op); this one is the wake-up for the real deadline.
+      await enqueue(tx, {
+        topic: 'offer.expire',
+        payload: { offerId: offer.id },
+        dedupeKey: `offer-expire:${offer.id}:delivered`,
+        availableAtSql: `'${offer.expiresAt.toISOString()}'::timestamptz`,
+      })
+      // The app and the operator console re-read on any event: new countdown.
+      await enqueueRealtime(tx, `offer:${offer.id}:delivered`, [`driver:${offer.driverId}`, 'admin'], 'offer.updated', {
+        offerId: offer.id,
+        orderId: offer.orderId,
+        expiresAt: offer.expiresAt.toISOString(),
+      })
+      return true
+    })
   }
 }
 

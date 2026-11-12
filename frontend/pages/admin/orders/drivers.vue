@@ -18,6 +18,8 @@
 import { computed, onMounted, ref } from 'vue'
 import { VEHICLE_TYPE_LABELS } from '~/constants/vehicles'
 import { opsDispatchRepository } from '~/repositories/opsDispatch.repository'
+import { adminRepository } from '~/repositories'
+import { extractErrorMessage } from '~/utils/errors'
 import { useAdminAuthStore } from '~/stores/adminAuth'
 import type { FleetDriver, FleetDriverKind, FleetDriverStatus, FleetSiteCandidate } from '~/types/opsDispatch'
 import type { VehicleType } from '~/types/enums'
@@ -98,6 +100,52 @@ async function run(key: string, action: () => Promise<FleetDriver>, done: (d: Fl
   }
 }
 
+/**
+ * «Հրապարակել կայքում» (2026-11-12) — what the driver entered goes to the site:
+ * - an app-only account (no website profile): becomes a registration request
+ *   prefilled with their data; the review page opens to complete and approve
+ *   it, and approval moves this same account onto the new page;
+ * - an app sign-up whose profile exists but is hidden: published at once.
+ */
+async function publishOnSite(d: FleetDriver) {
+  error.value = null
+  notice.value = null
+  if (d.kind === 'APP_ONLY') {
+    const ok = await confirmDialog({
+      title: 'Հրապարակել կայքում',
+      message:
+        `${d.driverName}-ի հավելվածում լրացրած տվյալներից կստեղծվի կայքի գրանցման հայտ։ ` +
+        'Կբացվի հայտի էջը. լրացրեք պակասողը (մակնիշ, տարի, տարածքներ, ծառայություններ, նկարներ) և հաստատեք։ ' +
+        'Վարորդը կշարունակի մտնել հավելված նույն գաղտնաբառով։',
+      confirmLabel: 'Ստեղծել հայտը',
+    })
+    if (!ok) return
+    busyId.value = `publish-${d.id}`
+    try {
+      const { registrationId } = await adminRepository.siteRegistrationFromAppDriver(d.id)
+      await navigateTo(`/admin/registrations/${registrationId}`)
+    } catch (e) {
+      error.value = extractErrorMessage(e, 'Չհաջողվեց ստեղծել հայտը։')
+    } finally {
+      busyId.value = null
+    }
+    return
+  }
+  if (d.towTruckId === null) return
+  const ok = await confirmDialog({ message: `Հրապարակե՞լ ${d.driverName}-ի էջը կայքում (իր լրացրած տվյալներով)։`, confirmLabel: 'Հրապարակել' })
+  if (!ok) return
+  busyId.value = `publish-${d.id}`
+  try {
+    await adminRepository.publishAppDriverTruck(d.towTruckId)
+    notice.value = `${d.driverName}-ի էջը հրապարակված է կայքում։`
+    await load()
+  } catch (e) {
+    error.value = extractErrorMessage(e, 'Չհաջողվեց հրապարակել։')
+  } finally {
+    busyId.value = null
+  }
+}
+
 async function searchSite() {
   if (siteQuery.value.trim().length < 2) return
   try {
@@ -123,10 +171,75 @@ const approve = (d: FleetDriver) =>
   run(`approve-${d.id}`, () => opsDispatchRepository.fleetAction(d.id, 'approve'), (x) => `${x.driverName}-ի հայտը հաստատվեց։`)
 /** Deleting is irreversible: the first click only arms the button for this driver */
 const deleteArmed = ref<number | null>(null)
-const deleteOnRequest = (d: FleetDriver) => {
+const deleteOnRequest = async (d: FleetDriver) => {
   deleteArmed.value = null
-  return run(`delete-${d.id}`, () => opsDispatchRepository.fleetAction(d.id, 'delete-account'), () => 'Հաշիվը ջնջվեց (անձնական տվյալներն ու տեղադրության պատմությունը)։')
+  const ok = await confirmDialog({
+    title: 'Ջնջել հաշիվը',
+    message:
+      `${d.driverName}-ի հավելվածի հաշիվը կջնջվի համակարգից. անձնական տվյալները, տեղադրության պատմությունը և բոլոր սարքերի մուտքերը։ ` +
+      'Վերականգնել հնարավոր չէ։ Եթե ուզում եք ժամանակավորապես կանգնեցնել, օգտագործեք «Արգելափակել»-ը։',
+    confirmLabel: 'Ջնջել ընդմիշտ',
+    danger: true,
+  })
+  if (!ok) return
+  return run(`delete-${d.id}`, () => opsDispatchRepository.fleetAction(d.id, 'delete-account'), () => 'Հաշիվը ջնջվեց համակարգից։')
 }
+
+/**
+ * «Արգելափակել» (2026-11-12): the driver keeps signing in and READS why (and
+ * until when) on Home, but cannot go online and gets no order — until it is
+ * lifted here, or by itself after the chosen number of days.
+ */
+const blockFor = ref<number | null>(null)
+const blockReason = ref('')
+const blockDays = ref<number | null>(null)
+const BLOCK_TERMS: { days: number | null; label: string }[] = [
+  { days: null, label: 'Մինչև ապաարգելափակելը' },
+  { days: 1, label: '1 օր' },
+  { days: 3, label: '3 օր' },
+  { days: 7, label: '7 օր' },
+  { days: 30, label: '30 օր' },
+]
+function openBlock(d: FleetDriver) {
+  blockFor.value = blockFor.value === d.id ? null : d.id
+  blockReason.value = ''
+  blockDays.value = null
+}
+async function submitBlock(d: FleetDriver) {
+  const reason = blockReason.value.trim()
+  if (reason.length < 2) return
+  const term = blockDays.value ? `${blockDays.value} օրով` : 'մինչև ապաարգելափակելը'
+  const ok = await confirmDialog({
+    title: 'Արգելափակել վարորդին',
+    message: `${d.driverName}-ը ${term} չի կարողանա միանալ և պատվերներ ստանալ։ Պատճառը նա կտեսնի հավելվածում․\n«${reason}»`,
+    confirmLabel: 'Արգելափակել',
+    danger: true,
+  })
+  if (!ok) return
+  await run(
+    `block-${d.id}`,
+    async () => {
+      await opsDispatchRepository.suspendDriver(d.id, true, reason, blockDays.value)
+      return d
+    },
+    (x) => `${x.driverName}-ը արգելափակված է ${term}։`,
+  )
+  blockFor.value = null
+}
+async function unblock(d: FleetDriver) {
+  const ok = await confirmDialog({ message: `Ապաարգելափակե՞լ ${d.driverName}-ին։ Նա կրկին կկարողանա միանալ և պատվերներ ստանալ։`, confirmLabel: 'Ապաարգելափակել' })
+  if (!ok) return
+  await run(
+    `unblock-${d.id}`,
+    async () => {
+      await opsDispatchRepository.suspendDriver(d.id, false, null)
+      return d
+    },
+    (x) => `${x.driverName}-ը ապաարգելափակված է։`,
+  )
+}
+/** A deleted account is gone from the system: not listed */
+const visibleDrivers = computed(() => drivers.value.filter((d) => d.status !== 'DELETED'))
 const reactivate = (d: FleetDriver) =>
   run(`reactivate-${d.id}`, () => opsDispatchRepository.fleetAction(d.id, 'reactivate'), (x) => `${x.driverName}-ի հասանելիությունը վերականգնվեց։`)
 
@@ -156,7 +269,7 @@ useSeoMetaData({ title: 'Հավելվածի վարորդներ', description: '�
 
 <template>
   <div class="container fleet">
-    <NuxtLink to="/admin/orders">← Պատվերներ</NuxtLink>
+    <OpsNav />
     <h1>Հավելվածի վարորդներ</h1>
     <p class="muted">
       Կայքի վարորդը հավելված է մտնում կայքի նույն հեռախոսահամարով և գաղտնաբառով, բայց միայն այն բանից հետո, երբ այստեղ նրան
@@ -239,7 +352,7 @@ useSeoMetaData({ title: 'Հավելվածի վարորդներ', description: '�
           </tr>
         </thead>
         <tbody>
-          <template v-for="d in drivers" :key="d.id">
+          <template v-for="d in visibleDrivers" :key="d.id">
             <tr>
               <td>
                 <NuxtLink v-if="d.slug" :to="`/tow-trucks/${d.slug}`" target="_blank">{{ d.driverName }}</NuxtLink>
@@ -252,25 +365,64 @@ useSeoMetaData({ title: 'Հավելվածի վարորդներ', description: '�
               <td>{{ vehicleLabel(d.vehicleType) }}<div class="muted small">{{ capacity(d) }}</div></td>
               <td>
                 {{ STATUS_LABEL[d.status] }}
-                <div v-if="d.kind === 'SITE_LINKED' && !d.siteListed" class="muted small">կայքում անջատված է (հավելվածի վրա չի ազդում)</div>
+                <div v-if="d.kind === 'SITE_LINKED' && !d.siteListed" class="muted small">կայքում չի երևում (հավելվածի վրա չի ազդում)</div>
                 <div v-if="d.statusReason" class="muted small">{{ d.statusReason }}</div>
+                <div v-if="d.block" class="fleet__blocked">
+                  ⛔ Արգելափակված {{ d.block.until ? `մինչև ${formatDateNumeric(d.block.until)}` : '(անժամկետ)' }}
+                  <div v-if="d.block.reason" class="small">«{{ d.block.reason }}»</div>
+                </div>
               </td>
               <td class="fleet__actions">
-                <AppButton v-if="d.status === 'ACTIVE'" size="sm" variant="outline" :disabled="busyId !== null" @click="reasonFor = { id: d.id, action: 'suspend' }">Կասեցնել</AppButton>
+                <AppButton v-if="d.status === 'ACTIVE' && !d.block" size="sm" variant="outline" :disabled="busyId !== null" @click="openBlock(d)">Արգելափակել</AppButton>
+                <AppButton v-if="d.block" size="sm" :disabled="busyId !== null" @click="unblock(d)">Ապաարգելափակել</AppButton>
                 <AppButton v-if="d.status === 'SUSPENDED'" size="sm" :disabled="busyId !== null" @click="reactivate(d)">Վերականգնել</AppButton>
                 <AppButton v-if="d.status === 'PENDING_REVIEW'" size="sm" :disabled="busyId !== null" @click="approve(d)">Հաստատել</AppButton>
-                <AppButton v-if="d.kind === 'APP_ONLY' && d.status !== 'DELETED'" size="sm" variant="ghost" :disabled="busyId !== null" @click="linkFor = linkFor === d.id ? null : d.id">Կապել կայքի պրոֆիլին</AppButton>
+                <AppButton
+                  v-if="d.status !== 'DELETED' && (d.kind === 'APP_ONLY' || !d.siteListed)"
+                  size="sm"
+                  :disabled="busyId !== null"
+                  title="Վարորդի լրացրած տվյալները կհրապարակվեն կայքում"
+                  @click="publishOnSite(d)"
+                >Հրապարակել կայքում</AppButton>
+                <AppButton
+                  v-if="d.kind === 'APP_ONLY' && d.status !== 'DELETED'"
+                  size="sm"
+                  variant="ghost"
+                  :disabled="busyId !== null"
+                  title="Եթե վարորդն արդեն ունի կայքում էջ (այլ գրանցմամբ)"
+                  @click="linkFor = linkFor === d.id ? null : d.id"
+                >Միավորել առկա էջի հետ</AppButton>
                 <template v-if="d.status !== 'DELETED'">
                   <AppButton
                     v-if="deleteArmed !== d.id"
                     size="sm"
                     variant="ghost"
                     :disabled="busyId !== null"
-                    title="Վարորդի խնդրանքով (առանց հավելվածի). նախ համոզվեք, որ խնդրողը հենց նա է"
-                    @click="deleteArmed = d.id"
+                    title="Հեռացնում է հաշիվը համակարգից (վարորդի խնդրանքով). նախ համոզվեք, որ խնդրողը հենց նա է"
+                    @click="deleteOnRequest(d)"
                   >Ջնջել հաշիվը</AppButton>
-                  <AppButton v-else size="sm" variant="danger" :disabled="busyId !== null" @click="deleteOnRequest(d)">Հաստատել ջնջումը</AppButton>
                 </template>
+              </td>
+            </tr>
+            <tr v-if="blockFor === d.id">
+              <td colspan="5">
+                <form class="fleet__block" @submit.prevent="submitBlock(d)">
+                  <input v-model="blockReason" placeholder="Պատճառը (վարորդը կտեսնի հավելվածում), օր.՝ հաճախորդի բողոք, պետք է զանգահարել մեզ" maxlength="300" />
+                  <div class="fleet__terms">
+                    <button
+                      v-for="term in BLOCK_TERMS"
+                      :key="term.label"
+                      type="button"
+                      class="fleet__term"
+                      :class="{ on: blockDays === term.days }"
+                      @click="blockDays = term.days"
+                    >{{ term.label }}</button>
+                  </div>
+                  <div class="fleet__block-actions">
+                    <AppButton size="sm" variant="danger" type="submit" :disabled="blockReason.trim().length < 2 || busyId !== null">Արգելափակել</AppButton>
+                    <AppButton size="sm" variant="ghost" type="button" @click="blockFor = null">Չեղարկել</AppButton>
+                  </div>
+                </form>
               </td>
             </tr>
             <tr v-if="reasonFor?.id === d.id && reasonFor.action === 'suspend'">
@@ -308,6 +460,36 @@ useSeoMetaData({ title: 'Հավելվածի վարորդներ', description: '�
 
 <style scoped lang="scss">
 .fleet {
+  &__blocked {
+    margin-top: 4px;
+    padding: 4px 8px;
+    border-radius: 8px;
+    background: var(--color-danger-bg, #fdecec);
+    color: var(--color-danger, #d64545);
+    font-size: 0.85rem;
+  }
+  &__block {
+    display: grid;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border-radius: 12px;
+    background: var(--color-bg, #f4f6f9);
+
+    input { padding: var(--space-2) var(--space-3); border-radius: 8px; border: 1px solid var(--color-border, #e3e8ef); }
+  }
+  &__terms { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  &__term {
+    padding: 4px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--color-border, #e3e8ef);
+    background: var(--color-surface, #fff);
+    cursor: pointer;
+    font: inherit;
+
+    &.on { background: var(--color-primary, #14304f); border-color: var(--color-primary, #14304f); color: #fff; }
+  }
+  &__block-actions { display: flex; gap: var(--space-2); }
+
   padding: var(--space-5) 0 var(--space-8);
   display: grid;
   gap: var(--space-4);

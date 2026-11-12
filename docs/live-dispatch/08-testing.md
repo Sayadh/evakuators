@@ -9,6 +9,10 @@ export LIVE_DISPATCH_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:5432/postgr
 export LIVE_DISPATCH_TEST_REDIS_URL=redis://127.0.0.1:6379                          # optional
 npm run test:live
 
+# Առանց PostgreSQL սերվերի (2026-11-12)․ նույն թեստերը in-memory PGlite-ի վրա
+# (իրական Postgres WebAssembly-ով, առանց PostGIS-ի)․ բոլոր integration-ները անցնում են
+npm run test:live:pglite
+
 # Գործող Vitest թեստերը (անփոփոխ)
 npm run test
 

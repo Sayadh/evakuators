@@ -14,6 +14,8 @@
 | [06-mobile.md](06-mobile.md) | Հավելված, build/signing, real-device checklist |
 | [11-driver-access.md](11-driver-access.md) | **Ով կարող է օգտվել հավելվածից**․ կայքի վարորդներ (ադմինը տալիս է հասանելիություն, նույն գաղտնաբառ) և միայն-հավելվածի վարորդներ (ինքնագրանցում + հաստատում), մեկ ցուցակ `/evakuator`-ում |
 | [12-store-submission.md](12-store-submission.md) | **Google Play / App Store**․ գաղտնիության պահանջներ, ինչ է արված կոդում, ինչ պետք է լրացնել console-ներում |
+| [13-wallet.md](13-wallet.md) | **Վարորդի հաշիվ**․ Idram համալրում, միջնորդավճար ամեն պատվերից, վերադարձ, ով է ստանում առաջարկ |
+| [14-site-listing.md](14-site-listing.md) | **Հավելվածի վարորդ → կայք**․ հավելվածից գրանցվածը կայքում չէ, մինչև հայտ չուղարկի պրոֆիլից և ադմինը չհաստատի |
 | [07-admin-console.md](07-admin-console.md) | Օպերատորի վահանակ |
 | [08-testing.md](08-testing.md) | Թեստեր, արդյունքներ, ինչ չի ստուգվել |
 | [09-rollout-and-rollback.md](09-rollout-and-rollback.md) | Staging, migration plan, backup, rollback, flags |

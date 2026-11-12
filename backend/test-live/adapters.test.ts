@@ -7,6 +7,7 @@ import assert from 'node:assert/strict'
 import { generateKeyPairSync, createVerify } from 'node:crypto'
 import { describe, it } from 'node:test'
 import { FcmSender, signServiceAccountJwt } from '../src/live-dispatch/notify/fcm'
+import { alertSoundFile, isAlertSound } from '../src/live-dispatch/notify/push.service'
 import { RedisBus } from '../src/live-dispatch/notify/realtime-bus'
 import { parseRedisUrl, RedisPublisher, RedisSubscriber } from '../src/live-dispatch/notify/redis-resp'
 import { rankCandidates } from '../src/live-dispatch/dispatching/domain/ranking'
@@ -159,6 +160,66 @@ describe('FCM HTTP v1 sender', () => {
     assert.ok(Number(sent.apns.headers['apns-expiration']) <= Math.floor(Date.now() / 1000) + 28)
   })
 
+  it('an actionable offer is data-only on Android (the app draws the buttons) and a categorised alert on iOS', async () => {
+    const { fetch, calls } = fakeFetch((call) =>
+      call.url.includes('oauth2') ? { status: 200, json: { access_token: 'a', expires_in: 3600 } } : { status: 200, json: { name: 'm' } },
+    )
+    await new FcmSender(account, fetch).send({
+      token: 't', title: 'Նոր պատվեր', body: 'Komitas → Davtashen', data: { type: 'offer', offerId: 'o1' },
+      ttlSeconds: 30, collapseKey: 'offer-o1', highPriority: true, actionCategory: 'offer',
+    })
+    const sent = JSON.parse(String(calls[1].init.body)).message
+    assert.equal(sent.notification, undefined, 'no FCM-drawn notification')
+    assert.equal(sent.android.notification, undefined)
+    assert.deepEqual(sent.data, { type: 'offer', offerId: 'o1', title: 'Նոր պատվեր', body: 'Komitas → Davtashen' })
+    assert.deepEqual(sent.apns.payload.aps.alert, { title: 'Նոր պատվեր', body: 'Komitas → Davtashen' })
+    assert.equal(sent.apns.payload.aps.category, 'offer')
+    assert.equal(sent.apns.payload.aps.sound, 'default', 'no custom sound unless asked')
+    assert.equal(sent.apns.payload.aps['interruption-level'], undefined)
+  })
+
+  it('the offer ring: bundled sound, time-sensitive, wakes the app to acknowledge delivery (iOS)', async () => {
+    const { fetch, calls } = fakeFetch((call) =>
+      call.url.includes('oauth2') ? { status: 200, json: { access_token: 'a', expires_in: 3600 } } : { status: 200, json: { name: 'm' } },
+    )
+    await new FcmSender(account, fetch).send({
+      token: 't', title: 'Նոր պատվեր', body: 'x', data: { type: 'offer', offerId: 'o1' }, ttlSeconds: 30, collapseKey: 'offer-o1',
+      highPriority: true, actionCategory: 'offer', sound: 'offer_alert.wav', timeSensitive: true, contentAvailable: true,
+    })
+    const aps = JSON.parse(String(calls[1].init.body)).message.apns.payload.aps
+    assert.equal(aps.sound, 'offer_alert.wav')
+    assert.equal(aps['interruption-level'], 'time-sensitive')
+    assert.equal(aps['content-available'], 1)
+  })
+
+  it('critical alert (iOS): the sound becomes the critical dictionary, only when asked', async () => {
+    const { fetch, calls } = fakeFetch((call) =>
+      call.url.includes('oauth2') ? { status: 200, json: { access_token: 'a', expires_in: 3600 } } : { status: 200, json: { name: 'm' } },
+    )
+    await new FcmSender(account, fetch).send({
+      token: 't', title: 'Նոր պատվեր', body: 'x', data: { type: 'offer', offerId: 'o1' }, ttlSeconds: 30, collapseKey: 'offer-o1',
+      highPriority: true, actionCategory: 'offer', sound: 'offer_alert.wav', critical: true,
+    })
+    const aps = JSON.parse(String(calls[1].init.body)).message.apns.payload.aps
+    assert.deepEqual(aps.sound, { critical: 1, name: 'offer_alert.wav', volume: 1 })
+  })
+
+  it('the "offer closed" push is silent: data only, background push on iOS, nothing to show or hear', async () => {
+    const { fetch, calls } = fakeFetch((call) =>
+      call.url.includes('oauth2') ? { status: 200, json: { access_token: 'a', expires_in: 3600 } } : { status: 200, json: { name: 'm' } },
+    )
+    await new FcmSender(account, fetch).send({
+      token: 't', title: '', body: '', data: { type: 'offer_closed', offerId: 'o1' }, ttlSeconds: 120, collapseKey: 'offer-closed-o1', highPriority: true, silent: true,
+    })
+    const sent = JSON.parse(String(calls[1].init.body)).message
+    assert.equal(sent.notification, undefined)
+    assert.deepEqual(sent.data, { type: 'offer_closed', offerId: 'o1' })
+    assert.equal(sent.android.priority, 'HIGH')
+    assert.equal(sent.apns.headers['apns-push-type'], 'background')
+    assert.equal(sent.apns.headers['apns-priority'], '5')
+    assert.deepEqual(sent.apns.payload.aps, { 'content-available': 1 })
+  })
+
   it('5xx and network failures are retryable, never "invalid token"', async () => {
     const { fetch } = fakeFetch((call) =>
       call.url.includes('oauth2') ? { status: 200, json: { access_token: 'a', expires_in: 3600 } } : { status: 503, json: {} },
@@ -295,5 +356,17 @@ describe('Redis pub/sub (real redis-server)', { skip: redisUrl ? false : 'LIVE_D
     subscriber.stop()
     admin.close()
     killer.close()
+  })
+})
+
+describe('selectable offer ring (push.service)', () => {
+  it('names the bundled file of a known ring, the original otherwise', () => {
+    assert.equal(alertSoundFile('harp'), 'offer_harp.wav')
+    assert.equal(alertSoundFile('classic'), 'offer_alert.wav')
+    assert.equal(alertSoundFile(null), 'offer_alert.wav')
+    assert.equal(alertSoundFile('../../etc'), 'offer_alert.wav', 'never an arbitrary file name')
+    assert.equal(isAlertSound('digital'), true)
+    assert.equal(isAlertSound('DIGITAL'), false)
+    assert.equal(isAlertSound(7), false)
   })
 })

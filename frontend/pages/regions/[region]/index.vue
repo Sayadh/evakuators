@@ -72,7 +72,7 @@ useSeoMetaData({
       </div>
     </header>
 
-    <NearestTowTrucksCta class="region-page__nearest" />
+    <NearestTowTrucksCta with-routes class="region-page__nearest" />
 
     <section aria-labelledby="cities-title" class="region-page__section">
       <h2 id="cities-title">{{ t('page.cities') }}</h2>

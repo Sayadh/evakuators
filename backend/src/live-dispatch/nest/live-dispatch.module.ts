@@ -5,6 +5,8 @@
  * app.module.ts. Nothing pre-existing imports from here.
  */
 import { Body, Controller, HttpCode, HttpStatus, Injectable, Module, OnApplicationBootstrap, OnApplicationShutdown, Post, UseFilters } from '@nestjs/common'
+import { adminSessionStillValid } from '../../admin-auth/admin-session-check'
+import { PrismaService } from '../../prisma/prisma.service'
 import { ConfigService } from '@nestjs/config'
 import { HttpAdapterHost } from '@nestjs/core'
 import { JwtService } from '@nestjs/jwt'
@@ -12,7 +14,12 @@ import { Throttle } from '@nestjs/throttler'
 import type { Server } from 'node:http'
 import { AdminAuthModule } from '../../admin-auth/admin-auth.module'
 import { DriverAuthModule } from '../../driver-auth/driver-auth.module'
+import { MyTowTruckModule } from '../../my-tow-truck/my-tow-truck.module'
 import { NearestModule } from '../../nearest/nearest.module'
+import { PrivacyConsentModule } from '../../privacy-consent/privacy-consent.module'
+import { ProfileChangesModule } from '../../profile-changes/profile-changes.module'
+import { RegistrationModule } from '../../registration/registration.module'
+import { SubscriptionsModule } from '../../subscriptions/subscriptions.module'
 import { NearestService } from '../../nearest/nearest.service'
 import { TowTrucksModule } from '../../tow-trucks/tow-trucks.module'
 import { TowTrucksService } from '../../tow-trucks/tow-trucks.service'
@@ -24,6 +31,10 @@ import { DriverAppController } from './driver-app.controller'
 import { DispatchErrorFilter } from './http'
 import { OpsDispatchController } from './ops.controller'
 import { LiveDispatchRuntimeHolder } from './runtime.provider'
+import { DriverAppSiteProfileGuard } from './site-profile.guard'
+import { WalletPayLinks, WalletPaymentsRegistrar } from './wallet-payments'
+import { IdramModule } from '../../idram/idram.module'
+import { SiteListingModule } from '../../site-listing/site-listing.module'
 
 @Injectable()
 export class NearbyLiveProvider {
@@ -92,6 +103,7 @@ export class RealtimeGatewayHost implements OnApplicationBootstrap, OnApplicatio
     private readonly holder: LiveDispatchRuntimeHolder,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly prisma: PrismaService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -108,11 +120,12 @@ export class RealtimeGatewayHost implements OnApplicationBootstrap, OnApplicatio
               const session = await rt.fleet.findSession(id.sessionId)
               return Boolean(session && !session.revokedAt)
             },
-            onAck: (offerId) => rt.offers.acknowledgeDelivery(offerId, id.driverId, 'REALTIME'),
+            onAck: async (offerId) => rt.offers.acknowledgeDelivery(offerId, id.driverId, 'REALTIME', await rt.settings.get()),
           }
         }
-        await verifyOpsToken(this.jwt, this.config.getOrThrow<string>('adminJwtSecret'), token)
-        return { audience: 'admin', stillValid: async () => true }
+        const ops = await verifyOpsToken(this.jwt, this.config.getOrThrow<string>('adminJwtSecret'), token)
+        if (!(await adminSessionStillValid(this.prisma, ops.adminUserId, ops.role))) return null
+        return { audience: 'admin', stillValid: () => adminSessionStillValid(this.prisma, ops.adminUserId, ops.role) }
       },
     })
   }
@@ -123,8 +136,35 @@ export class RealtimeGatewayHost implements OnApplicationBootstrap, OnApplicatio
 }
 
 @Module({
-  imports: [DriverAuthModule, AdminAuthModule, TowTrucksModule, NearestModule],
+  imports: [
+    DriverAuthModule,
+    AdminAuthModule,
+    TowTrucksModule,
+    NearestModule,
+    // The driver app's sign-up and profile pages reuse the website's own
+    // services (2026-11). Direction unchanged: nothing outside this folder
+    // imports from it, so it is still deletable with one line in app.module.ts.
+    RegistrationModule,
+    PrivacyConsentModule,
+    MyTowTruckModule,
+    ProfileChangesModule,
+    SubscriptionsModule,
+    // The driver wallet's top-ups are Idram bills (2026-11-12): the form, and
+    // the registry this module hands its WALLET_TOPUP handler to.
+    IdramModule,
+    // "I want to be on the website too" from the app's profile (2026-11-12)
+    SiteListingModule,
+  ],
   controllers: [DriverAppController, OpsDispatchController, NearbyLiveController],
-  providers: [LiveDispatchRuntimeHolder, DriverAppGuard, OpsGuard, NearbyLiveProvider, RealtimeGatewayHost],
+  providers: [
+    LiveDispatchRuntimeHolder,
+    DriverAppGuard,
+    DriverAppSiteProfileGuard,
+    OpsGuard,
+    NearbyLiveProvider,
+    RealtimeGatewayHost,
+    WalletPaymentsRegistrar,
+    WalletPayLinks,
+  ],
 })
 export class LiveDispatchModule {}

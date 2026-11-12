@@ -25,12 +25,17 @@ const { t } = useI18n()
         </p>
       </div>
 
-      <!-- The two ways to get a person on the phone fastest, side by side:
-           «nearest» (filled — it leads to the drivers) and our own number
-           (outlined). Both above the search, because somebody whose car has
-           just stopped wants a person before a list. The region cards right
-           under this hero are the third way in; there is no fourth. -->
+      <!-- Three buttons above the search (2026-11-12): shared routes (white,
+           first), «nearest» (gold) and our own number (outlined). The region
+           cards right under this hero are the next way in. -->
       <div class="hero__actions">
+        <!-- Shared routes («Պապուտի», 2026-11-12; label = the page's own H1): a driver already heading
+             somewhere takes a car on the way, usually cheaper. FIRST and
+             solid white (2026-11-12, owner's call): it has to be seen. -->
+        <NuxtLinkLocale to="/free-routes" class="hero__routes">
+          <AppIcon name="truck" :size="22" />
+          {{ t('freeRoutes.h1') }}
+        </NuxtLinkLocale>
         <NearestTowTrucksCta class="hero__nearest" />
         <DispatchCallCta variant="hero" class="hero__dispatch" />
       </div>
@@ -64,6 +69,11 @@ const { t } = useI18n()
   padding: var(--space-5) 0 var(--space-2);
   color: #fff;
 
+  // A phone: less room above the title, so it sits higher on the first screen
+  @media (max-width: 639px) {
+    padding-top: var(--space-3);
+  }
+
   @media (min-width: 768px) {
     padding: var(--space-7) 0 var(--space-3);
   }
@@ -85,8 +95,12 @@ const { t } = useI18n()
     // Overrides the global h1's `clamp(1.7rem, 4vw, 2.4rem)` — on a narrow
     // phone the `vw` term is smaller than the 1.7rem floor, so it was already
     // clamping to ~27px, still taller than this hero wants above the fold.
+    // 20px since 2026-11-12: a third hero button (shared routes) came in,
+    // and the title gave up the room so the search still fits the first screen.
     @media (max-width: 767px) {
-      font-size: 23px;
+      font-size: 22px;
+      line-height: 1.28;
+      margin-bottom: var(--space-2);
     }
   }
 
@@ -127,10 +141,14 @@ const { t } = useI18n()
       margin-bottom: var(--space-4);
     }
 
+    // Wider screens: routes + «nearest» side by side, our phone number on
+    // its own row below them, centred (2026-11-12).
     @media (min-width: 640px) {
       flex-direction: row;
+      flex-wrap: wrap;
       justify-content: center;
       align-items: center;
+      max-width: 960px;
     }
 
     // Both buttons the same height and, on a phone, the same full width — two
@@ -150,6 +168,110 @@ const { t } = useI18n()
   // two classes so this wins over the child's own scoped rule.
   &__actions &__dispatch {
     margin-block: 0;
+
+    // A phone: a little lower than the two buttons above (2026-11-12)
+    @media (max-width: 639px) {
+      :deep(.dispatch-cta__call) {
+        min-height: 44px;
+        padding-block: 8px;
+      }
+    }
+
+    @media (min-width: 640px) {
+      flex-basis: 100%;
+      display: flex;
+      justify-content: center;
+    }
+  }
+
+  &__routes {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    min-height: 54px;
+    width: 100%;
+    padding: 0 var(--space-5);
+    border-radius: var(--radius-md);
+    background: #fff;
+    border: 2px solid #fff;
+    color: var(--color-primary-dark);
+    font-weight: 700;
+    font-size: 1.1rem;
+    line-height: 1.2;
+
+    // A phone: as large as still fits on ONE line at 360–390px
+    // A phone: scales with the screen so the label stays on one line
+    // (≈14.8px at 360px, 16px at 390px+); it may still wrap on a tiny screen.
+    @media (max-width: 639px) {
+      min-height: 48px;
+      font-size: clamp(13.5px, 3.9vw, 15.5px);
+      padding: 0 12px;
+      gap: 8px;
+    }
+    text-align: center;
+    text-decoration: none;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+    transition: transform var(--transition), box-shadow var(--transition);
+    -webkit-tap-highlight-color: transparent;
+
+    svg {
+      color: var(--color-accent-dark, var(--color-accent));
+      flex-shrink: 0;
+
+      @media (max-width: 639px) {
+        width: 19px;
+        height: 19px;
+      }
+    }
+
+    &:hover,
+    &:focus-visible {
+      color: var(--color-primary-dark);
+      text-decoration: none;
+      transform: translateY(-1px);
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-accent);
+      outline-offset: 2px;
+    }
+
+    @media (min-width: 640px) {
+      width: auto;
+      white-space: nowrap;
+    }
+  }
+
+  &__nearest :deep(.app-button svg) {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+
+    @media (max-width: 639px) {
+      width: 18px;
+      height: 18px;
+    }
+  }
+
+  // The gold «nearest» button: same height, a bolder label. On a phone the
+  // label may wrap (large system font, narrow screen) but the icon never
+  // shrinks — at 360px a one-line label used to squeeze it to nothing.
+  &__nearest :deep(.app-button) {
+    min-height: 54px;
+    font-size: 1.1rem;
+    font-weight: 700;
+
+    @media (max-width: 639px) {
+      min-height: 44px;
+      padding-block: 10px;
+      font-size: clamp(13.5px, 3.9vw, 15.5px);
+      padding-inline: 12px;
+      gap: 8px;
+      white-space: normal;
+      line-height: 1.25;
+    }
   }
 
   &__search {

@@ -21,6 +21,7 @@ import type { GuardedRouting } from '../routing/routing-provider'
 import type { CandidateFinder } from './candidate-finder'
 import { rankCandidates, searchRadii, YEREVAN_CENTRE } from './domain/ranking'
 import { openAttempt, type NextOfferResult, type OffersRepository } from './offers.repository'
+import { requiredBalanceFor } from '../wallet/domain/fees'
 
 export interface EngineLogger {
   info(message: string, data?: Record<string, unknown>): void
@@ -102,6 +103,7 @@ export class DispatchEngine {
           requirements: requirementsOf(order),
           excludeAttemptId: attemptId,
           source: stage < radii.length ? 'GPS' : 'BASE',
+          requiredBalanceAmd: requiredBalanceFor(order, settings),
         },
         settings,
       )

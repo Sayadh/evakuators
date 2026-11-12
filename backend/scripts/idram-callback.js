@@ -144,7 +144,7 @@ async function listPayments(prisma) {
   for (const payment of payments) {
     const driver = `${payment.towTruck.driverName} ${payment.towTruck.phone}`
     console.log(
-      `  #${String(payment.id).padEnd(5)} ${payment.status.padEnd(9)} ${String(payment.amount).padStart(6)} ${payment.currency}  ${payment.planCode.padEnd(12)} ${driver}`,
+      `  #${String(payment.id).padEnd(5)} ${payment.status.padEnd(9)} ${String(payment.amount).padStart(6)} ${payment.currency}  ${String(payment.planCode ?? payment.kind).padEnd(12)} ${driver}`,
     )
   }
   console.log('\n  node scripts/idram-callback.js <id>')
@@ -205,7 +205,7 @@ async function main() {
       : option('trans-id', `LOCAL-${Date.now()}`)
     const transDate = new Date().toISOString().slice(0, 19).replace('T', ' ')
 
-    console.log(`payment #${payment.id} · ${payment.planCode} · ${payment.amount} ${payment.currency} · ${payment.status} · towTruck ${payment.towTruckId}`)
+    console.log(`payment #${payment.id} · ${payment.planCode ?? payment.kind} · ${payment.amount} ${payment.currency} · ${payment.status} · towTruck ${payment.towTruckId}`)
     console.log(`posting to ${apiUrl}${RESULT_PATH}`)
 
     const only = flag('precheck') || flag('confirm') || flag('replay')

@@ -29,6 +29,7 @@ export const TEST_CONFIG: LiveDispatchConfig = {
   routingDailyRequests: null,
   pushProvider: 'recording',
   fcmServiceAccount: null,
+  apnsCriticalAlerts: false,
   redisUrl: '',
 }
 

@@ -54,7 +54,8 @@ export interface SubscriptionPayment {
 export interface AdminPendingPayment {
   id: number
   towTruckId: number
-  kind: 'SUBSCRIPTION' | 'PROMOTION'
+  /** WALLET_TOPUP: money into the driver-app wallet (2026-11-12) — only an amount */
+  kind: 'SUBSCRIPTION' | 'PROMOTION' | 'WALLET_TOPUP'
   planTitle: string
   amount: number
   currency: string

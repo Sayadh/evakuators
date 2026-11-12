@@ -16,7 +16,11 @@ import type {
   OpsAlert,
   OpsMapDriver,
   OpsOrder,
+  OpsDriverWallet,
   OpsOrderDetail,
+  OpsPriceReview,
+  OpsWalletRow,
+  OpsWalletSummary,
   ProgressAction,
 } from '~/types/opsDispatch'
 
@@ -70,14 +74,45 @@ export const opsDispatchRepository = {
       query: { bbox: query.bbox, onlyOnline: query.onlyOnline ? 'true' : undefined },
     })
   },
-  suspendDriver(driverId: number, suspended: boolean, reason: string | null) {
-    return apiFetch<{ ok: true }>(`${base}/drivers/${driverId}/suspend`, { method: 'POST', headers: auth(), body: { suspended, reason } })
+  /** Block (or unblock) a driver for orders: a reason he sees, optionally for `days` (then it lifts by itself) */
+  suspendDriver(driverId: number, suspended: boolean, reason: string | null, days?: number | null) {
+    return apiFetch<{ ok: true }>(`${base}/drivers/${driverId}/suspend`, { method: 'POST', headers: auth(), body: { suspended, reason, ...(days ? { days } : {}) } })
   },
   alerts() {
     return apiFetch<OpsAlert[]>(`${base}/alerts`, { headers: auth() })
   },
   ackAlert(id: number) {
     return apiFetch<{ ok: true }>(`${base}/alerts/${id}/ack`, { method: 'POST', headers: auth() })
+  },
+  /** Driver wallet (2026-11-12): every balance, lowest first */
+  wallets() {
+    return apiFetch<OpsWalletRow[]>(`${base}/wallets`, { headers: auth() })
+  },
+  driverWallet(driverId: number, before?: number) {
+    return apiFetch<OpsDriverWallet>(`${base}/drivers/${driverId}/wallet`, { headers: auth(), query: { before } })
+  },
+  /** Wallet money over the last `days`, debts, who is low, reviews waiting */
+  walletSummary(days = 30) {
+    return apiFetch<OpsWalletSummary>(`${base}/wallets/summary`, { headers: auth(), query: { days } })
+  },
+  /** ADMIN only: how far below zero this driver may go and still get orders */
+  setCreditLimit(driverId: number, creditLimitAmd: number, key: string) {
+    return apiFetch<{ driverId: number; balanceAmd: number; creditLimitAmd: number; availableAmd: number }>(`${base}/drivers/${driverId}/wallet/credit-limit`, {
+      method: 'PUT',
+      headers: auth(key),
+      body: { creditLimitAmd },
+    })
+  },
+  /** Minimum prices drivers entered, waiting for a call */
+  priceReviews() {
+    return apiFetch<OpsPriceReview[]>(`${base}/price-reviews`, { headers: auth() })
+  },
+  resolvePriceReview(id: number, body: { decision: 'APPROVE' | 'CORRECT'; correctedPriceAmd?: number; note?: string }, key: string) {
+    return apiFetch<OpsOrder>(`${base}/price-reviews/${id}`, { method: 'POST', headers: auth(key), body })
+  },
+  /** ADMIN only: + credit / − debit, with the note the driver sees */
+  adjustWallet(driverId: number, body: { amountAmd: number; note?: string }, key: string) {
+    return apiFetch<{ driverId: number; balanceAmd: number }>(`${base}/drivers/${driverId}/wallet/adjustments`, { method: 'POST', headers: auth(key), body })
   },
   settings() {
     return apiFetch<Record<string, number | number[]>>(`${base}/settings`, { headers: auth() })

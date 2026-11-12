@@ -47,7 +47,9 @@ export class MyTowTruckService {
     // The JWT itself never expires early — if admin deactivates a driver
     // (ban / removed from platform) their still-valid 30-day token must
     // stop working immediately, not just disappear from the public listing.
-    if (!towTruck.isActive) {
+    // `appOnly` is NOT a deactivation: an app driver's profile is hidden from
+    // the site until published, and stays theirs to see and edit (2026-11-12).
+    if (!towTruck.isActive && !towTruck.appOnly) {
       throw new ForbiddenException('Ձեր պրոֆիլն ապաակտիվացված է, դիմեք admin-ին')
     }
     // The driver's own profile is the one place the exact coordinates belong in

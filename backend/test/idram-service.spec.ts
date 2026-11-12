@@ -4,6 +4,7 @@ import { SubscriptionPaymentStatus } from '@prisma/client'
 import { describe, expect, it, vi } from 'vitest'
 import { buildIdramChecksum } from '../src/idram/idram-checksum'
 import { IdramService } from '../src/idram/idram.service'
+import { PaymentHandlerRegistry, type ExternalPaymentHandler } from '../src/idram/payment-handlers'
 import type { SubscriptionsRepository } from '../src/subscriptions/subscriptions.repository'
 import type { SubscriptionsService } from '../src/subscriptions/subscriptions.service'
 
@@ -24,8 +25,10 @@ interface Options {
     id: number
     amount: number
     status: SubscriptionPaymentStatus
-    kind?: 'SUBSCRIPTION' | 'PROMOTION'
+    kind?: 'SUBSCRIPTION' | 'PROMOTION' | 'WALLET_TOPUP'
   } | null
+  /** A registered WALLET_TOPUP handler (the driver-app wallet), or none */
+  walletHandler?: ExternalPaymentHandler
   grantable?: boolean
   alreadySeenTransaction?: boolean
   confirmReturns?: unknown
@@ -62,8 +65,11 @@ function build(options: Options = {}) {
   const isStillGrantable = vi.fn(async () => options.grantable ?? true)
   const promotions = { isStillGrantable } as never
 
+  const registry = new PaymentHandlerRegistry()
+  if (options.walletHandler) registry.register('WALLET_TOPUP', options.walletHandler)
+
   return {
-    service: new IdramService(config, subscriptions, repository, promotions),
+    service: new IdramService(config, subscriptions, repository, promotions, registry),
     confirmPayment,
     recordProviderTransaction,
     isStillGrantable,
@@ -287,5 +293,36 @@ describe('the precheck on a placement', () => {
     const { service, isStillGrantable } = build({ grantable: false })
     await expect(service.handleCallback(precheckBody())).resolves.toBe(true)
     expect(isStillGrantable).not.toHaveBeenCalled()
+  })
+})
+
+describe('a product owned elsewhere — the driver-app wallet (WALLET_TOPUP)', () => {
+  const walletPayment = { id: 1806, amount: 3000, status: SubscriptionPaymentStatus.PENDING, kind: 'WALLET_TOPUP' as const }
+  const handler = (payable = true, confirms = true) => ({
+    isStillPayable: vi.fn(async () => payable),
+    confirm: vi.fn(async () => confirms),
+  })
+
+  it('precheck: the owner decides; with no owner registered, no money moves', async () => {
+    const yes = handler(true)
+    await expect(build({ payment: walletPayment, walletHandler: yes }).service.handleCallback(precheckBody())).resolves.toBe(true)
+    expect(yes.isStillPayable).toHaveBeenCalled()
+    await expect(build({ payment: walletPayment, walletHandler: handler(false) }).service.handleCallback(precheckBody())).resolves.toBe(false)
+    await expect(build({ payment: walletPayment }).service.handleCallback(precheckBody())).resolves.toBe(false)
+  })
+
+  it('confirmation goes to the owner — never to the subscription path — and a re-credit is still OK', async () => {
+    const first = handler(true, true)
+    const built = build({ payment: walletPayment, walletHandler: first })
+    await expect(built.service.handleCallback(confirmationBody())).resolves.toBe(true)
+    expect(first.confirm).toHaveBeenCalledWith(expect.objectContaining({ id: 1806 }), { provider: 'IDRAM', transactionId: '12345678901234' })
+    expect(built.confirmPayment).not.toHaveBeenCalled()
+    await expect(build({ payment: walletPayment, walletHandler: handler(true, false) }).service.handleCallback(confirmationBody())).resolves.toBe(true)
+  })
+
+  it('confirmation with no owner, or an owner that fails, is REFUSED so Idram retries (money moved, nothing credited yet)', async () => {
+    await expect(build({ payment: walletPayment }).service.handleCallback(confirmationBody())).resolves.toBe(false)
+    const failing = { isStillPayable: vi.fn(async () => true), confirm: vi.fn(async () => { throw new Error('db down') }) }
+    await expect(build({ payment: walletPayment, walletHandler: failing }).service.handleCallback(confirmationBody())).resolves.toBe(false)
   })
 })

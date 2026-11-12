@@ -26,6 +26,14 @@ export type LocationSource = 'GPS' | 'BASE'
  * is stale, inaccurate, suspicious or missing, and the driver has a base
  * location to be measured from instead. Requires `eligibleFrom('BASE')`
  * (a driver who never sent a fix has no "DriverLocationCurrent" row).
+ *
+ * Connection for `BASE`: a fresh heartbeat, OR one within
+ * `baseHeartbeatMaxAgeSeconds` when the phone can still be rung — a live push
+ * token on a live session. Switching GPS off (or locking the phone) also stops
+ * the background heartbeat, which rides on location updates; without this the
+ * fallback would never reach the very drivers it exists for. The offer itself
+ * still has to be confirmed as delivered (`offerDeliverySeconds`), so a phone
+ * that is really gone costs one short delivery window, not an order.
  */
 export function availabilityPredicate(p: Params, settings: DispatchSettings, source: LocationSource = 'GPS'): string {
   const gpsUsable = `(
@@ -37,12 +45,24 @@ export function availabilityPredicate(p: Params, settings: DispatchSettings, sou
     source === 'GPS'
       ? gpsUsable
       : `(t."baseLatitude" IS NOT NULL AND t."baseLongitude" IS NOT NULL AND (lc."driverId" IS NULL OR NOT ${gpsUsable}))`
+  const freshHeartbeat = `p."lastHeartbeatAt" >= now() - make_interval(secs => ${p.add(settings.heartbeatMaxAgeSeconds)}::int)`
+  const connection =
+    source === 'GPS'
+      ? freshHeartbeat
+      : `(${freshHeartbeat} OR (
+          p."lastHeartbeatAt" >= now() - make_interval(secs => ${p.add(settings.baseHeartbeatMaxAgeSeconds)}::int)
+          AND EXISTS (
+            SELECT 1 FROM "PushDeviceToken" pt
+              JOIN "DriverDeviceSession" s ON s."id" = pt."sessionId" AND s."revokedAt" IS NULL
+             WHERE pt."driverId" = t."id" AND pt."invalidatedAt" IS NULL
+          )
+        ))`
   return `(
     t."isActive" = true
-    AND p."dispatchSuspendedAt" IS NULL
+    AND (p."dispatchSuspendedAt" IS NULL OR p."dispatchSuspendedUntil" <= now())
     AND COALESCE(p."trackingConsentVersion", 0) >= ${p.add(TRACKING_CONSENT_VERSION)}::int
     AND p."wantsOnline" = true
-    AND p."lastHeartbeatAt" >= now() - make_interval(secs => ${p.add(settings.heartbeatMaxAgeSeconds)}::int)
+    AND ${connection}
     AND ${position}
     AND p."externalBusy" = false
     AND NOT EXISTS (SELECT 1 FROM "OrderOffer" x WHERE x."driverId" = t."id" AND x."status" = 'PENDING')

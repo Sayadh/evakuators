@@ -42,10 +42,24 @@ export interface PrimaryAreaCandidate {
  * «գյուղ» is spelled out rather than abbreviated because this string is read by
  * customers on a card, not by staff in a table.
  */
-export function composeLocationName(placeName: string, settlementName?: string): string {
+export function composeLocationName(placeName: string, settlementName?: string, placeSlug?: string): string {
   const village = settlementName?.trim()
   if (!village) return placeName.trim()
+  // Yerevan (2026-11-12): a district is not a village's municipality, so the
+  // spot goes in brackets — «Ավան (Ծարավ Աղբյուր)», never «Ավան, գյուղ …».
+  if (placeSlug && resolveAreaType(placeSlug) === LocationType.District) return `${placeName.trim()} (${village})`
   return `${placeName.trim()}, գյուղ ${village}`
+}
+
+/**
+ * The stored base label as it should READ. Labels saved before 2026-11-12
+ * for a Yerevan district say «Ավան, գյուղ Ծարավ Աղբյուր»; shown as
+ * «Ավան (Ծարավ Աղբյուր)» without rewriting the stored data.
+ */
+export function displayBaseName(location: { name: string; districtSlug?: string | null }): string {
+  if (!location.districtSlug) return location.name
+  const match = /^(.+?),\s*գյուղ\s+(.+)$/.exec(location.name.trim())
+  return match ? `${match[1].trim()} (${match[2].trim()})` : location.name
 }
 
 /**

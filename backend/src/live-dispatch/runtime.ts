@@ -8,6 +8,8 @@
  * Both can run on one VPS or on separate machines without code changes:
  * the only things they share are Postgres (truth) and Redis (fan-out).
  */
+import { readFileSync } from 'node:fs'
+import { resolve as resolvePath } from 'node:path'
 import { PostgisCandidateFinder, type CandidateFinder } from './dispatching/candidate-finder'
 import { DispatchEngine, silentLogger, type EngineLogger } from './dispatching/engine'
 import { OffersRepository } from './dispatching/offers.repository'
@@ -41,19 +43,33 @@ export interface LiveDispatchConfig {
   routingDailyRequests: number | null
   pushProvider: 'fcm' | 'recording'
   fcmServiceAccount: ServiceAccount | null
+  /**
+   * iOS Critical Alerts for the offer ring (rings through silent mode and Do
+   * Not Disturb). Needs Apple's approval of the critical-alerts entitlement
+   * AND an app built with it (mobile app.config.ts IOS_CRITICAL_ALERTS).
+   * Harmless otherwise: an app not entitled gets an ordinary sound.
+   */
+  apnsCriticalAlerts: boolean
   redisUrl: string
 }
 
 export function readLiveDispatchConfig(env: NodeJS.ProcessEnv): LiveDispatchConfig {
   const flag = (name: string) => (env[name] ?? '').toLowerCase() === 'true'
   let fcmServiceAccount: ServiceAccount | null = null
-  if (env.FCM_SERVICE_ACCOUNT_JSON) {
-    const parsed = JSON.parse(env.FCM_SERVICE_ACCOUNT_JSON) as ServiceAccount
-    if (!parsed.project_id || !parsed.client_email || !parsed.private_key) throw new Error('FCM_SERVICE_ACCOUNT_JSON is incomplete')
+  // The key as one line of JSON, or (2026-11-12) the path of the file Firebase
+  // downloads — «Generate new private key» — so nobody has to flatten it by hand.
+  const accountJson = env.FCM_SERVICE_ACCOUNT_JSON
+    ? env.FCM_SERVICE_ACCOUNT_JSON
+    : env.FCM_SERVICE_ACCOUNT_FILE
+      ? readFileSync(resolvePath(env.FCM_SERVICE_ACCOUNT_FILE), 'utf8')
+      : null
+  if (accountJson) {
+    const parsed = JSON.parse(accountJson) as ServiceAccount
+    if (!parsed.project_id || !parsed.client_email || !parsed.private_key) throw new Error('FCM service account is incomplete')
     fcmServiceAccount = parsed
   }
   const pushProvider = (env.PUSH_PROVIDER ?? 'recording') as LiveDispatchConfig['pushProvider']
-  if (pushProvider === 'fcm' && !fcmServiceAccount) throw new Error('PUSH_PROVIDER=fcm requires FCM_SERVICE_ACCOUNT_JSON')
+  if (pushProvider === 'fcm' && !fcmServiceAccount) throw new Error('PUSH_PROVIDER=fcm requires FCM_SERVICE_ACCOUNT_JSON or FCM_SERVICE_ACCOUNT_FILE')
   return {
     enabled: flag('LIVE_DISPATCH_ENABLED'),
     trackingEnabled: flag('DRIVER_TRACKING_ENABLED'),
@@ -75,6 +91,7 @@ export function readLiveDispatchConfig(env: NodeJS.ProcessEnv): LiveDispatchConf
         : null,
     pushProvider,
     fcmServiceAccount,
+    apnsCriticalAlerts: flag('APNS_CRITICAL_ALERTS'),
     redisUrl: env.REDIS_URL ?? '',
   }
 }
@@ -155,7 +172,7 @@ export function createRuntime(
   const reconciler = new Reconciler(db, offers)
   const pushSender =
     overrides.pushSender ?? (config.pushProvider === 'fcm' && config.fcmServiceAccount ? new FcmSender(config.fcmServiceAccount) : new RecordingPushSender())
-  const push = new PushService(db, pushSender)
+  const push = new PushService(db, pushSender, undefined, { criticalAlerts: config.apnsCriticalAlerts })
   const bus = overrides.bus ?? (config.redisUrl ? new RedisBus(parseRedisUrl(config.redisUrl)) : new InProcessBus())
 
   const handlers: Record<string, OutboxHandler> = {
@@ -167,7 +184,15 @@ export function createRuntime(
       await offers.expire(String(message.payload.offerId))
       return 'done'
     },
-    'push.offer': async (message) => ((await push.sendOfferPush(String(message.payload.offerId))) === 'retry' ? 'retry' : 'done'),
+    'push.offer': async (message) =>
+      (await push.sendOfferPush(String(message.payload.offerId), Number(message.payload.ring ?? 1) || 1)) === 'retry' ? 'retry' : 'done',
+    'push.offerClosed': async (message) => ((await push.sendOfferClosedPush(String(message.payload.offerId))) === 'retry' ? 'retry' : 'done'),
+    'push.walletCredited': async (message) =>
+      (await push.sendWalletCreditedPush(Number(message.payload.driverId), Number(message.payload.amountAmd), Number(message.payload.balanceAmd))) === 'retry'
+        ? 'retry'
+        : 'done',
+    'push.walletLow': async (message) =>
+      (await push.sendWalletLowPush(Number(message.payload.driverId), Number(message.payload.balanceAmd))) === 'retry' ? 'retry' : 'done',
     'push.order': async (message) =>
       (await push.sendOrderPush(Number(message.payload.orderId), Number(message.payload.driverId), String(message.payload.kind))) === 'retry'
         ? 'retry'

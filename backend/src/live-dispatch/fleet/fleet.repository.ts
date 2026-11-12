@@ -4,6 +4,7 @@
  * Every method takes the driver id from the AUTHENTICATED session (the guard
  * resolves it from the token's `sid`), never from a request body.
  */
+import { enqueueRealtime } from '../notify/outbox'
 import { DispatchError } from '../platform/errors'
 import { Params, toDate, toNullableDate, toNullableNumber, toNumber } from '../platform/params'
 import type { DispatchSettings } from '../platform/settings'
@@ -49,6 +50,10 @@ export interface DriverStateRow {
   vehicleType: string
   isActive: boolean
   dispatchSuspendedAt: Date | null
+  /** Why the operator blocked this driver (shown to the driver) — only while blocked */
+  dispatchSuspendedReason?: string | null
+  /** When the block lifts by itself; null = until an operator lifts it */
+  dispatchSuspendedUntil?: Date | null
   wantsOnline: boolean
   externalBusy: boolean
   lastHeartbeatAt: Date | null
@@ -69,7 +74,9 @@ export interface DriverStateRow {
 
 export const DRIVER_STATE_SELECT = `
   t."id" AS "driverId", t."kind", t."towTruckId", t."slug", t."driverName", t."phone", t."vehicleType", t."isActive",
-  p."dispatchSuspendedAt", COALESCE(p."wantsOnline", false) AS "wantsOnline",
+  CASE WHEN p."dispatchSuspendedUntil" IS NOT NULL AND p."dispatchSuspendedUntil" <= now() THEN NULL ELSE p."dispatchSuspendedAt" END AS "dispatchSuspendedAt",
+  p."dispatchSuspendedReason", p."dispatchSuspendedUntil",
+  COALESCE(p."wantsOnline", false) AS "wantsOnline",
   COALESCE(p."externalBusy", false) AS "externalBusy", p."lastHeartbeatAt",
   p."trackingConsentVersion", p."availableSince",
   lc."latitude", lc."longitude", lc."accuracyM", lc."speedMps", lc."measuredAt",
@@ -96,6 +103,8 @@ export function mapDriverState(row: Record<string, unknown>): DriverStateRow {
     vehicleType: String(row.vehicleType),
     isActive: Boolean(row.isActive),
     dispatchSuspendedAt: toNullableDate(row.dispatchSuspendedAt),
+    dispatchSuspendedReason: row.dispatchSuspendedAt == null || row.dispatchSuspendedReason == null ? null : String(row.dispatchSuspendedReason),
+    dispatchSuspendedUntil: row.dispatchSuspendedAt == null ? null : toNullableDate(row.dispatchSuspendedUntil),
     wantsOnline: Boolean(row.wantsOnline),
     externalBusy: Boolean(row.externalBusy),
     lastHeartbeatAt: toNullableDate(row.lastHeartbeatAt),
@@ -225,7 +234,11 @@ export class FleetRepository {
     })
   }
 
-  async registerPushToken(sessionId: string, driverId: number, token: string): Promise<void> {
+  /**
+   * @param alertSound the driver's new-order ring on this device (an ALERT_SOUNDS id,
+   *   checked by the caller); undefined keeps the stored choice, null resets it
+   */
+  async registerPushToken(sessionId: string, driverId: number, token: string, alertSound?: string | null): Promise<void> {
     if (token.length < 20 || token.length > 4096) throw new DispatchError('VALIDATION_FAILED', { field: 'token' })
     await withRetryingTransaction(this.db, async (tx) => {
       await this.assertActiveSession(tx, sessionId, driverId)
@@ -247,6 +260,13 @@ export class FleetRepository {
           WHERE NOT EXISTS (SELECT 1 FROM "PushDeviceToken" WHERE "token" = $3 AND "sessionId" = $1::uuid AND "invalidatedAt" IS NULL)`,
         [sessionId, driverId, token],
       )
+      if (alertSound !== undefined) {
+        await tx.query(
+          `UPDATE "PushDeviceToken" SET "alertSound" = $3
+            WHERE "token" = $1 AND "sessionId" = $2::uuid AND "invalidatedAt" IS NULL`,
+          [token, sessionId, alertSound],
+        )
+      }
     })
   }
 
@@ -316,10 +336,17 @@ export class FleetRepository {
         `INSERT INTO "DriverPresence" ("driverId") VALUES ($1::int) ON CONFLICT ("driverId") DO NOTHING`,
         [driverId],
       )
-      const [presence] = await tx.query<{ trackingConsentVersion: number | null }>(
-        `SELECT "trackingConsentVersion" FROM "DriverPresence" WHERE "driverId" = $1::int FOR UPDATE`,
+      const [presence] = await tx.query<{ trackingConsentVersion: number | null; blocked: boolean; reason: string | null; until: unknown }>(
+        `SELECT "trackingConsentVersion",
+                ("dispatchSuspendedAt" IS NOT NULL AND ("dispatchSuspendedUntil" IS NULL OR "dispatchSuspendedUntil" > now())) AS "blocked",
+                "dispatchSuspendedReason" AS "reason", "dispatchSuspendedUntil" AS "until"
+           FROM "DriverPresence" WHERE "driverId" = $1::int FOR UPDATE`,
         [driverId],
       )
+      // Blocked by an operator: cannot go online until it is lifted (or expires)
+      if (change.wantsOnline === true && presence.blocked) {
+        throw new DispatchError('DRIVER_BLOCKED', { reason: presence.reason, until: toNullableDate(presence.until)?.toISOString() ?? null })
+      }
       if (change.wantsOnline === true && (presence.trackingConsentVersion ?? 0) < TRACKING_CONSENT_VERSION) {
         throw new DispatchError('TRACKING_CONSENT_REQUIRED')
       }
@@ -423,7 +450,10 @@ export class FleetRepository {
         // The WHERE clause is the real ordering rule, evaluated by Postgres on
         // the locked row: a fix replaces the stored one only if it comes from
         // a newer session (the old one is revoked, see assertActiveSession) or
-        // is later in the same session by BOTH sequence and measurement time.
+        // was MEASURED later (same time: the higher sequence). 2026-11: it used
+        // to need a higher sequence too — a phone whose counter went backwards
+        // (its tracking file rewritten by two writers at once) then never
+        // updated its position again and showed "GPS old" for good.
         const updated = await tx.query(
           `INSERT INTO "DriverLocationCurrent" ("driverId", "sessionId", "seq", "latitude", "longitude",
               "accuracyM", "speedMps", "headingDeg", "measuredAt", "receivedAt", "suspicious", "suspiciousReason")
@@ -436,8 +466,9 @@ export class FleetRepository {
               "measuredAt" = EXCLUDED."measuredAt", "receivedAt" = EXCLUDED."receivedAt",
               "suspicious" = EXCLUDED."suspicious", "suspiciousReason" = EXCLUDED."suspiciousReason"
             WHERE "DriverLocationCurrent"."sessionId" <> EXCLUDED."sessionId"
-               OR (EXCLUDED."seq" > "DriverLocationCurrent"."seq"
-                   AND EXCLUDED."measuredAt" >= "DriverLocationCurrent"."measuredAt")
+               OR EXCLUDED."measuredAt" > "DriverLocationCurrent"."measuredAt"
+               OR (EXCLUDED."measuredAt" = "DriverLocationCurrent"."measuredAt"
+                   AND EXCLUDED."seq" > "DriverLocationCurrent"."seq")
            RETURNING 1`,
           [
             driverId,
@@ -535,7 +566,13 @@ export class FleetRepository {
     return rows.map(mapDriverState)
   }
 
-  async setDispatchSuspended(driverId: number, suspended: boolean, reason: string | null, adminUserId: number): Promise<void> {
+  /**
+   * Blocks (or unblocks) a driver for orders. Blocked: signs in and sees why
+   * (and until when) on Home, but cannot go online and is never offered an
+   * order. `until` null = until an operator lifts it; otherwise it lifts by
+   * itself at that time. Going offline is forced so the state is honest.
+   */
+  async setDispatchSuspended(driverId: number, suspended: boolean, reason: string | null, adminUserId: number, until: Date | null = null): Promise<void> {
     await this.db.query(
       `INSERT INTO "DriverPresence" ("driverId") VALUES ($1::int) ON CONFLICT ("driverId") DO NOTHING`,
       [driverId],
@@ -545,10 +582,14 @@ export class FleetRepository {
           SET "dispatchSuspendedAt" = CASE WHEN $2::boolean THEN now() ELSE NULL END,
               "dispatchSuspendedReason" = CASE WHEN $2::boolean THEN $3 ELSE NULL END,
               "dispatchSuspendedBy" = CASE WHEN $2::boolean THEN $4::int ELSE NULL END,
+              "dispatchSuspendedUntil" = CASE WHEN $2::boolean THEN $5::timestamptz ELSE NULL END,
+              "wantsOnline" = CASE WHEN $2::boolean THEN false ELSE "wantsOnline" END,
               "updatedAt" = now()
         WHERE "driverId" = $1::int`,
-      [driverId, suspended, reason, adminUserId],
+      [driverId, suspended, reason, adminUserId, until],
     )
+    // The open app re-reads its snapshot (Home shows / drops the block banner)
+    await enqueueRealtime(this.db, `driver:block:${driverId}:${Date.now()}`, [`driver:${driverId}`], 'driver.updated', { blocked: suspended })
   }
 
   /** Retention: deletes history older than the configured window, in bounded chunks */

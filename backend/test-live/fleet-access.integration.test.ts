@@ -75,6 +75,63 @@ describe('app access: site drivers and app-only drivers (real Postgres)', { skip
     return h.adminId
   }
 
+  /** An app sign-up as POST /driver-app/site-registrations files it — a website RegistrationRequest */
+  async function appSignup(phone: string, passwordHash: string, status: 'PENDING' | 'APPROVED' | 'REJECTED' = 'PENDING', approvedTowTruckId: number | null = null) {
+    await dbCtx.get().pool.query(
+      `INSERT INTO "RegistrationRequest" ("status", "firstName", "lastName", "phone", "vehicleBrand", "vehicleYear", "vehicleType",
+                                          "capacityRange", "regionSlugs", "citySlugs", "services", "updatedAt", "source", "passwordHash", "approvedTowTruckId")
+       VALUES ($1::"RegistrationStatus", 'Արամ', 'Պետրոսյան', $2, 'Isuzu', 2015, 'flatbed', '2-3.5', '{kotayk}', '{abovyan}', '{towing}', now(),
+               'APP', $3, $4::int)`,
+      [status, phone, passwordHash, approvedTowTruckId],
+    )
+  }
+
+  it('app sign-up (2026-11): pending → APP_ACCOUNT_PENDING only with ITS password; rejected → APP_ACCOUNT_REJECTED; still one comparison', async () => {
+    const { access: a, hasher } = access()
+    const phone = nextPhone()
+    await appSignup(phone, await hasher.hash('chosen-in-app'))
+    hasher.compares = 0
+    await assert.rejects(a.authenticate(phone, 'chosen-in-app'), (e: { code: string }) => e.code === 'APP_ACCOUNT_PENDING')
+    await assert.rejects(a.authenticate(phone, 'a-guess'), (e: { code: string }) => e.code === 'INVALID_CREDENTIALS', 'no status without the password')
+    assert.equal(hasher.compares, 2, 'exactly one comparison per attempt')
+    await dbCtx.get().pool.query(`UPDATE "RegistrationRequest" SET "status" = 'REJECTED' WHERE "phone" = $1`, [phone])
+    await assert.rejects(a.authenticate(phone, 'chosen-in-app'), (e: { code: string }) => e.code === 'APP_ACCOUNT_REJECTED')
+  })
+
+  it('app sign-up approved: the first sign-in grants app access, once; a suspension is never undone by signing in', async () => {
+    const { access: a, hasher } = access()
+    const { phone, towTruckId } = await siteTruck(hasher, 'chosen-in-app')
+    await appSignup(phone, '', 'APPROVED', towTruckId)
+    const first = await a.authenticate(phone, 'chosen-in-app')
+    assert.equal(first.kind, 'SITE_LINKED')
+    assert.equal((await a.authenticate(phone, 'chosen-in-app')).driverId, first.driverId, 'the same access, not a second row')
+    const [{ n }] = await dbCtx.get().pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM "FleetDriver" WHERE "towTruckId" = $1::int`, [towTruckId])
+    assert.equal(n, 1)
+    await a.suspend(first.driverId, 'test', await adminId())
+    await assert.rejects(a.authenticate(phone, 'chosen-in-app'), (e: { code: string }) => e.code === 'APP_ACCESS_SUSPENDED')
+  })
+
+  it('a website profile that did NOT come from the app still needs an admin grant', async () => {
+    const { access: a, hasher } = access()
+    const { phone, towTruckId } = await siteTruck(hasher, 'site-pass-web')
+    await appSignup(phone, '', 'REJECTED', towTruckId)
+    await assert.rejects(a.authenticate(phone, 'site-pass-web'), (e: { code: string }) => e.code === 'APP_ACCESS_NOT_GRANTED')
+  })
+
+  it('prepareSiteRegistration: refuses a number with an app-only account or an app sign-up already in review', async () => {
+    const { access: a, hasher } = access()
+    const phone = nextPhone()
+    const { passwordHash } = await a.prepareSiteRegistration(phone, 'chosen-in-app')
+    assert.ok(await hasher.compare('chosen-in-app', passwordHash), 'hashed, never stored in clear')
+    await appSignup(phone, passwordHash)
+    await assert.rejects(a.prepareSiteRegistration(phone, 'another-pass'), (e: { code: string }) => e.code === 'REGISTRATION_ALREADY_PENDING')
+    const other = nextPhone()
+    const { driverId } = await a.register({ ...REGISTRATION, phone: other })
+    await a.approve(driverId, await adminId())
+    await assert.rejects(a.prepareSiteRegistration(other, 'another-pass'), (e: { code: string }) => e.code === 'PHONE_ALREADY_REGISTERED')
+    await assert.rejects(a.prepareSiteRegistration(nextPhone(), 'short'), (e: { code: string }) => e.code === 'VALIDATION_FAILED')
+  })
+
   it('a website driver WITHOUT a grant cannot use the app, even with the right site password', async () => {
     const { access: a, hasher } = access()
     const { phone } = await siteTruck(hasher, 'site-pass-1')
@@ -110,6 +167,34 @@ describe('app access: site drivers and app-only drivers (real Postgres)', { skip
     assert.equal(n, 1, 'the website profile is untouched')
     await a.grantSiteAccess(towTruckId, await adminId())
     assert.equal((await a.authenticate(phone, 'site-pass-del')).driverId, granted.id)
+  })
+
+  it('deleting an account that SIGNED UP IN THE APP also erases the website profile it created (App Store 5.1.1(v)); the number may sign up again', async () => {
+    const { access: a, hasher } = access()
+    const { phone, towTruckId } = await siteTruck(hasher, 'chosen-in-app')
+    await appSignup(phone, '', 'APPROVED', towTruckId)
+    const { driverId } = await a.authenticate(phone, 'chosen-in-app') // first sign-in grants access
+    await dbCtx.get().pool.query(
+      `INSERT INTO "TowTruckImage" ("towTruckId", "path", "url", "width", "height", "sizeBytes", "position") VALUES ($1::int, 'uploads/x.webp', 'http://x/x.webp', 10, 10, 10, 0)`,
+      [towTruckId],
+    )
+    await a.deleteOwnAccount(driverId, 'chosen-in-app')
+    const [truck] = await dbCtx.get().pool.query<Record<string, unknown>>(
+      `SELECT "isActive", "phone", "driverName", "passwordHash", "latitude", "email" FROM "TowTruck" WHERE "id" = $1::int`,
+      [towTruckId],
+    )
+    assert.equal(truck.isActive, false, 'off the website')
+    assert.equal(truck.passwordHash, null)
+    assert.notEqual(truck.phone, phone, 'the phone is released')
+    assert.equal(truck.driverName, 'Ջնջված հաշիվ')
+    const [{ n }] = await dbCtx.get().pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM "TowTruckImage" WHERE "towTruckId" = $1::int`, [towTruckId])
+    assert.equal(n, 0, 'photos detached (the nightly purge deletes the files)')
+    const [request] = await dbCtx.get().pool.query<{ phone: string; firstName: string }>(
+      `SELECT "phone", "firstName" FROM "RegistrationRequest" WHERE "approvedTowTruckId" = $1::int`,
+      [towTruckId],
+    )
+    assert.notEqual(request.phone, phone)
+    await assert.rejects(a.authenticate(phone, 'chosen-in-app'), (e: { code: string }) => e.code === 'INVALID_CREDENTIALS')
   })
 
   it('grant → the SAME site password signs into the app; one row; idempotent', async () => {

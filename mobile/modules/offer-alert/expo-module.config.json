@@ -1,0 +1,6 @@
+{
+  "platforms": ["android"],
+  "android": {
+    "modules": ["am.evakuators.offeralert.OfferAlertModule"]
+  }
+}

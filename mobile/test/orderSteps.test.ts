@@ -38,6 +38,14 @@ describe('active order screen — one next step', () => {
     assert.equal(plan.priceBlocksTransport, true)
   })
 
+  it('accepted, negotiated price not yet agreed (2026-11-12): the price is the first step — no «Շարժվում եմ» yet', () => {
+    const plan = planOrderScreen({ ...base, status: 'PRICE_CONFIRMATION_PENDING', allowedActions: [], canSetPrice: true })
+    assert.equal(plan.primary, null)
+    assert.equal(plan.priceEntry, true)
+    assert.equal(plan.priceBlocksTransport, true)
+    assert.equal(plan.secondary, 'CANCEL', 'he may still ask to cancel')
+  })
+
   it('transporting: navigation to the destination only if there is one, then «Ավարտել»', () => {
     const transporting = { ...base, status: 'TRANSPORTING' as const, allowedActions: ['COMPLETE' as const], canCancel: false }
     assert.equal(planOrderScreen(transporting).navigateTo, null)

@@ -20,7 +20,9 @@ const LABELS: Record<string, string> = {
   gpsMaxAgeSeconds: 'GPS-ի թարմություն (վ)',
   gpsMaxAccuracyMeters: 'GPS-ի առավելագույն սխալ բաշխման համար (մ)',
   heartbeatMaxAgeSeconds: 'Heartbeat-ի թարմություն (վ)',
-  offerTimeoutSeconds: 'Առաջարկի ժամկետ (վ)',
+  baseHeartbeatMaxAgeSeconds: 'Կայանատեղիով բաշխում՝ GPS-ն անջատած վարորդին կապի առավելագույն ընդմիջում (վ)',
+  offerTimeoutSeconds: 'Պատասխանի ժամկետ՝ վարորդին հասնելու պահից (վ)',
+  offerDeliverySeconds: 'Առաջարկի առաքման ժամկետ՝ եթե չի հասնում վարորդին (վ)',
   searchAlertSeconds: 'Օպերատորի ազդանշան որոնման ընթացքում (վ)',
   searchMaxSeconds: 'Որոնման առավելագույն տևողություն (վ)',
   maxOffersPerAttempt: 'Առավելագույն առաջարկներ մեկ որոնման մեջ',
@@ -33,6 +35,20 @@ const LABELS: Record<string, string> = {
   activeGpsLostAlertSeconds: 'Ակտիվ պատվերի GPS-ի կորստի ազդանշան (վ)',
   locationHistoryRetentionDays: 'Տեղադրության պատմության պահպանում (օր)',
   routingDailyElementBudget: 'Routing-ի օրական element-ների բյուջե',
+  walletBillingEnabled: 'Վարորդի հաշվից միջնորդավճար (1 = միացված, 0 = անջատված)',
+  walletFeeFreeMaxPriceAmd: 'Անվճար պատվեր՝ մինչև այս գինը ներառյալ (֏, 0 = չկա)',
+  walletFeeBaseAmd: 'Միջնորդավճար՝ հիմնական (֏)',
+  walletFeeBaseMaxPriceAmd: 'Հիմնական միջնորդավճարը՝ մինչև այս գինը (֏)',
+  walletFeePercent: 'Դրանից վեր՝ ամբողջ գնի այսքան տոկոս (%)',
+  walletFeeRoundAmd: '… կլորացված այսքան դրամով (֏, օր.՝ 100)',
+  walletFeeMaxAmd: 'Միջնորդավճար՝ առավելագույնը (֏, 0 = առանց սահմանի)',
+  walletMinTopupAmd: 'Հաշվի համալրում՝ նվազագույնը (֏)',
+  walletMaxTopupAmd: 'Հաշվի համալրում՝ առավելագույնը (֏)',
+  walletFreeMaxRouteMeters: 'Նվազագույն գինը չի թույլատրվում այս հեռավորությունից երկար պատվերի համար (մ, 0 = չկա)',
+  walletTopupBonusEnabled: 'Համալրման բոնուս (1 = միացված, 0 = անջատված)',
+  walletTopupBonusThresholdsAmd: 'Բոնուսի շեմեր (֏, ստորակետով)',
+  walletTopupBonusPercents: 'Բոնուսի տոկոսներ (նույն հերթականությամբ, ստորակետով)',
+  walletLowBalanceOrders: '«Մնացորդը քիչ է» ծանուցում, երբ մնացել է այսքան պատվերի միջնորդավճար',
 }
 
 async function load() {
@@ -72,7 +88,7 @@ useSeoMetaData({ title: 'Բաշխման կարգավորումներ', descripti
 
 <template>
   <div class="container settings">
-    <NuxtLink to="/admin/orders">← Պատվերներ</NuxtLink>
+    <OpsNav />
     <h1>Բաշխման կարգավորումներ</h1>
     <p v-if="health" class="muted">
       Ավտոմատ բաշխում՝ {{ health.flags.dispatch ? 'միացված' : 'անջատված' }} · Tracking՝ {{ health.flags.tracking ? 'միացված' : 'անջատված' }} ·

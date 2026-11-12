@@ -18,6 +18,7 @@ import { RegistrationService } from './registration.service'
   ],
   controllers: [RegistrationController],
   providers: [RegistrationService, RegistrationRepository],
-  exports: [RegistrationRepository],
+  // RegistrationService for the driver app's sign-up (live-dispatch DriverAppController)
+  exports: [RegistrationRepository, RegistrationService],
 })
 export class RegistrationModule {}

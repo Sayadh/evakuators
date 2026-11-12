@@ -78,7 +78,7 @@ useJsonLd([
       </div>
     </header>
 
-    <NearestTowTrucksCta class="district-page__nearest" />
+    <NearestTowTrucksCta with-routes class="district-page__nearest" />
 
     <div class="district-page__toolbar">
       <AppButton v-if="!isDesktop" variant="outline" size="sm" @click="openDrawer">

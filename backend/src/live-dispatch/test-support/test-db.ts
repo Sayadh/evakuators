@@ -17,13 +17,18 @@
 import { randomBytes } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import type { SqlDatabase } from '../platform/sql'
 import { PgPool, PgWireClient, parseConnectionString } from './pg-wire'
+import { PgliteDatabase } from './pglite-db'
 
 const MIGRATIONS_DIR = join(__dirname, '..', '..', '..', 'prisma', 'migrations')
 const LIVE_POSTGIS_MIGRATION = '20261108090200_live_dispatch_postgis'
 
+/** A real server's pool, or the in-memory PGlite one (`LIVE_DISPATCH_TEST_DATABASE_URL=pglite`) */
+export type TestPool = SqlDatabase & { end(): Promise<void> }
+
 export interface TestDatabase {
-  pool: PgPool
+  pool: TestPool
   name: string
   hasPostgis: boolean
   url: string
@@ -42,6 +47,7 @@ function withoutPostgis(sql: string): string {
 }
 
 export async function createTestDatabase(): Promise<TestDatabase> {
+  if (testDatabaseUrl() === 'pglite') return createPgliteDatabase()
   const url = testDatabaseUrl()
   if (!url) throw new Error('LIVE_DISPATCH_TEST_DATABASE_URL is not set')
   const base = parseConnectionString(url)
@@ -88,9 +94,24 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   }
 }
 
+/** Every migration on an in-memory PGlite (no server, no PostGIS) — see pglite-db.ts */
+async function createPgliteDatabase(): Promise<TestDatabase> {
+  const pool = await PgliteDatabase.create()
+  for (const dir of readdirSync(MIGRATIONS_DIR).filter((d) => /^\d+_/.test(d)).sort()) {
+    if (dir === LIVE_POSTGIS_MIGRATION) continue
+    const sql = withoutPostgis(readFileSync(join(MIGRATIONS_DIR, dir, 'migration.sql'), 'utf8'))
+    try {
+      await pool.exec(sql)
+    } catch (error) {
+      throw new Error(`${dir}: ${(error as Error).message}`)
+    }
+  }
+  return { pool, name: 'pglite', hasPostgis: false, url: 'pglite', drop: () => pool.end() }
+}
+
 /** Inserts a minimal approved TowTruck row and returns its id */
 export async function insertTowTruck(
-  pool: PgPool,
+  pool: SqlDatabase,
   overrides: Partial<{
     vehicleType: string
     capacityTons: number
@@ -127,7 +148,7 @@ export async function insertTowTruck(
 
 /** A website driver who was GRANTED app access: TowTruck + SITE_LINKED FleetDriver */
 export async function insertSiteDriver(
-  pool: PgPool,
+  pool: SqlDatabase,
   overrides: Parameters<typeof insertTowTruck>[1] & { accessStatus?: 'ACTIVE' | 'SUSPENDED' } = {},
 ): Promise<{ driverId: number; towTruckId: number }> {
   const towTruckId = await insertTowTruck(pool, overrides)
@@ -140,7 +161,7 @@ export async function insertSiteDriver(
 
 /** An app-only driver (never on the website), ACTIVE unless stated */
 export async function insertAppOnlyDriver(
-  pool: PgPool,
+  pool: SqlDatabase,
   overrides: Partial<{
     vehicleType: string
     capacityTons: number
@@ -172,7 +193,7 @@ export async function insertAppOnlyDriver(
   return Number(row.id)
 }
 
-export async function insertAdminUser(pool: PgPool, role: 'ADMIN' | 'DISPATCHER' = 'ADMIN'): Promise<number> {
+export async function insertAdminUser(pool: SqlDatabase, role: 'ADMIN' | 'DISPATCHER' = 'ADMIN'): Promise<number> {
   const [row] = await pool.query<{ id: number }>(
     `INSERT INTO "User" ("email", "passwordHash", "role", "updatedAt") VALUES ($1, 'x', $2::"UserRole", now()) RETURNING "id"`,
     [`ops-${randomBytes(4).toString('hex')}@test.local`, role],

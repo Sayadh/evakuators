@@ -50,7 +50,8 @@ export interface OpsOrder {
   termsVersion: number
   customer: { phone: string; name: string | null }
   pickup: OpsPickupPoint
-  destination: OpsPoint | null
+  /** A description alone is possible (2026-11): coordinates may be null */
+  destination: { latitude: number | null; longitude: number | null; address: string } | null
   vehicle: { make: string | null; model: string | null; plate: string | null; weightKg: number | null }
   problemDescription: string
   requirements: {
@@ -63,7 +64,16 @@ export interface OpsOrder {
     overridden: boolean
     overrideNote: string | null
   }
-  price: { mode: PricingMode; currency: 'AMD'; quotedAmd: number | null; agreedAmd: number | null; confirmed: boolean; confirmedAt: string | null }
+  price: {
+    mode: PricingMode
+    currency: 'AMD'
+    quotedAmd: number | null
+    agreedAmd: number | null
+    confirmed: boolean
+    confirmedAt: string | null
+    /** Who entered the agreed price (2026-11-12) */
+    confirmedBy?: 'DRIVER' | 'OPERATOR' | null
+  }
   payment: { status: PaymentStatus; updatedAt: string | null }
   assignedDriverId: number | null
   pickupToDestination: { meters: number | null; seconds: number | null; computedAt: string | null; provider: string | null; manual: boolean } | null
@@ -116,6 +126,12 @@ export interface OpsOrderDetail {
   offers: OpsOffer[]
   candidates: OpsCandidate[]
   timeline: OpsTimelineEvent[]
+  /** Every driver the order was given to, newest first (2026-11-12) */
+  assignments?: { id: number; driverId: number; name: string | null; phone: string | null; active: boolean; startedAt: string; endedAt: string | null; endReason: string | null }[]
+  /** Minimum-price checks for this order, newest first (2026-11-12) */
+  priceReviews?: { id: number; driverId: number; priceAmd: number; status: 'PENDING' | 'APPROVED' | 'CORRECTED'; correctedPriceAmd: number | null; note: string | null; createdAt: string; resolvedAt: string | null }[]
+  /** Driver wallet lines for this order: fee, settlement, refund (2026-11-12) */
+  wallet?: { netFeeAmd: number; entries: { id: number; driverId: number; kind: OpsWalletEntryKind; amountAmd: number; note: string | null; createdAt: string }[] }
 }
 
 export interface OpsAvailability {
@@ -190,6 +206,8 @@ export interface FleetDriver {
   /** Shown on the website right now — informational, no effect on the app */
   siteListed: boolean
   statusReason: string | null
+  /** Blocked for orders by an operator: the reason the driver sees, and the end (null = until lifted) */
+  block?: { reason: string | null; until: string | null; since: string | null } | null
   statusChangedAt: string
   createdAt: string
 }
@@ -203,4 +221,53 @@ export interface FleetSiteCandidate {
   vehicleType: string
   driverId: number | null
   accessStatus: FleetDriverStatus | null
+}
+
+/** Driver wallet (2026-11-12) — `GET /ops/dispatch/wallets` */
+export interface OpsWalletRow {
+  driverId: number
+  name: string | null
+  phone: string | null
+  kind: string
+  balanceAmd: number
+  creditLimitAmd?: number
+  completedOrders?: number
+  updatedAt: string | null
+}
+
+/** `GET /ops/dispatch/wallets/summary` */
+export interface OpsWalletSummary {
+  days: number
+  billingEnabled: boolean
+  totals: { topupsAmd: number; topupsCount: number; bonusesAmd: number; feesNetAmd: number; feeOrders: number; refundsAmd: number; adminCreditsAmd: number; adminDebitsAmd: number }
+  balances: { heldAmd: number; owedAmd: number; inDebt: number; belowBaseFee: number }
+  pendingPriceReviews: number
+  daily: { day: string; topupsAmd: number; feesNetAmd: number; feeOrders: number }[]
+}
+
+/** `GET /ops/dispatch/price-reviews` — a minimum price waiting for a call */
+export interface OpsPriceReview {
+  id: number
+  orderId: number
+  orderNumber: string
+  driver: { id: number; name: string | null; phone: string | null }
+  customer: { phone: string; name: string | null }
+  pickupAddress: string
+  destinationAddress: string | null
+  routeMeters: number | null
+  priceAmd: number
+  createdAt: string
+}
+
+export type OpsWalletEntryKind = 'TOPUP' | 'TOPUP_BONUS' | 'ORDER_FEE' | 'ORDER_FEE_ADJUSTMENT' | 'ORDER_FEE_REFUND' | 'ADMIN_CREDIT' | 'ADMIN_DEBIT'
+
+/** `GET /ops/dispatch/drivers/:id/wallet` */
+export interface OpsDriverWallet {
+  billingEnabled: boolean
+  balanceAmd: number
+  fees: { baseAmd: number; baseMaxPriceAmd: number; stepPriceAmd: number; stepAmd: number }
+  creditLimitAmd?: number
+  topup: { minAmd: number; maxAmd: number; bonus?: { fromAmd: number; percent: number }[] }
+  entries: { id: number; kind: OpsWalletEntryKind; amountAmd: number; balanceAfterAmd: number; orderNumber: string | null; note: string | null; createdAt: string }[]
+  topups: { paymentId: number; amountAmd: number; status: string; createdAt: string }[]
 }

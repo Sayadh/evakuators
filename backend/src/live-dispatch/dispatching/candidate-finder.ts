@@ -19,6 +19,7 @@ import type { DispatchSettings } from '../platform/settings'
 import type { Sql } from '../platform/sql'
 import type { OrderRequirements } from '../orders/domain/requirements'
 import { availabilityPredicate, capabilityPredicate, eligibleFrom, type LocationSource } from './eligibility-sql'
+import { walletPredicate } from '../wallet/wallet-ledger'
 
 export interface FoundCandidate {
   driverId: number
@@ -39,6 +40,11 @@ export interface CandidateQuery {
   excludeAttemptId: number | null
   /** Live fix (default) or the base-location fallback */
   source?: LocationSource
+  /**
+   * Driver wallet (2026-11-12): only drivers whose balance covers this order's
+   * fee. `null`/absent = billing is off, no condition (wallet-ledger.ts).
+   */
+  requiredBalanceAmd?: number | null
 }
 
 /** Where a candidate is, per source — SQL expressions over t (profile) and lc (live fix) */
@@ -91,6 +97,7 @@ export class PostgisCandidateFinder implements CandidateFinder {
         WHERE ${availabilityPredicate(p, settings, source)}
           AND ST_DWithin(${at.point}, o.point, ${p.add(query.radiusMeters)}::double precision)
           AND ${capabilityPredicate(p, query.requirements)}
+          AND ${walletPredicate(p, query.requiredBalanceAmd ?? null)}
           AND ${exclusion(p, query.excludeAttemptId)}
         ORDER BY ${at.point} <-> o.point
         LIMIT ${p.add(query.limit)}::int`,
@@ -126,6 +133,7 @@ export class PlainSqlCandidateFinder implements CandidateFinder {
            FROM ${eligibleFrom(source)}
           WHERE ${availabilityPredicate(p, settings, source)}
             AND ${capabilityPredicate(p, query.requirements)}
+            AND ${walletPredicate(p, query.requiredBalanceAmd ?? null)}
             AND ${exclusion(p, query.excludeAttemptId)}
        ) d
        WHERE d."straightLineMeters" <= ${p.add(query.radiusMeters)}::float8

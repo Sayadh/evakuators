@@ -87,6 +87,20 @@ SITE_LINKED:  (չկա) ──grant──▶ ACTIVE ──suspend──▶ SUSPEN
   կայքի ճանապարհով (կայքը միշտ առաջինն է), իսկ ադմինը կտեսնի երկու գրառումը և
   կկապի դրանք։ «Հաստատել»-ը նման դեպքում մերժվում է (`PHONE_BELONGS_TO_SITE_DRIVER`)։
 
+## Գրանցում հավելվածում = կայքի գրանցում (`POST /driver-app/site-registrations`, 2026-11)
+
+Սեփականատիրոջ որոշում. հավելվածում գրանցվողը ստանում է **նույնը, ինչ կայքում գրանցվողը**՝ կայքի էջ և հավելվածի հասանելիություն։
+
+1. Հավելվածը վերբեռնում է նկարները (`POST /images`), ապա ուղարկում է կայքի `CreateRegistrationDto`-ն + `password` (`CreateAppRegistrationDto`)։ Նախ `FleetAccess.prepareSiteRegistration`-ը մերժում է, եթե այդ համարով կա app-only հաշիվ (`PHONE_ALREADY_REGISTERED`) կամ հավելվածից հայտ արդեն ստուգման մեջ է (`REGISTRATION_ALREADY_PENDING`), ապա `RegistrationService.submit`-ը՝ կայքի բոլոր կանոններով (կայքում արդեն կա՞ համարը, համաձայնության տարբերակ, տարածքների սահմանափակում, նկարներ)։
+2. `RegistrationRequest`-ում պահվում է `source = APP` և գաղտնաբառի **hash**-ը (`passwordHash`)։ Ադմինը հայտը տեսնում է կայքի սովորական հերթում «Գրանցվել է հավելվածից» նշանով, զանգահարում է համարին (SMS ստուգում չկա) և հաստատում։
+3. Հաստատման ժամանակ (`AdminService.approve`) hash-ը տեղափոխվում է `TowTruck.passwordHash` (`mustChangePassword: false` — սեփական գաղտնաբառ, Telegram-ի հղումը այն չի փոխում), հայտից ջնջվում է, և գրվում է `approvedTowTruckId`։
+4. Առաջին մուտքի ժամանակ `FleetAccess.authenticate`-ը տեսնում է, որ կայքի պրոֆիլը ստեղծվել է հավելվածի հայտից և **ինքն է տալիս** `SITE_LINKED / ACTIVE` հասանելիություն (`SITE_ACCESS_FROM_APP_SIGNUP` իրադարձություն)։ Միայն երբ `FleetDriver` տող ընդհանրապես չկա․ կասեցված կամ ջնջված հասանելիությունը մուտքով երբեք չի վերականգնվում։
+5. Մինչև հաստատումը մուտքը պատասխանում է `APP_ACCOUNT_PENDING`, մերժումից հետո՝ `APP_ACCOUNT_REJECTED` (միայն ճիշտ գաղտնաբառից հետո, դեռ մեկ hash համեմատություն)։
+
+Պրոֆիլը հավելվածում՝ `GET/PUT /driver-app/me/profile`, `PUT /driver-app/me/profile/coordinates`, `DELETE /driver-app/me/profile/change`, `PUT /driver-app/me/password` — կայքի նույն ծառայություններն են (`ProfileChangesService`, `SubscriptionActiveGuard`, `DriverAuthService.changePassword`)՝ `DriverAppSiteProfileGuard`-ի միջոցով, որը request-ին դնում է `towTruckId`։
+
+Ստորև նկարագրված app-only գրանցումը մնում է արդեն տեղադրված հին build-երի համար։
+
 ## Ինքնագրանցում (`POST /driver-app/registrations`)
 
 Դաշտեր՝ հեռախոս (`+374XXXXXXXX`), գաղտնաբառ (8–72), անուն, մեքենայի տեսակ (կայքի

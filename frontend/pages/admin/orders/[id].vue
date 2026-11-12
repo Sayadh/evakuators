@@ -18,6 +18,7 @@ import { useOpsRealtime } from '~/composables/useOpsRealtime'
 import type { CancelReason, OpsMapDriver, OpsOrderDetail, PaymentStatus, ProgressAction } from '~/types/opsDispatch'
 import { formatClockTime, formatDateNumeric } from '~/utils/formatters'
 import { formatPrice } from '~/utils/formatPrice'
+import { parseCoordinates } from '~/utils/coordinates'
 import {
   ATTENTION_LABEL,
   CANCEL_REASON_LABEL,
@@ -53,6 +54,13 @@ const pendingOffer = computed(() => detail.value?.offers.find((o) => o.status ==
 const assignedDriver = computed(() => drivers.value.find((d) => d.driverId === order.value?.assignedDriverId) ?? null)
 const searchFailed = computed(() => !!order.value?.attentionKind && SEARCH_FAILURE_KINDS.includes(order.value.attentionKind))
 const driverAttached = computed(() => order.value?.assignedDriverId != null)
+/** The driver who has (or last had) this order — callable even after the job is over */
+const lastAssignment = computed(() => detail.value?.assignments?.[0] ?? null)
+const WALLET_KIND_LABEL: Record<string, string> = {
+  ORDER_FEE: 'Գանձվել է ընդունելիս',
+  ORDER_FEE_ADJUSTMENT: 'Ճշգրտում ըստ գնի',
+  ORDER_FEE_REFUND: 'Վերադարձ',
+}
 
 async function load() {
   try {
@@ -92,6 +100,26 @@ async function run(action: string, fn: (key: string, version: number) => Promise
   }
 }
 
+// Pickup coordinates added AFTER creation (the order was taken by phone with
+// only an address): the automatic search needs them. Same "lat, lng" text as
+// the creation form, same parser.
+const pickupCoordsInput = ref('')
+const pickupCoordsError = ref<string | null>(null)
+const setPickupCoords = () => {
+  pickupCoordsError.value = null
+  const parsed = parseCoordinates(pickupCoordsInput.value)
+  if (!parsed.ok) {
+    pickupCoordsError.value = parsed.error
+    return
+  }
+  const address = order.value?.pickup.address ?? ''
+  return run(
+    'pickup-coords',
+    (k, v) => opsDispatchRepository.updateOrder(orderId, { expectedVersion: v, pickup: { latitude: parsed.latitude, longitude: parsed.longitude, address } }, k),
+    'Կոորդինատները պահպանվեցին։ Կարող եք սկսել ավտոմատ որոնումը։',
+  )
+}
+
 const start = () => run('start', (k, v) => opsDispatchRepository.action(orderId, 'start', { expectedVersion: v }, k), 'Ավտոմատ որոնումը սկսվեց։')
 const stop = () => run('stop', (k, v) => opsDispatchRepository.action(orderId, 'stop', { expectedVersion: v }, k), 'Որոնումը դադարեցվեց։')
 const progress = (a: ProgressAction) => run(`progress-${a}`, (k, v) => opsDispatchRepository.progress(orderId, a, v, k), 'Կարգավիճակը թարմացվեց (վարորդի անունից)։')
@@ -105,15 +133,45 @@ const setPayment = () => run('payment', (k, v) => opsDispatchRepository.action(o
 
 const cancelReason = ref<CancelReason>('CUSTOMER_DECLINED')
 const cancelComment = ref('')
-const cancel = () => {
-  if (!confirm('Չեղարկե՞լ պատվերը։ Վարորդը (եթե կա) կստանա ծանուցում։')) return
-  return run('cancel', (k, v) => opsDispatchRepository.action(orderId, 'cancel', { reason: cancelReason.value, comment: cancelComment.value || null, expectedVersion: v }, k), 'Պատվերը չեղարկվեց։')
+/**
+ * Driver wallet: before arrival the fee always goes back. After arrival only
+ * if the operator called and confirmed the driver came for nothing.
+ */
+const cancelRefund = ref(false)
+const arrived = computed(() => !!order.value?.timestamps.arrivedAt)
+const cancel = async () => {
+  if (!(await confirmDialog({ message: 'Չեղարկե՞լ պատվերը։ Վարորդը (եթե կա) կստանա ծանուցում։', confirmLabel: 'Չեղարկել պատվերը', cancelLabel: 'Ոչ', danger: true }))) return
+  return run(
+    'cancel',
+    (k, v) =>
+      opsDispatchRepository.action(
+        orderId,
+        'cancel',
+        { reason: cancelReason.value, comment: cancelComment.value || null, expectedVersion: v, ...(arrived.value && cancelRefund.value ? { refundDriverFee: true } : {}) },
+        k,
+      ),
+    'Պատվերը չեղարկվեց։',
+  )
 }
+
+// Minimum price entered by the driver, waiting for a call to the customer
+const pendingReview = computed(() => detail.value?.priceReviews?.find((r) => r.status === 'PENDING') ?? null)
+const correctedPrice = ref('')
+const approveReview = () =>
+  pendingReview.value &&
+  run('review-approve', (k) => opsDispatchRepository.resolvePriceReview(pendingReview.value!.id, { decision: 'APPROVE' }, k), 'Գինը հաստատվեց, միջնորդավճարը վերադարձվեց վարորդին։')
+const correctReview = () =>
+  pendingReview.value &&
+  run(
+    'review-correct',
+    (k) => opsDispatchRepository.resolvePriceReview(pendingReview.value!.id, { decision: 'CORRECT', correctedPriceAmd: Number(correctedPrice.value) }, k),
+    'Գինը ճշգրտվեց, միջնորդավճարը վերահաշվարկվեց։ Վարորդը ստացավ ծանուցում։',
+  )
 
 const releaseReason = ref('')
 const releaseRestart = ref(true)
-const release = () => {
-  if (!confirm('Հաստատում եք, որ նախորդ վարորդի նշանակումն ավարտված է (խոսել եք նրա հետ)։')) return
+const release = async () => {
+  if (!(await confirmDialog('Հաստատում եք, որ նախորդ վարորդի նշանակումն ավարտված է (խոսել եք նրա հետ)։'))) return
   return run(
     'release',
     (k, v) => opsDispatchRepository.action(orderId, 'release', { confirm: true, reason: releaseReason.value, restartSearch: releaseRestart.value, expectedVersion: v }, k),
@@ -122,9 +180,6 @@ const release = () => {
 }
 const resumeNote = ref('')
 const resume = () => run('resume', (k, v) => opsDispatchRepository.action(orderId, 'resume', { note: resumeNote.value, expectedVersion: v }, k), 'Պատվերը շարունակվում է նույն վարորդով։')
-const overrideNote = ref('')
-const override = () =>
-  run('override', (k, v) => opsDispatchRepository.action(orderId, 'override-requirements', { note: overrideNote.value, expectedVersion: v }, k), 'Անհայտ պահանջներն ընդունվեցին (audit-ում գրանցված)։')
 
 const manualDriver = ref<number | null>(null)
 const manualOverride = ref('')
@@ -185,7 +240,8 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
 <template>
   <div class="container order">
     <header class="order__header">
-      <NuxtLink to="/admin/orders" class="order__back">← Պատվերներ</NuxtLink>
+      <OpsNav />
+      <NuxtLink to="/admin/orders" class="order__back">← Բոլոր պատվերները</NuxtLink>
       <span class="order__live" :class="{ on: connected }">{{ connected ? 'Կենդանի' : 'Թարմացվում է 15 վ-ը մեկ' }}</span>
     </header>
     <p v-if="error" class="order__error" role="alert">{{ error }}</p>
@@ -214,7 +270,7 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
             </dd>
             <dt>Destination</dt>
             <dd>
-              <template v-if="order.destination">{{ order.destination.address }} · <a :href="`https://maps.google.com/?q=${order.destination.latitude},${order.destination.longitude}`" target="_blank" rel="noopener">քարտեզ</a></template>
+              <template v-if="order.destination">{{ order.destination.address }}<template v-if="order.destination.latitude !== null && order.destination.longitude !== null"> · <a :href="`https://maps.google.com/?q=${order.destination.latitude},${order.destination.longitude}`" target="_blank" rel="noopener">քարտեզ</a></template><span v-else class="muted"> · կոորդինատները հայտնի չեն</span></template>
               <template v-else>հայտնի չէ</template>
             </dd>
             <dt>Pickup → destination</dt>
@@ -249,12 +305,36 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
               <template v-if="order.price.mode === 'FIXED'">Ֆիքսված՝ {{ order.price.quotedAmd !== null ? formatPrice(order.price.quotedAmd) : '—' }}</template>
               <template v-else>
                 Համաձայնեցվող՝
-                <template v-if="order.price.confirmed">{{ formatPrice(order.price.agreedAmd ?? 0) }} (հաստատված {{ when(order.price.confirmedAt) }})</template>
+                <template v-if="order.price.confirmed">
+                  <strong>{{ formatPrice(order.price.agreedAmd ?? 0) }}</strong> (հաստատված {{ when(order.price.confirmedAt) }}<template v-if="order.price.confirmedBy">, {{ order.price.confirmedBy === 'DRIVER' ? 'մուտքագրել է վարորդը' : 'մուտքագրել է օպերատորը' }}</template>)
+                </template>
                 <strong v-else>դեռ չի հաստատված — տեղափոխումը փակ է</strong>
               </template>
             </dd>
             <dt>Վճարում</dt>
             <dd>{{ PAYMENT_LABEL[order.payment.status] }}</dd>
+            <template v-if="lastAssignment">
+              <dt>Վարորդ</dt>
+              <dd>
+                <strong>{{ lastAssignment.name ?? `#${lastAssignment.driverId}` }}</strong>
+                <template v-if="lastAssignment.phone"> · <a :href="`tel:${lastAssignment.phone}`">{{ formatArmenianPhone(lastAssignment.phone) }}</a></template>
+                <span class="muted"> · {{ lastAssignment.active ? 'ընթացիկ' : `ավարտված ${when(lastAssignment.endedAt)}` }}</span>
+                <div v-for="a in (detail?.assignments ?? []).slice(1)" :key="a.id" class="muted">
+                  Նախկին՝ {{ a.name ?? `#${a.driverId}` }}<template v-if="a.phone"> · <a :href="`tel:${a.phone}`">{{ formatArmenianPhone(a.phone) }}</a></template>
+                  <template v-if="a.endReason"> · {{ a.endReason }}</template>
+                </div>
+              </dd>
+            </template>
+            <template v-if="detail?.wallet && detail.wallet.entries.length > 0">
+              <dt>Միջնորդավճար</dt>
+              <dd>
+                <strong>{{ formatPrice(detail.wallet.netFeeAmd) }}</strong>
+                <span v-if="detail.wallet.netFeeAmd === 0" class="muted"> (վերադարձված կամ անվճար պատվեր)</span>
+                <div v-for="e in detail.wallet.entries" :key="e.id" class="muted">
+                  {{ WALLET_KIND_LABEL[e.kind] ?? e.kind }}՝ {{ e.amountAmd > 0 ? '+' : '−' }}{{ formatPrice(Math.abs(e.amountAmd)) }} · {{ when(e.createdAt) }}<template v-if="e.note"> · {{ e.note }}</template>
+                </div>
+              </dd>
+            </template>
             <dt v-if="order.internalNote">Ներքին նշում</dt>
             <dd v-if="order.internalNote">{{ order.internalNote }}</dd>
           </dl>
@@ -262,6 +342,17 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
 
         <section class="card">
           <h2>Գործողություններ</h2>
+
+          <div v-if="pendingReview" class="box box--warn">
+            <strong>Ստուգել գինը.</strong> վարորդը գրել է նվազագույն գինը՝ {{ formatPrice(pendingReview.priceAmd) }}։
+            Զանգեք հաճախորդին՝ <a :href="`tel:${order.customer.phone}`">{{ formatArmenianPhone(order.customer.phone) }}</a>
+            <template v-if="lastAssignment?.phone">, վարորդին՝ <a :href="`tel:${lastAssignment.phone}`">{{ formatArmenianPhone(lastAssignment.phone) }}</a></template>։
+            <div class="actions">
+              <AppButton size="sm" :disabled="busy" @click="approveReview">Ճիշտ է՝ վերադարձնել միջնորդավճարը</AppButton>
+              <input v-model="correctedPrice" type="number" min="1" placeholder="Իրական գինը, ֏" />
+              <AppButton size="sm" variant="outline" :disabled="busy || !(Number(correctedPrice) > 0)" @click="correctReview">Ուղղել գինը</AppButton>
+            </div>
+          </div>
 
           <div v-if="pendingOffer" class="box">
             Առաջարկ #{{ pendingOffer.driverId }} վարորդին — մնաց <strong>{{ secondsLeft(pendingOffer.expiresAt) }} վ</strong>
@@ -307,9 +398,16 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
             <AppButton size="sm" variant="danger" :disabled="busy || releaseReason.trim().length < 3" @click="release">Հանել նշանակումը</AppButton>
           </div>
 
-          <div v-if="order.status === 'DRAFT' || order.status === 'NEEDS_ATTENTION'" class="box">
-            <label>Անհայտ պահանջների override (պատճառ) <input v-model="overrideNote" /></label>
-            <AppButton size="sm" variant="outline" :disabled="busy || overrideNote.trim().length < 5" @click="override">Ընդունել անհայտը</AppButton>
+          <div
+            v-if="(order.pickup.latitude === null || order.pickup.longitude === null) && !['COMPLETED', 'CANCELLED'].includes(order.status)"
+            class="box"
+          >
+            <label>
+              Վերցնելու կետի կոորդինատներ (ավտոմատ որոնման համար)
+              <input v-model="pickupCoordsInput" placeholder="40.177200, 44.512600" inputmode="decimal" />
+            </label>
+            <div v-if="pickupCoordsError" class="order__error" role="alert">{{ pickupCoordsError }}</div>
+            <AppButton size="sm" :disabled="busy || pickupCoordsInput.trim().length === 0" @click="setPickupCoords">Պահպանել կոորդինատները</AppButton>
           </div>
 
           <div v-if="!driverAttached && !pendingOffer && ['DRAFT', 'SEARCHING', 'NEEDS_ATTENTION'].includes(order.status)" class="box">
@@ -347,6 +445,9 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
               </select>
             </label>
             <label v-if="cancelReason === 'OTHER'">Մեկնաբանություն* <input v-model="cancelComment" /></label>
+            <label v-if="arrived && detail?.wallet?.entries.length" class="inline">
+              <input v-model="cancelRefund" type="checkbox" /> Վարորդը տեղ էր հասել․ վերադարձնել միջնորդավճարը (զանգել եմ և հաստատել)
+            </label>
             <AppButton size="sm" variant="danger" :disabled="busy || (cancelReason === 'OTHER' && !cancelComment.trim())" @click="cancel">Չեղարկել պատվերը</AppButton>
           </div>
         </section>
@@ -561,5 +662,9 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
     word-break: break-word;
     color: var(--color-text-secondary);
   }
+}
+.box--warn {
+  border-color: var(--color-warning, #d97706);
+  background: #fff8eb;
 }
 </style>

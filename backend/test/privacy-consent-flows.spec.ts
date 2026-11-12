@@ -211,6 +211,30 @@ describe('2 — a registration with the current version is stored with its conse
     expect(data.vehicleType).toBe('flatbed')
   })
 
+  it('an app sign-up stores the hash and the source — never the password in clear', async () => {
+    // POST /driver-app/site-registrations: the website DTO plus `password`.
+    const { service, repository } = buildRegistration()
+
+    await service.submit({ ...REGISTRATION_DTO, password: 'secret-123' } as never, CONSENT_CONTEXT, {
+      passwordHash: '$2b$12$hash',
+    })
+
+    const [data] = repository.create.mock.calls[0]!
+    expect(data).not.toHaveProperty('password')
+    expect(data.passwordHash).toBe('$2b$12$hash')
+    expect(data.source).toBe('APP')
+  })
+
+  it('a website registration has no source override and no password', async () => {
+    const { service, repository } = buildRegistration()
+
+    await service.submit(REGISTRATION_DTO as never, CONSENT_CONTEXT)
+
+    const [data] = repository.create.mock.calls[0]!
+    expect(data).not.toHaveProperty('passwordHash')
+    expect(data).not.toHaveProperty('source')
+  })
+
   it('returns the created request', async () => {
     const { service } = buildRegistration()
 

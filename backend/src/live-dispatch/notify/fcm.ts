@@ -30,6 +30,38 @@ export interface PushMessage {
   /** Newer message with the same key replaces an undelivered older one */
   collapseKey: string
   highPriority: boolean
+  /**
+   * An actionable offer (2026-11): on Android the message is DATA-ONLY, so the
+   * app draws the notification itself with «Ընդունել» / «Մերժել» buttons
+   * (FCM-drawn notifications cannot carry buttons). An online driver's app
+   * runs a location foreground service, so it is alive to receive it. On iOS
+   * the alert stays an APNs alert with this category; the app registers the
+   * category's buttons.
+   */
+  actionCategory?: string
+  /**
+   * iOS: a sound file bundled in the app (≤ 30 s, Apple's limit) instead of
+   * the short system sound. Android plays the sound of the channel the app
+   * draws the notification on (mobile/src/push/channels.ts).
+   */
+  sound?: string
+  /** iOS 15+: `interruption-level: time-sensitive` — breaks through Focus / scheduled summary (needs the app entitlement) */
+  timeSensitive?: boolean
+  /** iOS: `content-available: 1` — wakes the app in the background so it can acknowledge delivery */
+  contentAvailable?: boolean
+  /**
+   * iOS Critical Alert (2026-11): the sound plays through silent mode and Do
+   * Not Disturb at full volume. Only honoured for an app with Apple's
+   * critical-alerts entitlement whose user allowed it; otherwise iOS plays
+   * the ordinary sound — so sending it is safe.
+   */
+  critical?: boolean
+  /**
+   * A data-only message with nothing to show or hear: Android delivers it to
+   * the app's background handler; iOS gets a background (`content-available`)
+   * push. Used to stop an offer's ring (`type: offer_closed`).
+   */
+  silent?: boolean
 }
 
 export type PushSendResult =
@@ -93,16 +125,20 @@ export class FcmSender implements PushSender {
       return { ok: false, invalidToken: false, retryable: true, error: (error as Error).message }
     }
     const ttl = Math.max(1, Math.floor(message.ttlSeconds))
+    if (message.silent) return this.post(accessToken, silentBody(message, ttl))
+    const actionable = !!message.actionCategory
     const body = {
       message: {
         token: message.token,
-        notification: { title: message.title, body: message.body },
-        data: message.data,
+        // Actionable: no top-level notification (it would make Android draw a
+        // button-less one); iOS gets its alert from apns.payload below.
+        ...(actionable ? {} : { notification: { title: message.title, body: message.body } }),
+        data: actionable ? { ...message.data, title: message.title, body: message.body } : message.data,
         android: {
           ttl: `${ttl}s`,
           priority: message.highPriority ? 'HIGH' : 'NORMAL',
           collapse_key: message.collapseKey,
-          notification: { channel_id: message.highPriority ? 'offers' : 'orders', tag: message.collapseKey },
+          ...(actionable ? {} : { notification: { channel_id: message.highPriority ? 'offers' : 'orders', tag: message.collapseKey } }),
         },
         apns: {
           headers: {
@@ -112,10 +148,22 @@ export class FcmSender implements PushSender {
             'apns-push-type': 'alert',
             'apns-collapse-id': message.collapseKey.slice(0, 64),
           },
-          payload: { aps: { sound: 'default', 'thread-id': 'evakuators' } },
+          payload: {
+            aps: {
+              sound: message.critical ? { critical: 1, name: message.sound ?? 'default', volume: 1.0 } : (message.sound ?? 'default'),
+              ...(message.timeSensitive ? { 'interruption-level': 'time-sensitive' } : {}),
+              ...(message.contentAvailable ? { 'content-available': 1 } : {}),
+              'thread-id': 'evakuators',
+              ...(actionable ? { alert: { title: message.title, body: message.body }, category: message.actionCategory } : {}),
+            },
+          },
         },
       },
     }
+    return this.post(accessToken, body)
+  }
+
+  private async post(accessToken: string, body: unknown): Promise<PushSendResult> {
     let response: Response
     try {
       response = await this.fetchImpl(`https://fcm.googleapis.com/v1/projects/${this.account.project_id}/messages:send`, {
@@ -141,6 +189,27 @@ export class FcmSender implements PushSender {
     const retryable = response.status === 429 || response.status >= 500
     if (response.status === 401) this.accessToken = null
     return { ok: false, invalidToken, retryable: retryable || response.status === 401, error: code }
+  }
+}
+
+/** A data-only FCM message: nothing shown, nothing heard (see PushMessage.silent) */
+export function silentBody(message: PushMessage, ttl: number) {
+  return {
+    message: {
+      token: message.token,
+      data: message.data,
+      android: { ttl: `${ttl}s`, priority: message.highPriority ? 'HIGH' : 'NORMAL', collapse_key: message.collapseKey },
+      apns: {
+        headers: {
+          'apns-expiration': String(Math.floor(Date.now() / 1000) + ttl),
+          // Apple: background pushes must be priority 5 and push-type background
+          'apns-priority': '5',
+          'apns-push-type': 'background',
+          'apns-collapse-id': message.collapseKey.slice(0, 64),
+        },
+        payload: { aps: { 'content-available': 1 } },
+      },
+    },
   }
 }
 

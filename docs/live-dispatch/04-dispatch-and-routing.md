@@ -32,7 +32,8 @@ RECONCILER (3 s): overdue offers, stuck searches, slow-search alerts, GPS-lost /
 | `candidateBatchSize` | 10 |
 | `yerevanRadiiMeters` | 8 / 20 / 40 կմ (pickup-ը Երևանի կենտրոնից ≤ 15 կմ) |
 | `regionRadiiMeters` | 25 / 60 / 120 կմ |
-| `offerTimeoutSeconds` | 45 |
+| `offerDeliverySeconds` | 15 → առաջարկը չի հասել վարորդին (ack չկա) → `EXPIRED`, հաջորդ թեկնածու |
+| `offerTimeoutSeconds` | 45 → հաշվվում է **վարորդին հասնելու պահից** (`deliveredAt`) |
 | `searchAlertSeconds` | 90 → `SEARCH_SLOW` alert |
 | `searchMaxSeconds` | 600 → `NEEDS_ATTENTION (SEARCH_TIMEOUT)` |
 | `maxOffersPerAttempt` | 25 → `NEEDS_ATTENTION (SEARCH_EXHAUSTED)` |
@@ -43,6 +44,14 @@ Batch-ը սպառվելիս վերցվում է հաջորդ batch-ը նույն
 շառավիղ։ Նույն փորձում նույն վարորդին կրկին չի առաջարկվում (`DispatchCandidate`
 unique)։ Երբ շառավիղները սպառված են → `NEEDS_ATTENTION`, ոչ անվերջ շրջան։
 
+## Առաջարկի ժամկետ և զանգ (2026-11)
+
+**Ժամկետը սկսվում է վարորդին հասնելու պահից։** Առաջարկը ստեղծվում է `expiresAt = now + offerDeliverySeconds` (15 վ)՝ առաքման պատուհանով։ Առաջին նշանը, որ հավելվածն ունի առաջարկը, `OffersRepository.markDelivered`-ն է կանչում. դա կարող է լինել push/realtime `ack`-ը (`POST /driver-app/offers/:id/ack`, WS `ack`) կամ հավելվածի `GET /driver-app/me`-ն, որը վերադարձնում է առաջարկը։ Այն դնում է `deliveredAt = now`, `expiresAt = now + offerTimeoutSeconds` (45 վ)՝ **մեկ անգամ**, միայն `PENDING` և առաքման պատուհանի ներսում (ժամկետանց առաջարկը երբեք չի «վերակենդանանում»)։ Նոր `offer.expire` job, `OFFER_DELIVERED` event, realtime `offer.updated`։ `expiresAt`-ը մնում է միակ deadline-ը, որ բոլորն են կարդում։ Ack-ը ուղարկվում է նաև ֆոնից. Android-ում data-only push-ից, iOS-ում՝ `content-available`-ից (best effort)։
+
+**Զանգ արգելափակված էկրանին.** offer push-ը կրկնվում է ամեն `OFFER_RING_INTERVAL_SECONDS` (10 վ), քանի դեռ առաջարկը `PENDING` է և deadline-ից առաջ (`PushService.scheduleNextRing`, `MAX_OFFER_RINGS = 12`)։ Ամեն կրկնություն **փոխարինում է** նախորդ notification-ին (նույն collapse id / Android identifier)։ Ձայնը հավելվածի մեջ ներդրված `offer_alert.wav`-ն է (~24 վ, iOS-ի սահմանը 30 վ է), iOS-ում `interruption-level: time-sensitive` (անցնում է Focus-ի միջով, **ոչ** silent switch-ի), Android-ում՝ `offer_ring` channel։ Բաց հավելվածում push-ը չի երևում և չի հնչում (`push.ts` notification handler). `OfferScreen`-ը մեկ կարճ ձայն է տալիս (`offerAlert.ts`) և հեռացնում է առաջարկի notification-ը։
+
+**Android-ում (2026-11) զանգը «զարթուցիչ» է** — `mobile/modules/offer-alert`․ full-screen intent (կողպված էկրանին բացվում է առաջարկը), `FLAG_INSISTENT` ձայն ALARM stream-ով, մինչև պատասխանը։ `ack`-ը հիմա պատասխանում է **200 `{ expiresAt }`**՝ deadline-ը պատասխանի պատուհանը սկսվելուց հետո, որ զանգը տևի ճիշտ այդքան։ Հետ կանչված կամ ժամկետանց առաջարկի համար outbox-ը ուղարկում է **լուռ push** `{ type: 'offer_closed' }` (`push.offerClosed`, `PushService.sendOfferClosedPush`), որը կանգնեցնում է զանգը։ iOS-ում `APNS_CRITICAL_ALERTS=true`-ով ձայնը դառնում է Critical Alert (միայն Apple-ի հաստատումից հետո)։ Տես `06-mobile.md` § «Պատվերի զանգ»։
+
 ## Կայանատեղիով պահուստային որոնում (2026-11)
 
 Եթե շառավիղների ամբողջ սանդուղքով **թարմ GPS-ով** ոչ մի վարորդ չի գտնվել, engine-ը նույն սանդուղքով անցնում է երկրորդ անգամ՝ `source: 'BASE'`։ Թեկնածու են այն վարորդները, որոնք միացված են («Ընդունում եմ պատվերներ»), **հավելվածը կապված է** (heartbeat ≤ `heartbeatMaxAgeSeconds`), բայց GPS-ը հին է, անճշգրիտ, կասկածելի կամ բացակայում է, և ունեն կայանատեղի։ Հեռավորությունը հաշվվում է կայանատեղիից։
@@ -52,6 +61,7 @@ unique)։ Երբ շառավիղները սպառված են → `NEEDS_ATTENTION
 - `DispatchCandidate.locationSource`-ը պահում է, թե ինչով է գտնվել թեկնածուն. առաջարկի պահին նույն կանոնով է կրկին ստուգվում (`eligibleAmong(…, source)`), route refresh-ը՝ կայանատեղիից։
 - Հաճախորդին երևացող «Հիմա առցանց մոտակայքում» (`nearby-live`) ցուցակը **միայն GPS** է, երբեք կայանատեղի։
 - Վարորդի հավելվածում `availability.baseFallback`-ը ցույց է տալիս «Պատվերներ՝ միայն ըստ կայանատեղիի»՝ «պատվերներ չեք ստանա»-ի փոխարեն։
+- **GPS-ն անջատած / կողպված հեռախոս (2026-11-12).** GPS-ն անջատելիս ետին պլանի heartbeat-ն էլ է դադարում (այն գնում է տեղադրության թարմացումների հետ), ուստի BASE-ի համար կապի պայմանը մեղմ է. թարմ heartbeat, **կամ** heartbeat ≤ `baseHeartbeatMaxAgeSeconds` (լռելյայն 1800 վ, admin-ի կարգավորումներում) **և** կենդանի session-ի վրա գործող push token։ Առաջարկը միևնույն է պետք է հաստատվի որպես առաքված (`offerDeliverySeconds`), այնպես որ իրականում անհասանելի հեռախոսը արժե մեկ կարճ առաքման պատուհան, ոչ թե պատվեր։ Snapshot-ում `driver.hasBase`-ը հավելվածին թույլ է տալիս GPS-ի կորստի դեպքում ասել «պատվերները կգան ըստ կայանատեղիի»։
 
 ## Տեխնիկական համապատասխանություն
 

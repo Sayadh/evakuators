@@ -21,7 +21,11 @@ export class ImagesController {
   // This endpoint is intentionally public (used during registration, before
   // any auth exists) — that makes it the single biggest abuse/storage-cost
   // vector in the API, so it gets the strictest throttle of any route.
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  // 30, not 10 (2026-11-12): mobile carriers put many phones behind one IP
+  // (CGNAT), and one sign-up alone uploads up to 6 photos plus retries — 10
+  // a minute made two drivers registering on the same network refuse each
+  // other. Still a hard cap per address; unattached uploads are purged nightly.
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @Post()
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_UPLOAD_BYTES } }))
   upload(@UploadedFile() file?: Express.Multer.File): Promise<UploadedImageDto> {

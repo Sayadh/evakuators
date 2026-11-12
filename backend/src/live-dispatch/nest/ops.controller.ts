@@ -3,7 +3,7 @@
  * (settings: ADMIN only). Separate from `/admin/*` on purpose: every route
  * there stays ADMIN-only under the unchanged AdminJwtGuard.
  */
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, Res, UseFilters, UseGuards } from '@nestjs/common'
+import { Body, Controller, Get, Param, Patch, Post, Put, Query, Req, Res, UseFilters, UseGuards } from '@nestjs/common'
 import type { Request, Response } from 'express'
 import { outboxHealth } from '../notify/outbox'
 import type { AttentionKind } from '../orders/domain/order-state'
@@ -84,7 +84,7 @@ export class OpsDispatchController {
   async release(
     @Req() req: Req2,
     @Param('id') id: string,
-    @Body() body: { confirm?: boolean; reason?: string; restartSearch?: boolean },
+    @Body() body: { confirm?: boolean; reason?: string; restartSearch?: boolean; refundDriverFee?: boolean },
     @Res() res: Response,
   ) {
     send(
@@ -92,7 +92,13 @@ export class OpsDispatchController {
       await this.service.releaseAssignment(
         req.adminUserId,
         intParam(id, 'id'),
-        { confirm: body?.confirm as true, reason: String(body?.reason ?? ''), restartSearch: Boolean(body?.restartSearch), expectedVersion: versionOf(body) },
+        {
+          confirm: body?.confirm as true,
+          reason: String(body?.reason ?? ''),
+          restartSearch: Boolean(body?.restartSearch),
+          expectedVersion: versionOf(body),
+          refundDriverFee: body?.refundDriverFee === true,
+        },
         mutationContext(req, body),
       ),
     )
@@ -149,9 +155,17 @@ export class OpsDispatchController {
   }
 
   @Post('drivers/:driverId/suspend')
-  async suspend(@Req() req: Req2, @Param('driverId') driverId: string, @Body() body: { suspended?: boolean; reason?: string }) {
+  async suspend(@Req() req: Req2, @Param('driverId') driverId: string, @Body() body: { suspended?: boolean; reason?: string; days?: number }) {
     if (typeof body?.suspended !== 'boolean') throw new DispatchError('VALIDATION_FAILED', { field: 'suspended' })
-    await this.holder.runtime.fleet.setDispatchSuspended(intParam(driverId, 'driverId'), body.suspended, body.reason ?? null, req.adminUserId)
+    // Blocking (2026-11-12): a reason the driver reads, and optionally a term in days
+    const reason = typeof body.reason === 'string' ? body.reason.trim().slice(0, 300) : ''
+    if (body.suspended && reason.length < 2) throw new DispatchError('VALIDATION_FAILED', { field: 'reason' })
+    let until: Date | null = null
+    if (body.suspended && body.days !== undefined && body.days !== null) {
+      if (typeof body.days !== 'number' || !Number.isInteger(body.days) || body.days < 1 || body.days > 365) throw new DispatchError('VALIDATION_FAILED', { field: 'days' })
+      until = new Date(Date.now() + body.days * 24 * 3600 * 1000)
+    }
+    await this.holder.runtime.fleet.setDispatchSuspended(intParam(driverId, 'driverId'), body.suspended, body.suspended ? reason : null, req.adminUserId, until)
     return { ok: true }
   }
 
@@ -258,5 +272,52 @@ export class OpsDispatchController {
   async health() {
     const outbox = await outboxHealth(this.holder.runtime.db)
     return { flags: { dispatch: this.holder.runtime.config.enabled, tracking: this.holder.runtime.config.trackingEnabled }, outbox }
+  }
+
+  // ─── Driver wallet (2026-11-12) ───────────────────────────────────────────
+
+  /** Every driver's balance, lowest first */
+  @Get('wallets')
+  wallets() {
+    return this.service.adminWallets()
+  }
+
+  @Get('drivers/:driverId/wallet')
+  driverWallet(@Param('driverId') driverId: string, @Query('before') before?: string) {
+    return this.service.adminWallet(intParam(driverId, 'driverId'), before && /^\d+$/.test(before) ? Number(before) : null)
+  }
+
+  /** Credit (+) or debit (−) by hand, with a note the driver sees. ADMIN only; Idempotency-Key required. */
+  @AdminOnly()
+  @Post('drivers/:driverId/wallet/adjustments')
+  async adjustWallet(@Req() req: Req2, @Param('driverId') driverId: string, @Body() body: unknown, @Res() res: Response) {
+    send(res, await this.service.adminWalletAdjust(req.adminUserId, intParam(driverId, 'driverId'), body, mutationContext(req, body)))
+  }
+
+  /** ADMIN only: how far below zero this driver may go and still be offered orders */
+  @AdminOnly()
+  @Put('drivers/:driverId/wallet/credit-limit')
+  async creditLimit(@Req() req: Req2, @Param('driverId') driverId: string, @Body() body: unknown, @Res() res: Response) {
+    send(res, await this.service.adminSetCreditLimit(req.adminUserId, intParam(driverId, 'driverId'), body, mutationContext(req, body)))
+  }
+
+  /** Money in and out over a period, debts, and who is running low */
+  @Get('wallets/summary')
+  walletsSummary(@Query('days') days?: string) {
+    return this.service.adminWalletSummary(Number(days ?? 30))
+  }
+
+  // ─── Price review (2026-11-12) ────────────────────────────────────────────
+
+  /** Minimum prices drivers entered, waiting for a call to the customer */
+  @Get('price-reviews')
+  priceReviews() {
+    return this.holder.runtime.orders.pendingPriceReviews()
+  }
+
+  /** APPROVE (the fee goes back) or CORRECT (the real price; the fee follows it) */
+  @Post('price-reviews/:id')
+  async resolvePriceReview(@Req() req: Req2, @Param('id') id: string, @Body() body: unknown, @Res() res: Response) {
+    send(res, await this.service.adminResolvePriceReview(req.adminUserId, intParam(id, 'id'), body, mutationContext(req, body)))
   }
 }

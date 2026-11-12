@@ -50,7 +50,7 @@ latency։ Հանրային որոնման կոորդինատները չեն պա
 | Տվյալ | Պահպանում |
 | --- | --- |
 | `DriverLocationCurrent` | 1 տող վարորդի համար (վերջին fix) |
-| `DriverLocationHistory` | `locationHistoryRetentionDays` (լռ. 30), ժամային cleanup |
+| `DriverLocationHistory` | `locationHistoryRetentionDays` (լռ. 7), ժամային cleanup |
 | `IdempotencyKey` | 24 ժ |
 | `OutboxEvent` (processed) | 7 օր |
 | Հանրային որոնման դիրք | Ոչ մի տեղ (միայն 60 վ in-memory cache key՝ կլորացված) |

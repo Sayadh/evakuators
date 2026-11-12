@@ -104,7 +104,7 @@ lock չկա (բացի `ALTER TYPE "UserRole" ADD VALUE`-ից, որը կարճ է
 
 `scripts/backup-db.sh`-ը արդեն վերցնում է ամբողջ բազան, ներառյալ նոր աղյուսակները։
 `DriverLocationHistory`-ն ամենաարագ աճողն է (400 × 2/ր × 60 × 24 ≈ 1.15 մլն տող/օր
-լրիվ առցանց fleet-ի դեպքում)․ retention-ը (լռ. 30 օր) worker-ի housekeeping-ն է։
+լրիվ առցանց fleet-ի դեպքում)․ retention-ը (լռ. 7 օր) worker-ի housekeeping-ն է։
 Restore-ի ստուգում ամսական՝ staging-ում `pg_restore` + `npm run test:live`։
 
 ## 7. PostGIS ստուգում (staging/production, read-only)

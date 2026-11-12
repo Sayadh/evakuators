@@ -22,11 +22,15 @@ export interface AuthenticatedAdminRequest extends Request {
  * Keep nginx TLS/rate-limiting in front by all means, just don't rely on it
  * as the only thing standing between the public internet and moderation data.
  */
+import { PrismaService } from '../prisma/prisma.service'
+import { adminSessionStillValid } from './admin-session-check'
+
 @Injectable()
 export class AdminJwtGuard implements CanActivate {
   constructor(
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -58,6 +62,10 @@ export class AdminJwtGuard implements CanActivate {
     // only) is 403, not 401: the session is fine, this route is not theirs.
     // A 401 here would make the frontend's apiFetch log them out of the
     // console they are allowed to use.
+    // A deleted admin, or one whose role changed, is out at once (not in 24 h)
+    if (!(await adminSessionStillValid(this.prisma, payload.sub, payload.role))) {
+      throw new UnauthorizedException('Ձեր admin նստաշրջանի ժամկետը սպառվել է, մուտք գործեք կրկին')
+    }
     if (payload.role !== UserRole.ADMIN) {
       throw new ForbiddenException('Այս բաժինը հասանելի է միայն ադմինիստրատորին')
     }

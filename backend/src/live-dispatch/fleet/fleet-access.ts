@@ -68,6 +68,7 @@ export interface FleetDriverView {
   /** Shown on the website right now (SITE_LINKED with an active card) — informational */
   siteListed: boolean
   statusReason: string | null
+  block: { reason: string | null; until: string | null; since: string | null } | null
   statusChangedAt: Date
   createdAt: Date
 }
@@ -102,8 +103,10 @@ export interface SiteCandidate {
 const VIEW_SELECT = `
   v."id", v."kind", v."status", v."towTruckId", v."slug", v."driverName", v."phone", v."vehicleType",
   v."capacityTons", v."maxLoadTons", v."manipulator", v."wheelSkates", v."isActive", v."siteListed",
-  d."vehicleDescription", d."statusReason", d."statusChangedAt", d."createdAt"`
-const VIEW_FROM = `FROM "FleetDriverProfile" v JOIN "FleetDriver" d ON d."id" = v."id"`
+  d."vehicleDescription", d."statusReason", d."statusChangedAt", d."createdAt",
+  (bp."dispatchSuspendedAt" IS NOT NULL AND (bp."dispatchSuspendedUntil" IS NULL OR bp."dispatchSuspendedUntil" > now())) AS "blocked",
+  bp."dispatchSuspendedReason" AS "blockedReason", bp."dispatchSuspendedUntil" AS "blockedUntil", bp."dispatchSuspendedAt" AS "blockedAt"`
+const VIEW_FROM = `FROM "FleetDriverProfile" v JOIN "FleetDriver" d ON d."id" = v."id" LEFT JOIN "DriverPresence" bp ON bp."driverId" = v."id"`
 
 function mapView(row: Record<string, unknown>): FleetDriverView {
   return {
@@ -123,6 +126,10 @@ function mapView(row: Record<string, unknown>): FleetDriverView {
     isActive: Boolean(row.isActive),
     siteListed: Boolean(row.siteListed),
     statusReason: row.statusReason == null ? null : String(row.statusReason),
+    // Blocked for orders by an operator (DriverPresence), with the reason the driver sees and the end, if any
+    block: row.blocked === true
+      ? { reason: row.blockedReason == null ? null : String(row.blockedReason), until: toNullableDate(row.blockedUntil)?.toISOString() ?? null, since: toNullableDate(row.blockedAt)?.toISOString() ?? null }
+      : null,
     statusChangedAt: toNullableDate(row.statusChangedAt) ?? new Date(0),
     createdAt: toNullableDate(row.createdAt) ?? new Date(0),
   }
@@ -189,7 +196,10 @@ function baseLocation(lat: unknown, lng: unknown): { latitude: number; longitude
 }
 
 async function lockPhone(tx: Sql, phone: string): Promise<void> {
-  await tx.query(`SELECT pg_advisory_xact_lock(hashtext('fleet-phone:' || $1::text))`, [phone])
+  // `pg_advisory_xact_lock` returns `void`, which Prisma's $queryRaw cannot
+  // deserialize ("Failed to deserialize column of type 'void'", 500 on every
+  // app sign-in that took this lock, 2026-11-12): select a constant instead.
+  await tx.query(`SELECT 1 AS "locked" FROM (SELECT pg_advisory_xact_lock(hashtext('fleet-phone:' || $1::text))) AS "lock"`, [phone])
 }
 
 async function siteTruckIdByPhone(sql: Sql, phone: string): Promise<number | null> {
@@ -201,6 +211,50 @@ async function recordFleetEvent(tx: Sql, driverId: number, type: string, actorUs
   await tx.query(
     `INSERT INTO "FleetDriverEvent" ("driverId", "type", "actorUserId", "data") VALUES ($1::int, $2, $3::int, $4::jsonb)`,
     [driverId, type, actorUserId, JSON.stringify(data)],
+  )
+}
+
+/**
+ * Since 2026-11 an app sign-up IS a website registration: its TowTruck (name,
+ * phones, photos, password, base) was created by the account the driver is
+ * now deleting. App Store 5.1.1(v) / Google Play: deleting an account deletes
+ * its data — so that profile goes too: taken off the site and stripped of
+ * everything personal. The row itself stays (orders and the ledger point at
+ * it); its photos are detached, and the nightly orphan purge deletes the files.
+ * A profile that was on the website BEFORE the app (granted access) is the
+ * driver's website account — managed on the website, left alone here.
+ */
+async function eraseAppCreatedProfile(tx: Sql, driverId: number): Promise<void> {
+  const rows = await tx.query<{ towTruckId: number }>(
+    `SELECT d."towTruckId" FROM "FleetDriver" d
+      WHERE d."id" = $1::int AND d."towTruckId" IS NOT NULL
+        AND EXISTS (SELECT 1 FROM "RegistrationRequest" r WHERE r."approvedTowTruckId" = d."towTruckId" AND r."source" = 'APP')`,
+    [driverId],
+  )
+  const towTruckId = rows[0] ? toNumber(rows[0].towTruckId) : null
+  if (towTruckId === null) return
+  await tx.query(
+    `UPDATE "TowTruck"
+        SET "isActive" = false, "appOnly" = false, "deactivationReason" = 'OTHER',
+            "driverName" = 'Ջնջված հաշիվ', "companyName" = NULL,
+            "phone" = 'deleted-' || "id"::text, "secondaryPhone" = NULL, "whatsapp" = NULL, "telegram" = NULL, "email" = NULL,
+            "description" = '', "workingHoursText" = NULL,
+            "latitude" = NULL, "longitude" = NULL, "locationUpdatedAt" = NULL,
+            "passwordHash" = NULL, "mustChangePassword" = false,
+            "telegramChatId" = NULL, "telegramLinkToken" = NULL, "telegramLinkTokenExpiresAt" = NULL,
+            "updatedAt" = now()
+      WHERE "id" = $1::int`,
+    [towTruckId],
+  )
+  await tx.query(`UPDATE "TowTruckImage" SET "towTruckId" = NULL WHERE "towTruckId" = $1::int`, [towTruckId])
+  await tx.query(`DELETE FROM "ProfileChangeRequest" WHERE "towTruckId" = $1::int`, [towTruckId])
+  await tx.query(`DELETE FROM "SiteListingRequest" WHERE "towTruckId" = $1::int`, [towTruckId])
+  await tx.query(
+    `UPDATE "RegistrationRequest"
+        SET "passwordHash" = NULL, "firstName" = 'Ջնջված', "lastName" = '', "companyName" = NULL, "phone" = 'deleted-' || "id"::text,
+            "secondaryPhone" = NULL, "whatsapp" = NULL, "telegram" = NULL, "email" = NULL, "latitude" = NULL, "longitude" = NULL
+      WHERE "approvedTowTruckId" = $1::int`,
+    [towTruckId],
   )
 }
 
@@ -264,7 +318,12 @@ export class FleetAccess {
         `SELECT "id", "status" FROM "FleetDriver" WHERE "towTruckId" = $1::int`,
         [site[0].id],
       )
-      const access = rows[0]
+      let access: { id: number; status: FleetDriverStatus } | undefined = rows[0]
+      // Signed up IN the app and approved: access is part of what they applied
+      // for, so the first sign-in grants it (see grantFromAppSignup). Only
+      // when there is no row at all — a suspended or self-deleted access is a
+      // decision, and is never undone by signing in.
+      if (!access) access = (await this.grantFromAppSignup(toNumber(site[0].id))) ?? undefined
       // A deleted app account is "no access": an admin may grant it again.
       if (!access || access.status === 'DELETED') throw new DispatchError('APP_ACCESS_NOT_GRANTED')
       if (access.status !== 'ACTIVE') throw new DispatchError('APP_ACCESS_SUSPENDED')
@@ -276,7 +335,14 @@ export class FleetAccess {
       [phone],
     )
     const row = rows[0]
-    const ok = await this.hasher.compare(password, row?.passwordHash ?? this.hasher.dummyHash)
+    // No app account either: perhaps an app sign-up still in the moderation
+    // queue (it is a website registration now, so it has no FleetDriver row
+    // until approval). Its own password is compared INSTEAD of the dummy hash —
+    // still exactly one comparison on this path — and the status is told only
+    // to someone who proved that password.
+    const signup = row ? null : await this.latestAppSignup(phone)
+    const ok = await this.hasher.compare(password, row?.passwordHash ?? signup?.passwordHash ?? this.hasher.dummyHash)
+    if (!row && signup && ok) throw new DispatchError(signup.status === 'REJECTED' ? 'APP_ACCOUNT_REJECTED' : 'APP_ACCOUNT_PENDING')
     if (!row || !ok) throw new DispatchError('INVALID_CREDENTIALS')
     // Only reached by someone who proved the password, so the status leaks nothing.
     if (row.status === 'PENDING_REVIEW') throw new DispatchError('APP_ACCOUNT_PENDING')
@@ -369,8 +435,98 @@ export class FleetAccess {
           WHERE "id" = $1::int`,
         [driverId, adminUserId, reason],
       )
+      await eraseAppCreatedProfile(tx, driverId)
     }
     await recordFleetEvent(tx, driverId, adminUserId === null ? 'ACCOUNT_DELETED_BY_DRIVER' : 'ACCOUNT_DELETED_ON_REQUEST', adminUserId, { kind })
+  }
+
+  // ─── App sign-up = website registration (2026-11) ─────────────────────
+
+  /**
+   * The checks the app's sign-up needs that the website's registration
+   * endpoint cannot make (it knows nothing about app accounts), then the
+   * password hash it will carry. Called before `RegistrationService.submit`.
+   *
+   * - an app-only account on this number already exists → sign in instead;
+   * - an app sign-up for it is already in the queue → wait for it.
+   *
+   * A number already on the website is refused by `RegistrationService` itself
+   * (the same main-phone rule `/register` applies), so it is not repeated here.
+   */
+  async prepareSiteRegistration(phone: unknown, password: unknown): Promise<{ passwordHash: string }> {
+    if (typeof phone !== 'string' || !APP_PHONE_PATTERN.test(phone)) throw invalid('phone')
+    if (typeof password !== 'string' || password.length < APP_PASSWORD_MIN_LENGTH || password.length > APP_PASSWORD_MAX_LENGTH) {
+      throw invalid('password')
+    }
+    const appOnly = await this.db.query<{ status: FleetDriverStatus }>(
+      `SELECT "status" FROM "FleetDriver" WHERE "kind" = 'APP_ONLY' AND "phone" = $1`,
+      [phone],
+    )
+    if (appOnly[0]?.status === 'PENDING_REVIEW') throw new DispatchError('REGISTRATION_ALREADY_PENDING')
+    if (appOnly[0] && appOnly[0].status !== 'REJECTED' && appOnly[0].status !== 'DELETED') throw new DispatchError('PHONE_ALREADY_REGISTERED')
+    const queued = await this.db.query(
+      `SELECT 1 FROM "RegistrationRequest" WHERE "phone" = $1 AND "source" = 'APP' AND "status" = 'PENDING' LIMIT 1`,
+      [phone],
+    )
+    if (queued.length > 0) throw new DispatchError('REGISTRATION_ALREADY_PENDING')
+    return { passwordHash: await this.hasher.hash(password) }
+  }
+
+  /** The newest app sign-up for this number that still holds its password (pending or rejected) */
+  private async latestAppSignup(phone: string): Promise<{ status: 'PENDING' | 'REJECTED'; passwordHash: string } | null> {
+    const rows = await this.db.query<{ status: 'PENDING' | 'REJECTED'; passwordHash: string }>(
+      `SELECT "status"::text AS "status", "passwordHash" FROM "RegistrationRequest"
+        WHERE "phone" = $1 AND "source" = 'APP' AND "passwordHash" IS NOT NULL AND "status" IN ('PENDING', 'REJECTED')
+        ORDER BY "createdAt" DESC LIMIT 1`,
+      [phone],
+    )
+    return rows[0] ?? null
+  }
+
+  /**
+   * First sign-in of a driver whose website profile came from an APP sign-up:
+   * app access was part of the application, so it is granted here, once.
+   *
+   * Inside FleetAccess because nothing else writes "FleetDriver"; at sign-in
+   * rather than inside AdminService.approve because the website module knows
+   * nothing about app accounts, and this way the grant is one transaction with
+   * its own checks instead of a second write after approval that could fail.
+   * `ON CONFLICT DO NOTHING`: a grant an admin made in between wins.
+   */
+  private async grantFromAppSignup(towTruckId: number): Promise<{ id: number; status: FleetDriverStatus } | null> {
+    return withRetryingTransaction(this.db, async (tx) => {
+      const signups = await tx.query<{ id: number }>(
+        `SELECT "id" FROM "RegistrationRequest" WHERE "approvedTowTruckId" = $1::int AND "source" = 'APP' AND "status" = 'APPROVED' LIMIT 1`,
+        [towTruckId],
+      )
+      if (!signups[0]) return null
+      const trucks = await tx.query<{ phone: string }>(`SELECT "phone" FROM "TowTruck" WHERE "id" = $1::int FOR SHARE`, [towTruckId])
+      if (!trucks[0]) return null
+      await lockPhone(tx, trucks[0].phone)
+      // Same refusal as grantSiteAccess: two accounts for one number are
+      // merged by an admin (linkToSite), never silently.
+      const appOnly = await tx.query(`SELECT 1 FROM "FleetDriver" WHERE "kind" = 'APP_ONLY' AND "phone" = $1`, [trucks[0].phone])
+      if (appOnly.length > 0) return null
+      const inserted = await tx.query<{ id: number }>(
+        `INSERT INTO "FleetDriver" ("kind", "status", "towTruckId") VALUES ('SITE_LINKED', 'ACTIVE', $1::int)
+         ON CONFLICT ("towTruckId") DO NOTHING RETURNING "id"`,
+        [towTruckId],
+      )
+      if (inserted[0]) {
+        await recordFleetEvent(tx, toNumber(inserted[0].id), 'SITE_ACCESS_FROM_APP_SIGNUP', null, {
+          towTruckId,
+          registrationRequestId: toNumber(signups[0].id),
+        })
+      }
+      const rows = await tx.query<{ id: number; status: FleetDriverStatus }>(`SELECT "id", "status" FROM "FleetDriver" WHERE "towTruckId" = $1::int`, [towTruckId])
+      return rows[0] ? { id: toNumber(rows[0].id), status: rows[0].status } : null
+    })
+  }
+
+  /** The website profile behind a SITE_LINKED driver, or null for an app-only one */
+  async towTruckIdOf(driverId: number): Promise<number | null> {
+    const rows = await this.db.query<{ towTruckId: number | null }>(`SELECT "towTruckId" FROM "FleetDriver" WHERE "id" = $1::int`, [driverId])
+    return rows[0] ? toNullableNumber(rows[0].towTruckId) : null
   }
 
   /**

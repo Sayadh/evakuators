@@ -84,6 +84,16 @@ export interface AdminRegistrationRequest {
     acceptedAt: string
     revokedAt: string | null
   } | null
+  /**
+   * `APP` — filed from the driver app (2026-11): the same form, plus a password
+   * the driver chose, so approving it also lets them sign in to the app. Absent
+   * on a backend older than that change.
+   */
+  source?: 'WEB' | 'APP'
+  /** Made by an admin from an existing app driver («Հրապարակել կայքում»): approval publishes and links it */
+  fleetDriverId?: number | null
+  /** The app-chosen password is waiting on this request (the hash is never sent) */
+  hasAppPassword?: boolean
 }
 
 /**
@@ -405,7 +415,59 @@ export interface AdminTowTrucksParams extends AdminListParams {
 }
 
 /** All moderation reads/writes against the backend admin endpoints */
+/** "I want to be on the website too" from the driver app (backend SiteListingService) */
+export type SiteListingStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
+export interface AdminSiteListingRequest {
+  id: number
+  status: SiteListingStatus
+  note: string | null
+  rejectionReason: string | null
+  createdAt: string
+  reviewedAt: string | null
+  towTruck: { id: number; slug: string; driverName: string; phone: string; vehicleType: string; isActive: boolean; images: string[]; createdAt: string }
+}
+export interface AdminSiteListingDetail {
+  id: number
+  status: SiteListingStatus
+  note: string | null
+  rejectionReason: string | null
+  createdAt: string
+  reviewedAt: string | null
+  isActive: boolean
+  profile: import('~/types/towTruck').TowTruck
+}
+
 export const adminRepository = {
+  listSiteListingRequests(status: SiteListingStatus | 'ALL' = 'PENDING'): Promise<AdminSiteListingRequest[]> {
+    return apiFetch<AdminSiteListingRequest[]>('/admin/site-listing-requests', { query: { status }, headers: authHeader() })
+  },
+
+  siteListingCount(): Promise<{ pending: number }> {
+    return apiFetch<{ pending: number }>('/admin/site-listing-requests/count', { headers: authHeader() })
+  },
+
+  getSiteListingRequest(id: number): Promise<AdminSiteListingDetail> {
+    return apiFetch<AdminSiteListingDetail>(`/admin/site-listing-requests/${id}`, { headers: authHeader() })
+  },
+
+  /** An app-only driver → a website registration request prefilled with what they entered */
+  siteRegistrationFromAppDriver(driverId: number): Promise<{ registrationId: number }> {
+    return apiFetch<{ registrationId: number }>(`/admin/site-listing-requests/from-app-driver/${driverId}`, { method: 'POST', headers: authHeader() })
+  },
+
+  /** Publishes an app driver's hidden profile on the site at once */
+  publishAppDriverTruck(towTruckId: number): Promise<void> {
+    return apiFetch<void>(`/admin/site-listing-requests/publish/${towTruckId}`, { method: 'POST', headers: authHeader() })
+  },
+
+  approveSiteListing(id: number): Promise<void> {
+    return apiFetch<void>(`/admin/site-listing-requests/${id}/approve`, { method: 'POST', headers: authHeader() })
+  },
+
+  rejectSiteListing(id: number, reason: string): Promise<void> {
+    return apiFetch<void>(`/admin/site-listing-requests/${id}/reject`, { method: 'POST', body: { reason }, headers: authHeader() })
+  },
+
   listRegistrations(
     status?: string,
     params: AdminListParams = {},

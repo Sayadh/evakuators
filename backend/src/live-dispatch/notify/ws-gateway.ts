@@ -24,7 +24,7 @@ export interface GatewayIdentity {
   audience: string
   /** Re-checked periodically; false closes the socket */
   stillValid: () => Promise<boolean>
-  onAck?: (offerId: string) => Promise<void>
+  onAck?: (offerId: string) => Promise<unknown>
 }
 
 export interface GatewayOptions {

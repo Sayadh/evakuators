@@ -99,9 +99,61 @@ function onSearchInput() {
   searchTimer = setTimeout(() => void loadOrders(), 350)
 }
 
-async function ackAlert(alert: OpsAlert) {
-  await opsDispatchRepository.ackAlert(alert.id).catch(() => undefined)
-  alerts.value = alerts.value.filter((a) => a.id !== alert.id)
+/**
+ * The same alert for the same order repeats (a lost GPS is re-raised every few
+ * minutes): one row per order + kind, with how many times and when last —
+ * 57 identical lines hid everything else (2026-11-12).
+ */
+interface AlertGroup { key: string; orderId: number; kind: string; ids: number[]; first: string; last: string }
+const alertGroups = computed<AlertGroup[]>(() => {
+  const groups = new Map<string, AlertGroup>()
+  for (const a of alerts.value) {
+    const key = `${a.orderId}:${a.kind}`
+    const g = groups.get(key)
+    if (!g) groups.set(key, { key, orderId: a.orderId, kind: a.kind, ids: [a.id], first: a.createdAt, last: a.createdAt })
+    else {
+      g.ids.push(a.id)
+      if (a.createdAt < g.first) g.first = a.createdAt
+      if (a.createdAt > g.last) g.last = a.createdAt
+    }
+  }
+  return [...groups.values()].sort((x, y) => y.last.localeCompare(x.last))
+})
+const alertsOpen = ref(true)
+const ackingAll = ref(false)
+
+function alertTime(iso: string): string {
+  const d = new Date(iso)
+  const today = new Date().toDateString() === d.toDateString()
+  return today ? formatClockTime(d) : `${formatDateNumeric(iso)} ${formatClockTime(d)}`
+}
+
+async function ackIds(ids: number[]) {
+  // No bulk endpoint: a few at a time, so 50 acks do not take 50 round trips in a row
+  const queue = [...ids]
+  const worker = async () => {
+    while (queue.length) {
+      const id = queue.shift()!
+      await opsDispatchRepository.ackAlert(id).catch(() => undefined)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(5, ids.length) }, worker))
+  const done = new Set(ids)
+  alerts.value = alerts.value.filter((a) => !done.has(a.id))
+}
+
+async function ackGroup(group: AlertGroup) {
+  await ackIds(group.ids)
+}
+
+async function ackAll() {
+  if (!(await confirmDialog({ message: `Նշե՞լ բոլոր ${alerts.value.length} ազդանշանները որպես տեսած։`, confirmLabel: 'Այո, տեսա' }))) return
+  ackingAll.value = true
+  try {
+    await ackIds(alerts.value.map((a) => a.id))
+  } finally {
+    ackingAll.value = false
+  }
 }
 
 // Realtime: any order change → re-read; reconnect → re-read everything.
@@ -153,7 +205,10 @@ const form = reactive({
   needsWheelSkates: null as boolean | null,
   /** '' = not stated; only sent when skates are needed */
   wheelSkatesCount: '' as '' | '1' | '2' | '3' | '4',
-  pricingMode: 'FIXED' as 'FIXED' | 'NEGOTIATION_REQUIRED',
+  // Default (2026-11-12): the driver calls the customer, agrees the price and
+  // must record it before setting off. FIXED only when the operator already
+  // agreed a price with the customer (then the driver enters nothing).
+  pricingMode: 'NEGOTIATION_REQUIRED' as 'FIXED' | 'NEGOTIATION_REQUIRED',
   quotedPriceAmd: '' as string,
   internalNote: '',
 })
@@ -171,8 +226,37 @@ function quickPassengerCar() {
   form.weightKg = '2000'
 }
 
+/** «+374 91 00 00 01», «091000001», «91000001» → +37491000001; null if it is not a number */
+function armenianPhone(input: string): string | null {
+  const digits = input.replace(/[^\d+]/g, '')
+  const m = /^(?:\+374|00374|374|0)?(\d{8})$/.exec(digits)
+  return m ? `+374${m[1]}` : null
+}
+
+/** What the operator must fix, said exactly — before the request leaves (2026-11-12) */
+function formProblem(): string | null {
+  if (!form.customerPhone.trim()) return 'Գրեք հաճախորդի հեռախոսահամարը'
+  if (!armenianPhone(form.customerPhone)) return 'Հաճախորդի հեռախոսը սխալ է. գրեք +374XXXXXXXX կամ 0XXXXXXXX ձևով'
+  if (form.pickupAddress.trim().length < 2) return 'Գրեք վերցնելու հասցեն'
+  if (form.weightKg && (Number(form.weightKg) < 100 || Number(form.weightKg) > 60000)) return 'Քաշը պետք է լինի 100-ից 60 000 կգ'
+  if (form.pricingMode === 'FIXED') {
+    if (!String(form.quotedPriceAmd).trim()) return 'Ֆիքսված գնի դեպքում գրեք համաձայնեցված գինը (կամ ընտրեք «Վարորդը կհամաձայնեցնի»)'
+    const price = Number(form.quotedPriceAmd)
+    if (!Number.isInteger(price) || price < 0 || price > 10_000_000) return 'Գինը պետք է լինի ամբողջ թիվ՝ 0-ից 10 000 000 ֏'
+  }
+  return null
+}
+const priceMissing = computed(() => form.pricingMode === 'FIXED' && !String(form.quotedPriceAmd).trim())
+const triedSubmit = ref(false)
+
 async function createOrder() {
   formError.value = null
+  triedSubmit.value = true
+  const problem = formProblem()
+  if (problem) {
+    formError.value = problem
+    return
+  }
   // Only the pickup address and the phone are mandatory (2026-11). Without
   // pickup coordinates the order can still be created and sent to a driver
   // manually; only the automatic search needs them.
@@ -192,7 +276,12 @@ async function createOrder() {
     customerPhone: form.customerPhone,
     customerName: form.customerName || null,
     pickup: { latitude: pickup?.latitude ?? null, longitude: pickup?.longitude ?? null, address: form.pickupAddress },
-    destination: destination ? { latitude: destination.latitude, longitude: destination.longitude, address: form.destinationAddress || '—' } : null,
+    // The description alone is kept too (2026-11) — the driver sees it even
+    // without coordinates; only the route figures and navigation need them.
+    destination:
+      destination || form.destinationAddress.trim()
+        ? { latitude: destination?.latitude ?? null, longitude: destination?.longitude ?? null, address: form.destinationAddress.trim() || 'Հասցեն նշված չէ' }
+        : null,
     vehicle: { make: form.make || null, model: form.model || null, plate: form.plate || null, weightKg: form.weightKg ? Number(form.weightKg) : null },
     problemDescription: form.problemDescription,
     requirements: {
@@ -224,28 +313,33 @@ useSeoMetaData({ title: 'Պատվերներ', description: 'Պատվերների
 
 <template>
   <div class="container ops">
-    <header class="ops__header">
-      <h1 class="ops__title">Պատվերներ</h1>
-      <div class="ops__header-actions">
-        <span class="ops__live" :class="{ 'ops__live--on': connected }">{{ connected ? 'Կենդանի' : 'Թարմացվում է 15 վ-ը մեկ' }}</span>
-        <NuxtLink v-if="adminAuth.role === 'ADMIN'" to="/admin/orders/drivers" class="ops__link">Հավելվածի վարորդներ</NuxtLink>
-        <NuxtLink to="/admin/orders/settings" class="ops__link">Կարգավորումներ</NuxtLink>
-        <NuxtLink to="/admin" class="ops__link">Ադմին վահանակ</NuxtLink>
-      </div>
-    </header>
+    <OpsNav :live="adminAuth.isLoggedIn ? connected : null" />
+    <h1 class="ops__title">Պատվերներ</h1>
 
     <EmptyState v-if="!apiEnabled" title="Backend API-ն միացված չէ" icon="info" />
     <EmptyState v-else-if="!adminAuth.isLoggedIn" title="Մուտք գործեք" description="Բացեք ադմին վահանակը և մուտք գործեք։" icon="info" />
 
     <template v-else>
       <section v-if="alerts.length" class="ops__alerts" aria-live="polite">
-        <h2 class="ops__h2">Ազդանշաններ ({{ alerts.length }})</h2>
-        <ul>
-          <li v-for="alert in alerts" :key="alert.id" class="ops__alert">
-            <NuxtLink :to="`/admin/orders/${alert.orderId}`">#{{ alert.orderId }}</NuxtLink>
-            {{ ALERT_LABEL[alert.kind] ?? alert.kind }}
-            <span class="ops__muted">{{ formatClockTime(new Date(alert.createdAt)) }}</span>
-            <button type="button" class="ops__ack" @click="ackAlert(alert)">Տեսա</button>
+        <div class="ops__alerts-head">
+          <h2 class="ops__h2">
+            Ազդանշաններ ({{ alerts.length }})
+            <span v-if="alertGroups.length !== alerts.length" class="ops__muted">· {{ alertGroups.length }} խումբ</span>
+          </h2>
+          <div class="ops__alerts-actions">
+            <button type="button" class="ops__ack" :disabled="ackingAll" @click="ackAll">{{ ackingAll ? 'Նշվում է…' : 'Տեսա բոլորը' }}</button>
+            <button type="button" class="ops__ack" @click="alertsOpen = !alertsOpen">{{ alertsOpen ? 'Թաքցնել' : 'Ցույց տալ' }}</button>
+          </div>
+        </div>
+        <ul v-if="alertsOpen" class="ops__alerts-list">
+          <li v-for="g in alertGroups" :key="g.key" class="ops__alert">
+            <NuxtLink :to="`/admin/orders/${g.orderId}`">#{{ g.orderId }}</NuxtLink>
+            {{ ALERT_LABEL[g.kind] ?? g.kind }}
+            <span v-if="g.ids.length > 1" class="ops__count">×{{ g.ids.length }}</span>
+            <span class="ops__muted">
+              <template v-if="g.ids.length > 1">{{ alertTime(g.first) }} – </template>{{ alertTime(g.last) }}
+            </span>
+            <button type="button" class="ops__ack" @click="ackGroup(g)">Տեսա</button>
           </li>
         </ul>
       </section>
@@ -265,7 +359,7 @@ useSeoMetaData({ title: 'Պատվերներ', description: 'Պատվերների
             <AppButton variant="accent" size="sm" @click="showForm = !showForm">{{ showForm ? 'Փակել' : '+ Նոր պատվեր' }}</AppButton>
           </div>
 
-          <form v-if="showForm" class="ops__form" @submit.prevent="createOrder">
+          <form v-if="showForm" class="ops__form" novalidate @submit.prevent="createOrder">
             <h2 class="ops__h2">Նոր պատվեր (սևագիր)</h2>
             <div class="row">
               <label>Հաճախորդի հեռախոս*<input v-model="form.customerPhone" required placeholder="+374 91 00 00 01" autocomplete="off" /></label>
@@ -307,16 +401,51 @@ useSeoMetaData({ title: 'Պատվերներ', description: 'Պատվերների
                 Պատվերը կառաջարկվի միայն անիվային ռոլիկներ ունեցող վարորդներին։ Քանակը կտեսնի վարորդը. ըստ քանակի ֆիլտր չկա, որովհետև պրոֆիլներում ռոլիկների թիվը նշված չէ։
               </p>
             </fieldset>
-            <div class="row">
-              <label>
-                Գնի տեսակ
-                <select v-model="form.pricingMode">
-                  <option value="FIXED">Ֆիքսված (նախապես համաձայնեցված)</option>
-                  <option value="NEGOTIATION_REQUIRED">Համաձայնեցվելու է ընդունելուց հետո</option>
-                </select>
+            <fieldset class="ops__pricing">
+              <legend>Գին</legend>
+              <div class="ops__price-modes" role="radiogroup" aria-label="Գնի տեսակ">
+                <button
+                  type="button"
+                  role="radio"
+                  class="ops__price-mode"
+                  :class="{ on: form.pricingMode === 'NEGOTIATION_REQUIRED' }"
+                  :aria-checked="form.pricingMode === 'NEGOTIATION_REQUIRED'"
+                  @click="form.pricingMode = 'NEGOTIATION_REQUIRED'"
+                >
+                  <strong>Վարորդը կհամաձայնեցնի</strong>
+                  <span>Զանգում է հաճախորդին և գրում գինը հավելվածում՝ պարտադիր մինչ շարժվելը</span>
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  class="ops__price-mode"
+                  :class="{ on: form.pricingMode === 'FIXED' }"
+                  :aria-checked="form.pricingMode === 'FIXED'"
+                  @click="form.pricingMode = 'FIXED'"
+                >
+                  <strong>Ֆիքսված գին</strong>
+                  <span>Դուք արդեն համաձայնեցրել եք հաճախորդի հետ</span>
+                </button>
+              </div>
+              <label v-if="form.pricingMode === 'FIXED'" class="ops__price-input">
+                Համաձայնեցված գինը*
+                <span class="ops__amd">
+                  <input
+                    v-model="form.quotedPriceAmd"
+                    type="number"
+                    min="0"
+                    step="500"
+                    inputmode="numeric"
+                    placeholder="օր.՝ 15000"
+                    required
+                    :class="{ 'is-invalid': triedSubmit && priceMissing }"
+                    :aria-invalid="triedSubmit && priceMissing"
+                  />
+                  <em>֏</em>
+                </span>
+                <small v-if="triedSubmit && priceMissing" class="ops__field-error">Պարտադիր է՝ գրեք համաձայնեցված գինը</small>
               </label>
-              <label v-if="form.pricingMode === 'FIXED'">Գին (֏)<input v-model="form.quotedPriceAmd" type="number" min="0" step="500" /></label>
-            </div>
+            </fieldset>
             <label>Ներքին նշում (վարորդը չի տեսնում)<textarea v-model="form.internalNote" rows="2" /></label>
             <p v-if="formError" class="ops__error" role="alert">{{ formError }}</p>
             <AppButton type="submit" :disabled="saving">{{ saving ? 'Պահպանվում է…' : 'Ստեղծել սևագիր' }}</AppButton>
@@ -404,7 +533,7 @@ useSeoMetaData({ title: 'Պատվերներ', description: 'Պատվերների
     margin-bottom: var(--space-4);
   }
   &__title {
-    margin: 0;
+    margin: 0 0 var(--space-4);
     font-size: 1.4rem;
   }
   &__header-actions {
@@ -446,14 +575,40 @@ useSeoMetaData({ title: 'Պատվերներ', description: 'Պատվերների
       list-style: none;
     }
   }
+  &__alerts-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
+  &__alerts-actions {
+    display: flex;
+    gap: var(--space-2);
+  }
+  &__alerts-list {
+    max-height: 400px;
+    overflow-y: auto;
+    padding-right: var(--space-2) !important;
+  }
+  &__count {
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: var(--color-surface);
+  }
   &__alert {
     display: flex;
     gap: var(--space-2);
     align-items: center;
     padding: 4px 0;
   }
-  &__ack {
+  &__alert &__ack {
     margin-left: auto;
+  }
+  &__ack {
+    padding: 2px 10px;
     border: 1px solid var(--color-border);
     background: var(--color-surface);
     border-radius: var(--radius-sm);
@@ -490,6 +645,82 @@ useSeoMetaData({ title: 'Պատվերներ', description: 'Պատվերների
     padding: 6px 10px;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
+  }
+  &__pricing {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--space-2);
+    min-width: 0;
+
+    legend {
+      font-size: 0.85rem;
+      color: var(--color-text-secondary);
+      padding: 0;
+      margin-bottom: 4px;
+    }
+  }
+  &__price-modes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--space-2);
+  }
+  &__price-mode {
+    display: grid;
+    gap: 2px;
+    text-align: left;
+    padding: var(--space-3);
+    border-radius: var(--radius-md);
+    border: 1.5px solid var(--color-border);
+    background: var(--color-surface);
+    cursor: pointer;
+    font: inherit;
+    color: var(--color-text);
+    transition: border-color 0.15s, background-color 0.15s;
+
+    span {
+      font-size: 0.8rem;
+      color: var(--color-text-secondary);
+      line-height: 1.35;
+    }
+    &:hover {
+      border-color: var(--color-text-muted);
+    }
+    &.on {
+      border-color: var(--color-primary, #14304f);
+      background: var(--color-primary-bg, #e8eef6);
+      box-shadow: inset 0 0 0 1px var(--color-primary, #14304f);
+    }
+  }
+  &__price-input {
+    max-width: 260px;
+
+    .is-invalid {
+      border-color: var(--color-danger, #d64545) !important;
+      box-shadow: 0 0 0 3px var(--color-danger-bg, #fdecec);
+    }
+  }
+  &__field-error {
+    color: var(--color-danger, #d64545);
+    font-size: 0.8rem;
+  }
+  &__amd {
+    position: relative;
+    display: block;
+
+    input {
+      width: 100%;
+      padding-right: 32px !important;
+    }
+    em {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-style: normal;
+      color: var(--color-text-secondary);
+    }
   }
   &__form {
     background: var(--color-surface);

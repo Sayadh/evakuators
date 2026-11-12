@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { FakeRoutingProvider } from '../src/live-dispatch/routing/providers'
 import { integrationSkip, offset, useTestDatabase, YEREVAN } from './helpers'
-import { count, createOrder, ctx, drain, eligibleDriver, harness, orderRow, overdue, pendingOffer, startDispatch, type Harness } from './support'
+import { count, createOrder, ctx, drain, eligibleDriver, harness, ORDER_BODY, orderRow, overdue, pendingOffer, startDispatch, type Harness } from './support'
 
 describe('E2E flows (real Postgres)', { skip: integrationSkip }, () => {
   const dbCtx = useTestDatabase()
@@ -66,12 +66,30 @@ describe('E2E flows (real Postgres)', { skip: integrationSkip }, () => {
     for (const expected of ['ORDER_CREATED', 'DISPATCH_STARTED', 'CANDIDATES_ADDED', 'OFFER_CREATED', 'OFFER_ACCEPTED', 'PROGRESS_EN_ROUTE', 'PROGRESS_ARRIVED', 'PROGRESS_START_TRANSPORT', 'PROGRESS_COMPLETE']) {
       assert.ok(types.includes(expected), `timeline has ${expected}: ${types.join(',')}`)
     }
-    // push went out with the offer deadline as TTL and no PII on the lock screen
+    // push went out with the offer deadline as TTL; it says where from and
+    // where to (product decision 2026-11) but never the customer's contact
     const pushed = h.push.sent.find((m) => m.data.type === 'offer')
     assert.ok(pushed)
     // TTL = the offer deadline, never longer than the offer timeout setting (45 s by default)
     assert.ok(pushed.ttlSeconds > 0 && pushed.ttlSeconds <= (await h.rt.settings.get()).offerTimeoutSeconds)
-    assert.ok(!`${pushed.title} ${pushed.body}`.includes('Հանրապետության'), 'no address on the lock screen')
+    assert.ok(pushed.body.includes('Հանրապետության հրապարակ → Arabkir garage'), pushed.body)
+    assert.ok(!`${pushed.title} ${pushed.body}`.includes('+37491000001') && !`${pushed.title} ${pushed.body}`.includes('Test Customer'), 'no customer contact')
+    assert.equal(pushed.actionCategory, 'offer', 'actionable: Accept / Reject buttons')
+    assert.equal(pushed.sound, 'offer_alert.wav', 'no ring chosen → the original')
+  })
+
+  it('the offer push rings with the sound the driver chose on that phone', async () => {
+    await fresh()
+    const driver = await eligibleDriver(h, offset(YEREVAN, 400, 0))
+    // The app re-registers its token with the chosen ring (POST me/push-token `sound`)
+    await h.rt.fleet.registerPushToken(driver.sessionId, driver.driverId, `token-${driver.driverId}-`.padEnd(40, 'x'), 'harp')
+    const order = await createOrder(h)
+    await startDispatch(h, order)
+    await drain(h)
+    const offer = await pendingOffer(h, order.id)
+    assert.equal(offer?.driverId, driver.driverId)
+    const pushed = h.push.sent.find((m) => m.data.type === 'offer' && m.data.offerId === offer!.id)
+    assert.equal(pushed?.sound, 'offer_harp.wav')
   })
 
   it('reject → next driver immediately; timeout → next driver', async () => {
@@ -101,6 +119,43 @@ describe('E2E flows (real Postgres)', { skip: integrationSkip }, () => {
     assert.equal(await count(h, `SELECT count(DISTINCT "driverId")::int AS n FROM "OrderOffer" WHERE "orderId" = $1::int`, [order.id]), 3)
   })
 
+  it('missed offers: the driver sees the offer he let run out, why, and that another driver took it — never who, never the customer', async () => {
+    await fresh()
+    const a = await eligibleDriver(h, offset(YEREVAN, 500, 0))
+    const b = await eligibleDriver(h, offset(YEREVAN, 1500, 0))
+    const order = await createOrder(h)
+    await startDispatch(h, order)
+    await drain(h)
+    const first = await pendingOffer(h, order.id)
+    assert.equal(first?.driverId, a.driverId)
+    // It rang on his phone (delivered) but he did not answer in time
+    // (created a minute ago: a delivery cannot precede the offer — OrderOffer_deliveredAt_check)
+    await h.db.pool.query(
+      `UPDATE "OrderOffer" SET "createdAt" = now() - interval '60 seconds', "deliveredAt" = now() - interval '50 seconds' WHERE "id" = $1::uuid`,
+      [first!.id],
+    )
+    await overdue(h, first!.id)
+    await h.rt.reconciler.run(await h.rt.settings.get())
+    await drain(h)
+    const second = await pendingOffer(h, order.id)
+    assert.equal(second?.driverId, b.driverId)
+    // A rejection is a choice, not a missed offer
+    assert.deepEqual(await h.service.driverMissedOffers(b.driverId, 20, null), [])
+    const accepted = await h.service.driverAccept(b.driverId, second!.id, ctx({ take: 1 }))
+    assert.equal(accepted.status, 200, JSON.stringify(accepted.body))
+
+    const missed = await h.service.driverMissedOffers(a.driverId, 20, null)
+    assert.equal(missed.length, 1)
+    assert.equal(missed[0].offerId, first!.id)
+    assert.equal(missed[0].reason, 'NO_ANSWER')
+    assert.equal(missed[0].outcome, 'TAKEN')
+    const text = JSON.stringify(missed)
+    assert.ok(!text.includes(ORDER_BODY.customerPhone) && !text.includes(ORDER_BODY.customerName) && !/customer/i.test(text), 'no customer contact')
+    assert.doesNotMatch(text, /"driverId"|"driverName"/, 'never who took it')
+    // paging: nothing before the only item
+    assert.deepEqual(await h.service.driverMissedOffers(a.driverId, 20, new Date(missed[0].offeredAt)), [])
+  })
+
   it('no candidates at all → NEEDS_ATTENTION (search exhausted), alert raised', async () => {
     await fresh()
     const order = await createOrder(h)
@@ -115,6 +170,38 @@ describe('E2E flows (real Postgres)', { skip: integrationSkip }, () => {
     assert.equal(restarted.status, 200, JSON.stringify(restarted.body))
   })
 
+  it('GPS switched off and the phone silent: still offered by his base while push can ring him', async () => {
+    await fresh()
+    const near = offset(YEREVAN, 600, 0)
+    // GPS off → no fixes AND no background heartbeat (it rides on location updates)
+    async function silentWithBase(minutesAgo: number, withPushToken: boolean) {
+      const d = await eligibleDriver(h, near)
+      await h.db.pool.query(`UPDATE "TowTruck" SET "latitude" = $2, "longitude" = $3 WHERE "id" = $1::int`, [d.towTruckId, near.latitude, near.longitude])
+      await h.db.pool.query(
+        `UPDATE "DriverLocationCurrent" SET "measuredAt" = now() - make_interval(mins => $2::int) WHERE "driverId" = $1::int`,
+        [d.driverId, minutesAgo],
+      )
+      await h.db.pool.query(`UPDATE "DriverPresence" SET "lastHeartbeatAt" = now() - make_interval(mins => $2::int) WHERE "driverId" = $1::int`, [d.driverId, minutesAgo])
+      if (!withPushToken) await h.db.pool.query(`UPDATE "PushDeviceToken" SET "invalidatedAt" = now() WHERE "driverId" = $1::int`, [d.driverId])
+      return d
+    }
+    const unreachable = await silentWithBase(5, false)
+    const tooLong = await silentWithBase(45, true)
+    const reachable = await silentWithBase(5, true)
+    const order = await createOrder(h)
+    await startDispatch(h, order)
+    await drain(h)
+    const offer = await pendingOffer(h, order.id)
+    assert.equal(offer?.driverId, reachable.driverId, 'base fallback with a stale heartbeat but a live push token')
+    assert.notEqual(offer?.driverId, unreachable.driverId)
+    assert.notEqual(offer?.driverId, tooLong.driverId)
+    const [{ locationSource }] = await h.db.pool.query<{ locationSource: string }>(
+      `SELECT "locationSource" FROM "DispatchCandidate" WHERE "driverId" = $1::int`,
+      [reachable.driverId],
+    )
+    assert.equal(locationSource, 'BASE')
+  })
+
   it('the radius widens stage by stage before giving up', async () => {
     await fresh()
     await h.setSettings({ yerevanRadiiMeters: [2000, 30000] })
@@ -127,7 +214,7 @@ describe('E2E flows (real Postgres)', { skip: integrationSkip }, () => {
     assert.equal(searchStage, 1)
   })
 
-  it('negotiated price: accept → PRICE_CONFIRMATION_PENDING; may drive, may not transport until confirmed', async () => {
+  it('negotiated price: accept → PRICE_CONFIRMATION_PENDING; no setting off (nor transport) until the price is recorded', async () => {
     await fresh()
     const d = await eligibleDriver(h, offset(YEREVAN, 700, 0))
     const order = await createOrder(h, { pricing: { mode: 'NEGOTIATION_REQUIRED' } })
@@ -140,16 +227,19 @@ describe('E2E flows (real Postgres)', { skip: integrationSkip }, () => {
 
     const accepted = await h.service.driverAccept(d.driverId, offer!.id, ctx())
     assert.deepEqual(accepted.body, { orderId: order.id, status: 'PRICE_CONFIRMATION_PENDING' })
-    assert.equal((await h.service.driverProgress(d.driverId, order.id, 'EN_ROUTE', ctx({ a: 1 }))).status, 200)
-    assert.equal((await h.service.driverProgress(d.driverId, order.id, 'ARRIVED', ctx({ a: 2 }))).status, 200)
-    const blocked = await h.service.driverProgress(d.driverId, order.id, 'START_TRANSPORT', ctx({ a: 3 }))
-    assert.equal(blocked.status, 409)
-    assert.equal((blocked.body as { code: string }).code, 'PRICE_NOT_CONFIRMED')
+    // 2026-11-12: the agreed price comes first — no «Շարժվում եմ» / «Տեղում եմ» without it
+    for (const [step, key] of [['EN_ROUTE', 1], ['ARRIVED', 2]] as const) {
+      const blocked = await h.service.driverProgress(d.driverId, order.id, step, ctx({ a: key }))
+      assert.equal(blocked.status, 409)
+      assert.equal((blocked.body as { code: string }).code, 'PRICE_NOT_CONFIRMED')
+    }
 
     const row = await orderRow(h, order.id)
     const confirmed = await h.service.confirmPrice(h.adminId, order.id, 18000, Number(row.version), ctx({ p: 18000 }))
     assert.equal(confirmed.status, 200, JSON.stringify(confirmed.body))
-    assert.equal((await h.service.driverProgress(d.driverId, order.id, 'START_TRANSPORT', ctx({ a: 4 }))).status, 200)
+    assert.equal((await h.service.driverProgress(d.driverId, order.id, 'EN_ROUTE', ctx({ a: 3 }))).status, 200)
+    assert.equal((await h.service.driverProgress(d.driverId, order.id, 'ARRIVED', ctx({ a: 4 }))).status, 200)
+    assert.equal((await h.service.driverProgress(d.driverId, order.id, 'START_TRANSPORT', ctx({ a: 5 }))).status, 200)
     const events = await h.rt.orders.timeline(order.id)
     const priceEvent = events.find((e) => e.type === 'PRICE_CONFIRMED')
     assert.deepEqual(priceEvent?.data, { agreedPriceAmd: 18000, quotedPriceAmd: null })
@@ -250,6 +340,26 @@ describe('E2E flows (real Postgres)', { skip: integrationSkip }, () => {
     const row = await orderRow(h, order.id)
     assert.equal(row.status, 'NEEDS_ATTENTION')
     assert.equal(row.attentionKind, 'MANUAL_OFFER_FAILED')
+  })
+
+  it('a destination may be a description only: kept, shown to the driver, no route invented', async () => {
+    await fresh()
+    const driver = await eligibleDriver(h, offset(YEREVAN, 300, 0))
+    const order = await createOrder(h, { destination: { latitude: null, longitude: null, address: 'Davtashen' } })
+    const detail = await h.service.orderDetail(order.id)
+    assert.deepEqual((detail as { order: { destination: unknown } }).order.destination, { latitude: null, longitude: null, address: 'Davtashen' })
+    assert.deepEqual(await h.service.computeOrderRoute(h.adminId, order.id), { computed: false, reason: 'NO_DESTINATION' })
+    await startDispatch(h, order)
+    await drain(h)
+    const offer = await pendingOffer(h, order.id)
+    assert.equal(offer?.driverId, driver.driverId)
+    const snap = await h.service.driverSnapshot(driver.driverId)
+    assert.equal((snap.currentOffer?.order as { destination?: { address?: string } } | undefined)?.destination?.address, 'Davtashen')
+    // half a pair is still refused
+    await assert.rejects(
+      h.service.createOrder(h.adminId, { ...ORDER_BODY, destination: { latitude: 40.2, longitude: null, address: 'x y' } }, ctx({ bad: 1 })),
+      (e: { code?: string }) => e.code === 'VALIDATION_FAILED',
+    )
   })
 
   it('requirements: unknown ones do not block dispatch (optional since 2026-11); capability filters candidates', async () => {

@@ -16,6 +16,7 @@ import {
 import { idramChecksumMatches } from './idram-checksum'
 import { isIdramConfigured } from './idram-config'
 import { buildIdramPaymentForm } from './idram-payment-form'
+import { PaymentHandlerRegistry } from './payment-handlers'
 import type { PaymentGatewayFormApi } from '../subscriptions/subscription.types'
 
 /** Which name a confirmed payment is stamped with — see SubscriptionPayment.provider */
@@ -33,6 +34,7 @@ export class IdramService {
     private readonly subscriptionsRepository: SubscriptionsRepository,
     @Inject(forwardRef(() => PromotionsService))
     private readonly promotions: PromotionsService,
+    private readonly externalHandlers: PaymentHandlerRegistry,
   ) {
     const idram = config.getOrThrow<AppConfig['idram']>('idram')
     this.recAccount = idram.recAccount
@@ -149,6 +151,16 @@ export class IdramService {
       return false
     }
 
+    // A product owned outside this module (the driver-app wallet): its owner
+    // decides. No handler registered → refused, so no money moves for it.
+    if (payment.kind === PaymentKind.WALLET_TOPUP) {
+      const handler = this.externalHandlers.get(payment.kind)
+      if (!handler || !(await handler.isStillPayable(payment))) {
+        this.logger.warn(`Idram precheck refused: ${payment.kind} payment #${payment.id} ${handler ? 'is no longer payable' : 'has no handler in this process'}`)
+        return false
+      }
+    }
+
     this.logger.log(`Idram precheck accepted for payment #${payment.id}`)
     return true
   }
@@ -249,6 +261,7 @@ export class IdramService {
     // extends access to the platform, the other adds days at the top of a town
     // page. The bill number says nothing about which — the row does.
     const source = { provider: IDRAM_PROVIDER, transactionId: callback.transId }
+    if (payment.kind === PaymentKind.WALLET_TOPUP) return this.confirmExternal(payment, source)
     const confirmed =
       payment.kind === PaymentKind.PROMOTION
         ? await this.promotions.confirmPayment(payment.id, source)
@@ -269,6 +282,31 @@ export class IdramService {
         `trans ${callback.transId} from ${callback.payerAccount}`,
     )
     return true
+  }
+
+  /**
+   * A confirmed payment for a product owned outside this module. The money
+   * has moved, so a missing handler is logged at error and REFUSED: Idram
+   * keeps retrying (and emails the merchant) until a process that can grant
+   * it answers — better than an OK that credits nothing.
+   */
+  private async confirmExternal(payment: SubscriptionPayment, source: { provider: string; transactionId: string }): Promise<boolean> {
+    const handler = this.externalHandlers.get(payment.kind)
+    if (!handler) {
+      this.logger.error(`Idram confirmation for ${payment.kind} payment #${payment.id} has no handler — NOT credited (trans ${source.transactionId})`)
+      return false
+    }
+    try {
+      const granted = await handler.confirm(payment, source)
+      this.logger.warn(
+        `Idram ${payment.kind} payment #${payment.id} ${granted ? 'credited' : 'was already credited'}: ` +
+          `${payment.amount} ${payment.currency}, trans ${source.transactionId}`,
+      )
+      return true
+    } catch (error) {
+      this.logger.error(`Idram confirmation for ${payment.kind} payment #${payment.id} FAILED to credit: ${(error as Error).message}`)
+      return false
+    }
   }
 
   /**

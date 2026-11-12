@@ -146,9 +146,14 @@ export function classifyBatch(fixes: IncomingFix[], receivedAt: Date, rules: Gps
 
   accepted.sort((a, b) => a.seq - b.seq)
 
-  // Newest by sequence; it must ALSO be fresh. If the newest is late, an
-  // older fix in the same batch is even later, so there is no candidate.
-  const newest = accepted[accepted.length - 1] ?? null
+  // Newest by MEASUREMENT time (same time: by sequence) — the same rule the
+  // stored position follows (fleet.repository.ts). It must ALSO be fresh. If
+  // the newest is late, every other fix in the batch is later still.
+  const newest = accepted.reduce<(typeof accepted)[number] | null>((best, fix) => {
+    if (!best) return fix
+    const diff = fix.measuredAt.getTime() - best.measuredAt.getTime()
+    return diff > 0 || (diff === 0 && fix.seq > best.seq) ? fix : best
+  }, null)
   const currentCandidate = newest && !newest.late ? newest : null
 
   return { accepted, rejected, currentCandidate }

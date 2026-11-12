@@ -27,6 +27,8 @@ import {
 import { planTransition, type AttentionKind, type OrderAction, type OrderStatus } from './domain/order-state'
 import { COLUMN_CASTS, updateColumns, type CreateOrderInput, type UpdateOrderInput } from './domain/order-input'
 import { lockOrder, mapOrder, ORDER_COLUMNS, readOrder, snapshotOf, type OrderRow } from './order-row'
+import { feePrice, freePriceAllowed, isFreePrice } from '../wallet/domain/fees'
+import { refundOrderFee, settleOrderFee } from '../wallet/wallet-ledger'
 
 const PROGRESS_COLUMN: Partial<Record<OrderAction, string>> = {
   EN_ROUTE: 'enRouteAt',
@@ -75,6 +77,21 @@ async function pushToDriver(tx: Sql, order: OrderRow, driverId: number, kind: st
     payload: { orderId: order.id, driverId, kind },
     dedupeKey: `push-order:${order.id}:v${version}:${kind}`,
   })
+}
+
+/** One offer the driver let run out, with the order it was for */
+export interface MissedOfferRow {
+  order: OrderRow
+  offerId: string
+  offeredAt: Date
+  expiresAt: Date
+  /** null: the offer never reached his phone (delivery window) */
+  deliveredAt: Date | null
+  closeReason: string | null
+  roadMeters: number | null
+  etaSeconds: number | null
+  straightLineMeters: number | null
+  takenByOther: boolean
 }
 
 export class OrdersRepository {
@@ -277,7 +294,15 @@ export class OrdersRepository {
     const sets = [`"status" = ${p.add(planned.to)}::"DispatchOrderStatus"`, `"${PROGRESS_COLUMN[action]}" = now()`]
     if (action === 'COMPLETE') sets.push('"activeAssignmentId" = NULL')
     const driverId = order.assignedDriverId
-    if (action === 'COMPLETE') await endActiveAssignment(tx, order, 'COMPLETED', actor.type === 'ADMIN' ? actor.id : null)
+    if (action === 'COMPLETE') {
+      // Driver wallet: the fee is settled to the order's final price (no-op if unbilled)
+      if (order.activeAssignmentId !== null) {
+        // A minimum price still waiting for the operator's call is not returned by completing
+        const reviewing = await pendingPriceReview(tx, orderId)
+        await settleOrderFee(tx, order.activeAssignmentId, feePrice(order), `COMPLETED: ${feePrice(order) ?? '—'}`, { allowDecrease: reviewing === null })
+      }
+      await endActiveAssignment(tx, order, 'COMPLETED', actor.type === 'ADMIN' ? actor.id : null)
+    }
     await bumpOrder(tx, orderId, sets, p)
     await recordEvent(tx, orderId, `PROGRESS_${action}`, actor, { from: order.status, to: planned.to })
     const updated = await lockOrder(tx, orderId)
@@ -294,7 +319,14 @@ export class OrdersRepository {
    * `priceConfirmedBy` stays an admin user id (null when the driver set it);
    * who did it is always in the audit event's actor.
    */
-  async confirmPrice(tx: Sql, orderId: number, agreedPriceAmd: number, expectedVersion: number | undefined, actor: ActorRef): Promise<OrderRow> {
+  async confirmPrice(
+    tx: Sql,
+    orderId: number,
+    agreedPriceAmd: number,
+    expectedVersion: number | undefined,
+    actor: ActorRef,
+    settings?: DispatchSettings,
+  ): Promise<OrderRow> {
     if (!Number.isSafeInteger(agreedPriceAmd) || agreedPriceAmd < 0 || agreedPriceAmd > 10_000_000) {
       throw new DispatchError('VALIDATION_FAILED', { field: 'agreedPriceAmd' })
     }
@@ -302,6 +334,13 @@ export class OrdersRepository {
     if (actor.type === 'DRIVER' && order.assignedDriverId !== actor.id) throw new DispatchError('ORDER_NOT_FOUND')
     checkVersion(order, expectedVersion)
     const planned = planTransition('CONFIRM_PRICE', snapshotOf(order), actor.type)
+    // The minimum (free) price entered by the DRIVER (2026-11-12): refused for
+    // a long trip outright; otherwise accepted, but an operator calls the
+    // customer before the provisional fee goes back (OrderPriceReview).
+    const driverFreePrice = actor.type === 'DRIVER' && !!settings && isFreePrice(agreedPriceAmd, settings)
+    if (driverFreePrice && !freePriceAllowed(order.routeMeters, settings!)) {
+      throw new DispatchError('PRICE_TOO_LOW_FOR_DISTANCE', { routeMeters: order.routeMeters, maxRouteMeters: settings!.walletFreeMaxRouteMeters })
+    }
     const p = new Params()
     await bumpOrder(
       tx,
@@ -314,12 +353,109 @@ export class OrdersRepository {
       ],
       p,
     )
-    await recordEvent(tx, orderId, 'PRICE_CONFIRMED', actor, { agreedPriceAmd, quotedPriceAmd: order.quotedPriceAmd })
+    // Driver wallet: the provisional fee charged at accept becomes the fee for
+    // this price — except a return for the minimum price, which waits for the review.
+    const feeChangeAmd =
+      order.activeAssignmentId !== null
+        ? await settleOrderFee(tx, order.activeAssignmentId, agreedPriceAmd, `PRICE_AGREED: ${agreedPriceAmd}`, { allowDecrease: !driverFreePrice })
+        : 0
+    let priceReviewId: number | null = null
+    if (driverFreePrice && order.activeAssignmentId !== null && actor.id !== null) {
+      priceReviewId = await openPriceReview(tx, { orderId, assignmentId: order.activeAssignmentId, driverId: actor.id, priceAmd: agreedPriceAmd })
+    }
+    await recordEvent(tx, orderId, 'PRICE_CONFIRMED', actor, {
+      agreedPriceAmd,
+      quotedPriceAmd: order.quotedPriceAmd,
+      ...(feeChangeAmd ? { feeChangeAmd } : {}),
+      ...(priceReviewId ? { priceReviewId } : {}),
+    })
     const updated = await lockOrder(tx, orderId)
     const driverId = updated.assignedDriverId
     if (actor.type === 'ADMIN' && driverId) await pushToDriver(tx, updated, driverId, 'PRICE_CONFIRMED')
     await notifyOrderChanged(tx, updated, 'PRICE_CONFIRMED')
     return updated
+  }
+
+  /**
+   * Operator, after calling the customer about a minimum price the driver
+   * entered (2026-11-12): APPROVE → the price stands and the provisional fee
+   * goes back; CORRECT → the real price replaces it and the fee follows it.
+   * Allowed in any status, even after completion — the call may come later.
+   */
+  async resolvePriceReview(
+    tx: Sql,
+    reviewId: number,
+    input: { decision: 'APPROVE' | 'CORRECT'; correctedPriceAmd?: number | null; note?: string | null },
+    adminUserId: number,
+  ): Promise<OrderRow> {
+    const [review] = await tx.query<{ id: number; orderId: number; assignmentId: number; driverId: number; priceAmd: number }>(
+      `SELECT "id", "orderId", "assignmentId", "driverId", "priceAmd" FROM "OrderPriceReview" WHERE "id" = $1::int AND "status" = 'PENDING' FOR UPDATE`,
+      [reviewId],
+    )
+    if (!review) throw new DispatchError('PRICE_REVIEW_NOT_FOUND')
+    const orderId = toNumber(review.orderId)
+    await lockOrder(tx, orderId)
+    const admin: ActorRef = { type: 'ADMIN', id: adminUserId }
+    const assignmentId = toNumber(review.assignmentId)
+    const driverId = toNumber(review.driverId)
+    if (input.decision === 'APPROVE') {
+      await settleOrderFee(tx, assignmentId, toNumber(review.priceAmd), `PRICE_REVIEW_APPROVED: ${review.priceAmd}`)
+      await tx.query(
+        `UPDATE "OrderPriceReview" SET "status" = 'APPROVED', "resolvedAt" = now(), "resolvedByUserId" = $2::int, "note" = $3 WHERE "id" = $1::int`,
+        [reviewId, adminUserId, input.note ?? null],
+      )
+      await bumpOrder(tx, orderId, [], new Params())
+      await recordEvent(tx, orderId, 'PRICE_REVIEW_APPROVED', admin, { reviewId, priceAmd: review.priceAmd })
+    } else {
+      const corrected = input.correctedPriceAmd
+      if (typeof corrected !== 'number' || !Number.isSafeInteger(corrected) || corrected <= 0 || corrected > 10_000_000) {
+        throw new DispatchError('VALIDATION_FAILED', { field: 'correctedPriceAmd' })
+      }
+      const p = new Params()
+      await bumpOrder(tx, orderId, [`"agreedPriceAmd" = ${p.add(corrected)}::int`, `"priceConfirmedAt" = now()`, `"priceConfirmedBy" = ${p.add(adminUserId)}::int`], p)
+      await settleOrderFee(tx, assignmentId, corrected, `PRICE_CORRECTED: ${review.priceAmd} → ${corrected}`)
+      await tx.query(
+        `UPDATE "OrderPriceReview" SET "status" = 'CORRECTED', "correctedPriceAmd" = $2::int, "resolvedAt" = now(), "resolvedByUserId" = $3::int, "note" = $4 WHERE "id" = $1::int`,
+        [reviewId, corrected, adminUserId, input.note ?? null],
+      )
+      await recordEvent(tx, orderId, 'PRICE_CORRECTED', admin, { reviewId, fromAmd: review.priceAmd, toAmd: corrected })
+      await pushToDriver(tx, await lockOrder(tx, orderId), driverId, 'PRICE_CORRECTED')
+    }
+    await tx.query(
+      `UPDATE "OrderAlert" SET "acknowledgedAt" = now(), "acknowledgedBy" = $2::int WHERE "dedupeKey" = $1 AND "acknowledgedAt" IS NULL`,
+      [`price-review:${reviewId}`, adminUserId],
+    )
+    const updated = await lockOrder(tx, orderId)
+    await notifyOrderChanged(tx, updated, 'PRICE_REVIEW_RESOLVED', [driverId])
+    return updated
+  }
+
+  /** Operator: minimum prices waiting for a call, oldest first */
+  async pendingPriceReviews(limit = 100) {
+    const rows = await this.db.query<Record<string, unknown>>(
+      `SELECT r."id", r."orderId", o."number", r."driverId", t."driverName", t."phone" AS "driverPhone",
+              o."customerPhone", o."customerName", o."pickupAddress", o."destinationAddress", o."routeMeters",
+              r."priceAmd", r."createdAt"
+         FROM "OrderPriceReview" r
+         JOIN "DispatchOrder" o ON o."id" = r."orderId"
+         JOIN "FleetDriverProfile" t ON t."id" = r."driverId"
+        WHERE r."status" = 'PENDING'
+        ORDER BY r."createdAt"
+        LIMIT $1::int`,
+      [Math.min(Math.max(limit, 1), 200)],
+    )
+    return rows.map((r) => ({
+      id: toNumber(r.id),
+      orderId: toNumber(r.orderId),
+      orderNumber: String(r.number),
+      driver: { id: toNumber(r.driverId), name: r.driverName === null ? null : String(r.driverName), phone: r.driverPhone === null ? null : String(r.driverPhone) },
+      customer: { phone: String(r.customerPhone), name: r.customerName === null ? null : String(r.customerName) },
+      pickupAddress: String(r.pickupAddress),
+      destinationAddress: r.destinationAddress === null ? null : String(r.destinationAddress),
+      routeMeters: r.routeMeters === null ? null : toNumber(r.routeMeters),
+      priceAmd: toNumber(r.priceAmd),
+      createdAt: toDate(r.createdAt).toISOString(),
+    }))
   }
 
   /** Payment is its own fact. Completing an order never sets it. */
@@ -342,13 +478,24 @@ export class OrdersRepository {
 
   // ─── Cancellation, problems, attention ────────────────────────────────────
 
-  async cancel(tx: Sql, orderId: number, input: { reason: string; comment?: string | null; expectedVersion: number }, adminUserId: number): Promise<OrderRow> {
+  async cancel(
+    tx: Sql,
+    orderId: number,
+    input: { reason: string; comment?: string | null; expectedVersion: number; refundDriverFee?: boolean },
+    adminUserId: number,
+  ): Promise<OrderRow> {
     const order = await lockOrder(tx, orderId)
     checkVersion(order, input.expectedVersion)
     planTransition('CANCEL', snapshotOf(order), 'ADMIN')
     const admin: ActorRef = { type: 'ADMIN', id: adminUserId }
     await revokePendingOffer(tx, orderId, 'ORDER_CANCELLED', admin)
     await tx.query(`UPDATE "DispatchAttempt" SET "endedAt" = now(), "endReason" = 'CANCELLED' WHERE "orderId" = $1::int AND "endedAt" IS NULL`, [orderId])
+    // Driver wallet (2026-11-12): cancelled before he reached the pickup → his
+    // fee comes back. After arrival only when the operator says so — he called
+    // the customer and confirmed the driver came for nothing.
+    if (order.activeAssignmentId !== null && (order.arrivedAt === null || input.refundDriverFee === true)) {
+      await refundOrderFee(tx, order.activeAssignmentId, `ORDER_CANCELLED: ${input.reason}${order.arrivedAt ? ' (after arrival, by operator)' : ''}`)
+    }
     const driverId = await endActiveAssignment(tx, order, 'ORDER_CANCELLED', adminUserId)
     await resolveOpenRequest(tx, orderId, adminUserId, 'ORDER_CANCELLED')
     const p = new Params()
@@ -505,7 +652,7 @@ export class OrdersRepository {
   async releaseAssignment(
     tx: Sql,
     orderId: number,
-    input: { confirm: true; reason: string; restartSearch: boolean; expectedVersion: number },
+    input: { confirm: true; reason: string; restartSearch: boolean; expectedVersion: number; refundDriverFee?: boolean },
     adminUserId: number,
     settings: DispatchSettings,
   ): Promise<OrderRow> {
@@ -524,6 +671,7 @@ export class OrdersRepository {
       restartSearch: input.restartSearch,
       resolution: 'ASSIGNMENT_RELEASED',
       settings,
+      refundDriverFee: input.refundDriverFee === true,
     })
   }
 
@@ -538,10 +686,15 @@ export class OrdersRepository {
   private async release(
     tx: Sql,
     order: OrderRow,
-    input: { to: OrderStatus; actor: ActorRef; reason: string; restartSearch: boolean; resolution: string; settings: DispatchSettings },
+    input: { to: OrderStatus; actor: ActorRef; reason: string; restartSearch: boolean; resolution: string; settings: DispatchSettings; refundDriverFee?: boolean },
   ): Promise<OrderRow> {
     const orderId = order.id
     const adminUserId = input.actor.type === 'ADMIN' ? input.actor.id : null
+    // Driver wallet (2026-11-12): an OPERATOR took the order away before the
+    // driver arrived → his fee comes back. His own cancel (actor DRIVER) does not.
+    if (input.actor.type === 'ADMIN' && order.activeAssignmentId !== null && (order.arrivedAt === null || input.refundDriverFee === true)) {
+      await refundOrderFee(tx, order.activeAssignmentId, `RELEASED: ${input.reason}`)
+    }
     const releasedDriverId = await endActiveAssignment(tx, order, `RELEASED: ${input.reason}`, adminUserId)
     await resolveOpenRequest(tx, orderId, adminUserId, input.resolution)
     const p = new Params()
@@ -673,16 +826,67 @@ export class OrdersRepository {
     return rows[0] ? mapOrder(rows[0]) : null
   }
 
-  async historyFor(driverId: number, limit: number, before: Date | null): Promise<OrderRow[]> {
+  /**
+   * The driver's own jobs, newest assignment first, paged by that assignment's
+   * start (`before` = the previous page's last `assignedAt`).
+   *
+   * The cursor and the order are the SAME column. They used to differ — pages
+   * were ordered by order id but cut by `startedAt < before`, and the app sent
+   * the order's `createdAt` as `before` — so an order created earlier but
+   * assigned later than the last row shown fell between two pages and was
+   * never listed.
+   */
+  async historyFor(driverId: number, limit: number, before: Date | null): Promise<(OrderRow & { assignedStartedAt: Date })[]> {
     const rows = await this.db.query<Record<string, unknown>>(
-      `SELECT DISTINCT ON (o."id") ${ORDER_COLUMNS}, a."startedAt" AS "assignedStartedAt"
-         FROM "OrderAssignment" a JOIN "DispatchOrder" o ON o."id" = a."orderId"
-        WHERE a."driverId" = $1::int AND ($2::timestamptz IS NULL OR a."startedAt" < $2::timestamptz)
-        ORDER BY o."id" DESC, a."startedAt" DESC
+      `SELECT * FROM (
+          SELECT DISTINCT ON (o."id") ${ORDER_COLUMNS}, a."startedAt" AS "assignedStartedAt"
+            FROM "OrderAssignment" a JOIN "DispatchOrder" o ON o."id" = a."orderId"
+           WHERE a."driverId" = $1::int
+           ORDER BY o."id" DESC, a."startedAt" DESC
+        ) h
+        WHERE ($2::timestamptz IS NULL OR h."assignedStartedAt" < $2::timestamptz)
+        ORDER BY h."assignedStartedAt" DESC, h."id" DESC
         LIMIT $3::int`,
       [driverId, before, Math.min(Math.max(limit, 1), 50)],
     )
-    return rows.map(mapOrder)
+    return rows.map((row) => ({ ...mapOrder(row), assignedStartedAt: toDate(row.assignedStartedAt) }))
+  }
+
+  /**
+   * Offers this driver let run out (2026-11, «Բաց թողնված» in the app):
+   * EXPIRED only — not the ones he rejected, nor those withdrawn by dispatch.
+   * Newest first, paged by the offer's `createdAt` (index
+   * OrderOffer_driverId_createdAt_idx). `takenByOther`: someone else was
+   * assigned afterwards (never WHO).
+   */
+  async missedOffersFor(driverId: number, limit: number, before: Date | null): Promise<MissedOfferRow[]> {
+    const rows = await this.db.query<Record<string, unknown>>(
+      `SELECT ${ORDER_COLUMNS},
+              f."id" AS "offerId", f."createdAt" AS "offeredAt", f."expiresAt" AS "offerExpiresAt",
+              f."deliveredAt" AS "offerDeliveredAt", f."closeReason" AS "offerCloseReason",
+              f."roadMeters" AS "offerRoadMeters", f."etaSeconds" AS "offerEtaSeconds",
+              f."straightLineMeters" AS "offerStraightLineMeters",
+              EXISTS (SELECT 1 FROM "OrderAssignment" x WHERE x."orderId" = o."id" AND x."driverId" <> $1::int) AS "takenByOther"
+         FROM "OrderOffer" f JOIN "DispatchOrder" o ON o."id" = f."orderId"
+        WHERE f."driverId" = $1::int AND f."status" = 'EXPIRED'
+          AND ($2::timestamptz IS NULL OR f."createdAt" < $2::timestamptz)
+        ORDER BY f."createdAt" DESC, f."id" DESC
+        LIMIT $3::int`,
+      [driverId, before, Math.min(Math.max(limit, 1), 50)],
+    )
+    const optionalNumber = (value: unknown) => (value === null || value === undefined ? null : toNumber(value))
+    return rows.map((row) => ({
+      order: mapOrder(row),
+      offerId: String(row.offerId),
+      offeredAt: toDate(row.offeredAt),
+      expiresAt: toDate(row.offerExpiresAt),
+      deliveredAt: row.offerDeliveredAt === null || row.offerDeliveredAt === undefined ? null : toDate(row.offerDeliveredAt),
+      closeReason: row.offerCloseReason === null || row.offerCloseReason === undefined ? null : String(row.offerCloseReason),
+      roadMeters: optionalNumber(row.offerRoadMeters),
+      etaSeconds: optionalNumber(row.offerEtaSeconds),
+      straightLineMeters: optionalNumber(row.offerStraightLineMeters),
+      takenByOther: row.takenByOther === true,
+    }))
   }
 
   async openAlerts(limit: number): Promise<{ id: number; orderId: number; kind: string; data: unknown; createdAt: string }[]> {
@@ -705,4 +909,22 @@ export class OrdersRepository {
       [alertId, adminUserId],
     )
   }
+}
+
+/** A minimum price the driver entered, waiting for an operator's call; the alert puts it on the console */
+async function openPriceReview(tx: Sql, input: { orderId: number; assignmentId: number; driverId: number; priceAmd: number }): Promise<number> {
+  const existing = await pendingPriceReview(tx, input.orderId)
+  if (existing !== null) return existing
+  const [row] = await tx.query<{ id: number }>(
+    `INSERT INTO "OrderPriceReview" ("orderId", "assignmentId", "driverId", "priceAmd") VALUES ($1::int, $2::int, $3::int, $4::int) RETURNING "id"`,
+    [input.orderId, input.assignmentId, input.driverId, input.priceAmd],
+  )
+  const id = toNumber(row.id)
+  await raiseAlert(tx, input.orderId, 'PRICE_REVIEW', `price-review:${id}`, { reviewId: id, priceAmd: input.priceAmd, driverId: input.driverId })
+  return id
+}
+
+async function pendingPriceReview(tx: Sql, orderId: number): Promise<number | null> {
+  const [row] = await tx.query<{ id: number }>(`SELECT "id" FROM "OrderPriceReview" WHERE "orderId" = $1::int AND "status" = 'PENDING'`, [orderId])
+  return row ? toNumber(row.id) : null
 }

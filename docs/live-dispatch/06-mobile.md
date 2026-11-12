@@ -19,20 +19,64 @@
 ```
 mobile/
   index.ts                 background task + FCM handler registered BEFORE the UI
-  App.tsx                  routing by server state (offer > active order > home)
+  App.tsx                  signed out (login · sign-up wizard · privacy) / signed in (4 tabs);
+                           a live offer takes over the screen, a NEW active order opens itself
   app.config.ts            permissions, plugins, background modes — no secrets
+  metro.config.js          `~/…` → ../frontend (the website's PURE modules — see below)
   eas.json                 development / preview / production profiles
-  src/api/                 typed client (timeouts, idempotency, uncertain ≠ failed)
+  assets/ui/               line icons (tintable PNG @1x/2x/3x) + logo variants
+  src/api/                 typed client (timeouts, idempotency, uncertain ≠ failed, multipart upload)
   src/auth/session.ts      token + device id in SecureStore (AFTER_FIRST_UNLOCK)
+  src/navigation/          tabs (Home · Orders · Profile · More), a stack per tab, Android back
+  src/ui/                  design tokens (the website palette) + component kit + icons
+  src/shared/site.ts       the ONE seam to the website: its locale JSON (`siteT`) and catalogue labels
+  src/forms/               the registration questions as RN field groups (sign-up AND profile editor)
+  src/register/            wizard steps ↔ the website validator's error keys, on-device draft
+  src/profile/             profile ⇄ form ⇄ UpdateMyTowTruckDto (port of dashboard.vue)
+  src/media/               photo picking (expo-image-picker), the 1–6 photo set, resumable upload
   src/location/            TaskManager task, server-driven adaptive policy + jitter,
                            bounded offline buffer (300 fixes, oldest dropped)
-  src/push/push.ts         FCM token/refresh, foreground/opened/initial → re-read state
+  src/push/                FCM token/refresh, offer ring, notification actions
   src/realtime/socket.ts   WebSocket (auth in first frame), reconnect → snapshot
-  src/state/               server snapshot + pending actions (never optimistic)
+  src/state/               server snapshot + pending actions (never optimistic); profile cache
   src/i18n/                hy (default) + ru — type-checked parity
-  src/screens/             Login, Permissions, Home, Offer, ActiveOrder, Request, History, Settings
+  src/screens/             Login, Register (wizard), Home, Offer, ActiveOrder, Request, Orders,
+                           OrderDetail, Profile, ProfileEdit, More, PrivacyPolicy, PrivacySettings,
+                           ChangePassword, Permissions
   test/                    pure-module tests (node:test)
 ```
+
+## Գրանցում և պրոֆիլ = կայքի գրանցում և անձնական էջ (2026-11)
+
+- Հավելվածում գրանցումը **կայքի գրանցումն է**՝ նույն դաշտերը, նկարներ (1–6), համաձայնություն, մոդերացիա, հաստատումից հետո՝ հանրային էջ։ Ավելանում է միայն գաղտնաբառը (`POST /driver-app/site-registrations`, տես `11-driver-access.md`)։
+- Ձևի state-ը, validator-ը, payload-ը, աշխարհագրությունը, ծառայությունները և դաշտերի տեքստերը **կայքի ֆայլերն են**՝ ներմուծված `~/…`-ով (`metro.config.js`, `tsconfig.json` `paths`)։ Միայն մաքուր TS մոդուլներ (ոչ Vue/Nuxt) — `test/sharedForms.test.ts`-ը քայլում է բոլոր ներմուծումները և ձախողվում է հակառակ դեպքում։ Արդյունքում կայքում փոխված կանոնը հաջորդ build-ում փոխվում է նաև հավելվածում, պատճեն չկա։
+- Պրոֆիլի խմբագրումը կայքի dashboard-ի կանոններն է (`profile/profileForm.ts`)․ պահպանումը **հերթագրվում է** մոդերացիայի (`PUT /driver-app/me/profile`), ոչ թե գրվում։
+- Գաղտնիության քաղաքականության տեքստը մեկն է՝ `frontend/constants/driverAppPrivacyContent.ts`, որը ցուցադրում են և՛ կայքի `/driver-app/privacy` էջը, և՛ հավելվածի «Գաղտնիության քաղաքականություն» էկրանը։
+- **EAS build**՝ monorepo-ում EAS-ը վերբեռնում է ամբողջ git repo-ն, ուստի `../frontend`-ը հասանելի է։ Տեղական build-ի համար էլ պետք է, որ `frontend/`-ը կողքին լինի։
+
+### Նոր native package (մեկ անգամ)
+
+```bash
+cd mobile
+npx expo install expo-image-picker   # camera + photo library for the vehicle photos
+npx expo prebuild --clean && npx expo run:ios   # (or run:android) — a NEW dev build is required
+```
+Մինչև տեղադրելը հավելվածը աշխատում է, իսկ նկարների քայլը ցույց է տալիս «հասանելի չէ այս տարբերակում»։ `app.config.ts`-ն ավտոմատ ավելացնում է plugin-ը և iOS-ի `NSCameraUsageDescription` / `NSPhotoLibraryUsageDescription` տեքստերը (hy/en/ru)։
+
+## Պատվերի «զանգ» կողպված հեռախոսին (2026-11)
+
+Նոր առաջարկը կողպված հեռախոսին **զանգում է և բացվում էկրանին**, մինչև վարորդը պատասխանի (կամ ժամկետն անցնի / առաջարկը հետ կանչվի)։
+
+| | Android | iOS |
+| --- | --- | --- |
+| Ինչպես | Տեղական native module `modules/offer-alert` (Kotlin)․ full-screen intent (ինչպես մուտքային զանգ), `FLAG_INSISTENT` ձայն՝ կրկնվում է մինչև պատասխանը, **ALARM** audio stream (լուռ/վիբրացիա ռեժիմը չի խլացնում), «Ընդունել»/«Մերժել» կոճակներ | APNs time-sensitive ծանուցում `offer_alert.wav`-ով, սերվերը կրկնում է ~10 վ-ը մեկ մինչև պատասխանը; Critical Alerts՝ Apple-ի հաստատումից հետո |
+| Էկրանին | Կողպված էկրանի վրա բացվում է հավելվածը՝ առաջարկով (`setShowWhenLocked`), պատասխանից հետո նորից կողպեքի ետևում է | Ծանուցումը կողպված էկրանին. App Store-ում «էկրանի վրա բացվել» թույլատրված է միայն զանգերի (CallKit/VoIP) հավելվածներին |
+| Կանգ | Պատասխան, «Անջատել ձայնը», ժամկետ (`setTimeoutAfter` = սերվերի deadline), լուռ push `offer_closed` (հետ կանչված/ժամկետանց) | Ժամկետ, սերվերը դադարում է կրկնել |
+
+- Սկզբում հնչում է անմիջապես (ժամանակավոր 60 վ), հետո `POST /offers/:id/ack`-ի պատասխանի `expiresAt`-ով ճշտվում է՝ դանդաղ ցանցը չի ուշացնում զանգը։
+- **«Պատվերների ծանուցումներ»** էկրան (Ավելին → կամ Home-ի զգուշացում)․ ստուգում է ծանուցումները, ալիքը, Android 14+ «Full screen notifications», զարթուցիչի ձայնը (պարտադիր), «Do Not Disturb»-ի շրջանցում և մարտկոցի խնայողություն (խորհուրդ), և **«Փորձարկել»**՝ 5 վ հետո փորձնական զանգ, որ վարորդը կողպի հեռախոսը և տեսնի։
+- Native module-ը նոր է → **պետք է նոր development build** (`npx expo prebuild --clean && npx expo run:android`)։ Առանց դրա հավելվածը աշխատում է հին ծանուցումով, իսկ ստուգման էկրանը ասում է «թարմացրեք»։
+- iOS Critical Alerts՝ `IOS_CRITICAL_ALERTS=true` build-ում (entitlement) + backend `APNS_CRITICAL_ALERTS=true`, **միայն Apple-ի հաստատումից հետո** (հակառակ դեպքում signing-ը ձախողվում է)։
 
 ## Հիմնական կանոններ (և որտեղ են դրանք պարտադրվում)
 
@@ -46,7 +90,8 @@ mobile/
 | Offline-ում buffer-ը սահմանափակ է, հին կետերը՝ պատմություն | `location/buffer.ts` (թեստ) + սերվեր |
 | Offline ընտրված + ակտիվ պատվեր չկա → tracking-ը դադարում է | սերվերի policy `OFF` → `stopTracking()` |
 | Token-ները secure storage-ում | `auth/session.ts` |
-| Տեքստերը hardcode չեն | `i18n/hy.ts`, `ru.ts` (parity թեստ) |
+| Տեքստերը hardcode չեն | `i18n/hy.ts`, `ru.ts` (parity թեստ); գրանցման դաշտերը՝ կայքի `hy.json`/`ru.json` |
+| Գրանցման/խմբագրման կանոնները կայքինն են | `~/utils/registrationForm` և այլն (`test/sharedForms.test.ts`) |
 
 ## Build և signing
 
@@ -101,3 +146,9 @@ location-ի համար պետք է հիմնավորում review-ի ժամանա
 | 11 | Սարքի փոփոխություն (login 2-րդ սարքից) | ☐ | ☐ | 1-ին սարքը 401 → login էկրան; 1-ին սարքի GPS-ը չի ընդունվում |
 | 12 | Ակտիվ պատվեր, «Նավիգացիա» | ☐ | ☐ | Բացվում է Google Maps / Apple Maps |
 | 13 | Ռուսերեն լեզու | ☐ | ☐ | Բոլոր էկրանները ռուսերեն |
+
+## Բաց թողնված պատվերներ, պրոֆիլ, զանգի ձայն (2026-11-12)
+
+- **Բաց թողնված պատվերներ.** `GET /driver-app/orders/missed` — վարորդի `EXPIRED` առաջարկները (ոչ մերժվածները, ոչ հետ կանչվածները), նորից հին, `?before=<offeredAt>` էջավորմամբ։ Ամեն տարր՝ երբ, որտեղից/ուր, որքան հեռու էր, **ինչու** (`NOT_DELIVERED` — չի հասել հեռախոսին, `TOO_LATE`, `NO_ANSWER`) և **ինչ եղավ** պատվերը (`TAKEN` / `CANCELLED` / `OPEN` / `CLOSED`)։ Երբեք՝ հաճախորդի կոնտակտը կամ թե ով վերցրեց։ Հավելվածում՝ «Պատվերներ» tab-ի վերևի քարտ → `MissedOffersScreen`, Home-ի «Բաց եք թողել N պատվեր» և tab-ի badge (նորերը՝ վերջին դիտումից հետո, `state/missedOffers.tsx`)։ `NOT_DELIVERED`-ի դեպքում էկրանը տանում է ծանուցումների կարգավորմանը։
+- **Պրոֆիլ.** `profile/ProfileDetails.tsx`-ը ցույց է տալիս գրանցման **բոլոր** դաշտերը՝ կայքի իսկ պիտակներով (`siteT`), դատարկը՝ «Նշված չէ»։ Ամեն բաժին ունի «Փոխել» → moderation։
+- **Զանգի ձայն.** Բաց հավելվածի կարճ զանգն էլ (`offerAlert.ts`) հիմա ընտրված ձայնով է։ Ձայնային ֆայլերը iOS/Android նախագծում հայտնվում են **միայն `npx expo prebuild --clean`-ից հետո** — առանց դրա iOS-ը նվագում է միայն `offer_alert.wav`-ը (կամ ստանդարտ ձայնը)։

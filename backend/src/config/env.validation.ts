@@ -39,6 +39,11 @@ const envSchema = z.object({
 
   // Admin panel login (see User model, role ADMIN)
   ADMIN_JWT_SECRET: z.string().min(16, 'ADMIN_JWT_SECRET must be at least 16 characters'),
+  // Security audit 2026-11-12: "true" refuses a password-only admin login —
+  // an admin must have linked Telegram (npm run admin:telegram-link) to get
+  // the second factor. Off by default so no admin is locked out by an upgrade;
+  // turn it on once `npm run admin:accounts` shows every admin linked.
+  ADMIN_REQUIRE_2FA: z.enum(['true', 'false']).optional().default('false'),
 
   // Admin 2FA + registration notifications — a SEPARATE dedicated bot from
   // the driver one. Optional on purpose: unset means admin login stays

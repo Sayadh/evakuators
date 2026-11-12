@@ -24,6 +24,8 @@ import { ConfigService } from '@nestjs/config'
 import { JwtService } from '@nestjs/jwt'
 import type { Request } from 'express'
 import { ADMIN_SESSION_AUDIENCE } from '../../admin-auth/admin-token.audience'
+import { adminSessionStillValid } from '../../admin-auth/admin-session-check'
+import { PrismaService } from '../../prisma/prisma.service'
 import { LiveDispatchRuntimeHolder } from './runtime.provider'
 
 export const DRIVER_APP_AUDIENCE = 'driver:app'
@@ -103,11 +105,16 @@ export class OpsGuard implements CanActivate {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly reflector: Reflector,
+    private readonly prisma: PrismaService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<OpsRequest>()
     const identity = await verifyOpsToken(this.jwt, this.config.getOrThrow<string>('adminJwtSecret'), bearer(request))
+    // A deleted admin, or one whose role changed, is out at once (admin-session-check.ts)
+    if (!(await adminSessionStillValid(this.prisma, identity.adminUserId, identity.role))) {
+      throw new UnauthorizedException({ code: 'UNAUTHENTICATED', message: 'Մուտք գործեք կրկին' })
+    }
     const adminOnly = this.reflector.getAllAndOverride<boolean>(ADMIN_ONLY, [context.getHandler(), context.getClass()])
     if (adminOnly && identity.role !== 'ADMIN') throw new ForbiddenException({ code: 'FORBIDDEN', message: 'Միայն ադմինիստրատորի համար' })
     request.adminUserId = identity.adminUserId

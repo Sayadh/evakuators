@@ -59,12 +59,12 @@ export const driverAuthRepository = {
    * server. This method sits in `driverAuth.repository.ts` next to `login()`,
    * which needs no header — which is exactly how it came to be missed.
    *
-   * Answers 204 with no body — hence `apiFetch<null>` and a `void` return: the
-   * generic describes what comes back on the wire (nothing), the signature
-   * describes what a caller should do with it (also nothing).
+   * Answers the NEW session token (2026-11-12): changing the password ends
+   * every session issued before it — this one included — so the caller must
+   * store the token it gets back (`driverAuth.markPasswordChanged(token)`).
    */
-  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
-    await apiFetch<null>('/my/tow-truck/password', {
+  async changePassword(currentPassword: string, newPassword: string): Promise<{ token: string }> {
+    return apiFetch<{ token: string }>('/my/tow-truck/password', {
       method: 'PATCH',
       body: { currentPassword, newPassword },
       headers: useDriverAuthStore().authHeader,

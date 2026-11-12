@@ -89,9 +89,12 @@ export const ALERT_LABEL: Record<string, string> = {
   DRIVER_CANCEL_REQUEST: 'Վարորդը խնդրում է չեղարկել',
   DRIVER_CANCELLED_REDISPATCHED: 'Վարորդը հրաժարվեց, պատվերն ավտոմատ փոխանցվեց այլ վարորդի',
   DRIVER_PROBLEM: 'Վարորդը խնդիր է հայտնել',
+  PRICE_REVIEW: 'Վարորդը գրել է նվազագույն գինը — զանգեք հաճախորդին',
 }
 
 export const ERROR_LABEL: Record<string, string> = {
+  PRICE_REVIEW_NOT_FOUND: 'Գնի ստուգումն արդեն որոշված է։ Էջը թարմացվեց։',
+  PRICE_TOO_LOW_FOR_DISTANCE: 'Այս հեռավորության պատվերը չի կարող լինել նվազագույն գնով։',
   VERSION_CONFLICT: 'Պատվերն արդեն փոխվել է մեկ ուրիշի կողմից։ Էջը թարմացվեց — ստուգեք և կրկնեք։',
   REQUIREMENTS_UNCONFIRMED: 'Տեխնիկական պահանջները ճշտված չեն։ Լրացրեք կամ հաստատեք override-ով։',
   PRICE_REQUIRED: 'Ֆիքսված գնով պատվերի համար գինը պարտադիր է։',
@@ -144,8 +147,45 @@ export function apiErrorCode(error: unknown): string | null {
   return typeof data?.code === 'string' ? data.code : null
 }
 
+/**
+ * What exactly was wrong, field by field (2026-11-12): the server's
+ * VALIDATION_FAILED carries `details.issues[{ path }]` — said in words here,
+ * never just «Տվյալները սխալ են».
+ */
+const FIELD_PROBLEM: [RegExp, string][] = [
+  [/^customerPhone/, 'Հաճախորդի հեռախոսը սխալ է. գրեք +374XXXXXXXX կամ 0XXXXXXXX ձևով'],
+  [/^customerName/, 'Հաճախորդի անունը շատ երկար է (առավելագույնը 120 նիշ)'],
+  [/^pickup\.address/, 'Գրեք վերցնելու հասցեն (առնվազն 2 նիշ)'],
+  [/^pickup/, 'Վերցնելու կետի կոորդինատները սխալ են կամ Հայաստանից դուրս են'],
+  [/^destination\.address/, 'Հասցման հասցեն սխալ է'],
+  [/^destination/, 'Հասցման կետի կոորդինատները սխալ են կամ Հայաստանից դուրս են'],
+  [/^vehicle\.weightKg/, 'Քաշը պետք է լինի 100-ից 60 000 կգ'],
+  [/^vehicle\.plate/, 'Համարանիշը շատ երկար է'],
+  [/^vehicle/, 'Մեքենայի տվյալները սխալ են (մակնիշ/մոդել՝ առավելագույնը 60 նիշ)'],
+  [/^problemDescription/, 'Խնդրի նկարագրությունը շատ երկար է (առավելագույնը 2000 նիշ)'],
+  [/^requirements\.wheelSkatesCount/, 'Ռոլիկների քանակը պետք է լինի 1-ից 4'],
+  [/^pricing\.quotedPriceAmd/, 'Գինը պետք է լինի ամբողջ թիվ՝ 0-ից 10 000 000 ֏'],
+  [/^pricing/, 'Ընտրեք գնի տեսակը'],
+  [/^internalNote/, 'Ներքին նշումը շատ երկար է (առավելագույնը 2000 նիշ)'],
+]
+
+function validationProblems(error: unknown): string | null {
+  const details = (error as { data?: { details?: { issues?: { path?: string }[]; field?: string } } })?.data?.details
+  const paths = [...(details?.issues ?? []).map((issue) => issue.path ?? ''), ...(details?.field ? [details.field] : [])]
+  const said = new Set<string>()
+  for (const path of paths) {
+    const hit = FIELD_PROBLEM.find(([pattern]) => pattern.test(path))
+    said.add(hit ? hit[1] : `Սխալ դաշտ՝ ${path || 'անհայտ'}`)
+  }
+  return said.size ? [...said].join('։ ') + '։' : null
+}
+
 export function apiErrorText(error: unknown, fallback: string): string {
   const code = apiErrorCode(error)
+  if (code === 'VALIDATION_FAILED') {
+    const problems = validationProblems(error)
+    if (problems) return problems
+  }
   if (code && ERROR_LABEL[code]) return ERROR_LABEL[code]
   const message = (error as { data?: { message?: unknown } })?.data?.message
   return typeof message === 'string' ? message : fallback

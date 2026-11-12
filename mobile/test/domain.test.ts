@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { measureClock, secondsLeft } from '../src/domain/countdown'
 import { addFixes, nextChunk, removeSent, MAX_FIXES_PER_REQUEST, type Fix } from '../src/location/buffer'
-import { fixIsDue, jittered, keepFix, needsRestart, DEFAULT_POLICY } from '../src/location/policy'
+import { fixIsDue, jittered, keepFix, needsRestart, osIntervalSeconds, DEFAULT_POLICY, IDLE_OS_SECONDS } from '../src/location/policy'
 import { reconcile, type PendingAction } from '../src/state/pendingActions'
 
 describe('countdown uses the server clock', () => {
@@ -50,6 +50,16 @@ describe('tracking policy', () => {
     assert.equal(needsRestart(null, DEFAULT_POLICY), true)
     assert.equal(needsRestart(DEFAULT_POLICY, { ...DEFAULT_POLICY }), false)
     assert.equal(needsRestart(DEFAULT_POLICY, { ...DEFAULT_POLICY, mode: 'ACTIVE_ORDER', locationIntervalSeconds: 12 }), true)
+  })
+  it('standing ↔ moving does not restart the OS task (no notification flash); online/offline and orders do', () => {
+    const moving = { ...DEFAULT_POLICY, mode: 'IDLE_MOVING' as const, locationIntervalSeconds: 30 }
+    assert.equal(needsRestart(DEFAULT_POLICY, moving), false)
+    assert.equal(needsRestart(moving, DEFAULT_POLICY), false)
+    assert.equal(needsRestart(DEFAULT_POLICY, { ...DEFAULT_POLICY, mode: 'OFF', locationIntervalSeconds: null }), true)
+    // both idle modes ask the OS for the faster cadence; the app thins to the current one
+    assert.equal(osIntervalSeconds(DEFAULT_POLICY), IDLE_OS_SECONDS)
+    assert.equal(osIntervalSeconds(moving), 30)
+    assert.equal(osIntervalSeconds({ ...DEFAULT_POLICY, mode: 'ACTIVE_ORDER', locationIntervalSeconds: 12 }), 12)
   })
   it('never gates on distance, and reports at least once a minute', () => {
     assert.equal(DEFAULT_POLICY.distanceFilterMeters, 0)

@@ -261,13 +261,19 @@ export function adminOrderView(order: OrderRow) {
     customer: { phone: order.customerPhone, name: order.customerName },
     pickup: { latitude: order.pickupLatitude, longitude: order.pickupLongitude, address: order.pickupAddress },
     destination:
-      order.destinationLatitude === null
+      // A description alone is a destination too (2026-11); coordinates may be null.
+      order.destinationLatitude === null && order.destinationAddress === null
         ? null
-        : { latitude: order.destinationLatitude, longitude: order.destinationLongitude, address: order.destinationAddress },
+        : { latitude: order.destinationLatitude, longitude: order.destinationLongitude, address: order.destinationAddress ?? '' },
     vehicle: vehicleView(order),
     problemDescription: order.problemDescription,
     requirements: requirementsView(order),
-    price: priceView(order),
+    price: {
+      ...priceView(order),
+      // Who entered the agreed price: the assigned driver (no admin id is
+      // stored then) or an operator — the console shows it next to the price.
+      confirmedBy: order.priceConfirmedAt === null ? null : order.priceConfirmedBy === null ? ('DRIVER' as const) : ('OPERATOR' as const),
+    },
     payment: { status: order.paymentStatus, updatedAt: iso(order.paymentUpdatedAt) },
     assignedDriverId: order.assignedDriverId,
     pickupToDestination: routeView(order),
@@ -293,9 +299,10 @@ export function driverOfferOrderView(order: OrderRow) {
     number: order.number,
     pickup: { latitude: order.pickupLatitude, longitude: order.pickupLongitude, address: order.pickupAddress },
     destination:
-      order.destinationLatitude === null
+      // A description alone is a destination too (2026-11); coordinates may be null.
+      order.destinationLatitude === null && order.destinationAddress === null
         ? null
-        : { latitude: order.destinationLatitude, longitude: order.destinationLongitude, address: order.destinationAddress },
+        : { latitude: order.destinationLatitude, longitude: order.destinationLongitude, address: order.destinationAddress ?? '' },
     vehicle: vehicleView(order),
     problemDescription: order.problemDescription,
     requirements: requirementsView(order),

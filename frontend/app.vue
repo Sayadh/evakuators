@@ -68,5 +68,7 @@ useHead({
       -->
       <NuxtPage :page-key="(route) => route.path" />
     </NuxtLayout>
+    <!-- The site's confirmation dialog — every page asks through confirmDialog() -->
+    <ClientOnly><ConfirmDialogHost /></ClientOnly>
   </div>
 </template>

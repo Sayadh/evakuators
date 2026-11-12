@@ -15,8 +15,8 @@
 | `OFFER_ACCEPTED` | `SEARCHING` | ASSIGNED (FIXED) \| PRICE_CONFIRMATION_PENDING (NEGOTIATION_REQUIRED) | DRIVER | offer PENDING, before deadline (DB clock), terms version current, order and driver have no active assignment |
 | `SEARCH_FAILED` | `SEARCHING` | NEEDS_ATTENTION | SYSTEM | candidates exhausted, attempt limit or max duration reached, no pending offer |
 | `CONFIRM_PRICE` | `PRICE_CONFIRMATION_PENDING`, `EN_ROUTE_TO_PICKUP`, `ARRIVED_AT_PICKUP` | ASSIGNED from PRICE_CONFIRMATION_PENDING, otherwise unchanged | ADMIN, DRIVER | NEGOTIATION_REQUIRED and not yet confirmed; agreed price ≥ 0; a driver only on their own order (he agrees it with the customer by phone — 2026-11) |
-| `EN_ROUTE` | `ASSIGNED`, `PRICE_CONFIRMATION_PENDING` | EN_ROUTE_TO_PICKUP | DRIVER, ADMIN | driver may head out while the price is being agreed |
-| `ARRIVED` | `ASSIGNED`, `PRICE_CONFIRMATION_PENDING`, `EN_ROUTE_TO_PICKUP` | ARRIVED_AT_PICKUP | DRIVER, ADMIN | — |
+| `EN_ROUTE` | `ASSIGNED`, `PRICE_CONFIRMATION_PENDING` | EN_ROUTE_TO_PICKUP | DRIVER, ADMIN | a driver: price FIXED or confirmed (PRICE_NOT_CONFIRMED otherwise) — 2026-11-12, the agreed price comes before setting off |
+| `ARRIVED` | `ASSIGNED`, `PRICE_CONFIRMATION_PENDING`, `EN_ROUTE_TO_PICKUP` | ARRIVED_AT_PICKUP | DRIVER, ADMIN | a driver from PRICE_CONFIRMATION_PENDING: price confirmed first |
 | `START_TRANSPORT` | `ARRIVED_AT_PICKUP` | TRANSPORTING | DRIVER, ADMIN | price FIXED or confirmed (PRICE_NOT_CONFIRMED otherwise) |
 | `COMPLETE` | `TRANSPORTING` | COMPLETED | DRIVER, ADMIN | ends the assignment; does NOT change payment status |
 | `DRIVER_CANCEL_REQUEST` | `PRICE_CONFIRMATION_PENDING`, `ASSIGNED` | SEARCHING (redispatch) or NEEDS_ATTENTION (DRIVER_CANCEL_REQUEST) | DRIVER | not yet EN_ROUTE (2026-11 — once en route a driver can only report a PROBLEM). Reason other than CUSTOMER_DECLINED (incl. NOT_SPECIFIED, sent when the driver picks none in 45 s) and the pickup has coordinates → the driver is released and a new automatic search starts without him (nor anyone who already rejected the order), same transaction. CUSTOMER_DECLINED → assignment KEPT until an operator decides |

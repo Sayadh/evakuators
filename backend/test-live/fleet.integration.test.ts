@@ -60,6 +60,45 @@ describe('fleet: sessions, presence, location (real Postgres)', { skip: integrat
     assert.equal(availability.eligible, true, JSON.stringify(availability))
   })
 
+  it('blocking (2026-11-12): offline at once, cannot go online, never eligible, reason+term visible; it lifts by itself when the term ends', async () => {
+    const { driverId, sessionId } = await onlineDriver()
+    await fleet().ingestLocations(driverId, sessionId, [fix(1, 3)], settings())
+    const until = new Date(Date.now() + 3 * 24 * 3600 * 1000)
+    await fleet().setDispatchSuspended(driverId, true, 'Հաճախորդի բողոք', 1, until)
+
+    let state = await fleet().driverState(driverId)
+    assert.equal(state!.wantsOnline, false, 'forced offline')
+    assert.equal(state!.dispatchSuspendedReason, 'Հաճախորդի բողոք')
+    assert.equal(state!.dispatchSuspendedUntil?.getTime(), until.getTime())
+    assert.ok(availabilityOf(state!, settings()).reasons.includes('SUSPENDED'))
+    await assert.rejects(
+      fleet().setAvailability(driverId, sessionId, { wantsOnline: true }),
+      (e: DispatchError) => e.code === 'DRIVER_BLOCKED',
+    )
+    // The app is told to re-read its snapshot
+    const [{ n }] = await ctx.get().pool.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM "OutboxEvent" WHERE "topic" = 'realtime' AND "dedupeKey" LIKE $1`,
+      [`rt:driver:block:${driverId}:%`],
+    )
+    assert.equal(n, 1)
+
+    // The term is over: nothing has to run — he reads as unblocked and may go online
+    await ctx.get().pool.query(`UPDATE "DriverPresence" SET "dispatchSuspendedUntil" = now() - interval '1 second' WHERE "driverId" = $1::int`, [driverId])
+    state = await fleet().driverState(driverId)
+    assert.equal(state!.dispatchSuspendedAt, null)
+    assert.equal(state!.dispatchSuspendedReason, null)
+    await fleet().setAvailability(driverId, sessionId, { wantsOnline: true })
+
+    // Indefinite: until an operator lifts it
+    await fleet().setDispatchSuspended(driverId, true, 'Զանգահարեք մեզ', 1, null)
+    state = await fleet().driverState(driverId)
+    assert.ok(state!.dispatchSuspendedAt)
+    assert.equal(state!.dispatchSuspendedUntil, null)
+    await fleet().setDispatchSuspended(driverId, false, null, 1)
+    state = await fleet().driverState(driverId)
+    assert.equal(state!.dispatchSuspendedAt, null)
+  })
+
   it('#7 an OLD fix arriving AFTER a newer one never replaces it', async () => {
     const { driverId, sessionId } = await onlineDriver()
     const newer = offset(YEREVAN, 500, 0)
@@ -78,8 +117,10 @@ describe('fleet: sessions, presence, location (real Postgres)', { skip: integrat
 
   it('#7b a replayed fix (same seq) is absorbed: no duplicate history, no change', async () => {
     const { driverId, sessionId } = await onlineDriver()
-    await fleet().ingestLocations(driverId, sessionId, [fix(5, 2)], settings())
-    const replay = await fleet().ingestLocations(driverId, sessionId, [fix(5, 2)], settings())
+    // A replay is the SAME buffered fix, sent again (same seq, same measuredAt)
+    const sent = fix(5, 2)
+    await fleet().ingestLocations(driverId, sessionId, [sent], settings())
+    const replay = await fleet().ingestLocations(driverId, sessionId, [{ ...sent }], settings())
     assert.equal(replay.currentUpdated, false)
     const [{ n }] = await ctx.get().pool.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM "DriverLocationHistory" WHERE "driverId" = $1::int`,
@@ -156,6 +197,15 @@ describe('fleet: sessions, presence, location (real Postgres)', { skip: integrat
       [driverId],
     )
     assert.equal(n, 1)
+  })
+
+  it('a sequence that went backwards (phone file reset) still updates the position by time', async () => {
+    const { driverId, sessionId } = await onlineDriver()
+    await fleet().ingestLocations(driverId, sessionId, [fix(500, 60)], settings())
+    const after = await fleet().ingestLocations(driverId, sessionId, [fix(3, 1, offset(YEREVAN, 300, 0))], settings())
+    assert.equal(after.currentUpdated, true, 'a newer measurement wins even with a lower seq')
+    const older = await fleet().ingestLocations(driverId, sessionId, [fix(900, 30)], settings())
+    assert.equal(older.currentUpdated, false, 'an older measurement never replaces a newer one')
   })
 
   it('concurrent ingests from one session end on the highest sequence', async () => {

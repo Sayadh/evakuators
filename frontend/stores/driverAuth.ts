@@ -60,12 +60,14 @@ export const useDriverAuthStore = defineStore('driverAuth', {
      * would restore the stored session with `mustChangePassword: true` and put
      * the driver back in front of a dialog they already dealt with — and the
      * backend would reject their old password on the second attempt, leaving
-     * them stuck. The token itself is untouched; the flag describes the
-     * password, not the session.
+     * them stuck. Since 2026-11-12 the token is replaced too: the server ends
+     * every session issued before the change and answers with a new one.
      */
-    markPasswordChanged() {
+    markPasswordChanged(token?: string) {
       if (!this.session) return
-      this.session = { ...this.session, mustChangePassword: false }
+      // The change ended every older session (backend sessionVersion): the
+      // token that came back with it is the one that still works.
+      this.session = { ...this.session, mustChangePassword: false, ...(token ? { token } : {}) }
       if (import.meta.client) localStorage.setItem(STORAGE_KEY, JSON.stringify(this.session))
     },
 

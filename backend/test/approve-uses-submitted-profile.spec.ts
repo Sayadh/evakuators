@@ -273,16 +273,39 @@ describe('approve() publishes the submitted profile', () => {
     ).resolves.toBeDefined()
   })
 
-  it('leaves the stored request untouched apart from its status', async () => {
+  it('leaves the stored request untouched apart from its status and the truck it became', async () => {
     // The row is the audit trail — the only surviving evidence of what the
-    // driver actually sent. Approval marks it APPROVED and writes nothing else.
+    // driver actually sent. Approval marks it APPROVED and records which truck
+    // it became (what the driver app grants access from); none of the driver's
+    // answers is rewritten.
     const { service, tx } = buildService()
     await service.approve(42, approveDto())
 
     expect(tx.registrationRequest.update.mock.calls[0]![0]).toEqual({
       where: { id: 42 },
-      data: { status: 'APPROVED' },
+      data: { status: 'APPROVED', approvedTowTruckId: 7 },
     })
+  })
+
+  it('an app sign-up: the chosen password moves onto the truck as an owned password, and leaves the request', async () => {
+    // CreateAppRegistrationDto. Owned (`mustChangePassword: false`), so the
+    // Telegram link approval generates touches nothing for this driver — and
+    // the hash lives in exactly one row afterwards.
+    const { service, tx, create } = buildService({ source: 'APP', passwordHash: '$2b$12$app-chosen' } as never)
+    await service.approve(42, approveDto())
+
+    expect(create.mock.calls[0]![0].data).toMatchObject({ passwordHash: '$2b$12$app-chosen', mustChangePassword: false })
+    expect(tx.registrationRequest.update.mock.calls[0]![0]).toEqual({
+      where: { id: 42 },
+      data: { status: 'APPROVED', approvedTowTruckId: 7, passwordHash: null },
+    })
+  })
+
+  it('a website request starts the truck with no password, as it always has', async () => {
+    const data = await createdData()
+
+    expect(data).not.toHaveProperty('passwordHash')
+    expect(data).not.toHaveProperty('mustChangePassword')
   })
 
   it('still takes the photos from the request, which the page cannot edit', async () => {

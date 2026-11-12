@@ -33,6 +33,7 @@ const SEARCH_DEBOUNCE_MS = 180
 const MIN_QUERY_LENGTH = 2
 
 const router = useRouter()
+const localePath = useLocalePath()
 
 const query = ref('')
 const results = shallowRef<LocationSearchResult[]>([])
@@ -68,7 +69,8 @@ function go(result: LocationSearchResult): void {
   isOpen.value = false
   query.value = ''
   results.value = []
-  router.push(result.route)
+  // localePath: keeps /ru or /en — a plain path sent a Russian visitor to the Armenian page
+  router.push(localePath(result.route))
 }
 
 function move(delta: number): void {

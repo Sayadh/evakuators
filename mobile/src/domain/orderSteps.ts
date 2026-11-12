@@ -3,7 +3,7 @@
  *
  * The flow the driver walks (product decision, 2026-11):
  *
- *   accepted  → Call · [enter agreed price] · «Շարժվում եմ» · «Չեղարկել»
+ *   accepted  → Call · [enter agreed price — REQUIRED first when negotiated, 2026-11-12] · «Շարժվում եմ» · «Չեղարկել»
  *   en route  → Call · Navigation (if coordinates) · «Տեղում եմ» · «Խնդիր կա»
  *   arrived   → Call · [enter agreed price] · «Սկսել տեղափոխումը» · «Խնդիր կա»
  *   transport → Call · Navigation to destination (if any) · «Ավարտել» · «Խնդիր կա»
@@ -23,7 +23,7 @@ export interface OrderScreenPlan {
   navigateTo: { latitude: number; longitude: number } | null
   /** The driver may (and, before transport, must) record the agreed price */
   priceEntry: boolean
-  /** Transport is blocked only by the missing price */
+  /** The next step is blocked only by the missing price (setting off or transport) */
   priceBlocksTransport: boolean
   /** Bottom action: ask to cancel (before setting off) or report a problem */
   secondary: 'CANCEL' | 'PROBLEM' | null
@@ -39,7 +39,7 @@ export function planOrderScreen(order: PlanInput): OrderScreenPlan {
   let navigateTo: OrderScreenPlan['navigateTo'] = null
   if (order.status === 'EN_ROUTE_TO_PICKUP' && order.pickup.latitude !== null && order.pickup.longitude !== null) {
     navigateTo = { latitude: order.pickup.latitude, longitude: order.pickup.longitude }
-  } else if (order.status === 'TRANSPORTING' && order.destination) {
+  } else if (order.status === 'TRANSPORTING' && order.destination && order.destination.latitude !== null && order.destination.longitude !== null) {
     navigateTo = { latitude: order.destination.latitude, longitude: order.destination.longitude }
   }
 
@@ -47,7 +47,9 @@ export function planOrderScreen(order: PlanInput): OrderScreenPlan {
     primary,
     navigateTo,
     priceEntry: order.canSetPrice && !waitingForOperator,
-    priceBlocksTransport: order.status === 'ARRIVED_AT_PICKUP' && order.canSetPrice && primary === null,
+    // Since 2026-11-12 the server allows no step at all before the agreed price
+    // (accepted → «Շարժվում եմ» too), so the price IS the next step there as well
+    priceBlocksTransport: !waitingForOperator && order.canSetPrice && primary === null,
     secondary: waitingForOperator ? null : order.canCancel ? 'CANCEL' : 'PROBLEM',
     waitingForOperator,
   }

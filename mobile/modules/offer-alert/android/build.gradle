@@ -1,0 +1,21 @@
+// The offer alarm (incoming-call style) — a local Expo module, autolinked from
+// mobile/modules. See OfferAlarm.kt.
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'am.evakuators'
+version = '1.0.0'
+
+android {
+  namespace "am.evakuators.offeralert"
+  defaultConfig {
+    versionCode 1
+    versionName "1.0.0"
+  }
+}
+
+dependencies {
+  implementation 'androidx.core:core:1.17.0'
+}

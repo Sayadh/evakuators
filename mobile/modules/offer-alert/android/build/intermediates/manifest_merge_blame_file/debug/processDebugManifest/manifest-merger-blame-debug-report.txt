@@ -1,0 +1,21 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="am.evakuators.offeralert" >
+4
+5    <uses-sdk android:minSdkVersion="24" />
+5-->INJECTED
+5-->INJECTED
+6    <!--
+7    Full-screen intent: the offer opens over the lock screen like an incoming
+8    call. Android 14+ grants it by default only to calling/alarm apps; the app
+9    asks the driver to allow it (Settings → «Full screen notifications») and
+10    the Play Console declaration explains the use (docs/live-dispatch/12-store-submission.md).
+11    -->
+12    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+12-->/Users/mac/Desktop/evakuators-app/evakuators/mobile/modules/offer-alert/android/src/main/AndroidManifest.xml:8:3-79
+12-->/Users/mac/Desktop/evakuators-app/evakuators/mobile/modules/offer-alert/android/src/main/AndroidManifest.xml:8:20-76
+13    <uses-permission android:name="android.permission.VIBRATE" />
+13-->/Users/mac/Desktop/evakuators-app/evakuators/mobile/modules/offer-alert/android/src/main/AndroidManifest.xml:9:3-64
+13-->/Users/mac/Desktop/evakuators-app/evakuators/mobile/modules/offer-alert/android/src/main/AndroidManifest.xml:9:20-61
+14
+15</manifest>

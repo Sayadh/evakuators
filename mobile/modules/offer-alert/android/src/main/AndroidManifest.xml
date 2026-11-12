@@ -1,0 +1,10 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!--
+    Full-screen intent: the offer opens over the lock screen like an incoming
+    call. Android 14+ grants it by default only to calling/alarm apps; the app
+    asks the driver to allow it (Settings → «Full screen notifications») and
+    the Play Console declaration explains the use (docs/live-dispatch/12-store-submission.md).
+  -->
+  <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+  <uses-permission android:name="android.permission.VIBRATE" />
+</manifest>

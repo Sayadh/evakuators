@@ -195,7 +195,10 @@ const config: ExpoConfig = {
     // link time. Dynamic linkage is the supported combination (rnfirebase.io/ios-spm).
     ['expo-build-properties', { ios: { useFrameworks: 'dynamic' } }],
   ],
+  owner: 'sayadh',
   extra: {
+    /** EAS project (expo.dev/accounts/sayadh/projects/evakuators-driver) */
+    eas: { projectId: '5c8014aa-3e17-432c-93ff-cca756db6f48' },
     iosCriticalAlerts: IOS_CRITICAL_ALERTS,
     apiBaseUrl: API_BASE_URL,
     /** The website: privacy policy and account-deletion pages live there (/driver-app/…) */

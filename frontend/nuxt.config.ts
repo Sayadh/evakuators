@@ -179,6 +179,10 @@ export default defineNuxtConfig({
      * - `evakuators.am` — every real photo, served by nginx from the VPS disk
      *   at `/media/` (backend MEDIA_PUBLIC_URL). Staging lists it too, because
      *   its rows are copies of production's and point here.
+     * - `staging.evakuators.am` — photos uploaded ON staging (driver-app
+     *   sign-ups under test), which staging writes to its own MEDIA_DIR and
+     *   serves at https://staging.evakuators.am/media/. Our own host, so no
+     *   wider outbound reach than `evakuators.am` above.
      * - `picsum.photos` — mock-mode data only (frontend/mocks).
      * - `localhost` — `npm run dev` only, for a local backend with uploads
      *   enabled (`MEDIA_PUBLIC_URL=http://localhost:4002/media`). Never in a
@@ -191,6 +195,7 @@ export default defineNuxtConfig({
      */
     domains: [
       'evakuators.am',
+      'staging.evakuators.am',
       'picsum.photos',
       ...(process.env.NODE_ENV === 'development' ? ['localhost'] : []),
     ],

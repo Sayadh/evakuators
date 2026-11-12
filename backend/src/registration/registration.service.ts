@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common'
+import { RegistrationSource } from '@prisma/client'
 import { AdminNotificationService } from '../admin-auth/admin-notification.service'
 import { assertWithinArmenia } from '../common/coordinates'
 import type { ConsentRequestContext } from '../privacy-consent/consent-request-context'
@@ -13,6 +14,14 @@ export interface RegistrationCreatedDto {
   status: string
 }
 
+/**
+ * What only an app sign-up carries: the hash of the password the driver chose
+ * (see CreateAppRegistrationDto). Hashed by the caller, never stored in clear.
+ */
+export interface AppRegistrationAccount {
+  passwordHash: string
+}
+
 @Injectable()
 export class RegistrationService {
   constructor(
@@ -25,6 +34,7 @@ export class RegistrationService {
   async submit(
     dto: CreateRegistrationDto,
     consentContext: ConsentRequestContext,
+    appAccount?: AppRegistrationAccount,
   ): Promise<RegistrationCreatedDto> {
     // The version gate, before anything else is checked or written.
     //
@@ -124,7 +134,15 @@ export class RegistrationService {
     const { privacyConsentAccepted, ...data } = rest
     void privacyConsentAccepted
 
-    const request = await this.repository.create(data, imageIds, (registrationRequestId, tx) =>
+    // `password` exists only on CreateAppRegistrationDto; it must never reach
+    // the row in clear, whoever the caller is — only `appAccount.passwordHash`.
+    const { password, ...fields } = data as typeof data & { password?: string }
+    void password
+    const row = appAccount
+      ? { ...fields, source: RegistrationSource.APP, passwordHash: appAccount.passwordHash }
+      : fields
+
+    const request = await this.repository.create(row, imageIds, (registrationRequestId, tx) =>
       // Inside the transaction that creates the request — see
       // RegistrationRepository.create. A request stored without its consent is
       // a driver's data held with no record of permission to hold it, so the

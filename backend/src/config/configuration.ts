@@ -53,6 +53,7 @@ export interface AppConfig {
   }
   driverJwtSecret: string
   adminJwtSecret: string
+  adminRequire2fa: boolean
   /**
    * Pepper for hashing visitor ids in the analytics module
    * (see AnalyticsVisitorKeyService). Optional in the environment: when unset
@@ -164,6 +165,7 @@ export default (): AppConfig => ({
   },
   driverJwtSecret: driverJwtSecret(),
   adminJwtSecret: process.env.ADMIN_JWT_SECRET ?? '',
+  adminRequire2fa: process.env.ADMIN_REQUIRE_2FA === 'true',
   analyticsVisitorPepper: process.env.ANALYTICS_VISITOR_PEPPER || driverJwtSecret(),
   privacyConsentIpSecret: process.env.PRIVACY_CONSENT_IP_SECRET || driverJwtSecret(),
   routeMatrix: {

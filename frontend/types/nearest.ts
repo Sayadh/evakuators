@@ -41,3 +41,23 @@ export interface NearestSearchResult {
    */
   routed: boolean
 }
+
+/**
+ * `POST /nearest-tow-trucks/live` — ONE list, same shape as the existing
+ * search plus a `live` mark. A website driver who is online in the driver app
+ * with a fresh GPS fix is measured from where their phone is now (`live`);
+ * everyone else from the parking spot in their profile. A driver appears once.
+ * Live entries carry no coordinates; distance is rounded to 100 m and time to
+ * the minute. App-only drivers (not on the website) never appear here.
+ */
+export interface LiveNearestTowTruck extends NearestTowTruck {
+  live?: { freshness: 'UNDER_1_MIN' | 'UNDER_2_MIN' }
+}
+
+export interface LiveNearbyResult {
+  results: LiveNearestTowTruck[]
+  routed: boolean
+  liveCount: number
+  computedAt: string
+  disclaimer: 'NOT_A_RESERVATION'
+}

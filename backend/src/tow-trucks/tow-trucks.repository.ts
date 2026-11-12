@@ -530,7 +530,9 @@ export class TowTrucksRepository {
   ): Promise<TowTruck> {
     return this.prisma.towTruck.update({
       where: { id },
-      data: { isActive, deactivationReason: isActive ? null : deactivationReason },
+      // Activating an app-only truck publishes it: it is no longer "hidden
+      // because app-only" (see SiteListingService)
+      data: { isActive, deactivationReason: isActive ? null : deactivationReason, ...(isActive ? { appOnly: false } : {}) },
     })
   }
 
@@ -908,7 +910,8 @@ export class TowTrucksRepository {
   setPassword(id: number, passwordHash: string, mustChangePassword: boolean): Promise<TowTruck> {
     return this.prisma.towTruck.update({
       where: { id },
-      data: { passwordHash, mustChangePassword },
+      // A new password ends every website session issued before it
+      data: { passwordHash, mustChangePassword, sessionVersion: { increment: 1 } },
     })
   }
 
@@ -953,6 +956,7 @@ export class TowTrucksRepository {
       data: {
         passwordHash: null,
         mustChangePassword: false,
+        sessionVersion: { increment: 1 },
         telegramLinkToken: token,
         telegramLinkTokenExpiresAt: expiresAt,
       },

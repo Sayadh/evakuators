@@ -97,7 +97,7 @@ const chosenName = computed(
  * after.
  */
 const preview = computed(() =>
-  chosenName.value ? composeLocationName(chosenName.value, props.settlement) : '',
+  chosenName.value ? composeLocationName(chosenName.value, props.settlement, props.slug) : '',
 )
 
 /**

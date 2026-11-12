@@ -35,7 +35,7 @@ useSeoMetaData({
       </div>
     </header>
 
-    <NearestTowTrucksCta class="yerevan-page__nearest" />
+    <NearestTowTrucksCta with-routes class="yerevan-page__nearest" />
 
     <div v-if="pending" class="card-grid">
       <LoadingSkeleton variant="card" :count="12" />

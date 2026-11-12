@@ -9,6 +9,8 @@ import { NearestService } from '../src/nearest/nearest.service'
 import {
   ROUTE_ORS_DAILY_CALL_LIMIT,
   ROUTE_ORS_DAILY_QUOTA,
+  ROUTE_ORS_DISPATCH_DAILY_SHARE,
+  ROUTE_ORS_SITE_DAILY_SHARE,
   ROUTE_ORS_DAILY_SAFETY_MARGIN,
 } from '../src/routing/routing.constants'
 
@@ -48,9 +50,11 @@ describe('the day boundary', () => {
 })
 
 describe('the numbers', () => {
-  it('leaves a safety margin under the real ORS quota rather than spending it exactly', () => {
-    expect(ROUTE_ORS_DAILY_CALL_LIMIT).toBe(ROUTE_ORS_DAILY_QUOTA - ROUTE_ORS_DAILY_SAFETY_MARGIN)
+  it('splits the one key between the website and dispatch, leaving a safety margin', () => {
+    expect(ROUTE_ORS_DAILY_CALL_LIMIT).toBe(ROUTE_ORS_SITE_DAILY_SHARE)
+    expect(ROUTE_ORS_SITE_DAILY_SHARE + ROUTE_ORS_DISPATCH_DAILY_SHARE + ROUTE_ORS_DAILY_SAFETY_MARGIN).toBe(ROUTE_ORS_DAILY_QUOTA)
     expect(ROUTE_ORS_DAILY_SAFETY_MARGIN).toBeGreaterThan(0)
+    expect(ROUTE_ORS_DISPATCH_DAILY_SHARE).toBeGreaterThan(0)
   })
 })
 

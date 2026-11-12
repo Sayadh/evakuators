@@ -24,7 +24,7 @@ const faqItems = buildAllRegionsFaq()
 
     <h1>{{ t('regionsPage.title') }}</h1>
 
-    <NearestTowTrucksCta class="regions-page__nearest" />
+    <NearestTowTrucksCta with-routes class="regions-page__nearest" />
 
     <NuxtLinkLocale :to="getYerevanRoute()" class="regions-page__yerevan">
       <div>

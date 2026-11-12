@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { LANGUAGE_CHOICE_COOKIE_MAX_AGE, LANGUAGE_PROMPT_COOKIE } from '~/constants/languagePrompt'
 /**
  * Armenian / Русский / English.
  *
@@ -46,6 +47,18 @@ interface Props {
 withDefaults(defineProps<Props>(), { variant: 'inline' })
 
 const { locale, locales, t } = useI18n()
+
+// The visitor's own pick is remembered for the language prompt
+// (constants/languagePrompt.ts): picking RU/EN here means "stay", HY means "hy".
+const languageAnswer = useCookie<'hy' | 'stay' | null>(LANGUAGE_PROMPT_COOKIE, {
+  maxAge: LANGUAGE_CHOICE_COOKIE_MAX_AGE,
+  sameSite: 'lax',
+  path: '/',
+  default: () => null,
+})
+function rememberChoice(code: string): void {
+  languageAnswer.value = code === 'hy' ? 'hy' : 'stay'
+}
 const switchLocalePath = useSwitchLocalePath()
 const route = useRoute()
 
@@ -120,6 +133,7 @@ watch(() => route.fullPath, close)
       :class="{ 'lang__item--active': option.code === locale }"
       :hreflang="option.code"
       :aria-current="option.code === locale ? 'true' : undefined"
+      @click="rememberChoice(option.code)"
     >
       {{ option.code.toUpperCase() }}
       <span class="lang__full">{{ option.label }}</span>
@@ -158,6 +172,7 @@ watch(() => route.fullPath, close)
         :class="{ 'lang__option--active': option.code === locale }"
         :hreflang="option.code"
         :aria-current="option.code === locale ? 'true' : undefined"
+        @click="rememberChoice(option.code)"
       >
         <span class="lang__option-code">{{ option.code.toUpperCase() }}</span>
         <span class="lang__option-name">{{ option.label }}</span>

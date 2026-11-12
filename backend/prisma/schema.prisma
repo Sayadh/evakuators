@@ -18,9 +18,35 @@ enum RegistrationStatus {
   REJECTED
 }
 
+/// Where a registration request was filed. APP = the driver app's sign-up
+/// (2026-11): the same form, the same moderation and the same public profile as
+/// the website, plus a password the driver chose — see RegistrationRequest.passwordHash.
+enum RegistrationSource {
+  WEB
+  APP
+}
+
 enum UserRole {
   ADMIN
+  /// Live dispatch console only (/ops/dispatch/*). Refused by AdminJwtGuard,
+  /// so it reaches none of the pre-existing /admin routes. Migration
+  /// 20261108090000_add_dispatcher_role.
+  DISPATCHER
 }
+
+// Live dispatch tables (DriverDeviceSession, DriverPresence,
+// DriverLocationCurrent/History, DispatchOrder, DispatchAttempt,
+// DispatchCandidate, OrderOffer, OrderAssignment, OrderEvent, OrderAlert,
+// OrderDriverRequest, NotificationDelivery, OutboxEvent, IdempotencyKey,
+// DispatchSetting, RoutingUsageDay) are created by the hand-written
+// migrations 20261108090100_live_dispatch_core and _postgis and are accessed
+// ONLY through parameterised raw SQL in backend/src/live-dispatch/ — every
+// correctness rule there (partial unique indexes, FOR UPDATE, DB-clock
+// deadlines, ON CONFLICT … WHERE) is outside what the typed client expresses.
+// They are deliberately not modelled here; `prisma migrate diff` therefore
+// lists them as DROP TABLE lines, alongside the known DROP DEFAULT baseline
+// (docs/data-model.md § Migrations). Never apply that diff.
+// See docs/live-dispatch/03-data-model.md.
 
 /// Lifecycle of a driver's proposed edit to their own live profile.
 ///
@@ -95,6 +121,10 @@ enum PaymentKind {
   /// A placement at the top of the driver's own town page, for a number of
   /// days. Grants no access and must never reach a coverage query.
   PROMOTION
+  /// Money into the driver-app wallet (2026-11-12): only an amount. Credited
+  /// by live dispatch (backend/src/live-dispatch/wallet) through the payment
+  /// handler registry in IdramModule; grants no access and no placement.
+  WALLET_TOPUP
 }
 
 /// Where a PROMOTION payment puts the driver. Two products on one payment path.
@@ -362,6 +392,9 @@ model TowTruck {
   /// and a reactivated driver carries no stale explanation. See
   /// AdminService.setTowTruckActive and DeactivationReason.
   deactivationReason DeactivationReason?
+  /// Hidden from the site because the driver signed up in the app and has not
+  /// been published yet (see SiteListingRequest) — NOT an admin deactivation.
+  appOnly            Boolean             @default(false)
   /// A paid top placement. Was purely editorial (the homepage's "best tow
   /// trucks" pick); it now also pins the driver to the top of their OWN city or
   /// district page, which is the thing being sold.
@@ -452,6 +485,7 @@ model TowTruck {
   /// ProfileChangeRequest. Cascades on delete like everything else here, so
   /// AdminService.deleteTowTruck() needs no extra cleanup step.
   profileChanges ProfileChangeRequest[]
+  siteListingRequests SiteListingRequest[]
 
   /// Every time this driver consented to (or withdrew consent for) the
   /// processing and publication of their data — see DriverPrivacyConsent. An
@@ -495,6 +529,11 @@ model TowTruck {
   /// "not holding a temporary password", which is true: they held no password
   /// at all.
   mustChangePassword Boolean @default(false)
+
+  /// Website sessions (2026-11-12 security audit): every website token
+  /// carries this number (`sv`); a password change or an admin reset bumps it,
+  /// so every token issued before stops working (DriverJwtGuard).
+  sessionVersion Int @default(0)
 
   // Telegram — login-code delivery until password login replaced it, now the
   // channel for contact notices and for the one-time password handover.
@@ -608,6 +647,30 @@ model TowTruckImage {
 /// order, and the second would silently overwrite the first's fields. A driver
 /// who saves again while one is pending REPLACES it — same row, new diff — which
 /// is also why `createdAt` is refreshed on resubmission.
+enum SiteListingStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// An app-only driver's request to be published on the website too. An admin
+/// reviews the profile and approves (TowTruck goes live) or rejects with a reason.
+model SiteListingRequest {
+  id         Int      @id @default(autoincrement())
+  towTruckId Int
+  towTruck   TowTruck @relation(fields: [towTruckId], references: [id], onDelete: Cascade)
+
+  status           SiteListingStatus @default(PENDING)
+  note             String?
+  rejectionReason  String?
+  createdAt        DateTime          @default(now())
+  reviewedAt       DateTime?
+  reviewedByUserId Int?
+
+  @@index([towTruckId])
+  @@index([status, createdAt])
+}
+
 model ProfileChangeRequest {
   id         Int      @id @default(autoincrement())
   towTruckId Int
@@ -857,7 +920,31 @@ model RegistrationRequest {
   /// `approve()` re-points it at the TowTruck it creates.
   privacyConsents DriverPrivacyConsent[]
 
+  /// WEB for the website form, APP for the driver app's sign-up.
+  source RegistrationSource @default(WEB)
+
+  /// bcrypt hash of the password the driver chose in the app (APP only — the
+  /// website form asks for none; its drivers get one over Telegram, see
+  /// docs/auth-and-security.md § "Where a driver's password comes from").
+  ///
+  /// Moved onto TowTruck.passwordHash by AdminService.approve and cleared here
+  /// in the same transaction, so a hash only ever lives in one row. Never
+  /// returned by any API — toAdminRegistrationSummary strips it.
+  passwordHash String?
+
+  /// The truck this request became, set by approve(). Lets the app grant
+  /// itself access on the driver's first sign-in (FleetAccess.authenticate):
+  /// someone who registered IN the app must be able to use it once approved.
+  approvedTowTruckId Int?
+
+  /// Made by an admin from an app-only driver's account («Հրապարակել կայքում»):
+  /// approval links that FleetDriver to the new truck instead of a new account.
+  fleetDriverId Int?
+
   @@index([status])
+  @@index([fleetDriverId])
+  @@index([phone])
+  @@index([approvedTowTruckId])
 }
 
 /// "Ազատ երթուղիներ" — a driver heading somewhere empty posts a route so

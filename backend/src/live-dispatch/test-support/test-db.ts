@@ -1,0 +1,202 @@
+/**
+ * Creates a throw-away database, applies EVERY migration in order, and hands
+ * back a pool. TEST SUPPORT ONLY.
+ *
+ * Opt-in by environment, never by accident: it refuses to run unless
+ * `LIVE_DISPATCH_TEST_DATABASE_URL` is set, and it only ever CREATEs and DROPs
+ * databases whose name starts with `ld_test_`. It never reads `DATABASE_URL`
+ * (docs/testing.md: a test must not silently open whatever database that
+ * variable happens to point at).
+ *
+ * PostGIS: if the server has the extension it is used for real; if not, the
+ * PostGIS statements of the original nearest-search migration are stripped
+ * (the same treatment `migrations.pglite.spec.ts` gives them) and the
+ * live-dispatch PostGIS migration is skipped — and `hasPostgis` says so, so
+ * spatial tests can skip themselves loudly rather than pass vacuously.
+ */
+import { randomBytes } from 'node:crypto'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import type { SqlDatabase } from '../platform/sql'
+import { PgPool, PgWireClient, parseConnectionString } from './pg-wire'
+import { PgliteDatabase } from './pglite-db'
+
+const MIGRATIONS_DIR = join(__dirname, '..', '..', '..', 'prisma', 'migrations')
+const LIVE_POSTGIS_MIGRATION = '20261108090200_live_dispatch_postgis'
+
+/** A real server's pool, or the in-memory PGlite one (`LIVE_DISPATCH_TEST_DATABASE_URL=pglite`) */
+export type TestPool = SqlDatabase & { end(): Promise<void> }
+
+export interface TestDatabase {
+  pool: TestPool
+  name: string
+  hasPostgis: boolean
+  url: string
+  drop(): Promise<void>
+}
+
+export function testDatabaseUrl(): string | null {
+  return process.env.LIVE_DISPATCH_TEST_DATABASE_URL ?? null
+}
+
+function withoutPostgis(sql: string): string {
+  return sql
+    .replace(/CREATE EXTENSION IF NOT EXISTS postgis;/gi, '')
+    .replace(/ALTER TABLE "TowTruck"\s+ADD COLUMN "location"[\s\S]*?STORED;/gi, '')
+    .replace(/CREATE INDEX "TowTruck_location_gist"[\s\S]*?;/gi, '')
+}
+
+export async function createTestDatabase(): Promise<TestDatabase> {
+  if (testDatabaseUrl() === 'pglite') return createPgliteDatabase()
+  const url = testDatabaseUrl()
+  if (!url) throw new Error('LIVE_DISPATCH_TEST_DATABASE_URL is not set')
+  const base = parseConnectionString(url)
+  const name = `ld_test_${randomBytes(5).toString('hex')}`
+
+  const admin = new PgWireClient(base)
+  await admin.connect()
+  await admin.query(`CREATE DATABASE ${name}`)
+  const [{ available }] = await admin.query<{ available: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'postgis') AS available`,
+  )
+  await admin.close()
+
+  const options = { ...base, database: name }
+  const setup = new PgWireClient(options)
+  await setup.connect()
+  for (const dir of readdirSync(MIGRATIONS_DIR).filter((d) => /^\d+_/.test(d)).sort()) {
+    if (!available && dir === LIVE_POSTGIS_MIGRATION) continue
+    let sql = readFileSync(join(MIGRATIONS_DIR, dir, 'migration.sql'), 'utf8')
+    if (!available) sql = withoutPostgis(sql)
+    try {
+      // Applied verbatim, as `prisma migrate deploy` would, in one transaction
+      await setup.simpleQuery(`BEGIN;\n${sql}\nCOMMIT;`)
+    } catch (error) {
+      await setup.simpleQuery('ROLLBACK').catch(() => undefined)
+      throw new Error(`${dir}: ${(error as Error).message}`)
+    }
+  }
+  await setup.close()
+
+  const pool = new PgPool(options, 40)
+  return {
+    pool,
+    name,
+    hasPostgis: available,
+    url: `${url.replace(/\/[^/]*$/, '')}/${name}`,
+    async drop() {
+      await pool.end()
+      const cleanup = new PgWireClient(base)
+      await cleanup.connect()
+      await cleanup.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`)
+      await cleanup.close()
+    },
+  }
+}
+
+/** Every migration on an in-memory PGlite (no server, no PostGIS) — see pglite-db.ts */
+async function createPgliteDatabase(): Promise<TestDatabase> {
+  const pool = await PgliteDatabase.create()
+  for (const dir of readdirSync(MIGRATIONS_DIR).filter((d) => /^\d+_/.test(d)).sort()) {
+    if (dir === LIVE_POSTGIS_MIGRATION) continue
+    const sql = withoutPostgis(readFileSync(join(MIGRATIONS_DIR, dir, 'migration.sql'), 'utf8'))
+    try {
+      await pool.exec(sql)
+    } catch (error) {
+      throw new Error(`${dir}: ${(error as Error).message}`)
+    }
+  }
+  return { pool, name: 'pglite', hasPostgis: false, url: 'pglite', drop: () => pool.end() }
+}
+
+/** Inserts a minimal approved TowTruck row and returns its id */
+export async function insertTowTruck(
+  pool: SqlDatabase,
+  overrides: Partial<{
+    vehicleType: string
+    capacityTons: number
+    manipulator: boolean
+    wheelSkates: boolean
+    isActive: boolean
+    phone: string
+    passwordHash: string | null
+  }> = {},
+): Promise<number> {
+  const suffix = randomBytes(4).toString('hex')
+  const phone = overrides.phone ?? `+3749${String(Math.floor(Math.random() * 1e7)).padStart(7, '0')}`
+  const [row] = await pool.query<{ id: number }>(
+    `INSERT INTO "TowTruck" ("slug", "driverName", "phone", "description", "vehicleBrand", "vehicleYear",
+       "vehicleType", "capacityTons", "manipulator", "wheelSkates", "isActive", "locationName",
+       "services", "serviceAreas", "passwordHash", "updatedAt")
+     VALUES ($1, $2, $3, '', 'Test', 2015, $4, $5::float8, $6::boolean, $7::boolean, $8::boolean, 'Yerevan',
+       '{}'::text[], '[]'::jsonb, $9, now())
+     RETURNING "id"`,
+    [
+      `t-${suffix}`,
+      `Driver ${suffix}`,
+      phone,
+      overrides.vehicleType ?? 'flatbed',
+      overrides.capacityTons ?? 3.5,
+      overrides.manipulator ?? false,
+      overrides.wheelSkates ?? false,
+      overrides.isActive ?? true,
+      overrides.passwordHash ?? null,
+    ],
+  )
+  return row.id
+}
+
+/** A website driver who was GRANTED app access: TowTruck + SITE_LINKED FleetDriver */
+export async function insertSiteDriver(
+  pool: SqlDatabase,
+  overrides: Parameters<typeof insertTowTruck>[1] & { accessStatus?: 'ACTIVE' | 'SUSPENDED' } = {},
+): Promise<{ driverId: number; towTruckId: number }> {
+  const towTruckId = await insertTowTruck(pool, overrides)
+  const [row] = await pool.query<{ id: number }>(
+    `INSERT INTO "FleetDriver" ("kind", "status", "towTruckId") VALUES ('SITE_LINKED', $2::"FleetDriverStatus", $1::int) RETURNING "id"`,
+    [towTruckId, overrides.accessStatus ?? 'ACTIVE'],
+  )
+  return { driverId: Number(row.id), towTruckId }
+}
+
+/** An app-only driver (never on the website), ACTIVE unless stated */
+export async function insertAppOnlyDriver(
+  pool: SqlDatabase,
+  overrides: Partial<{
+    vehicleType: string
+    capacityTons: number
+    maxLoadTons: number | null
+    manipulator: boolean
+    wheelSkates: boolean
+    status: 'PENDING_REVIEW' | 'ACTIVE' | 'SUSPENDED' | 'REJECTED'
+    phone: string
+    passwordHash: string
+  }> = {},
+): Promise<number> {
+  const phone = overrides.phone ?? `+3747${String(Math.floor(Math.random() * 1e7)).padStart(7, '0')}`
+  const [row] = await pool.query<{ id: number }>(
+    `INSERT INTO "FleetDriver" ("kind", "status", "phone", "passwordHash", "driverName", "vehicleType", "capacityTons",
+                                "maxLoadTons", "manipulator", "wheelSkates")
+     VALUES ('APP_ONLY', $1::"FleetDriverStatus", $2, $3, $4, $5, $6::float8, $7::float8, $8::boolean, $9::boolean) RETURNING "id"`,
+    [
+      overrides.status ?? 'ACTIVE',
+      phone,
+      overrides.passwordHash ?? 'x',
+      `App driver ${randomBytes(3).toString('hex')}`,
+      overrides.vehicleType ?? 'flatbed',
+      overrides.capacityTons ?? 3.5,
+      overrides.maxLoadTons ?? null,
+      overrides.manipulator ?? false,
+      overrides.wheelSkates ?? false,
+    ],
+  )
+  return Number(row.id)
+}
+
+export async function insertAdminUser(pool: SqlDatabase, role: 'ADMIN' | 'DISPATCHER' = 'ADMIN'): Promise<number> {
+  const [row] = await pool.query<{ id: number }>(
+    `INSERT INTO "User" ("email", "passwordHash", "role", "updatedAt") VALUES ($1, 'x', $2::"UserRole", now()) RETURNING "id"`,
+    [`ops-${randomBytes(4).toString('hex')}@test.local`, role],
+  )
+  return row.id
+}

@@ -108,16 +108,17 @@ export class MyTowTruckController {
    * route would let a stolen token be used to guess the password it did not
    * come with (see ChangePasswordDto for why that check exists at all).
    *
-   * Answers 204, not the profile. Nothing about the truck changed, and echoing
-   * the profile back would suggest the response is worth reading.
+   * Answers the NEW website token (2026-11-12): the change ends every
+   * session issued before it, this one included, so the dashboard swaps in
+   * the token it gets back and stays signed in.
    */
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Patch('password')
-  @HttpCode(204)
+  @HttpCode(200)
   changePassword(
     @Req() request: AuthenticatedDriverRequest,
     @Body() dto: ChangePasswordDto,
-  ): Promise<void> {
+  ): Promise<{ token: string }> {
     return this.driverAuthService.changePassword(
       request.towTruckId,
       dto.currentPassword,

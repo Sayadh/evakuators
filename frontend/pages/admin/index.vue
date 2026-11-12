@@ -85,6 +85,10 @@ function isUnauthorized(error: unknown): boolean {
 
 async function afterLogin(token: string): Promise<void> {
   adminAuth.login(token)
+  if (adminAuth.role === 'DISPATCHER') {
+    await navigateTo('/admin/orders')
+    return
+  }
   await Promise.all([loadRegistrations(), loadProfileChanges(), loadReviews(), loadTowTrucks()])
 }
 
@@ -371,10 +375,10 @@ async function sendBroadcast(): Promise<void> {
   if (ids.length === 0 || !text || broadcastMessageTooLong.value) return
 
   if (
-    !confirm(
-      `Ուղարկե՞լ այս հաղորդագրությունը ${ids.length} վարորդի Telegram-ով։ ` +
-        'Հետ կանչել հնարավոր չէ։',
-    )
+    !(await confirmDialog({
+      message: `Ուղարկե՞լ այս հաղորդագրությունը ${ids.length} վարորդի Telegram-ով։ ` + 'Հետ կանչել հնարավոր չէ։',
+      confirmLabel: 'Ուղարկել',
+    }))
   ) {
     return
   }
@@ -587,7 +591,7 @@ async function toggleTowTruckActive(truck: AdminTowTruck): Promise<void> {
     deactivateDialogOpen.value = true
     return
   }
-  if (!confirm(`Ակտիվացնե՞լ ${truck.driverName}-ի պրոֆիլը։`)) return
+  if (!(await confirmDialog({ message: `Ակտիվացնե՞լ ${truck.driverName}-ի պրոֆիլը։`, confirmLabel: 'Ակտիվացնել' }))) return
 
   actioningId.value = truck.id
   try {
@@ -762,7 +766,7 @@ async function togglePartner(truck: AdminTowTruck): Promise<void> {
  */
 async function togglePaymentDue(truck: AdminTowTruck): Promise<void> {
   const turningOn = !truck.paymentDueAt
-  if (turningOn && !confirm(PAYMENT_DUE_CONFIRM)) return
+  if (turningOn && !(await confirmDialog(PAYMENT_DUE_CONFIRM))) return
 
   actioningId.value = truck.id
   towTrucksError.value = ''
@@ -833,11 +837,11 @@ async function toggleTowTruckHeavyEquipment(truck: AdminTowTruck): Promise<void>
 async function resendTelegramLink(truck: AdminTowTruck): Promise<void> {
   if (
     truck.hasTelegramLinked &&
-    !confirm(
+    !(await confirmDialog(
       `Փոխե՞լ ${truck.driverName}-ի Telegram-ը։ Նոր link-ը սեղմելուց հետո հին Telegram-ը ` +
         'կդադարի աշխատել՝ ծանուցումներն այլևս այնտեղ չեն գա։ Եթե վարորդը դեռ չի փոխել ' +
         'իր ժամանակավոր գաղտնաբառը, կստանա նորը։',
-    )
+    ))
   ) {
     return
   }
@@ -873,11 +877,14 @@ async function resendTelegramLink(truck: AdminTowTruck): Promise<void> {
  */
 async function resetDriverPassword(truck: AdminTowTruck): Promise<void> {
   if (
-    !confirm(
-      `Զրոյացնե՞լ ${truck.driverName}-ի գաղտնաբառը։ Հին գաղտնաբառը կջնջվի անմիջապես, և ` +
+    !(await confirmDialog({
+      message:
+        `Զրոյացնե՞լ ${truck.driverName}-ի գաղտնաբառը։ Հին գաղտնաբառը կջնջվի անմիջապես, և ` +
         'վարորդը մուտք գործել չի կարողանա այնքան ժամանակ, մինչև չսեղմի նոր link-ը։ ' +
         'Link-ը կհայտնվի հաջորդ պատուհանում — պարտադիր ուղարկիր իրեն։',
-    )
+      confirmLabel: 'Զրոյացնել',
+      danger: true,
+    }))
   ) {
     return
   }
@@ -940,10 +947,10 @@ async function savePhone(truck: AdminTowTruck): Promise<void> {
   }
 
   if (
-    !confirm(
+    !(await confirmDialog(
       `Փոխե՞լ ${truck.driverName}-ի հիմնական հեռախոսահամարը (${truck.phone} → ${phoneEditValue.value})։ ` +
         'Սա driver-ի մուտքի հեռախոսահամարն է. հին համարով այլևս մուտք գործել հնարավոր չի լինի։',
-    )
+    ))
   ) {
     return
   }
@@ -1092,6 +1099,7 @@ async function savePrimaryArea(truck: AdminTowTruck): Promise<void> {
         truck.serviceAreas.find((area) => area.slug === primaryAreaForm.slug)?.name ??
           cityOrDistrictLabel(primaryAreaForm.slug),
         primaryAreaForm.settlement,
+        primaryAreaForm.slug,
       ),
     })
 
@@ -1157,7 +1165,7 @@ async function removeServiceArea(truck: AdminTowTruck, area: AdminServiceArea): 
     ? remaining.find((item) => item.type !== LocationType.Route)
     : undefined
 
-  const confirmed = confirm(
+  const confirmed = await confirmDialog(
     `Հեռացնե՞լ «${area.name}»-ը ${truck.driverName}-ի սպասարկվող տարածքներից։\n\n` +
       'Հաստատելուց հետո այդ տարածքը կհեռանա նաև վարորդի պրոֆիլից, և նա այլևս չի երևա ' +
       'այդ վայրի որոնման արդյունքներում։ Վարորդն ինքը կարող է այն հետ ավելացնել իր էջից։' +
@@ -1200,11 +1208,15 @@ async function removeServiceArea(truck: AdminTowTruck, area: AdminServiceArea): 
 
 /** Irreversible — deletes the truck, its images (DB row + file on disk) and reviews */
 async function deleteTowTruck(truck: AdminTowTruck): Promise<void> {
-  const confirmed = confirm(
-    `Ջնջե՞լ ${truck.driverName}-ի («${truck.slug}») ամբողջ պրոֆիլը։ Այս գործողությունը ՉԻ ՀԵՏԱՐԿՎՈՒՄ. ` +
+  const confirmed = await confirmDialog({
+    title: 'Ջնջե՞լ պրոֆիլը',
+    message:
+      `Ջնջե՞լ ${truck.driverName}-ի («${truck.slug}») ամբողջ պրոֆիլը։ Այս գործողությունը ՉԻ ՀԵՏԱՐԿՎՈՒՄ. ` +
       'նկարները, կարծիքները և մուտքի պատմությունը ընդմիշտ կջնջվեն։ Եթե ուղղակի ուզում ես ժամանակավորապես թաքցնել, ' +
       'օգտագործիր "Ապաակտիվացնել" կոճակը փոխարենը։',
-  )
+    confirmLabel: 'Ջնջել ընդմիշտ',
+    danger: true,
+  })
   if (!confirmed) return
 
   actioningId.value = truck.id
@@ -1298,12 +1310,29 @@ async function submitReject(): Promise<void> {
   }
 }
 
+/** App drivers asking to be published on the site — the nav link's counter */
+const siteListingPending = ref(0)
+async function loadSiteListingCount(): Promise<void> {
+  try {
+    siteListingPending.value = (await adminRepository.siteListingCount()).pending
+  } catch {
+    siteListingPending.value = 0
+  }
+}
+
 onMounted(() => {
   if (!apiEnabled || !adminAuth.isLoggedIn) return
+  // A DISPATCHER session can use only the live dispatch console; every
+  // request this page makes would be refused (403) for them.
+  if (adminAuth.role === 'DISPATCHER') {
+    void navigateTo('/admin/orders')
+    return
+  }
   void loadRegistrations()
   void loadProfileChanges()
   void loadReviews()
   void loadTowTrucks()
+  void loadSiteListingCount()
 })
 
 watch(statusFilter, () => {
@@ -1386,7 +1415,7 @@ async function approveReview(review: AdminReview): Promise<void> {
 }
 
 async function rejectReview(review: AdminReview): Promise<void> {
-  if (!confirm(`Ջնջե՞լ ${review.authorName}-ի կարծիքը։`)) return
+  if (!(await confirmDialog({ message: `Ջնջե՞լ ${review.authorName}-ի կարծիքը։`, confirmLabel: 'Ջնջել', danger: true }))) return
 
   actioningId.value = review.id
   try {
@@ -1408,7 +1437,9 @@ async function rejectReview(review: AdminReview): Promise<void> {
         <!-- First, because it is the only one used while a customer is on the
              phone — the other links are desk work that can wait. -->
         <NuxtLink to="/admin/dispatch" class="admin-page__nav-link">Ուղղորդում</NuxtLink>
+        <NuxtLink to="/admin/orders" class="admin-page__nav-link">Պատվերներ</NuxtLink>
         <NuxtLink to="/admin/payments" class="admin-page__nav-link">Վճարումներ</NuxtLink>
+        <NuxtLink to="/admin/site-listing" class="admin-page__nav-link">Կայքի հայտեր<template v-if="siteListingPending > 0"> ({{ siteListingPending }})</template></NuxtLink>
         <AppButton variant="outline" size="sm" @click="logout">
           Դուրս գալ
         </AppButton>
@@ -1517,6 +1548,7 @@ async function rejectReview(review: AdminReview): Promise<void> {
                 <!-- Only while PENDING — see the identical note on the review
                      page for why an already-decided request always reads
                      `null` here regardless of what the driver actually did. -->
+                <AppBadge v-if="request.source === 'APP'" variant="primary">Հավելվածից</AppBadge>
                 <AppBadge
                   v-if="request.status === 'PENDING'"
                   :variant="request.privacyConsent ? 'success' : 'danger'"

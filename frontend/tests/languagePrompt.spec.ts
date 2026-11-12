@@ -68,6 +68,13 @@ describe('LanguagePrompt wiring', () => {
     expect(component).toContain('maxAge: LANGUAGE_PROMPT_COOKIE_MAX_AGE')
   })
 
+  it('a language picked in the switcher is remembered, so the prompt never undoes it', () => {
+    const switcher = readFileSync(`${ROOT}components/layout/LanguageSwitcher.vue`, 'utf8')
+    expect(switcher).toContain('LANGUAGE_PROMPT_COOKIE')
+    expect(switcher).toContain('maxAge: LANGUAGE_CHOICE_COOKIE_MAX_AGE')
+    expect(switcher.match(/@click="rememberChoice\(option\.code\)"/g)?.length).toBe(2)
+  })
+
   it('is mounted once, in the default layout', () => {
     expect(layout).toContain('<LanguagePrompt />')
   })

@@ -256,6 +256,23 @@ const LINK_HINT_ONBOARDING =
   'կապակցվում է, և նույն պահին այնտեղ կստանա իր մուտքի գաղտնաբառը (եթե դեռ չունի իրենը)։ ' +
   'Link-ը վավեր է 7 օր։'
 
+// A driver who registered from the APP already chose a password there: they
+// sign in with it straight away, and Telegram is only an optional extra
+// (linking it never touches that password — see issueTemporaryPassword).
+const LINK_HINT_APP =
+  'Վարորդը գրանցվել է հավելվածից. նա արդեն կարող է մտնել հավելված իր հեռախոսահամարով ' +
+  'և գրանցվելիս ընտրած գաղտնաբառով։ Ոչինչ ուղարկել պետք չէ։ Կայքում նրա էջը ՉԻ երևում, ' +
+  'մինչև նա ինքը հայտ չուղարկի հավելվածի պրոֆիլից («Կայքի հայտեր» բաժին)։'
+const LINK_HINT_APP_OPTIONAL =
+  'Ոչ պարտադիր․ կայքում հրապարակվելուց հետո վարորդը Telegram-ը կարող է կապել հենց հավելվածից։ ' +
+  'Կապելը նրա գաղտնաբառը ՉԻ փոխում։ Link-ը վավեր է 7 օր։'
+const approvedFromApp = ref(false)
+/** Made from an existing app driver: published right away, same account */
+const publishedAppDriver = ref(false)
+const LINK_HINT_APP_DRIVER =
+  'Էջը հրապարակված է կայքում, և հավելվածի հաշիվը կապված է դրան. վարորդը շարունակում է մտնել նույն ' +
+  'հեռախոսահամարով և գաղտնաբառով, պատվերների պատմությունն ու հաշիվը պահպանված են։ Ոչինչ ուղարկել պետք չէ։'
+
 /**
  * Runs the shared rules plus this page's own two, and hands back the parsed
  * coordinate pair so the string in the box is read exactly once — the same
@@ -319,7 +336,7 @@ async function approve(): Promise<void> {
     capacityTons: representativeCapacityTons(form.capacity),
     // Composed, never typed: the backend has no geography and cannot rebuild
     // «Վարդենիս» from `vardenis`, so this string is stored exactly as sent.
-    locationName: composeLocationName(primaryName, adminForm.primarySettlement),
+    locationName: composeLocationName(primaryName, adminForm.primarySettlement, adminForm.primarySlug),
     description: adminForm.description.trim() || undefined,
     ...placement,
     // Resolved to real Armenian names here — the backend has no geography data
@@ -337,6 +354,8 @@ async function approve(): Promise<void> {
   submitting.value = true
   try {
     const result = await adminRepository.approveRegistration(request.value.id, payload)
+    approvedFromApp.value = request.value.source === 'APP'
+    publishedAppDriver.value = request.value.fleetDriverId != null
     telegramLinkUrl.value = result.telegramLinkUrl
     telegramLinkCopied.value = false
     telegramLinkModalOpen.value = true
@@ -363,7 +382,7 @@ function backToPanel(): void {
 /* ── Reject ── */
 async function reject(): Promise<void> {
   if (!request.value) return
-  if (!confirm(`Մերժե՞լ ${request.value.firstName} ${request.value.lastName}-ի հայտը։`)) return
+  if (!(await confirmDialog({ message: `Մերժե՞լ ${request.value.firstName} ${request.value.lastName}-ի հայտը։`, confirmLabel: 'Մերժել', danger: true }))) return
 
   submitError.value = ''
   submitting.value = true
@@ -419,6 +438,10 @@ async function reject(): Promise<void> {
             "no consent" here regardless of what the driver actually did —
             showing the badge then would just be wrong, not merely stale.
           -->
+          <!-- Filed from the driver app: approving it also opens the app to
+               this driver with the password they chose there. -->
+          <AppBadge v-if="request.fleetDriverId != null" variant="accent">Հավելվածի վարորդ → կայք․ լրացրեք պակասող դաշտերը</AppBadge>
+          <AppBadge v-else-if="request.source === 'APP'" variant="primary">Գրանցվել է հավելվածից</AppBadge>
           <AppBadge v-if="isPending" :variant="request.privacyConsent ? 'success' : 'danger'">
             {{
               request.privacyConsent
@@ -525,12 +548,26 @@ async function reject(): Promise<void> {
          a 7-day credential, and navigating away before an admin has copied it
          would mean regenerating it from the truck list to get another. -->
     <AppModal v-model="telegramLinkModalOpen" title="Պրոֆիլը ստեղծված է">
-      <p class="review__hint">{{ LINK_HINT_ONBOARDING }}</p>
-      <p class="review__link">{{ telegramLinkUrl }}</p>
-      <AppButton variant="outline" block @click="copyTelegramLink">
-        {{ telegramLinkCopied ? 'Պատճենված է ✓' : 'Պատճենել link-ը' }}
-      </AppButton>
-      <AppButton variant="primary" block @click="backToPanel">Վերադառնալ վահանակ</AppButton>
+      <template v-if="approvedFromApp">
+        <p class="review__hint"><strong>{{ publishedAppDriver ? LINK_HINT_APP_DRIVER : LINK_HINT_APP }}</strong></p>
+        <AppButton variant="primary" block @click="backToPanel">Վերադառնալ վահանակ</AppButton>
+        <details class="review__optional">
+          <summary>Telegram-ի կապում (ոչ պարտադիր)</summary>
+          <p class="review__hint">{{ LINK_HINT_APP_OPTIONAL }}</p>
+          <p class="review__link">{{ telegramLinkUrl }}</p>
+          <AppButton variant="outline" block @click="copyTelegramLink">
+            {{ telegramLinkCopied ? 'Պատճենված է ✓' : 'Պատճենել link-ը' }}
+          </AppButton>
+        </details>
+      </template>
+      <template v-else>
+        <p class="review__hint">{{ LINK_HINT_ONBOARDING }}</p>
+        <p class="review__link">{{ telegramLinkUrl }}</p>
+        <AppButton variant="outline" block @click="copyTelegramLink">
+          {{ telegramLinkCopied ? 'Պատճենված է ✓' : 'Պատճենել link-ը' }}
+        </AppButton>
+        <AppButton variant="primary" block @click="backToPanel">Վերադառնալ վահանակ</AppButton>
+      </template>
     </AppModal>
   </div>
 </template>
@@ -659,6 +696,17 @@ async function reject(): Promise<void> {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-3);
+  }
+
+  &__optional {
+    margin-top: var(--space-4);
+    display: grid;
+    gap: var(--space-3);
+
+    summary {
+      cursor: pointer;
+      color: var(--color-text-muted, inherit);
+    }
   }
 
   &__link {

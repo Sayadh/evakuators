@@ -24,6 +24,8 @@ number in this codebase, it is not arbitrary. Staging (see
 ```
 frontend/     Nuxt 3, Vue 3 Composition API, TypeScript, Pinia, SCSS — port 3002
 backend/      NestJS, Prisma, PostgreSQL, photos in MEDIA_DIR — port 4002, routes under /api/v1
+              + dist/worker.js (live dispatch worker, PM2 `evakuators-worker`, binds no port)
+mobile/       Driver app — Expo SDK 58 development build (React Native), see docs/live-dispatch/06-mobile.md
 nginx/        Example reverse-proxy config for production
 scripts/      Ops scripts run on the VPS (backup-db.sh)
 ecosystem.config.js   PM2 process definitions for both apps
@@ -31,7 +33,15 @@ docs/         Deep-dive docs — read these before making non-trivial changes
 ```
 
 Two completely separate npm projects, two completely separate deploys. There
-is no shared code, no shared types, no monorepo tool (no Turborepo/Nx). When
+is no shared code, no shared types, no monorepo tool (no Turborepo/Nx) between
+frontend and backend. **One deliberate exception: `mobile/` imports the
+website's PURE modules directly** (`~/…` → `../frontend`, see
+`mobile/metro.config.js`) — the registration form state/validator/payload, the
+geography, the service and vehicle taxonomies, the locale JSON and the driver
+app's privacy text — because the app's sign-up IS the website's registration
+and its profile editor IS the dashboard (2026-11). So a change to those
+frontend files ships in the next app build too; keep them free of Vue/Nuxt
+(`mobile/test/sharedForms.test.ts` enforces it). When
 something needs to stay in sync between them (see "Manual sync points"
 below), it is only enforced by comments and human/AI discipline — nothing
 catches a drift at compile time or in CI.
@@ -247,6 +257,8 @@ assume one is unused:
 | Touch a driver's base (`citySlug`/`districtSlug`/`locationName`) or the order of a city listing | `docs/locations.md` § "The base" — the base must be one of the served areas (`backend/src/tow-trucks/placement.ts`, one copy for all three write paths), and it **may be a road corridor** — stored as an empty `citySlug`/`districtSlug` plus the corridor's name, so the truck keeps its marz page and has no city page, the label is composed on the frontend because the backend has no geography, and city pages rank locally-based drivers above everyone else in the Recommended order **only** |
 | Change a driver's coverage from `/admin` | `docs/locations.md` § "An admin can remove a single area" — the endpoint takes the slug to REMOVE, never the new list, which is what lets it skip the coverage cap; re-read that before making it a general editor |
 | Touch the base parking coordinates (lat/lng) | `backend/src/common/coordinates.ts` + `frontend/utils/coordinates.ts` — one rule each side, mirrored by hand; the UI is `CoordinatesInput.vue` / `CoordinatesDialog.vue`, shared by registration, the driver dashboard and `/admin` |
+| Touch the driver app's sign-up or profile pages | `docs/live-dispatch/06-mobile.md` § "Գրանցում և պրոֆիլ" + `11-driver-access.md` § "Գրանցում հավելվածում" — the app files a WEBSITE registration (`POST /driver-app/site-registrations` = `CreateRegistrationDto` + password); approval moves the password onto the truck and the first app sign-in grants access; profile edits go through the website's moderation queue. The privacy-policy TEXT is `frontend/constants/driverAppPrivacyContent.ts`, rendered by both the website page and the app |
+| Touch live dispatch (driver app API, orders, offers, worker, `/admin/orders`, `/ops/dispatch/*`, `POST /nearest-tow-trucks/live`, `mobile/`) | `docs/live-dispatch/README.md` — PostgreSQL is the only source of truth (partial unique indexes ARE the double-booking guard; deadlines use the DB clock); every flag is off by default; the new tables are raw-SQL only and deliberately not in `schema.prisma` (`prisma migrate diff` lists them as DROP TABLE — never apply it); `npm run test:live` needs `LIVE_DISPATCH_TEST_DATABASE_URL` (a scratch server, never `DATABASE_URL`). **A live-dispatch `driverId` is `FleetDriver.id`, never `TowTruck.id`**: app access is a separate entity (website drivers an admin granted, signing in with the site password; app-only drivers who registered in the app and never appear on the site) — `docs/live-dispatch/11-driver-access.md`. Never add an "app-only" flag to `TowTruck` |
 | Touch `/evakuator`, PostGIS, or the route-matrix provider | `docs/nearest-search.md` — the two-step design, why the results reuse `TowTruckCard` untouched, the rule that a straight-line distance never gets a time next to it, and `NEAREST_SEARCH_ENABLED` (currently **on**) — while `false` it pauses the search itself and nothing else, the nav link, the CTA banners and the sitemap entry stay up on purpose, so the page acts as an announcement |
 | Change how often a visitor may run the nearest search | `docs/nearest-search.md` § "How often one person may search" — 2/day per browser (`NEAREST_DAILY_SEARCH_LIMIT`) buys **road distances and times**, not searches: past it the page keeps searching, unlimited, sending `skipRouting: true` for a straight-line-only answer, because the PostGIS half is free and an empty screen is the wrong thing to hand someone next to a broken car. **Nothing on this page ever refuses to answer** — a test asserts there is no early exit between reading the limit and calling the API. It is unrelated to `ROUTE_ORS_DAILY_QUOTA` (500, `backend/src/routing/routing.constants.ts`), the real daily cap on the OpenRouteService key, tracked **globally, not per IP** and shared with the admin dispatch screen's coordinate search — a former per-IP ceiling was removed because a modest number of distinct addresses could collectively exceed a platform-wide budget that a per-IP number couldn't see. Running out of the ORS budget silently degrades the search to straight-line distances (`routed: false`); it never refuses a request or returns a 429. Both the browser allowance and the ORS budget charge for *work done*, never requests received, so a cache hit is free. The browser stores the **answer** and a counter, never the coordinates |
 | Find what a specific page/route does | `docs/pages-and-routes.md` |

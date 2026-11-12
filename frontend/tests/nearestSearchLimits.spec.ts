@@ -127,7 +127,7 @@ describe('the order the page checks things in', () => {
     // `remember()` sits after the await, inside the try — so a refused prompt
     // (which returns early above) and a failed request (which lands in the
     // catch) both cost nothing.
-    expect(page.indexOf('remember(fresh')).toBeGreaterThan(page.indexOf('await nearestRepository'))
+    expect(page.indexOf('remember(remembered ?? fresh')).toBeGreaterThan(page.indexOf('await nearestRepository'))
   })
 
   it('degrades past the allowance instead of refusing', () => {
@@ -163,7 +163,7 @@ describe('the order the page checks things in', () => {
   it('does not charge an allowance for a straight-line answer', () => {
     // There is nothing left to charge, and counting past the limit would make
     // the "N of 2 left" figure on screen nonsense.
-    expect(page).toContain('remember(fresh, !straightLineOnly)')
+    expect(page).toContain('remember(remembered ?? fresh, !straightLineOnly)')
   })
 
   it('reads storage after mount, never during render', () => {

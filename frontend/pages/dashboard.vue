@@ -288,7 +288,7 @@ async function loadProfileChange(): Promise<void> {
  * who queued something by mistake is to wait for a rejection.
  */
 async function withdrawProfileChange(): Promise<void> {
-  if (!confirm('Հետ վերցնե՞լ ուղարկված փոփոխությունները։')) return
+  if (!(await confirmDialog('Հետ վերցնե՞լ ուղարկված փոփոխությունները։'))) return
 
   withdrawing.value = true
   try {

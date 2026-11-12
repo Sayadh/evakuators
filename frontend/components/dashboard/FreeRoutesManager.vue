@@ -167,7 +167,7 @@ async function submit(): Promise<void> {
 const deletingId = ref<number | null>(null)
 
 async function removeRoute(route: MyFreeRoute): Promise<void> {
-  if (!import.meta.client || !window.confirm('Ջնջե՞լ այս երթուղին։')) return
+  if (!(await confirmDialog({ message: 'Ջնջե՞լ այս երթուղին։', confirmLabel: 'Ջնջել', danger: true }))) return
 
   deletingId.value = route.id
   try {

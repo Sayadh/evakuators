@@ -57,6 +57,24 @@ module.exports = {
       instances: 1,
       autorestart: true,
       max_memory_restart: '512M',
+      // Lets in-flight requests and WebSockets close cleanly (enableShutdownHooks)
+      kill_timeout: 10000,
+    },
+    {
+      // Live dispatch worker: outbox, offer expiries, pushes, reconciler.
+      // Binds NO port. Same backend/.env as the API (DATABASE_URL, REDIS_URL,
+      // LIVE_DISPATCH_ENABLED, …). Idles harmlessly while the flag is off.
+      // Safe to restart at any moment — see backend/src/worker.ts.
+      name: 'evakuators-worker',
+      cwd: './backend',
+      script: 'dist/worker.js',
+      env: {
+        NODE_ENV: 'production',
+      },
+      instances: 1,
+      autorestart: true,
+      max_memory_restart: '384M',
+      kill_timeout: 15000,
     },
   ],
 }

@@ -80,6 +80,23 @@ module.exports = {
       instances: 1,
       autorestart: true,
       max_memory_restart: '512M',
+      kill_timeout: 10000,
+    },
+    {
+      // Staging live-dispatch worker. Reads THIS checkout's backend/.env, so
+      // it talks to the staging database only. Keep PUSH_PROVIDER=recording
+      // and DISPATCH_ROUTING_PROVIDER=fake there unless a test explicitly
+      // needs the real ones (real pushes would reach real drivers' phones).
+      name: 'evakuators-worker-staging',
+      cwd: './backend',
+      script: 'dist/worker.js',
+      env: {
+        NODE_ENV: 'production',
+      },
+      instances: 1,
+      autorestart: true,
+      max_memory_restart: '384M',
+      kill_timeout: 15000,
     },
   ],
 }

@@ -2,3 +2,5 @@ node_modules/
 dist/
 .env
 *.log
+# Firebase Admin key (FCM_SERVICE_ACCOUNT_FILE) — a secret, never committed
+firebase-service-account*.json

@@ -26,8 +26,14 @@ import type { RegistrationWithImages } from '../registration/registration.reposi
  */
 export type AdminRegistrationSummary = Omit<
   RegistrationWithImages,
-  'latitude' | 'longitude'
+  'latitude' | 'longitude' | 'passwordHash'
 > & {
+  /**
+   * An app sign-up whose password is still waiting on this request — i.e. the
+   * driver will sign in to the app with it once approved. The hash itself is
+   * never sent anywhere.
+   */
+  hasAppPassword: boolean
   latitude?: number
   longitude?: number
   /**
@@ -50,10 +56,13 @@ type RegistrationRow = RegistrationWithImages & {
 }
 
 export function toAdminRegistrationSummary(request: RegistrationRow): AdminRegistrationSummary {
-  const { privacyConsents, ...rest } = request
+  // `passwordHash` is taken OUT, not passed through: this mapper spreads the
+  // raw row, and a bcrypt hash has no business in a browser, admin or not.
+  const { privacyConsents, passwordHash, ...rest } = request
 
   return {
     ...rest,
+    hasAppPassword: passwordHash !== null,
     latitude: decimalToNumber(request.latitude),
     longitude: decimalToNumber(request.longitude),
     privacyConsent: toAdminConsentSummary(privacyConsents[0]),

@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   Logger,
@@ -15,6 +17,8 @@ import bcrypt from 'bcrypt'
 import { PrivacyConsentService } from '../privacy-consent/privacy-consent.service'
 import { TowTrucksRepository } from '../tow-trucks/tow-trucks.repository'
 import { BCRYPT_ROUNDS, generateTemporaryPassword } from './driver-password'
+import { DRIVER_SITE_AUDIENCE } from './driver-site-token'
+import { LOCKED_MESSAGE, loginAttempts } from '../common/login-attempts'
 
 const TOKEN_TTL = '30d'
 
@@ -112,14 +116,19 @@ export class DriverAuthService {
     // so refusing them here would mean the only way out of a lapsed
     // subscription is to phone us. Every other kind of deactivation is still
     // refused, a few lines below, AFTER the password check.
+    const attemptKey = `site:${phone.trim()}`
+    const wait = loginAttempts.retryAfterSeconds(attemptKey)
+    if (wait > 0) throw new HttpException(LOCKED_MESSAGE(wait), HttpStatus.TOO_MANY_REQUESTS)
     const towTruck = await this.towTrucksRepository.findByMainPhoneAnyStatus(phone)
 
     // Always runs, even with no match and even when the row has no hash yet —
     // see DUMMY_HASH. `bcrypt.compare` against the dummy can only ever be
     // false, so this cannot accidentally authenticate anyone.
     const isValid = await bcrypt.compare(password, towTruck?.passwordHash ?? DUMMY_HASH)
+    if (isValid && towTruck?.passwordHash) loginAttempts.succeeded(attemptKey)
 
     if (!towTruck || !towTruck.passwordHash || !isValid) {
+      loginAttempts.failed(attemptKey)
       // One message for all three failures. Splitting them would tell an
       // unauthenticated caller which numbers exist and which of those have
       // finished setting up — and a driver who genuinely mistyped either field
@@ -157,8 +166,8 @@ export class DriverAuthService {
 
     return {
       token: await this.jwt.signAsync(
-        { sub: towTruck.id },
-        { secret: this.secret, expiresIn: TOKEN_TTL },
+        { sub: towTruck.id, sv: towTruck.sessionVersion },
+        { secret: this.secret, expiresIn: TOKEN_TTL, audience: DRIVER_SITE_AUDIENCE },
       ),
       towTruckId: towTruck.id,
       slug: towTruck.slug,
@@ -208,18 +217,15 @@ export class DriverAuthService {
    * dialog on the dashboard and, from here on, what stops a Telegram re-link
    * from touching this account's password again.
    *
-   * Deliberately does NOT invalidate the caller's own session, nor any other:
-   * there are no refresh tokens and no session table to revoke against (see
-   * docs/auth-and-security.md § "Things that are NOT implemented"), so a logout
-   * here would only sign the driver out of the tab they are standing in while
-   * changing nothing about a token someone else might hold. Fixing that means
-   * session invalidation as a feature, not a line in this method.
+   * Ends every other website session (2026-11-12): the truck's session
+   * version is bumped, so tokens issued before stop working on every device;
+   * the caller gets a new token in the response and stays signed in.
    */
   async changePassword(
     towTruckId: number,
     currentPassword: string,
     newPassword: string,
-  ): Promise<void> {
+  ): Promise<{ token: string }> {
     const towTruck = await this.towTrucksRepository.findById(towTruckId)
     if (!towTruck) throw new NotFoundException('Ձեր պրոֆիլը չի գտնվել')
 
@@ -234,10 +240,19 @@ export class DriverAuthService {
       throw new BadRequestException('Ընթացիկ գաղտնաբառը սխալ է')
     }
 
-    await this.towTrucksRepository.setPassword(
+    // setPassword bumps the session version (2026-11-12 security audit):
+    // every website token issued before — on any device — stops working, and
+    // the caller gets a fresh one so this tab stays signed in.
+    const updated = await this.towTrucksRepository.setPassword(
       towTruckId,
       await bcrypt.hash(newPassword, BCRYPT_ROUNDS),
       false,
     )
+    return { token: await this.signSiteToken(updated.id, updated.sessionVersion) }
+  }
+
+  /** A website session for this truck at its current session version */
+  signSiteToken(towTruckId: number, sessionVersion: number): Promise<string> {
+    return this.jwt.signAsync({ sub: towTruckId, sv: sessionVersion }, { secret: this.secret, expiresIn: TOKEN_TTL, audience: DRIVER_SITE_AUDIENCE })
   }
 }

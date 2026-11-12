@@ -33,6 +33,16 @@ export const LANGUAGE_PROMPT = {
 export const LANGUAGE_PROMPT_COOKIE = 'evakuators_language_prompt'
 export const LANGUAGE_PROMPT_COOKIE_MAX_AGE = 60 * 60 * 24
 
+/**
+ * A language picked in the SWITCHER (2026-11-12) is a choice, not a passing
+ * answer: remembered for a year under the same cookie, so the prompt never
+ * opens for someone who chose Russian or English themselves. Before this, a
+ * visitor who switched to Russian and later reloaded (or came back) was asked
+ * again — and the big gold «Անցնել հայերենի» button sent them back to
+ * Armenian, which read as "the site keeps switching back".
+ */
+export const LANGUAGE_CHOICE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365
+
 export type PromptedLocale = keyof typeof LANGUAGE_PROMPT.stayLabels
 
 /**

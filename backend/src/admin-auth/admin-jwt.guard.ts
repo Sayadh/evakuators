@@ -1,6 +1,7 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common'
@@ -21,11 +22,15 @@ export interface AuthenticatedAdminRequest extends Request {
  * Keep nginx TLS/rate-limiting in front by all means, just don't rely on it
  * as the only thing standing between the public internet and moderation data.
  */
+import { PrismaService } from '../prisma/prisma.service'
+import { adminSessionStillValid } from './admin-session-check'
+
 @Injectable()
 export class AdminJwtGuard implements CanActivate {
   constructor(
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -36,8 +41,9 @@ export class AdminJwtGuard implements CanActivate {
       throw new UnauthorizedException('Մուտք գործեք admin հաշվով շարունակելու համար')
     }
 
+    let payload: { sub: number; role: UserRole }
     try {
-      const payload = await this.jwt.verifyAsync<{ sub: number; role: UserRole }>(
+      payload = await this.jwt.verifyAsync<{ sub: number; role: UserRole }>(
         header.slice('Bearer '.length),
         {
           secret: this.config.getOrThrow<string>('adminJwtSecret'),
@@ -49,11 +55,21 @@ export class AdminJwtGuard implements CanActivate {
           audience: ADMIN_SESSION_AUDIENCE,
         },
       )
-      if (payload.role !== UserRole.ADMIN) throw new Error('not an admin')
-      request.adminUserId = payload.sub
-      return true
     } catch {
       throw new UnauthorizedException('Ձեր admin նստաշրջանի ժամկետը սպառվել է, մուտք գործեք կրկին')
     }
+    // A VALID session of another role (DISPATCHER, live dispatch console
+    // only) is 403, not 401: the session is fine, this route is not theirs.
+    // A 401 here would make the frontend's apiFetch log them out of the
+    // console they are allowed to use.
+    // A deleted admin, or one whose role changed, is out at once (not in 24 h)
+    if (!(await adminSessionStillValid(this.prisma, payload.sub, payload.role))) {
+      throw new UnauthorizedException('Ձեր admin նստաշրջանի ժամկետը սպառվել է, մուտք գործեք կրկին')
+    }
+    if (payload.role !== UserRole.ADMIN) {
+      throw new ForbiddenException('Այս բաժինը հասանելի է միայն ադմինիստրատորին')
+    }
+    request.adminUserId = payload.sub
+    return true
   }
 }

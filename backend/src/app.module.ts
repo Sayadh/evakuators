@@ -14,12 +14,14 @@ import { DriverAuthModule } from './driver-auth/driver-auth.module'
 import { FreeRoutesModule } from './free-routes/free-routes.module'
 import { HealthModule } from './health/health.module'
 import { IdramModule } from './idram/idram.module'
+import { LiveDispatchModule } from './live-dispatch/nest/live-dispatch.module'
 import { ImagesModule } from './images/images.module'
 import { MyTowTruckModule } from './my-tow-truck/my-tow-truck.module'
 import { NearestModule } from './nearest/nearest.module'
 import { PromotionsModule } from './promotions/promotions.module'
 import { PrivacyConsentModule } from './privacy-consent/privacy-consent.module'
 import { ProfileChangesModule } from './profile-changes/profile-changes.module'
+import { SiteListingModule } from './site-listing/site-listing.module'
 import { PrismaModule } from './prisma/prisma.module'
 import { RegistrationModule } from './registration/registration.module'
 import { ReviewsModule } from './reviews/reviews.module'
@@ -61,10 +63,15 @@ import { TowTrucksModule } from './tow-trucks/tow-trucks.module'
     NearestModule,
     PromotionsModule,
     ProfileChangesModule,
+    SiteListingModule,
     PrivacyConsentModule,
     DispatchModule,
     SubscriptionsModule,
     IdramModule,
+    // Live dispatch (driver app, order console, live nearby search). Every
+    // endpoint is behind LIVE_DISPATCH_ENABLED / DRIVER_TRACKING_ENABLED /
+    // LIVE_NEARBY_ENABLED (all off by default) — see docs/live-dispatch/.
+    LiveDispatchModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: SsrAwareThrottlerGuard }],
 })

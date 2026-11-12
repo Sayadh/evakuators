@@ -229,7 +229,7 @@ useJsonLd([
       </div>
     </header>
 
-    <NearestTowTrucksCta class="city-page__nearest" />
+    <NearestTowTrucksCta with-routes class="city-page__nearest" />
 
     <div class="city-page__toolbar">
       <AppButton v-if="!isDesktop" variant="outline" size="sm" @click="openDrawer">

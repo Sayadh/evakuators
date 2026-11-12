@@ -1,0 +1,13 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "noUnusedLocals": true,
+    "baseUrl": ".",
+    "paths": {
+      "~/repositories": ["src/shared/frontendRepositoryTypes.ts"],
+      "~/*": ["../frontend/*"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx"]
+}

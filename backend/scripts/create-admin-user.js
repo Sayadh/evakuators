@@ -4,6 +4,11 @@
  *
  * Usage:
  *   node scripts/create-admin-user.js admin@evakuators.am 'a-strong-password'
+ *   node scripts/create-admin-user.js ops@evakuators.am 'a-strong-password' DISPATCHER
+ *
+ * The optional third argument is the role (default ADMIN). DISPATCHER can use
+ * only the live dispatch console (/admin/orders); every pre-existing /admin
+ * route still requires ADMIN (AdminJwtGuard).
  *
  * Run from backend/ with DATABASE_URL already available (reads backend/.env).
  */
@@ -12,10 +17,15 @@ const { PrismaClient, UserRole } = require('@prisma/client')
 const bcrypt = require('bcrypt')
 
 async function main() {
-  const [email, password] = process.argv.slice(2)
+  const [email, password, roleArg = 'ADMIN'] = process.argv.slice(2)
 
   if (!email || !password) {
-    console.error('Usage: node scripts/create-admin-user.js <email> <password>')
+    console.error('Usage: node scripts/create-admin-user.js <email> <password> [ADMIN|DISPATCHER]')
+    process.exit(1)
+  }
+  const role = UserRole[roleArg]
+  if (!role) {
+    console.error(`Unknown role "${roleArg}". Use ADMIN or DISPATCHER.`)
     process.exit(1)
   }
   if (password.length < 8) {
@@ -28,11 +38,11 @@ async function main() {
 
   const user = await prisma.user.upsert({
     where: { email },
-    update: { passwordHash, role: UserRole.ADMIN },
-    create: { email, passwordHash, role: UserRole.ADMIN },
+    update: { passwordHash, role },
+    create: { email, passwordHash, role },
   })
 
-  console.log(`Admin user ready: ${user.email} (id ${user.id})`)
+  console.log(`User ready: ${user.email} (id ${user.id}, role ${user.role})`)
   await prisma.$disconnect()
 }
 

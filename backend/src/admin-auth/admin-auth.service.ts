@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common'
+import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable, Logger, UnauthorizedException } from '@nestjs/common'
+import { LOCKED_MESSAGE, loginAttempts } from '../common/login-attempts'
 import { ConfigService } from '@nestjs/config'
 import { JwtService } from '@nestjs/jwt'
 import { Cron, CronExpression } from '@nestjs/schedule'
@@ -71,7 +72,11 @@ export class AdminAuthService {
     config: ConfigService,
   ) {
     this.secret = config.getOrThrow<string>('adminJwtSecret')
+    this.require2fa = config.get<boolean>('adminRequire2fa') === true
   }
+
+  /** ADMIN_REQUIRE_2FA: no password-only admin sign-in (security audit 2026-11-12) */
+  private readonly require2fa: boolean
 
   /**
    * Deletes spent 2FA codes.
@@ -93,17 +98,27 @@ export class AdminAuthService {
   }
 
   async login(email: string, password: string): Promise<AdminLoginResult> {
+    const attemptKey = `admin:${email.trim().toLowerCase()}`
+    const wait = loginAttempts.retryAfterSeconds(attemptKey)
+    if (wait > 0) throw new HttpException(LOCKED_MESSAGE(wait), HttpStatus.TOO_MANY_REQUESTS)
     const user = await this.adminUserRepository.findAdminByEmail(email)
 
     const isValid = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH)
     if (!user || !isValid) {
+      loginAttempts.failed(attemptKey)
       throw new UnauthorizedException('Սխալ email կամ գաղտնաբառ')
     }
+    loginAttempts.succeeded(attemptKey)
 
     // 2FA only kicks in once the admin has actually linked their Telegram —
     // until then, stay single-factor so a freshly `admin:create`-d account
     // is never locked out before it's had a chance to link.
     if (!user.telegramChatId) {
+      if (this.require2fa) {
+        throw new ForbiddenException(
+          'Մուտքը պահանջում է երկրորդ քայլ (Telegram), բայց այս հաշվին Telegram կապված չէ։ Սերվերում գործարկեք՝ npm run admin:telegram-link',
+        )
+      }
       return { requiresCode: false, token: await this.signSession(user.id, user.role) }
     }
 

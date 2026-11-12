@@ -3,6 +3,7 @@ import { PromotionsModule } from '../promotions/promotions.module'
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module'
 import { IdramController } from './idram.controller'
 import { IdramService } from './idram.service'
+import { PaymentHandlerRegistry } from './payment-handlers'
 
 // SubscriptionsModule and PromotionsModule for the two confirmation paths and
 // the payment lookup — this module owns the conversation with Idram, never the
@@ -11,8 +12,9 @@ import { IdramService } from './idram.service'
 @Module({
   imports: [forwardRef(() => SubscriptionsModule), forwardRef(() => PromotionsModule)],
   controllers: [IdramController],
-  providers: [IdramService],
+  providers: [IdramService, PaymentHandlerRegistry],
   // The driver's own payment creation attaches the Idram form to its response.
-  exports: [IdramService],
+  // The registry: products owned elsewhere (the driver-app wallet) register here.
+  exports: [IdramService, PaymentHandlerRegistry],
 })
 export class IdramModule {}

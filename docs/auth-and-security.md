@@ -97,8 +97,15 @@ keyed on it would let anyone lock any driver out of their own account.
 
 ### Where a driver's password comes from
 
-Not from the registration form, and not chosen by an admin. It is minted in
-exactly one place: `TelegramWebhookController.handleStart`, the moment a driver
+Not from the website's registration form, and not chosen by an admin. **One
+exception (2026-11): a driver who signs up in the driver app chooses a password
+there** (`CreateAppRegistrationDto`); its bcrypt hash waits on the request and
+`AdminService.approve` moves it onto the truck with `mustChangePassword: false`
+— row 3 of the table below, so the Telegram link generated at approval touches
+nothing. It is worth exactly the moderation behind it (an admin calls the
+number before approving; there is no SMS check). See
+`docs/live-dispatch/11-driver-access.md`. Otherwise it is minted in exactly one
+place: `TelegramWebhookController.handleStart`, the moment a driver
 taps their one-time `t.me` deep link, calls
 `DriverAuthService.issueTemporaryPassword()` and sends the result as a second
 Telegram message. That is the only channel where we are already talking to

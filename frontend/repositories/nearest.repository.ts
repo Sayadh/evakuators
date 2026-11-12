@@ -1,5 +1,5 @@
 import { apiFetch } from './apiClient'
-import type { NearestSearchResult } from '~/types/nearest'
+import type { LiveNearbyResult, NearestSearchResult } from '~/types/nearest'
 
 /**
  * The nearest-evacuator search.
@@ -27,6 +27,17 @@ export const nearestRepository = {
     skipRouting = false,
   ): Promise<NearestSearchResult> {
     return apiFetch<NearestSearchResult>('/nearest-tow-trucks', {
+      method: 'POST',
+      body: { latitude, longitude, skipRouting },
+    })
+  },
+
+  /**
+   * Live variant (behind NUXT_PUBLIC_LIVE_NEARBY_ENABLED). Same POST-only
+   * rule: the position travels in the body, never in a URL.
+   */
+  findNearestLive(latitude: number, longitude: number, skipRouting = false): Promise<LiveNearbyResult> {
+    return apiFetch<LiveNearbyResult>('/nearest-tow-trucks/live', {
       method: 'POST',
       body: { latitude, longitude, skipRouting },
     })

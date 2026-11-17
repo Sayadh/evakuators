@@ -16,6 +16,10 @@ import { toDate, toNullableNumber, toNumber } from '../platform/params'
 import type { SqlDatabase } from '../platform/sql'
 import type { PushSender } from './fcm'
 import { enqueue } from './outbox'
+import { decideProblemAlert, type ProblemReason, type ProblemRules } from './problem-alert'
+
+/** Same id as the app's channel (mobile/src/push/channels.ts PROBLEM_CHANNEL) */
+export const PROBLEM_ALERT_CHANNEL = 'driver_problems'
 
 export interface PushTexts {
   offerTitle: string
@@ -27,6 +31,9 @@ export interface PushTexts {
   walletLowBody?: (balanceAmd: number) => string
   walletCreditedTitle?: string
   walletCreditedBody?: (amountAmd: number, balanceAmd: number) => string
+  /** Problem alerts (2026-11-16): what is wrong, that offers stopped, what to do */
+  problemTitle?: (reason: ProblemReason) => string
+  problemBody?: (reason: ProblemReason) => string
 }
 
 /** Armenian is the app's primary language; the app re-renders in the driver's language when opened */
@@ -47,6 +54,11 @@ export const ARMENIAN_PUSH_TEXTS: PushTexts = {
       RESUMED: 'Պատվերը շարունակվում է',
       PRICE_CORRECTED: 'Օպերատորը ճշգրտեց պատվերի գինը',
     })[kind] ?? 'Բացեք հավելվածը',
+  problemTitle: (reason) => (reason === 'GPS' ? '⚠️ GPS-ը չի աշխատում' : '⚠️ Կապ չկա սերվերի հետ'),
+  problemBody: (reason) =>
+    reason === 'GPS'
+      ? 'Պատվերներ չեք ստանում։ Միացրեք տեղադրությունը (GPS) և բացեք հավելվածը։'
+      : 'Պատվերներ չեք ստանում։ Բացեք հավելվածը և ստուգեք ինտերնետը։',
   walletCreditedTitle: 'Ձեր հաշիվը համալրվեց',
   walletCreditedBody: (amountAmd, balanceAmd) =>
     `+${amountAmd.toLocaleString('en-US').replace(/,/g, ' ')} ֏ · մնացորդը՝ ${balanceAmd.toLocaleString('en-US').replace(/,/g, ' ')} ֏`,
@@ -97,7 +109,17 @@ function short(value: unknown): string | null {
   return text.length > 40 ? `${text.slice(0, 39)}…` : text
 }
 
+/** Heartbeat older than this → wake (the console calls it «Կապ չկա» at 90 s, heartbeatMaxAgeSeconds) */
+export const WAKE_AFTER_SECONDS = 50
+/** At most one wake per driver this often */
+export const WAKE_EVERY_SECONDS = 60
+/** Silent for longer than this → the phone is off or gone; stop waking it */
+export const WAKE_GIVE_UP_SECONDS = 6 * 3600
+
 export class PushService {
+  /** driverId → last wake (ms). In memory: the worker is one process, a restart only allows one early wake */
+  private readonly lastWakeAt = new Map<number, number>()
+
   constructor(
     private readonly db: SqlDatabase,
     private readonly sender: PushSender,
@@ -284,6 +306,162 @@ export class PushService {
       else if (result.retryable) retry = true
     }
     return sent ? 'sent' : retry ? 'retry' : 'skipped'
+  }
+
+  /**
+   * «Նոր նախապատվեր» (2026-11-17): an ordinary notification (not the offer
+   * ring — nothing expires in seconds), with the route and the weight so the
+   * driver can decide from the lock screen whether to open it.
+   */
+  async sendPreOrderPush(preOrderId: number, driverId: number, reminder = false): Promise<'sent' | 'skipped' | 'retry'> {
+    const [row] = await this.db.query<{ pickupAddress: string; destinationAddress: string | null; vehicleWeightKg: number | null; status: string }>(
+      `SELECT "pickupAddress", "destinationAddress", "vehicleWeightKg", "status" FROM "PreOrder" WHERE "id" = $1::int`,
+      [preOrderId],
+    )
+    if (!row || row.status !== 'OPEN') return 'skipped'
+    const tokens = await this.tokensFor(driverId)
+    if (tokens.length === 0) return 'skipped'
+    const short = (s: string | null) => (s && s.length > 40 ? `${s.slice(0, 39)}…` : s)
+    const weight = row.vehicleWeightKg ? ` · ${row.vehicleWeightKg} կգ` : ''
+    const body = `${short(row.pickupAddress)}${row.destinationAddress ? ` → ${short(row.destinationAddress)}` : ''}${weight}\nԵթե հարմար է, գրեք ձեր գինը`
+    let sent = false
+    let retry = false
+    for (const { token } of tokens) {
+      const result = await this.sender.send({
+        token,
+        // «Կրկին ծանուցել» (2026-11-18): the same job, asked again
+        title: reminder ? `Նախապատվեր #${preOrderId}՝ խնդրում ենք նայել` : 'Նոր նախապատվեր',
+        body,
+        data: { type: 'pre_order', preOrderId: String(preOrderId) },
+        ttlSeconds: 6 * 3600,
+        collapseKey: `pre-order-${preOrderId}`,
+        highPriority: false,
+      })
+      if (result.ok) sent = true
+      else if (result.invalidToken) await this.invalidate(token, result.error)
+      else if (result.retryable) retry = true
+    }
+    return sent ? 'sent' : retry ? 'retry' : 'skipped'
+  }
+
+  /**
+   * «Wake» (2026-11-14). A LOCKED phone that does not move gets no location
+   * fixes from Android (Doze, makers' battery savers), and the background
+   * heartbeat rides on those fixes — so after 90 s the driver turned
+   * «Կապ չկա» and stopped getting offers until he opened the app. A
+   * high-priority data push is what Android lets through Doze: the app's
+   * background handler sends a heartbeat and a fresh fix (tracking.ts
+   * `wakeFromPush`). Only drivers who chose Online, whose heartbeat is going
+   * stale (not long dead: a phone off for hours is not pinged forever), at
+   * most once per WAKE_EVERY_SECONDS each. Called by the worker.
+   */
+  async wakeStaleDrivers(): Promise<number> {
+    const rows = await this.db.query<{ driverId: number }>(
+      `SELECT p."driverId" FROM "DriverPresence" p
+         JOIN "FleetDriver" d ON d."id" = p."driverId"
+        WHERE d."status" = 'ACTIVE'
+          AND (p."wantsOnline" OR EXISTS (SELECT 1 FROM "OrderAssignment" a WHERE a."driverId" = p."driverId" AND a."endedAt" IS NULL))
+          AND p."lastHeartbeatAt" < now() - make_interval(secs => ${WAKE_AFTER_SECONDS})
+          AND p."lastHeartbeatAt" > now() - make_interval(secs => ${WAKE_GIVE_UP_SECONDS})`,
+    )
+    const now = Date.now()
+    let woken = 0
+    for (const row of rows) {
+      const driverId = toNumber(row.driverId)
+      if (now - (this.lastWakeAt.get(driverId) ?? 0) < WAKE_EVERY_SECONDS * 1000) continue
+      this.lastWakeAt.set(driverId, now)
+      for (const { token } of await this.tokensFor(driverId)) {
+        const result = await this.sender.send({
+          token,
+          title: '',
+          body: '',
+          data: { type: 'wake' },
+          ttlSeconds: 60,
+          collapseKey: `wake-${driverId}`,
+          highPriority: true,
+          silent: true,
+        })
+        if (result.ok) woken++
+        else if (result.invalidToken) await this.invalidate(token, result.error)
+      }
+    }
+    return woken
+  }
+
+  /**
+   * Problem alerts (2026-11-16, problem-alert.ts): an Online driver — or one
+   * with an active order — who lost his connection or GPS is told so, with a
+   * sound, at once, then every 5 minutes, at most 3 times per problem. The
+   * state lives on DriverPresence so the console can show «Ծանուցված է».
+   * Called by the worker.
+   */
+  async alertProblemDrivers(rules: ProblemRules): Promise<number> {
+    const rows = await this.db.query<Record<string, unknown>>(
+      `SELECT p."driverId", p."problemAlertReason", p."problemAlertCount",
+              EXTRACT(EPOCH FROM now() - p."lastHeartbeatAt")::float8 AS "heartbeatAge",
+              EXTRACT(EPOCH FROM now() - lc."measuredAt")::float8 AS "gpsAge",
+              EXTRACT(EPOCH FROM now() - p."problemAlertAt")::float8 AS "alertAge"
+         FROM "DriverPresence" p
+         JOIN "FleetDriver" d ON d."id" = p."driverId"
+         LEFT JOIN "DriverLocationCurrent" lc ON lc."driverId" = p."driverId"
+        WHERE d."status" = 'ACTIVE'
+          AND (p."problemAlertCount" > 0
+               OR ((p."wantsOnline" OR EXISTS (SELECT 1 FROM "OrderAssignment" a WHERE a."driverId" = p."driverId" AND a."endedAt" IS NULL))
+                   AND p."lastHeartbeatAt" > now() - make_interval(secs => ${WAKE_GIVE_UP_SECONDS})))`,
+    )
+    let sent = 0
+    for (const row of rows) {
+      const driverId = toNumber(row.driverId)
+      const working = await this.isWorking(driverId)
+      const decision = working
+        ? decideProblemAlert(
+            {
+              heartbeatAgeSeconds: toNullableNumber(row.heartbeatAge),
+              gpsAgeSeconds: toNullableNumber(row.gpsAge),
+              stored: { reason: row.problemAlertReason == null ? null : String(row.problemAlertReason), count: toNumber(row.problemAlertCount ?? 0), lastAtAgeSeconds: toNullableNumber(row.alertAge) },
+            },
+            rules,
+          )
+        : ({ kind: 'clear' } as const)
+      if (decision.kind === 'none') continue
+      if (decision.kind === 'clear') {
+        await this.db.query(
+          `UPDATE "DriverPresence" SET "problemAlertReason" = NULL, "problemAlertCount" = 0, "problemAlertAt" = NULL WHERE "driverId" = $1::int`,
+          [driverId],
+        )
+        continue
+      }
+      await this.db.query(
+        `UPDATE "DriverPresence" SET "problemAlertReason" = $2, "problemAlertCount" = $3::int, "problemAlertAt" = now() WHERE "driverId" = $1::int`,
+        [driverId, decision.reason, decision.count],
+      )
+      for (const { token } of await this.tokensFor(driverId)) {
+        const result = await this.sender.send({
+          token,
+          title: this.texts.problemTitle?.(decision.reason) ?? ARMENIAN_PUSH_TEXTS.problemTitle!(decision.reason),
+          body: this.texts.problemBody?.(decision.reason) ?? ARMENIAN_PUSH_TEXTS.problemBody!(decision.reason),
+          data: { type: 'driver_problem', reason: decision.reason },
+          ttlSeconds: 240,
+          // One notification per driver: a new alert replaces the previous one
+          collapseKey: `driver-problem-${driverId}`,
+          highPriority: true,
+          androidChannel: PROBLEM_ALERT_CHANNEL,
+        })
+        if (result.ok) sent++
+        else if (result.invalidToken) await this.invalidate(token, result.error)
+      }
+    }
+    return sent
+  }
+
+  /** Online, or carrying an active order — the only drivers a lost connection costs anything */
+  private async isWorking(driverId: number): Promise<boolean> {
+    const rows = await this.db.query<{ working: boolean }>(
+      `SELECT (COALESCE((SELECT "wantsOnline" FROM "DriverPresence" WHERE "driverId" = $1::int), false)
+               OR EXISTS (SELECT 1 FROM "OrderAssignment" a WHERE a."driverId" = $1::int AND a."endedAt" IS NULL)) AS "working"`,
+      [driverId],
+    )
+    return rows[0]?.working === true
   }
 
   /** Next repeat of the offer push; the dedupe key makes a re-run of this ring schedule nothing new */

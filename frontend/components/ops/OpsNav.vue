@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * The dispatch console's own navigation (2026-11-12): one tab bar for the four
- * pages — orders, app drivers, wallets, settings — so it is always clear where
+ * The dispatch console's own navigation (2026-11-12): one tab bar for its
+ * pages — orders, pre-orders (2026-11-17), app drivers, wallets, settings, stats and errors (2026-11-17) — so it is always clear where
  * you are and the way back is the same everywhere. `live` shows the realtime
  * state on the orders page.
  */
@@ -11,14 +11,19 @@ import { useAdminAuthStore } from '~/stores/adminAuth'
 const props = defineProps<{ live?: boolean | null }>()
 
 const adminAuth = useAdminAuthStore()
+// Sound + browser notification when a driver cancels / reports a problem (composables/useIncidentAlarm.ts)
+const alarm = useIncidentAlarm()
 const route = useRoute()
 
 interface Tab { to: string; label: string; icon?: IconName; glyph?: string; adminOnly?: boolean }
 const TABS: Tab[] = [
   { to: '/admin/orders', label: 'Պատվերներ', icon: 'truck' },
+  { to: '/admin/orders/pre-orders', label: 'Նախապատվերներ', glyph: '📝' },
   { to: '/admin/orders/drivers', label: 'Վարորդներ', icon: 'user', adminOnly: true },
   { to: '/admin/orders/wallets', label: 'Հաշիվներ', glyph: '֏' },
   { to: '/admin/orders/settings', label: 'Կարգավորումներ', icon: 'filter' },
+  { to: '/admin/orders/stats', label: 'Վիճակագրություն', glyph: '📊' },
+  { to: '/admin/orders/errors', label: 'Սխալներ', glyph: '🐞', adminOnly: true },
 ]
 
 const tabs = computed(() => TABS.filter((tab) => !tab.adminOnly || adminAuth.role === 'ADMIN'))
@@ -48,6 +53,16 @@ function isActive(tab: Tab): boolean {
     </div>
 
     <div class="ops-nav__side">
+      <button
+        type="button"
+        class="ops-nav__bell"
+        :class="{ 'ops-nav__bell--on': alarm.enabled.value }"
+        :title="alarm.enabled.value ? 'Ձայնն ու ծանուցումները միացված են։ Սեղմեք՝ անջատելու համար' : 'Միացնել ձայնն ու ծանուցումները, երբ վարորդը չեղարկում է կամ խնդիր է հայտնում'"
+        @click="alarm.enabled.value ? alarm.disable() : alarm.enable()"
+      >
+        {{ alarm.enabled.value ? '🔔 Ձայնը միացված է' : '🔕 Միացնել ձայնը' }}
+      </button>
+      <span v-if="alarm.enabled.value && alarm.permission.value === 'denied'" class="ops-nav__hint">Բրաուզերը արգելել է ծանուցումները․ ձայնը կաշխատի</span>
       <span
         v-if="props.live !== undefined && props.live !== null"
         class="ops-nav__live"
@@ -66,6 +81,22 @@ function isActive(tab: Tab): boolean {
 </template>
 
 <style scoped lang="scss">
+.ops-nav__bell {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-weight: 600;
+  cursor: pointer;
+  &--on {
+    border-color: var(--color-success);
+    color: var(--color-success);
+  }
+}
+.ops-nav__hint {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
 .ops-nav {
   display: flex;
   align-items: center;

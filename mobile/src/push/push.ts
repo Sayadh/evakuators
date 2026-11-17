@@ -5,6 +5,8 @@
  * that. Events arriving over both push and WebSocket are de-duplicated by the
  * snapshot itself (the same offer id renders once).
  */
+import { emitPreOrderArrived, emitPreOrderTapped, isPreOrderPush } from './preOrderEvents'
+import { showPreOrderNotification } from './preOrderNotification'
 import {
   AuthorizationStatus,
   getInitialNotification,
@@ -22,6 +24,8 @@ import { api } from '../api/client'
 import Constants from 'expo-constants'
 import { getLanguage } from '../auth/session'
 import { DICTIONARIES, translate } from '../i18n'
+import { wakeFromPush } from '../location/tracking'
+import { setupChannels as setupChannelsNow } from './channels'
 import { getAlertSound } from './sounds'
 import { ringingOfferId, showAlarm, stopAlarm, type AlarmTexts } from './offerAlarm'
 import { dismissOfferNotification, isOfferPushNotification, registerOfferCategory, showOfferNotification } from './offerNotification'
@@ -43,8 +47,15 @@ const messaging = getMessaging()
 // effort; opening the app acks as well.
 //
 // `offer_closed` (silent): the offer was withdrawn or timed out — stop ringing.
+//
+// `wake` (silent, 2026-11-14): the locked phone's heartbeat is going stale —
+// send one now (location/tracking.ts wakeFromPush).
 setBackgroundMessageHandler(messaging, async (message) => {
   const data = (message.data ?? {}) as Record<string, unknown>
+  if (data.type === 'wake') {
+    await wakeFromPush()
+    return
+  }
   const offerId = typeof data.offerId === 'string' ? data.offerId : null
   if (data.type === 'offer_closed' && offerId) {
     if (ringingOfferId() === offerId) await stopAlarm()
@@ -98,6 +109,7 @@ Notifications.setNotificationHandler({
 
 export { setupChannels } from './channels'
 
+
 /**
  * iOS Critical Alerts: asked only by a build made with the entitlement
  * (app.config.ts IOS_CRITICAL_ALERTS — which needs Apple's approval first).
@@ -111,6 +123,10 @@ export async function requestPushPermission(): Promise<boolean> {
 
 /** The token goes with the driver's ring choice: iOS plays the file the server's push names */
 export async function registerPushToken(): Promise<void> {
+  // The channels exist before any push needs one — the problem alerts
+  // (driver_problems) are drawn by FCM itself, which falls back to a quiet
+  // default channel when the named one is missing.
+  await setupChannelsNow().catch(() => undefined)
   const token = await getToken(messaging)
   await api.pushToken(token, await getAlertSound())
 }
@@ -119,13 +135,33 @@ export function subscribePush(handlers: { onAnyMessage: (offerId: string | null)
   const pick = (data: Record<string, unknown> | undefined) => (data?.type === 'offer' ? String(data.offerId) : null)
   // iOS needs the category registered before an offer alert arrives
   void registerOfferCategory().catch(() => undefined)
+  // Pre-orders (2026-11-17): arrived → re-read the list; tapped → open it
+  const preOrder = (data: Record<string, unknown> | undefined, tap: boolean): boolean => {
+    const id = isPreOrderPush(data)
+    if (id === null) return false
+    if (tap) emitPreOrderTapped(id)
+    else emitPreOrderArrived(id)
+    return true
+  }
   const unsubscribers = [
-    onMessage(messaging, async (message) => handlers.onAnyMessage(pick(message.data))),
-    onNotificationOpenedApp(messaging, (message) => handlers.onAnyMessage(pick(message.data))),
+    onMessage(messaging, async (message) => {
+      if (!preOrder(message.data, false)) return handlers.onAnyMessage(pick(message.data))
+      // The app is open: FCM shows nothing, so draw it (with sound) ourselves
+      const id = isPreOrderPush(message.data)
+      if (id === null) return
+      const dictionary = DICTIONARIES[await getLanguage().catch(() => 'hy' as const)]
+      await showPreOrderNotification(id, { title: message.notification?.title, body: message.notification?.body }, {
+        title: translate(dictionary, 'preOrders.pushTitle'),
+        body: translate(dictionary, 'preOrders.pushBody'),
+      }).catch(() => undefined)
+    }),
+    onNotificationOpenedApp(messaging, (message) => {
+      if (!preOrder(message.data, true)) handlers.onAnyMessage(pick(message.data))
+    }),
     onTokenRefresh(messaging, (token) => void getAlertSound().then((sound) => api.pushToken(token, sound)).catch(() => undefined)),
   ]
   void getInitialNotification(messaging).then((message) => {
-    if (message) handlers.onAnyMessage(pick(message.data))
+    if (message && !preOrder(message.data, true)) handlers.onAnyMessage(pick(message.data))
   })
   return () => unsubscribers.forEach((u) => u())
 }

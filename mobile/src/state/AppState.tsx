@@ -21,6 +21,8 @@ import * as Notifications from 'expo-notifications'
 import { ACCEPT_ACTION, offerIdOf, REJECT_ACTION } from '../push/offerNotification'
 import { consumeAlarmAction, onAlarmAction, ringingOfferId, stopAlarm } from '../push/offerAlarm'
 import { registerPushToken, subscribePush } from '../push/push'
+import { emitPreOrderTapped } from '../push/preOrderEvents'
+import { preOrderIdOf } from '../push/preOrderNotification'
 import { syncAlarmSound } from '../push/alertSoundChoice'
 import { connectRealtime } from '../realtime/socket'
 import { reconcile, type PendingAction, type PendingKind } from './pendingActions'
@@ -63,7 +65,7 @@ interface Ctx {
   progress(orderId: number, action: ProgressAction): Promise<void>
   /** The price agreed with the customer by phone; true when the server took it */
   setPrice(orderId: number, agreedPriceAmd: number): Promise<boolean>
-  sendRequest(orderId: number, body: { kind: 'CANCEL' | 'PROBLEM'; reason: string; comment: string | null }): Promise<boolean>
+  sendRequest(orderId: number, body: { kind: 'CANCEL' | 'PROBLEM'; reason: string; comment: string | null; driverPriceAmd?: number | null; customerPriceAmd?: number | null }): Promise<boolean>
   /** When the test alarm (Alerts setup) last opened the app — proof it works on this phone */
   alarmTestSeenAt: number | null
   /** The phone's location switch and permissions, re-read every few seconds while the app is open */
@@ -305,6 +307,16 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       // iOS: a remote (FCM → APNs) notification carries its data in the
       // TRIGGER payload, not in content.data — reading only content.data made
       // the «Ընդունել» / «Մերժել» buttons do nothing on iPhone (2026-11-12).
+      // A pre-order notification (2026-11-17, drawn by the app while it was open): open the list
+      const preOrderId = preOrderIdOf(response.notification)
+      if (preOrderId !== null) {
+        const tapKey = `${response.notification.request.identifier}:pre-order`
+        if (!handledResponses.current.has(tapKey)) {
+          handledResponses.current.add(tapKey)
+          emitPreOrderTapped(preOrderId)
+        }
+        return
+      }
       const offerId = offerIdOf(response.notification)
       if (!offerId) return
       const data = { offerId }

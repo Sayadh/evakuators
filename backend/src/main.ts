@@ -7,6 +7,7 @@ import { AppModule } from './app.module'
 import type { AppConfig } from './config/configuration'
 import { AllExceptionsFilter } from './common/all-exceptions.filter'
 import { buildValidationException } from './common/validation-exception.factory'
+import { ErrorTrackingService } from './error-tracking/error-tracking.service'
 
 async function bootstrap(): Promise<void> {
   // Typed as the Express app so `app.set()` (trust proxy, below) is available
@@ -88,7 +89,7 @@ async function bootstrap(): Promise<void> {
   // Multer errors, rate-limit hits, and any genuine bug all get a clear
   // Armenian message instead of a bare "Internal server error" — see
   // common/all-exceptions.filter.ts and common/exception-response.ts.
-  app.useGlobalFilters(new AllExceptionsFilter())
+  app.useGlobalFilters(new AllExceptionsFilter(app.get(ErrorTrackingService)))
 
   app.enableShutdownHooks()
 

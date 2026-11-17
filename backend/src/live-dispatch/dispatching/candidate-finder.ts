@@ -45,6 +45,8 @@ export interface CandidateQuery {
    * fee. `null`/absent = billing is off, no condition (wallet-ledger.ts).
    */
   requiredBalanceAmd?: number | null
+  /** Also drivers busy with another order (eligibility-sql.ts `includeBusy`) — never offered from this list */
+  includeBusy?: boolean
 }
 
 /** Where a candidate is, per source — SQL expressions over t (profile) and lc (live fix) */
@@ -94,7 +96,7 @@ export class PostgisCandidateFinder implements CandidateFinder {
        SELECT t."id" AS "driverId", ST_Distance(${at.point}, o.point) AS "straightLineMeters",
               ${at.lat} AS "latitude", ${at.lng} AS "longitude", p."availableSince", ${at.measuredAt} AS "measuredAt"
          FROM ${eligibleFrom(source)}, origin o
-        WHERE ${availabilityPredicate(p, settings, source)}
+        WHERE ${availabilityPredicate(p, settings, source, { includeBusy: query.includeBusy })}
           AND ST_DWithin(${at.point}, o.point, ${p.add(query.radiusMeters)}::double precision)
           AND ${capabilityPredicate(p, query.requirements)}
           AND ${walletPredicate(p, query.requiredBalanceAmd ?? null)}
@@ -131,7 +133,7 @@ export class PlainSqlCandidateFinder implements CandidateFinder {
          SELECT t."id" AS "driverId", ${distance} AS "straightLineMeters",
                 ${at.lat} AS "latitude", ${at.lng} AS "longitude", p."availableSince", ${at.measuredAt} AS "measuredAt"
            FROM ${eligibleFrom(source)}
-          WHERE ${availabilityPredicate(p, settings, source)}
+          WHERE ${availabilityPredicate(p, settings, source, { includeBusy: query.includeBusy })}
             AND ${capabilityPredicate(p, query.requirements)}
             AND ${walletPredicate(p, query.requiredBalanceAmd ?? null)}
             AND ${exclusion(p, query.excludeAttemptId)}

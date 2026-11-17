@@ -374,6 +374,35 @@ export class DriverAppController {
     send(res, await this.holder.service.driverRequest(req.driverId, intParam(orderId, 'orderId'), body, mutationContext(req, body)))
   }
 
+  // ─── Pre-orders (2026-11-17) ───────────────────────────────────────────────
+
+  /** The pre-orders this driver was told about: open ones, and the ones he priced lately */
+  @UseGuards(DriverAppGuard)
+  @Get('pre-orders')
+  preOrders(@Req() req: DriverAppRequest) {
+    return this.holder.service.driverPreOrders(req.driverId)
+  }
+
+  /** His price — new or changed, while it is open. Other drivers never see it. */
+  @UseGuards(DriverAppGuard)
+  @Put('pre-orders/:id/bid')
+  preOrderBid(@Req() req: DriverAppRequest, @Param('id') id: string, @Body() body: unknown) {
+    return this.holder.service.driverPreOrderBid(req.driverId, intParam(id, 'id'), body)
+  }
+
+  @UseGuards(DriverAppGuard)
+  @Delete('pre-orders/:id/bid')
+  preOrderWithdraw(@Req() req: DriverAppRequest, @Param('id') id: string) {
+    return this.holder.service.driverPreOrderWithdraw(req.driverId, intParam(id, 'id'))
+  }
+
+  /** The cancel screen has been open for minutes without a reason sent (2026-11-17): the operator is told, once */
+  @UseGuards(DriverAppGuard)
+  @Post('orders/:orderId/cancel-stalled')
+  async cancelStalled(@Req() req: DriverAppRequest, @Param('orderId') orderId: string) {
+    return this.holder.service.driverCancelStalled(req.driverId, intParam(orderId, 'orderId'))
+  }
+
   @UseGuards(DriverAppGuard)
   @Get('orders/history')
   history(@Req() req: DriverAppRequest, @Query('limit') limit?: string, @Query('before') before?: string) {

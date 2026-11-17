@@ -23,7 +23,7 @@ import { extractErrorMessage } from '~/utils/errors'
 import { useAdminAuthStore } from '~/stores/adminAuth'
 import type { FleetDriver, FleetDriverKind, FleetDriverStatus, FleetSiteCandidate } from '~/types/opsDispatch'
 import type { VehicleType } from '~/types/enums'
-import { formatDateNumeric } from '~/utils/formatters'
+import { formatClockTime, formatDateNumeric } from '~/utils/formatters'
 import { apiErrorText } from '~/utils/opsDispatchLabels'
 
 const adminAuth = useAdminAuthStore()
@@ -360,13 +360,18 @@ useSeoMetaData({ title: 'Հավելվածի վարորդներ', description: '�
                 <div class="muted small">{{ d.phone }}</div>
               </td>
               <td>
-                <span class="tag" :class="d.kind === 'SITE_LINKED' ? 'tag--site' : 'tag--app'">{{ KIND_LABEL[d.kind] }}</span>
+                <span class="tag" :class="d.kind === 'SITE_LINKED' && !d.appOnly ? 'tag--site' : 'tag--app'">{{ d.appOnly ? 'Հավելվածից' : KIND_LABEL[d.kind] }}</span>
               </td>
               <td>{{ vehicleLabel(d.vehicleType) }}<div class="muted small">{{ capacity(d) }}</div></td>
               <td>
                 {{ STATUS_LABEL[d.status] }}
-                <div v-if="d.kind === 'SITE_LINKED' && !d.siteListed" class="muted small">կայքում չի երևում (հավելվածի վրա չի ազդում)</div>
+                <div v-if="d.appOnly" class="muted small">գրանցվել է հավելվածից, կայքում չէ</div>
+                <div v-else-if="d.kind === 'SITE_LINKED' && !d.siteListed" class="muted small">կայքում չի երևում (հավելվածի վրա չի ազդում)</div>
                 <div v-if="d.statusReason" class="muted small">{{ d.statusReason }}</div>
+                <div v-if="d.rating" class="muted small" :title="`${d.rating.count} գնահատական`">⭐ {{ d.rating.average.toFixed(1) }} ({{ d.rating.count }})</div>
+                <div v-if="d.problemAlert" class="fleet__blocked">
+                  🔔 {{ d.problemAlert.reason === 'GPS' ? 'GPS-ը չի աշխատում' : 'Կապ չկա' }} · ծանուցված է{{ d.problemAlert.at ? ` ${formatClockTime(new Date(d.problemAlert.at))}` : '' }} ({{ d.problemAlert.count }}/3)
+                </div>
                 <div v-if="d.block" class="fleet__blocked">
                   ⛔ Արգելափակված {{ d.block.until ? `մինչև ${formatDateNumeric(d.block.until)}` : '(անժամկետ)' }}
                   <div v-if="d.block.reason" class="small">«{{ d.block.reason }}»</div>

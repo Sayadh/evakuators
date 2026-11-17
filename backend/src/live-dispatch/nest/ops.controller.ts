@@ -278,8 +278,8 @@ export class OpsDispatchController {
 
   /** Every driver's balance, lowest first */
   @Get('wallets')
-  wallets() {
-    return this.service.adminWallets()
+  wallets(@Query('days') days?: string) {
+    return this.service.adminWallets(Number(days ?? 30))
   }
 
   @Get('drivers/:driverId/wallet')
@@ -308,6 +308,54 @@ export class OpsDispatchController {
   }
 
   // ─── Price review (2026-11-12) ────────────────────────────────────────────
+
+  // ─── Pre-orders (2026-11-17) ───────────────────────────────────────────────
+
+  /** Describe a job without the customer's contact; every driver who can do it is notified and answers with a price */
+  @Post('pre-orders')
+  async createPreOrder(@Req() req: Req2, @Body() body: unknown, @Res() res: Response) {
+    send(res, await this.service.createPreOrder(req.adminUserId, body, mutationContext(req, body)))
+  }
+
+  @Get('pre-orders')
+  preOrders(@Query('status') status?: string) {
+    return this.holder.runtime.preOrders.list(status === 'CLOSED' ? 'CLOSED' : 'OPEN')
+  }
+
+  /** The job, how many drivers were told, and every price — cheapest first */
+  @Get('pre-orders/:id')
+  preOrder(@Param('id') id: string) {
+    return this.holder.runtime.preOrders.detail(intParam(id, 'id'))
+  }
+
+  /** «Կրկին ծանուցել»: push every active driver again, while it is open */
+  @Post('pre-orders/:id/notify')
+  async notifyPreOrder(@Req() req: Req2, @Param('id') id: string, @Res() res: Response) {
+    send(res, await this.service.notifyPreOrder(req.adminUserId, intParam(id, 'id'), mutationContext(req, {})))
+  }
+
+  @Post('pre-orders/:id/close')
+  closePreOrder(@Req() req: Req2, @Param('id') id: string) {
+    return this.holder.runtime.preOrders.close(intParam(id, 'id'), req.adminUserId)
+  }
+
+  /** A real order at this driver's price, offered to him (the order is created even if the offer is refused) */
+  @Post('pre-orders/:id/convert')
+  async convertPreOrder(@Req() req: Req2, @Param('id') id: string, @Body() body: { driverId?: unknown; customerPhone?: unknown }, @Res() res: Response) {
+    send(res, await this.service.convertPreOrder(req.adminUserId, intParam(id, 'id'), body, mutationContext(req, body)))
+  }
+
+  /** How the dispatch is doing over the last N days (2026-11-17): the stats page */
+  @Get('stats')
+  stats(@Query('days') days?: string) {
+    return this.service.adminStats(Number(days ?? 7))
+  }
+
+  /** The operator's 1–5 for a completed job (2026-11-17); rating again replaces it */
+  @Put('orders/:id/rating')
+  async rate(@Req() req: Req2, @Param('id') id: string, @Body() body: unknown, @Res() res: Response) {
+    send(res, await this.service.adminRateOrder(req.adminUserId, intParam(id, 'id'), body, mutationContext(req, body)))
+  }
 
   /** Minimum prices drivers entered, waiting for a call to the customer */
   @Get('price-reviews')

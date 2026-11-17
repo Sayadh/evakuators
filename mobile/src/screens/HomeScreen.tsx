@@ -6,7 +6,7 @@
  */
 import { useState } from 'react'
 import * as Location from 'expo-location'
-import { Image, Linking, Platform, StyleSheet, Text, View } from 'react-native'
+import { Alert, Image, Linking, Platform, StyleSheet, Text, View } from 'react-native'
 import { formatPrice } from '~/utils/formatPrice'
 import { ApiError, mediaUrl } from '../api/client'
 import { useLanguage, useT } from '../i18n'
@@ -14,7 +14,9 @@ import { useNav } from '../navigation/Navigator'
 import { useApp, type GpsRefreshResult } from '../state/AppState'
 import { useProfile } from '../state/ProfileState'
 import { useMissedOffers } from '../state/missedOffers'
+import { usePreOrders } from '../state/preOrders'
 import { blocksAlarm } from '../push/alertReadiness'
+import { openAlarmSettings } from '../push/offerAlarm'
 import { useAlertReadiness } from '../push/useAlertReadiness'
 import { Icon } from '../ui/Icon'
 import { Badge, Banner, Button, Card, Loading, Note, Screen, SwitchRow } from '../ui/kit'
@@ -28,6 +30,7 @@ export function HomeScreen() {
   const { profile } = useProfile()
   const { checks } = useAlertReadiness()
   const missed = useMissedOffers()
+  const preOrders = usePreOrders()
   const [busy, setBusy] = useState(false)
   const [toggleError, setToggleError] = useState<string | null>(null)
   const [gpsBusy, setGpsBusy] = useState(false)
@@ -138,7 +141,27 @@ export function HomeScreen() {
           icon="power"
           label={online ? t('home.goOffline') : t('home.goOnline')}
           busy={busy}
-          onPress={() => void toggle(() => app.setOnline(!online))}
+          onPress={() => {
+            // Going Online with battery optimisation on (Android, 2026-11-14):
+            // say once what it costs — a locked phone loses its connection and
+            // its offers — and offer the fix. Never a dead end: «Later» still
+            // goes Online, and Home keeps the warning until it is fixed.
+            const battery = checks?.find((check) => check.key === 'battery')
+            if (!online && battery && !battery.ok) {
+              Alert.alert(t('alerts.batteryOnlineTitle'), t('alerts.batteryOnlineBody'), [
+                { text: t('alerts.batteryOnlineLater'), style: 'cancel', onPress: () => void toggle(() => app.setOnline(true)) },
+                {
+                  text: t('alerts.batteryOnlineFix'),
+                  onPress: () => {
+                    openAlarmSettings('battery')
+                    void toggle(() => app.setOnline(true))
+                  },
+                },
+              ])
+              return
+            }
+            void toggle(() => app.setOnline(!online))
+          }}
         />
       </View>
       )}
@@ -147,6 +170,11 @@ export function HomeScreen() {
       {s.wallet?.low ? (
         <Banner tone="danger" title={t('wallet.lowTitle')} action={{ label: t('wallet.topUp'), onPress: () => nav.push('wallet') }}>
           {t('wallet.homeLowBody', { balance: formatPrice(s.wallet.balanceAmd) })}
+        </Banner>
+      ) : null}
+      {preOrders.unanswered > 0 && !s.currentOffer && !s.activeOrder ? (
+        <Banner tone="info" title={t('preOrders.homeTitle', { count: String(preOrders.unanswered) })} action={{ label: t('preOrders.homeAction'), onPress: () => nav.openOn('orders', 'preOrders') }}>
+          {t('preOrders.homeBody')}
         </Banner>
       ) : null}
       {missed.unseen > 0 && !s.currentOffer ? (

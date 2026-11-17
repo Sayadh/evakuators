@@ -9,16 +9,20 @@
  * Buttons are shown by STATUS, but the server is the authority — a refused
  * action shows the server's reason.
  */
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import OpsDriverMap from '~/components/ops/OpsDriverMap.vue'
+import OrderFormFields from '~/components/ops/OrderFormFields.vue'
+import PickupPrecisionPicker from '~/components/ops/PickupPrecisionPicker.vue'
 import { SHOW_OPS_DRIVER_MAP } from '~/constants/admin'
 import { newIdempotencyKey, opsDispatchRepository } from '~/repositories/opsDispatch.repository'
 import { useAdminAuthStore } from '~/stores/adminAuth'
 import { useOpsRealtime } from '~/composables/useOpsRealtime'
-import type { CancelReason, OpsMapDriver, OpsOrderDetail, PaymentStatus, ProgressAction } from '~/types/opsDispatch'
+import type { CancelReason, OpsMapDriver, OpsOrderDetail, PaymentStatus, PickupPrecision, ProgressAction } from '~/types/opsDispatch'
 import { formatClockTime, formatDateNumeric } from '~/utils/formatters'
 import { formatPrice } from '~/utils/formatPrice'
 import { parseCoordinates } from '~/utils/coordinates'
+import { orderIncidents, type OrderIncident } from '~/utils/orderIncidents'
+import { blankOrderForm, orderEditBody, orderFormFromOrder, orderFormLocks, type OrderFormState } from '~/utils/orderForm'
 import {
   ATTENTION_LABEL,
   CANCEL_REASON_LABEL,
@@ -27,7 +31,9 @@ import {
   ORDER_STATUS_VARIANT,
   PAYMENT_LABEL,
   REASON_LABEL,
-  SEARCH_FAILURE_KINDS,
+  DRIVER_ONLY_CANCEL_REASONS,
+  PICKUP_PRECISION_LABEL,
+  DRIVERLESS_ATTENTION_KINDS,
   apiErrorCode,
   apiErrorText,
   availabilitySummary,
@@ -52,10 +58,17 @@ const now = ref(Date.now())
 const order = computed(() => detail.value?.order ?? null)
 const pendingOffer = computed(() => detail.value?.offers.find((o) => o.status === 'PENDING') ?? null)
 const assignedDriver = computed(() => drivers.value.find((d) => d.driverId === order.value?.assignedDriverId) ?? null)
-const searchFailed = computed(() => !!order.value?.attentionKind && SEARCH_FAILURE_KINDS.includes(order.value.attentionKind))
+/** No driver attached and a new search is allowed: a failed search, or a customer who has not decided (2026-11-17) */
+const searchFailed = computed(() => !!order.value?.attentionKind && DRIVERLESS_ATTENTION_KINDS.includes(order.value.attentionKind))
 const driverAttached = computed(() => order.value?.assignedDriverId != null)
 /** The driver who has (or last had) this order — callable even after the job is over */
 const lastAssignment = computed(() => detail.value?.assignments?.[0] ?? null)
+// What went wrong, in words (utils/orderIncidents.ts): open ones as banners on top, all as history
+const incidents = computed(() => (detail.value ? orderIncidents(detail.value) : []))
+const openIncidents = computed(() => incidents.value.filter((i) => i.open))
+function incidentTime(iso: string): string {
+  return `${formatDateNumeric(iso)} ${formatClockTime(new Date(iso))}`
+}
 const WALLET_KIND_LABEL: Record<string, string> = {
   ORDER_FEE: 'Գանձվել է ընդունելիս',
   ORDER_FEE_ADJUSTMENT: 'Ճշգրտում ըստ գնի',
@@ -104,9 +117,15 @@ async function run(action: string, fn: (key: string, version: number) => Promise
 // only an address): the automatic search needs them. Same "lat, lng" text as
 // the creation form, same parser.
 const pickupCoordsInput = ref('')
+const pickupCoordsPrecision = ref<PickupPrecision | ''>('')
 const pickupCoordsError = ref<string | null>(null)
 const setPickupCoords = () => {
   pickupCoordsError.value = null
+  if (!pickupCoordsPrecision.value) {
+    pickupCoordsError.value = 'Նշեք՝ կետը հաստատվա՞ծ է, թե մոտավոր'
+    return
+  }
+  const precision = pickupCoordsPrecision.value
   const parsed = parseCoordinates(pickupCoordsInput.value)
   if (!parsed.ok) {
     pickupCoordsError.value = parsed.error
@@ -115,9 +134,86 @@ const setPickupCoords = () => {
   const address = order.value?.pickup.address ?? ''
   return run(
     'pickup-coords',
-    (k, v) => opsDispatchRepository.updateOrder(orderId, { expectedVersion: v, pickup: { latitude: parsed.latitude, longitude: parsed.longitude, address } }, k),
+    (k, v) => opsDispatchRepository.updateOrder(orderId, { expectedVersion: v, pickup: { latitude: parsed.latitude, longitude: parsed.longitude, address, precision } }, k),
     'Կոորդինատները պահպանվեցին։ Կարող եք սկսել ավտոմատ որոնումը։',
   )
+}
+
+// «✏️ Խմբագրել» (2026-11-16): the same form as «+ Նոր պատվեր»
+// (components/ops/OrderFormFields.vue), pre-filled. Only the changed groups
+// are sent (utils/orderForm.ts orderEditBody), against the version the form
+// was OPENED at — a save over someone else's newer edit is a VERSION_CONFLICT,
+// never a silent overwrite. The backend pushes the assigned driver itself
+// (TERMS_CHANGED) and, while searching, re-offers on the new terms.
+const editing = ref(false)
+const editForm = reactive(blankOrderForm())
+const editTried = ref(false)
+const editError = ref<string | null>(null)
+let editOriginal: OrderFormState | null = null
+let editVersion = 0
+const editLocks = computed(() => orderFormLocks(order.value))
+function startEdit() {
+  if (!order.value) return
+  editOriginal = orderFormFromOrder(order.value)
+  Object.assign(editForm, orderFormFromOrder(order.value))
+  editVersion = order.value.version
+  editTried.value = false
+  editError.value = null
+  editing.value = true
+}
+function cancelEdit() {
+  editing.value = false
+  editError.value = null
+  pendingKeys.delete('edit')
+}
+async function saveEdit() {
+  if (!order.value || !editOriginal) return
+  editTried.value = true
+  editError.value = null
+  const result = orderEditBody(editOriginal, editForm, editLocks.value)
+  if (!result.ok) {
+    editError.value = result.error
+    return
+  }
+  if (!result.body) {
+    editing.value = false
+    notice.value = 'Փոփոխություն չկար։'
+    return
+  }
+  const body = result.body
+  const material = ['pickup', 'destination', 'requirements', 'pricing'].some((k) => k in body) || (body.vehicle as Record<string, unknown> | undefined)?.weightKg !== undefined
+  const success = !material
+    ? 'Պատվերը պահպանվեց։'
+    : order.value.assignedDriverId !== null
+      ? 'Պատվերը պահպանվեց։ Վարորդը ստացավ ծանուցում պայմանների փոփոխության մասին։'
+      : order.value.status === 'SEARCHING'
+        ? 'Պատվերը պահպանվեց։ Ընթացիկ առաջարկը (եթե կար) չեղարկվեց և կուղարկվի նոր պայմաններով։'
+        : 'Պատվերը պահպանվեց։'
+  error.value = null
+  notice.value = null
+  busy.value = true
+  try {
+    await opsDispatchRepository.updateOrder(orderId, { expectedVersion: editVersion, ...body }, keyFor('edit'))
+    pendingKeys.delete('edit')
+    editing.value = false
+    notice.value = success
+  } catch (e) {
+    const code = apiErrorCode(e)
+    if (code) pendingKeys.delete('edit')
+    if (code === 'VERSION_CONFLICT') {
+      // Someone (or the driver) changed the order after the form was opened.
+      // Rebasing the operator's typing onto it would quietly revert their
+      // change, so the form reopens on the fresh order instead.
+      await load()
+      startEdit()
+      editError.value = 'Պատվերը այս ընթացքում փոխվել է (օպերատոր կամ վարորդ)։ Ձևը թարմացվեց նոր տվյալներով․ ստուգեք և պահպանեք կրկին։'
+      return
+    }
+    editError.value = apiErrorText(e, 'Պատվերը պահպանել չհաջողվեց։')
+  } finally {
+    busy.value = false
+  }
+  await load()
 }
 
 const start = () => run('start', (k, v) => opsDispatchRepository.action(orderId, 'start', { expectedVersion: v }, k), 'Ավտոմատ որոնումը սկսվեց։')
@@ -178,6 +274,25 @@ const release = async () => {
     releaseRestart.value ? 'Նշանակումը հանվեց, նոր որոնումը սկսվեց։' : 'Նշանակումը հանվեց։',
   )
 }
+/** Banner «take the driver off and search again»: the incident is the reason, unless the operator wrote one */
+const releaseForIncident = (incident: OrderIncident) => {
+  if (releaseReason.value.trim().length < 3) releaseReason.value = `${incident.title}${incident.reason ? `: ${incident.reason}` : ''}`
+  releaseRestart.value = true
+  return release()
+}
+/** Banner «cancel…»: the reason must still be chosen, so it takes the operator to the form */
+const goToCancel = () => document.getElementById('order-cancel')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+// The operator's 1–5 for a completed job (2026-11-17), usually after asking the customer
+const ratingScore = ref<number | null>(null)
+const ratingComment = ref('')
+const currentRating = computed(() => detail.value?.rating ?? null)
+const rate = () =>
+  ratingScore.value !== null &&
+  run(
+    'rate',
+    (k) => opsDispatchRepository.rateOrder(orderId, { score: ratingScore.value!, comment: ratingComment.value.trim() || null }, k),
+    'Գնահատականը պահպանվեց։',
+  )
 const resumeNote = ref('')
 const resume = () => run('resume', (k, v) => opsDispatchRepository.action(orderId, 'resume', { note: resumeNote.value, expectedVersion: v }, k), 'Պատվերը շարունակվում է նույն վարորդով։')
 
@@ -254,10 +369,35 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
         <span v-if="order.attentionKind" class="order__attention">{{ ATTENTION_LABEL[order.attentionKind] }}</span>
       </div>
 
+      <OrderIncidentBanner
+        v-for="incident in openIncidents"
+        :key="incident.id"
+        :incident="incident"
+        :customer-phone="order.customer.phone"
+        :driver-attached="driverAttached"
+        :cancellable="!['COMPLETED', 'CANCELLED'].includes(order.status)"
+        :busy="busy"
+        @release="releaseForIncident(incident)"
+        @resume="resume"
+        @restart="start"
+        @cancel="goToCancel"
+      />
+
       <div class="order__grid">
         <section class="card">
-          <h2>Պատվեր</h2>
-          <dl>
+          <div class="order__card-head">
+            <h2>Պատվեր</h2>
+            <AppButton v-if="!editing" size="sm" variant="outline" :disabled="busy" @click="startEdit">✏️ Խմբագրել</AppButton>
+          </div>
+          <form v-if="editing" class="order__edit" novalidate @submit.prevent="saveEdit">
+            <OrderFormFields v-model="editForm" :locks="editLocks" :tried-submit="editTried" :drivers="drivers" />
+            <p v-if="editError" class="order__error" role="alert">{{ editError }}</p>
+            <div class="order__edit-actions">
+              <AppButton type="submit" :disabled="busy">{{ busy ? 'Պահպանվում է…' : 'Պահպանել' }}</AppButton>
+              <AppButton type="button" variant="outline" :disabled="busy" @click="cancelEdit">Չեղարկել</AppButton>
+            </div>
+          </form>
+          <dl v-else>
             <dt>Հաճախորդ</dt>
             <dd><a :href="`tel:${order.customer.phone}`">{{ formatArmenianPhone(order.customer.phone) }}</a> {{ order.customer.name }}</dd>
             <dt>Pickup</dt>
@@ -265,6 +405,7 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
               {{ order.pickup.address }}
               <template v-if="order.pickup.latitude !== null && order.pickup.longitude !== null">
                 · <a :href="`https://maps.google.com/?q=${order.pickup.latitude},${order.pickup.longitude}`" target="_blank" rel="noopener">քարտեզ</a>
+                <template v-if="order.pickup.precision"> · <strong>{{ PICKUP_PRECISION_LABEL[order.pickup.precision] }}</strong></template>
               </template>
               <template v-else> · <span class="muted">կոորդինատները հայտնի չեն</span></template>
             </dd>
@@ -296,8 +437,8 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
             <dt>Պահանջներ</dt>
             <dd>
               Անիվները պտտվում են՝ {{ tri(order.requirements.wheelsRoll) }} · Ղեկ արգելափակված՝ {{ tri(order.requirements.steeringLocked) }} ·
-              Տուփ արգելափակված՝ {{ tri(order.requirements.gearboxLocked) }} · Մանիպուլյատոր՝ {{ tri(order.requirements.needsManipulator) }} ·
-              Անիվային ռոլիկներ՝ {{ tri(order.requirements.needsWheelSkates ?? null) }}<template v-if="order.requirements.needsWheelSkates && order.requirements.wheelSkatesCount"> ({{ order.requirements.wheelSkatesCount }} հատ)</template>
+              Տուփ արգելափակված՝ {{ tri(order.requirements.gearboxLocked) }} · Մանիպուլյատոր՝ {{ tri(order.requirements.needsManipulator) }}
+              <template v-if="order.requirements.needsWheelSkates"> · <b>Պետք են ռոլիկներ<template v-if="order.requirements.wheelSkatesCount">՝ {{ order.requirements.wheelSkatesCount }} հատ</template></b></template>
               <div v-if="order.requirements.overridden" class="muted">Override՝ «{{ order.requirements.overrideNote }}»</div>
             </dd>
             <dt>Գին</dt>
@@ -335,6 +476,21 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
                 </div>
               </dd>
             </template>
+            <template v-if="detail.referral">
+              <dt>Փոխանցող վարորդ</dt>
+              <dd>
+                {{ detail.referral.name ?? `#${detail.referral.driverId}` }}
+                <template v-if="detail.referral.phone"> · <a :href="`tel:${detail.referral.phone}`">{{ formatArmenianPhone(detail.referral.phone) }}</a></template>
+                <div class="muted">
+                  <template v-if="detail.referral.status === 'CREDITED'">✅ Մուտքագրվել է նրա հաշվին՝ {{ formatPrice(detail.referral.creditedAmd ?? 0) }}</template>
+                  <template v-else-if="detail.referral.status === 'WAITING'">⏳ Սպասում է գնի ստուգմանը, հետո կմուտքագրվի</template>
+                  <template v-else-if="detail.referral.status === 'SKIPPED'">
+                    Չի մուտքագրվել՝ {{ detail.referral.skipReason === 'REFERRER_DID_THE_JOB' ? 'պատվերը կատարել է ինքը' : 'միջնորդավճար չկար (անվճար պատվեր)' }}
+                  </template>
+                  <template v-else>Կմուտքագրվի պատվերն ավարտվելիս</template>
+                </div>
+              </dd>
+            </template>
             <dt v-if="order.internalNote">Ներքին նշում</dt>
             <dd v-if="order.internalNote">{{ order.internalNote }}</dd>
           </dl>
@@ -342,6 +498,29 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
 
         <section class="card">
           <h2>Գործողություններ</h2>
+
+          <div v-if="order.status === 'COMPLETED'" class="box">
+            <strong>Գնահատել վարորդին</strong>
+            <span v-if="currentRating" class="muted"> · հիմա՝ {{ '⭐'.repeat(currentRating.score) }} ({{ currentRating.score }}/5)<template v-if="currentRating.comment"> · «{{ currentRating.comment }}»</template></span>
+            <div class="rating" role="radiogroup" aria-label="Գնահատական 1-ից 5">
+              <button
+                v-for="n in 5"
+                :key="n"
+                type="button"
+                role="radio"
+                class="rating__star"
+                :class="{ on: (ratingScore ?? currentRating?.score ?? 0) >= n }"
+                :aria-checked="(ratingScore ?? currentRating?.score) === n"
+                :aria-label="`${n}`"
+                @click="ratingScore = n"
+              >
+                ★
+              </button>
+            </div>
+            <label>Մեկնաբանություն (ըստ ցանկության) <input v-model="ratingComment" maxlength="500" /></label>
+            <AppButton size="sm" :disabled="busy || ratingScore === null" @click="rate">{{ currentRating ? 'Փոխել գնահատականը' : 'Պահպանել գնահատականը' }}</AppButton>
+            <p class="muted small">Միայն ինֆորմացիա է (Վարորդներ և Վիճակագրություն էջերում), պատվերների բաշխման վրա չի ազդում։</p>
+          </div>
 
           <div v-if="pendingReview" class="box box--warn">
             <strong>Ստուգել գինը.</strong> վարորդը գրել է նվազագույն գինը՝ {{ formatPrice(pendingReview.priceAmd) }}։
@@ -406,6 +585,7 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
               Վերցնելու կետի կոորդինատներ (ավտոմատ որոնման համար)
               <input v-model="pickupCoordsInput" placeholder="40.177200, 44.512600" inputmode="decimal" />
             </label>
+            <PickupPrecisionPicker v-if="pickupCoordsInput.trim()" v-model="pickupCoordsPrecision" name="quickPickupPrecision" />
             <div v-if="pickupCoordsError" class="order__error" role="alert">{{ pickupCoordsError }}</div>
             <AppButton size="sm" :disabled="busy || pickupCoordsInput.trim().length === 0" @click="setPickupCoords">Պահպանել կոորդինատները</AppButton>
           </div>
@@ -437,11 +617,11 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
             <AppButton size="sm" variant="outline" :disabled="busy" @click="setPayment">Պահել</AppButton>
           </div>
 
-          <div v-if="!['COMPLETED', 'CANCELLED'].includes(order.status)" class="box">
+          <div v-if="!['COMPLETED', 'CANCELLED'].includes(order.status)" id="order-cancel" class="box">
             <label>
               Չեղարկման պատճառ
               <select v-model="cancelReason">
-                <template v-for="(label, key) in CANCEL_REASON_LABEL" :key="key"><option v-if="key !== 'NOT_SPECIFIED'" :value="key">{{ label }}</option></template>
+                <template v-for="(label, key) in CANCEL_REASON_LABEL" :key="key"><option v-if="!DRIVER_ONLY_CANCEL_REASONS.includes(key)" :value="key">{{ label }}</option></template>
               </select>
             </label>
             <label v-if="cancelReason === 'OTHER'">Մեկնաբանություն* <input v-model="cancelComment" /></label>
@@ -491,6 +671,19 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
         </section>
 
         <section class="card">
+          <template v-if="incidents.length">
+            <h2>Միջադեպեր</h2>
+            <ul class="incidents">
+              <li v-for="incident in incidents" :key="incident.id" :class="`incidents__item incidents__item--${incident.tone}`">
+                <strong>{{ incident.title }}</strong>
+                <span class="muted"> · {{ incident.actor.label }} · {{ incidentTime(incident.at) }}</span>
+                <div v-if="incident.reason || incident.comment || incident.prices" class="incidents__why">
+                  {{ incident.reason }}<template v-if="incident.reason && incident.comment"> · </template><template v-if="incident.comment">«{{ incident.comment }}»</template>
+                  <template v-if="incident.prices"> · {{ incident.prices }}</template>
+                </div>
+              </li>
+            </ul>
+          </template>
           <h2>Timeline</h2>
           <ol class="timeline">
             <li v-for="event in [...detail.timeline].reverse()" :key="event.id">
@@ -545,6 +738,25 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
   &__notice {
     color: var(--color-success);
   }
+  &__card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+    h2 {
+      margin: 0 !important;
+    }
+  }
+  &__edit {
+    display: grid;
+    gap: var(--space-3);
+  }
+  &__edit-actions {
+    display: flex;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
   &__grid {
     display: grid;
     gap: var(--space-4);
@@ -579,6 +791,23 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
   }
   dd {
     margin: 0;
+  }
+}
+.rating {
+  display: flex;
+  gap: 4px;
+  margin: 6px 0;
+  &__star {
+    font-size: 1.8rem;
+    line-height: 1;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    color: var(--color-border, #d0d5dd);
+    padding: 0 2px;
+    &.on {
+      color: #f5a623;
+    }
   }
 }
 .box {
@@ -642,6 +871,32 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
     text-align: left;
     padding: 6px;
     border-bottom: 1px solid var(--color-border);
+  }
+}
+.incidents {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--space-4);
+  display: grid;
+  gap: var(--space-2);
+  &__item {
+    padding: 8px 12px;
+    border-left: 4px solid var(--color-border);
+    background: var(--color-bg);
+    border-radius: 6px;
+    &--danger {
+      border-left-color: var(--color-danger);
+    }
+    &--warn {
+      border-left-color: #d97706;
+    }
+    &--info {
+      border-left-color: var(--color-primary);
+    }
+  }
+  &__why {
+    font-size: 0.9rem;
+    margin-top: 2px;
   }
 }
 .timeline {

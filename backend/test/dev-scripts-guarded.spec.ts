@@ -47,14 +47,25 @@ const NO_DATABASE = new Set(['assert-safe-environment.js', 'check-di-graph.js'])
  *   given `--apply`, it only ever touches `TowTruckImage.url`, and only for
  *   rows whose file it has just verified is a WebP on disk.
  *
- * The first two are read-your-own-account operations, and the third rewrites a
- * single column under those conditions — which is what keeps the exception a
- * narrow one rather than a hole.
+ * - `admin-accounts.js` (security audit 2026-11-12) — lists admin accounts, or
+ *   keeps one and deletes the rest. Only meaningful on the live server, where
+ *   the accounts are. A dry run unless given `--yes`, and it refuses an email
+ *   that is not an existing ADMIN, so it can never leave the site with none.
+ * - `create-review-account.js` (2026-11-12) — the App Store / Google Play
+ *   reviewer's demo driver. It is FOR production (the stores test the live
+ *   app), and it only upserts rows keyed by the reserved `+374 00 000001`
+ *   number, which no operator issues.
+ *
+ * The first two are read-your-own-account operations, the third rewrites a
+ * single column under those conditions, and the last two are scoped to one
+ * account each — which is what keeps the exception a narrow one rather than a hole.
  */
 const PRODUCTION_ALLOWED = new Set([
   'create-admin-user.js',
   'generate-admin-telegram-link.js',
   'migrate-images-to-disk.js',
+  'admin-accounts.js',
+  'create-review-account.js',
 ])
 
 function scripts(): string[] {
@@ -88,7 +99,9 @@ describe('dev scripts', () => {
     // Not a formality: this is the line that turns "unguarded" from something
     // that can happen by omission into something someone had to write down.
     expect([...PRODUCTION_ALLOWED].sort()).toEqual([
+      'admin-accounts.js',
       'create-admin-user.js',
+      'create-review-account.js',
       'generate-admin-telegram-link.js',
       'migrate-images-to-disk.js',
     ])

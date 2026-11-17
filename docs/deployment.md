@@ -1,10 +1,32 @@
 # Deployment
 
 Single VPS, PM2 for process management, nginx as reverse proxy + TLS
-termination. No containers, no CI/CD pipeline — deploys are manual `git
-pull` + rebuild on the server. This doc is the practical runbook; see
+termination. No containers. CI checks every push (GitHub Actions); deploys
+are `scripts/deploy.sh` on the server — git pull + rebuild, nothing pushes to
+the server automatically. This doc is the practical runbook; see
 `README.md` for the first-time setup checklist (database, media directory,
 initial nginx/certbot setup, etc.) which isn't repeated here.
+
+## One command (2026-11-17) — use this
+
+```bash
+scripts/deploy.sh staging        # from /var/www/evakuators-staging
+scripts/deploy.sh production     # from production's checkout — asks you to type "production"
+```
+
+It is the routine deploy below as one fail-fast sequence, plus the traps this
+doc describes: `git pull --ff-only` (refuses local edits on the server),
+`npm ci` only when a lockfile changed, ALWAYS `prisma generate`, a database
+backup before migrating production, `migrate deploy`, both builds and
+`check:di`, and only then `pm2 startOrRestart <this environment's ecosystem file>` (startOrRestart: a process the file defines but PM2 is not running yet — the worker, the first time — is started, not skipped),
+followed by a health check of the backend (database up) and the frontend on
+this environment's ports. Nothing restarts unless every build passed; any
+failure prints the exact rollback commands. `--force` rebuilds when the pull
+brought nothing. The manual sequence below stays as the reference for what it does.
+
+CI (`.github/workflows/ci.yml`) runs lint, type check and the tests of all
+three projects on every push — look at the GitHub «Actions» tab before
+deploying a commit.
 
 ## Routine deploy (most common case)
 
@@ -329,6 +351,14 @@ does to its rows — including a full reset — cannot reach production's.
 `scripts/refresh-staging-db.sh` is the only supported way to (re)populate it;
 see "Refreshing staging's data" below.
 
+**Push: the copy never carries production's phones (2026-11-18).** Both
+refresh scripts delete the copied `PushDeviceToken` rows and every pending
+`OutboxEvent` right after the restore. The apps use one Firebase project, so a
+copied token is a real driver's phone: without this, a pre-order created on
+staging («notify every active driver») — or on a laptop after
+`refresh-local-db.sh` — would push production's (or staging's) drivers. Each
+phone registers a fresh token with its own backend on its next launch.
+
 ### Telegram: same bot token, outbound messages allow-listed
 
 Telegram gives one bot exactly one **webhook** — the URL Telegram calls for
@@ -603,6 +633,35 @@ are hard links (`rsync --link-dest`). It needs `rsync` (`apt install rsync`),
 and its off-site copy is `MEDIA_OFFSITE_CMD` (it receives the snapshot
 **directory**, so use `rclone sync "$1" remote:...` or `scp -r`). Restore the
 dump and the snapshot **from the same run**, so every row's file exists.
+
+### Off-site to Supabase Storage + alerts (2026-11-17)
+
+Built in, so no rclone setup is needed. In `backend/.env` on the server:
+
+```bash
+SUPABASE_BACKUP_URL="https://<project>.supabase.co"
+SUPABASE_BACKUP_SERVICE_KEY="<service_role key — Settings → API>"
+SUPABASE_BACKUP_BUCKET="evakuators-backups"      # create it, PRIVATE
+SUPABASE_BACKUP_PREFIX="db"                      # staging: "db-staging"
+BACKUP_ENCRYPTION_KEY="<openssl rand -base64 48>"
+```
+
+With `SUPABASE_BACKUP_URL` set and `OFFSITE_CMD` unset, every run encrypts the
+dump (AES-256, `scripts/backup-offsite-supabase.sh`) and uploads it, keeping
+`RETENTION_DAYS` there too. It refuses to upload without
+`BACKUP_ENCRYPTION_KEY` — the dump holds phone numbers and password hashes.
+**Store that key in a password manager as well**: lose it and every copy is
+unreadable. Supabase's free plan caps one file at 50 MB; a gzipped dump is far
+below that today, check `du -h` now and then.
+
+Restore from Supabase: download the `.enc` file from the dashboard, then
+`openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:BACKUP_ENCRYPTION_KEY -in db-….sql.gz.enc | gunzip | psql <db>`.
+
+Alerts: every failure (dump, photos, or the off-site copy) is sent to the
+admins on Telegram, and a complete run writes the `backup` heartbeat — the API
+reports on Telegram when there has been none for 26 hours, which also catches
+a cron that never runs (`notify/ops-watch.ts`). The cron line itself is the
+same as above; `postgresql-client` (for `psql`) and `curl` must be installed.
 
 ## Log rotation
 

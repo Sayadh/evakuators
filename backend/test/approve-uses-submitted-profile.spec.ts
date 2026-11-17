@@ -105,6 +105,8 @@ function buildService(storedOverrides: Partial<typeof STORED> = {}) {
     towTruck: { create },
     towTruckImage: { updateMany: vi.fn(() => Promise.resolve({ count: 0 })) },
     registrationRequest: { update: vi.fn(() => Promise.resolve({})) },
+    // The app-only → site-linked hand-over (FleetDriver UPDATE + event) runs as raw SQL
+    $executeRaw: vi.fn(() => Promise.resolve(0)),
   }
 
   const prisma = {

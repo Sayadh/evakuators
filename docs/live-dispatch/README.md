@@ -20,6 +20,7 @@
 | [08-testing.md](08-testing.md) | Թեստեր, արդյունքներ, ինչ չի ստուգվել |
 | [09-rollout-and-rollback.md](09-rollout-and-rollback.md) | Staging, migration plan, backup, rollback, flags |
 | [10-load-test-report.md](10-load-test-report.md) | Բեռնվածության թեստի իրական արդյունքներ |
+| [16-pre-orders.md](16-pre-orders.md) | Նախապատվերներ՝ գների հավաքում նախքան պատվերը |
 | [openapi.json](openapi.json) | API պայմանագիր (OpenAPI 3.1), կոդի հետ համաժամեցված թեստով |
 
 ## Local development

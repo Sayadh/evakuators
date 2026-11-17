@@ -38,7 +38,7 @@ export function isApiEnabled(): boolean {
 }
 
 interface ApiRequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   query?: Record<string, string | number | boolean | undefined>
   body?: BodyInit | Record<string, unknown>
   /** e.g. { Authorization: `Bearer ${token}` } for driver-authenticated calls */

@@ -19,6 +19,13 @@
 #   OFFSITE_CMD      command to copy the dump off this machine — see below
 #   MEDIA_DIR        the photos directory           (default: read from ENV_FILE)
 #   MEDIA_OFFSITE_CMD  same as OFFSITE_CMD, for the photo snapshot DIRECTORY
+#   SUPABASE_BACKUP_URL (+ _SERVICE_KEY, _BUCKET, BACKUP_ENCRYPTION_KEY)
+#                    built-in off-site copy when OFFSITE_CMD is unset — see
+#                    scripts/backup-offsite-supabase.sh (2026-11-17)
+#
+# Every failure is also sent to the admins on Telegram (ADMIN_TELEGRAM_BOT_TOKEN
+# + linked admin accounts), and every complete run writes the 'backup'
+# heartbeat the API watches: no message at all for 26 h is a message too.
 #
 set -euo pipefail
 
@@ -28,18 +35,42 @@ BACKUP_DIR="${BACKUP_DIR:-/var/backups/evakuators}"
 RETENTION_DAYS="${RETENTION_DAYS:-14}"
 
 log() { printf '%s  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"; }
-fail() { log "ERROR: $*" >&2; exit 1; }
 
-# DATABASE_URL is read from backend/.env rather than duplicated in cron, so the
-# credentials live in exactly one place. `set -a` exports what the file defines.
-if [[ -z "${DATABASE_URL:-}" ]]; then
-  [[ -f "$ENV_FILE" ]] || fail "no DATABASE_URL in the environment and no $ENV_FILE to read it from"
+# Telegram to every admin who linked the ADMIN bot (2026-11-17). Best-effort:
+# a backup must not fail because Telegram is down. Needs PG_URL for the chat
+# ids, so it stays quiet when the database itself is unreachable — the API's
+# 26-hour watch (notify/ops-watch.ts) still notices then.
+notify() {
+  [[ -n "${ADMIN_TELEGRAM_BOT_TOKEN:-}" && -n "${PG_URL:-}" ]] || return 0
+  command -v psql >/dev/null && command -v curl >/dev/null || return 0
+  local host prefix=""
+  host="$(printf '%s' "${FRONTEND_URL:-https://evakuators.am}" | sed -E 's#^[a-z]+://##; s#/.*$##')"
+  [[ "$host" == "evakuators.am" || "$host" == "www.evakuators.am" ]] || prefix="[$host] "
+  local chat
+  for chat in $(psql "$PG_URL" -At -c 'SELECT "telegramChatId" FROM "User" WHERE "telegramChatId" IS NOT NULL' 2>/dev/null); do
+    curl --silent --max-time 10 -o /dev/null "https://api.telegram.org/bot${ADMIN_TELEGRAM_BOT_TOKEN}/sendMessage" \
+      --data-urlencode "chat_id=$chat" --data-urlencode "text=${prefix}$1" || true
+  done
+}
+
+fail() {
+  log "ERROR: $*" >&2
+  notify "🔴 Բազայի պահուստը ձախողվեց՝ $*"$'\n'"Սերվերում՝ tail -50 /var/log/evakuators-backup.log"
+  exit 1
+}
+
+# DATABASE_URL (and the Telegram/Supabase settings) are read from backend/.env
+# rather than duplicated in cron, so credentials live in exactly one place.
+# `set -a` exports what the file defines; a DATABASE_URL given explicitly wins.
+EXPLICIT_DATABASE_URL="${DATABASE_URL:-}"
+if [[ -f "$ENV_FILE" ]]; then
   set -a
   # shellcheck disable=SC1090
   source "$ENV_FILE"
   set +a
 fi
-[[ -n "${DATABASE_URL:-}" ]] || fail "DATABASE_URL is empty"
+[[ -n "$EXPLICIT_DATABASE_URL" ]] && DATABASE_URL="$EXPLICIT_DATABASE_URL"
+[[ -n "${DATABASE_URL:-}" ]] || fail "DATABASE_URL is empty (and no $ENV_FILE to read it from)"
 
 command -v pg_dump >/dev/null || fail "pg_dump not found (apt install postgresql-client)"
 
@@ -74,9 +105,21 @@ gzip -t "$TARGET" || fail "$TARGET is corrupt"
 # dump path as $1, for example:
 #   OFFSITE_CMD='rclone copy "$1" remote:evakuators-backups'
 #   OFFSITE_CMD='scp "$1" backup@other-host:/backups/'
+# or, built in (2026-11-17), set SUPABASE_BACKUP_URL & co. in backend/.env:
+# an encrypted copy to a private Supabase bucket.
+if [[ -z "${OFFSITE_CMD:-}" && -n "${SUPABASE_BACKUP_URL:-}" ]]; then
+  OFFSITE_CMD="\"$REPO_ROOT/scripts/backup-offsite-supabase.sh\" \"\$1\""
+fi
+OFFSITE="none"
 if [[ -n "${OFFSITE_CMD:-}" ]]; then
   log "copying off-site"
-  bash -c "$OFFSITE_CMD" _ "$TARGET" || log "WARNING: off-site copy failed — local dump kept"
+  if bash -c "$OFFSITE_CMD" _ "$TARGET"; then
+    OFFSITE="ok"
+  else
+    OFFSITE="failed"
+    log "WARNING: off-site copy failed — local dump kept"
+    notify "⚠️ Բազայի պահուստը ստեղծվեց, բայց ՉՊԱՏՃԵՆՎԵՑ սերվերից դուրս (off-site)։"$'\n'"Սերվերում՝ tail -50 /var/log/evakuators-backup.log"
+  fi
 else
   log "WARNING: OFFSITE_CMD is not set — this backup lives on the same disk as the database"
 fi
@@ -131,6 +174,15 @@ fi
 # Prune old dumps last, so a failure above never deletes the previous good copy.
 DELETED="$(find "$BACKUP_DIR" -name 'db-*.sql.gz' -mtime "+$RETENTION_DAYS" -print -delete | wc -l)"
 log "pruned $DELETED dump(s) older than $RETENTION_DAYS days"
+
+# The heartbeat the API watches (SystemHeartbeat 'backup', notify/ops-watch.ts).
+# Written only when the copy also left this machine (or no off-site copy is
+# configured at all): a run whose off-site copy failed is not «a backup».
+if [[ "$OFFSITE" != "failed" ]]; then
+  psql "$PG_URL" -q -c "INSERT INTO \"SystemHeartbeat\" (\"name\", \"at\", \"data\") VALUES ('backup', now(), jsonb_build_object('file', '$(basename "$TARGET")', 'size', '$SIZE', 'offsite', '$OFFSITE'))
+    ON CONFLICT (\"name\") DO UPDATE SET \"at\" = now(), \"data\" = EXCLUDED.\"data\"" \
+    || log "WARNING: could not write the backup heartbeat (is the SystemHeartbeat migration applied?)"
+fi
 
 log "done"
 

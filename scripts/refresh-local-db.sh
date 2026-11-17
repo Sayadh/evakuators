@@ -180,6 +180,21 @@ BEGIN
 END $$;
 SQL
 
+# Never let a laptop reach staging's drivers (2026-11-18): drop the copied push
+# tokens and the pending outbox, so a local worker has nobody to push.
+log "removing copied push tokens and pending outbox messages"
+psql -U "$LOCAL_SUPERUSER" -d "$LOCAL_DB" -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
+DO $$
+BEGIN
+  -- Copied push tokens would let THIS environment push the source's real
+  -- drivers (same Firebase project). Each phone registers a fresh token with
+  -- this backend on its next launch.
+  IF to_regclass('public."PushDeviceToken"') IS NOT NULL THEN DELETE FROM "PushDeviceToken"; END IF;
+  -- Pending pushes / Telegram alerts queued by the source must not be sent from here
+  IF to_regclass('public."OutboxEvent"') IS NOT NULL THEN DELETE FROM "OutboxEvent" WHERE "processedAt" IS NULL; END IF;
+END $$;
+SQL
+
 log "done — local now mirrors staging."
 log ""
 log "Next, if you have not already mirrored the environment itself:"

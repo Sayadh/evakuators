@@ -13,8 +13,8 @@
  * driver's page is public on the website and they sign in to the app with this
  * phone and password.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Linking, Text, View } from 'react-native'
+import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react'
+import { Linking, ScrollView, Text, View } from 'react-native'
 import { PRIVACY_POLICY_VERSION } from '~/constants/privacyConsent'
 import { createRegistrationFormState, validateRegistrationForm } from '~/utils/registrationForm'
 import { buildRegistrationPayload } from '~/utils/registrationPayload'
@@ -46,6 +46,7 @@ export function RegisterScreen({ onBack, onOpenPrivacy }: { onBack: () => void; 
   const [sent, setSent] = useState(false)
   const [draftOffer, setDraftOffer] = useState<{ step: number; form: RegistrationFormState; gallery: GalleryPhoto[] } | null>(null)
   const loaded = useRef(false)
+  const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null)
 
   useEffect(() => {
     void loadDraft().then((draft) => {
@@ -94,6 +95,10 @@ export function RegisterScreen({ onBack, onOpenPrivacy }: { onBack: () => void; 
     if (broken !== null) {
       setShown(new Set(STEPS))
       setStep(broken)
+      // The only error the review step can have is the consent checkbox, at the
+      // very bottom of a long page: take the driver to it instead of a button
+      // that seems to do nothing.
+      if (broken === step) setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50)
       return
     }
     const coordinates = (() => {
@@ -198,7 +203,7 @@ export function RegisterScreen({ onBack, onOpenPrivacy }: { onBack: () => void; 
   )
 
   return (
-    <Screen header={<Header title={t('register.title')} onBack={back} />} footer={footer}>
+    <Screen header={<Header title={t('register.title')} onBack={back} />} footer={footer} scrollRef={scrollRef}>
       <Steps current={step} total={STEPS.length} label={t('register.stepOf', { n: step + 1, total: STEPS.length, title: t(`register.steps.${name}`) })} />
       <View style={{ gap: 4 }}>
         <Text style={[type.title, { color: colors.text }]}>{t(`register.steps.${name}`)}</Text>

@@ -20,7 +20,13 @@ export interface Availability {
 
 export interface Point { latitude: number; longitude: number; address: string }
 /** Pickup coordinates may be unknown (2026-11: only the address is mandatory) — no navigation then */
-export interface PickupPoint { latitude: number | null; longitude: number | null; address: string }
+export interface PickupPoint {
+  latitude: number | null
+  longitude: number | null
+  address: string
+  /** 2026-11-17: how sure the operator is of the point; absent/null = not stated (no coordinates, or an older order) */
+  precision?: 'EXACT' | 'APPROXIMATE' | null
+}
 
 export interface OfferOrderView {
   number: string
@@ -90,7 +96,16 @@ export interface Snapshot {
   wallet?: { billingEnabled: boolean; balanceAmd: number; creditLimitAmd?: number; low: boolean }
 }
 
-export type WalletEntryKind = 'TOPUP' | 'TOPUP_BONUS' | 'ORDER_FEE' | 'ORDER_FEE_ADJUSTMENT' | 'ORDER_FEE_REFUND' | 'ADMIN_CREDIT' | 'ADMIN_DEBIT'
+export type WalletEntryKind =
+  | 'TOPUP'
+  | 'TOPUP_BONUS'
+  | 'ORDER_FEE'
+  | 'ORDER_FEE_ADJUSTMENT'
+  | 'ORDER_FEE_REFUND'
+  | 'ADMIN_CREDIT'
+  | 'ADMIN_DEBIT'
+  /** 2026-11-17: his share of an order he handed to us */
+  | 'REFERRAL_CREDIT'
 
 /** One statement line; `amountAmd` is signed (+ in, − out) */
 export interface WalletEntry {
@@ -211,3 +226,34 @@ export type ProfileResponse =
       kind: 'APP_ONLY'
       appAccount: { driverName: string; phone: string; vehicleType: string; capacityTons: number | null; wheelSkates: boolean; vehicleDescription: string | null; createdAt: string }
     }
+
+/**
+ * A pre-order (2026-11-17, backend pre-orders/pre-orders.ts): a job the
+ * operator is collecting prices for. Never the customer's contact; never
+ * another driver's price.
+ */
+export interface PreOrder {
+  id: number
+  /** Prices are still accepted — until the operator closes it (no deadline) */
+  open: boolean
+  createdAt: string
+  pickup: { latitude: number | null; longitude: number | null; address: string; precision: 'EXACT' | 'APPROXIMATE' | null }
+  /** Required since 2026-11-17; null only on an older pre-order */
+  destination: { latitude: number | null; longitude: number | null; address: string } | null
+  vehicle: { make: string | null; model: string | null; weightKg: number | null }
+  requirements: {
+    wheelsRoll: boolean | null
+    steeringLocked: boolean | null
+    gearboxLocked: boolean | null
+    needsManipulator: boolean | null
+    needsWheelSkates: boolean | null
+    wheelSkatesCount: number | null
+  }
+  comment: string
+  /** His own price, if he answered */
+  myBidAmd: number | null
+  /** Straight line from his last position to the pickup */
+  distanceMeters: number | null
+  /** The operator made an order from it for him (it may stay open for others) */
+  chosen: boolean
+}

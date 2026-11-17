@@ -78,6 +78,58 @@ describe('E2E flows (real Postgres)', { skip: integrationSkip }, () => {
     assert.equal(pushed.sound, 'offer_alert.wav', 'no ring chosen → the original')
   })
 
+  it('wake (2026-11-14): a locked, still phone whose heartbeat is going stale gets a silent high-priority push — once a minute, Online drivers only', async () => {
+    await fresh()
+    const stale = await eligibleDriver(h, offset(YEREVAN, 400, 0))
+    const alive = await eligibleDriver(h, offset(YEREVAN, 900, 0))
+    const offline = await eligibleDriver(h, offset(YEREVAN, 1500, 0))
+    const gone = await eligibleDriver(h, offset(YEREVAN, 2000, 0))
+    const ago = (driverId: number, seconds: number) =>
+      h.db.pool.query(`UPDATE "DriverPresence" SET "lastHeartbeatAt" = now() - make_interval(secs => $2) WHERE "driverId" = $1::int`, [driverId, seconds])
+    await ago(stale.driverId, 70)
+    await ago(offline.driverId, 70)
+    await ago(gone.driverId, 7 * 3600)
+    await h.db.pool.query(`UPDATE "DriverPresence" SET "wantsOnline" = false WHERE "driverId" = $1::int`, [offline.driverId])
+    void alive
+
+    const before = h.push.sent.length
+    assert.equal(await h.rt.push.wakeStaleDrivers(), 1)
+    const wakes = h.push.sent.slice(before)
+    assert.equal(wakes.length, 1)
+    assert.deepEqual(wakes[0].data, { type: 'wake' })
+    assert.equal(wakes[0].token.startsWith(`token-${stale.driverId}-`), true)
+    assert.equal(wakes[0].highPriority, true)
+    assert.equal(wakes[0].silent, true)
+    // Not again within the minute
+    assert.equal(await h.rt.push.wakeStaleDrivers(), 0)
+  })
+
+  it('problem alerts (2026-11-16): an Online driver with stale GPS is told, with the problem channel, and the console sees it; offline drivers are not', async () => {
+    await fresh()
+    const d = await eligibleDriver(h, offset(YEREVAN, 400, 0))
+    const offline = await eligibleDriver(h, offset(YEREVAN, 900, 0))
+    await h.db.pool.query(`UPDATE "DriverLocationCurrent" SET "measuredAt" = now() - interval '10 minutes' WHERE "driverId" = ANY($1::int[])`, [[d.driverId, offline.driverId]])
+    await h.db.pool.query(`UPDATE "DriverPresence" SET "wantsOnline" = false WHERE "driverId" = $1::int`, [offline.driverId])
+    const settings = await h.rt.settings.get()
+
+    const before = h.push.sent.length
+    assert.equal(await h.rt.push.alertProblemDrivers(settings), 1)
+    const alert = h.push.sent[before]
+    assert.deepEqual(alert.data, { type: 'driver_problem', reason: 'GPS' })
+    assert.equal(alert.androidChannel, 'driver_problems')
+    assert.equal(alert.silent, undefined)
+    assert.match(alert.title, /GPS/)
+    const view = await h.rt.access.get(d.driverId)
+    assert.equal(view.problemAlert?.reason, 'GPS')
+    assert.equal(view.problemAlert?.count, 1)
+    // Not again within 5 minutes
+    assert.equal(await h.rt.push.alertProblemDrivers(settings), 0)
+    // Fixed → reset
+    await h.db.pool.query(`UPDATE "DriverLocationCurrent" SET "measuredAt" = now() WHERE "driverId" = $1::int`, [d.driverId])
+    await h.rt.push.alertProblemDrivers(settings)
+    assert.equal((await h.rt.access.get(d.driverId)).problemAlert, null)
+  })
+
   it('the offer push rings with the sound the driver chose on that phone', async () => {
     await fresh()
     const driver = await eligibleDriver(h, offset(YEREVAN, 400, 0))
@@ -269,10 +321,9 @@ describe('E2E flows (real Postgres)', { skip: integrationSkip }, () => {
     assert.equal((await h.service.driverSnapshot(first.driverId)).activeOrder, null)
   })
 
-  it('manual reassignment: customer declined → stays assigned → operator releases + restarts in one step → another driver', async () => {
+  it('customer declined / will call: driver released at once, order waits for an operator, operator restarts the search', async () => {
     await fresh()
     const first = await eligibleDriver(h, offset(YEREVAN, 400, 0))
-    const second = await eligibleDriver(h, offset(YEREVAN, 3000, 0))
     const order = await createOrder(h)
     await startDispatch(h, order)
     await drain(h)
@@ -280,28 +331,145 @@ describe('E2E flows (real Postgres)', { skip: integrationSkip }, () => {
     assert.equal(offer?.driverId, first.driverId)
     await h.service.driverAccept(first.driverId, offer!.id, ctx())
 
-    // "Customer declined" may mean the whole order is off: a person decides.
-    const request = await h.service.driverRequest(first.driverId, order.id, { kind: 'CANCEL', reason: 'CUSTOMER_DECLINED', comment: 'customer found another truck' }, ctx({ r: 1 }))
+    // The customer's doing (2026-11-17): the driver must not wait for a call-back.
+    const request = await h.service.driverRequest(first.driverId, order.id, { kind: 'CANCEL', reason: 'CUSTOMER_WILL_CALL' }, ctx({ r: 1 }))
     assert.equal(request.status, 201, JSON.stringify(request.body))
     let row = await orderRow(h, order.id)
     assert.equal(row.status, 'NEEDS_ATTENTION')
-    assert.ok(row.activeAssignmentId, 'assignment KEPT — no automatic second truck')
+    assert.equal(row.attentionKind, 'CUSTOMER_PENDING')
+    assert.equal(row.activeAssignmentId, null, 'driver released')
+    assert.equal((await h.service.driverSnapshot(first.driverId)).activeOrder, null, 'free for other work')
     await drain(h)
-    assert.equal(await pendingOffer(h, order.id), null, 'nothing re-dispatched automatically')
+    assert.equal(await pendingOffer(h, order.id), null, 'nothing re-dispatched automatically — the customer has not decided')
+    const alerts = await count(h, `SELECT count(*)::int AS n FROM "OrderAlert" WHERE "orderId" = $1::int AND "kind" = 'DRIVER_CANCEL_REQUEST'`, [order.id])
+    assert.equal(alerts, 1, 'the operator is told')
+    assert.equal(await count(h, `SELECT count(*)::int AS n FROM "OrderDriverRequest" WHERE "orderId" = $1::int AND "status" = 'OPEN'`, [order.id]), 0)
 
-    const released = await h.service.releaseAssignment(
-      h.adminId,
-      order.id,
-      { confirm: true, reason: 'customer still needs a truck', restartSearch: true, expectedVersion: Number(row.version) },
-      ctx({ release: 1 }),
-    )
-    assert.equal(released.status, 200, JSON.stringify(released.body))
+    // The customer called back: the operator starts a new search straight from the attention state
+    const started = await h.service.startDispatch(h.adminId, order.id, Number(row.version), ctx({ s: 2 }))
+    assert.equal(started.status, 200, JSON.stringify(started.body))
     await drain(h)
-    const next = await pendingOffer(h, order.id)
-    assert.equal(next?.driverId, second.driverId, 'released driver is not re-offered the same job')
     row = await orderRow(h, order.id)
     assert.equal(row.status, 'SEARCHING')
-    assert.equal(await count(h, `SELECT count(*)::int AS n FROM "OrderDriverRequest" WHERE "orderId" = $1::int AND "status" = 'OPEN'`, [order.id]), 0)
+    assert.ok(await pendingOffer(h, order.id), 'offered again')
+  })
+
+  it('price not agreed: the driver must say what he asked; both prices reach the operator', async () => {
+    await fresh()
+    const first = await eligibleDriver(h, offset(YEREVAN, 400, 0))
+    const order = await createOrder(h)
+    await startDispatch(h, order)
+    await drain(h)
+    const offer = await pendingOffer(h, order.id)
+    await h.service.driverAccept(first.driverId, offer!.id, ctx())
+
+    await assert.rejects(
+      () => h.service.driverRequest(first.driverId, order.id, { kind: 'CANCEL', reason: 'PRICE_NOT_AGREED' }, ctx({ r: 1 })),
+      (e: { code?: string }) => e.code === 'VALIDATION_FAILED',
+    )
+    assert.equal((await orderRow(h, order.id)).activeAssignmentId !== null, true, 'a refused request leaves no trace')
+
+    const asked = await h.service.driverRequest(first.driverId, order.id, { kind: 'CANCEL', reason: 'PRICE_NOT_AGREED', driverPriceAmd: 20000, customerPriceAmd: 12000 }, ctx({ r: 2 }))
+    assert.equal(asked.status, 201, JSON.stringify(asked.body))
+    const [req] = await h.db.pool.query<{ driverPriceAmd: number; customerPriceAmd: number }>(`SELECT "driverPriceAmd", "customerPriceAmd" FROM "OrderDriverRequest" WHERE "orderId" = $1::int`, [order.id])
+    assert.deepEqual({ ...req }, { driverPriceAmd: 20000, customerPriceAmd: 12000 })
+    const event = (await h.rt.orders.timeline(order.id)).find((e) => e.type === 'DRIVER_CANCEL_REQUESTED')
+    assert.equal((event?.data as { driverPriceAmd: number }).driverPriceAmd, 20000)
+    assert.equal((event?.data as { customerPriceAmd: number }).customerPriceAmd, 12000)
+  })
+
+  it('cancel screen left open: one operator alert per assignment, the order is untouched', async () => {
+    await fresh()
+    const first = await eligibleDriver(h, offset(YEREVAN, 400, 0))
+    const stranger = await eligibleDriver(h, offset(YEREVAN, 9000, 0))
+    const order = await createOrder(h)
+    await startDispatch(h, order)
+    await drain(h)
+    const offer = await pendingOffer(h, order.id)
+    await h.service.driverAccept(first.driverId, offer!.id, ctx())
+    const before = await orderRow(h, order.id)
+    assert.deepEqual(await h.service.driverCancelStalled(first.driverId, order.id), { raised: true })
+    assert.deepEqual(await h.service.driverCancelStalled(first.driverId, order.id), { raised: false })
+    await assert.rejects(() => h.service.driverCancelStalled(stranger.driverId, order.id))
+    const alerts = await count(h, `SELECT count(*)::int AS n FROM "OrderAlert" WHERE "orderId" = $1::int AND "kind" = 'DRIVER_CANCEL_STALLED'`, [order.id])
+    assert.equal(alerts, 1)
+    assert.equal((await orderRow(h, order.id)).version, before.version)
+  })
+
+  it('pickup precision (2026-11-17): required with coordinates, cleared without, shown to the offered and the assigned driver', async () => {
+    await fresh()
+    const d = await eligibleDriver(h, offset(YEREVAN, 400, 0))
+    const { precision: _p, ...noPrecision } = ORDER_BODY.pickup
+    await assert.rejects(
+      () => h.service.createOrder(h.adminId, { ...ORDER_BODY, pickup: noPrecision }, ctx({ c: 'no-precision' })),
+      (e: { code?: string }) => e.code === 'VALIDATION_FAILED',
+    )
+    const order = await createOrder(h, { pickup: { ...ORDER_BODY.pickup, precision: 'APPROXIMATE' } })
+    assert.equal((await orderRow(h, order.id)).pickupPrecision, 'APPROXIMATE')
+    await startDispatch(h, order)
+    await drain(h)
+    const offer = await pendingOffer(h, order.id)
+    const snap = await h.service.driverSnapshot(d.driverId)
+    assert.equal((snap.currentOffer as { order: { pickup: { precision: string } } }).order.pickup.precision, 'APPROXIMATE')
+    await h.service.driverAccept(d.driverId, offer!.id, ctx())
+    const active = (await h.service.driverSnapshot(d.driverId)).activeOrder as { pickup: { precision: string } }
+    assert.equal(active.pickup.precision, 'APPROXIMATE')
+
+    // An address-only pickup carries no precision, whatever is sent
+    const phoned = await createOrder(h, { pickup: { latitude: null, longitude: null, address: 'Abovyan, near the market', precision: 'EXACT' } })
+    assert.equal((await orderRow(h, phoned.id)).pickupPrecision, null)
+  })
+
+  it('rating (2026-11-17): only a completed job, for the driver who completed it, replaceable, averaged on the drivers page', async () => {
+    await fresh()
+    const d = await eligibleDriver(h, offset(YEREVAN, 400, 0))
+    const order = await createOrder(h)
+    await startDispatch(h, order)
+    await drain(h)
+    const offer = await pendingOffer(h, order.id)
+    await h.service.driverAccept(d.driverId, offer!.id, ctx())
+    const early = await h.service.adminRateOrder(h.adminId, order.id, { score: 5 }, ctx({ s: 'early' }))
+    assert.equal((early.body as { code: string }).code, 'INVALID_TRANSITION', 'not before the job is done')
+    for (const [i, action] of (['EN_ROUTE', 'ARRIVED', 'START_TRANSPORT', 'COMPLETE'] as const).entries()) {
+      assert.equal((await h.service.driverProgress(d.driverId, order.id, action, ctx({ p: i }))).status, 200)
+    }
+    await assert.rejects(() => h.service.adminRateOrder(h.adminId, order.id, { score: 6 }, ctx({ s: 'six' })), (e: { code?: string }) => e.code === 'VALIDATION_FAILED')
+    assert.equal((await h.service.adminRateOrder(h.adminId, order.id, { score: 3, comment: 'late' }, ctx({ s: 1 }))).status, 200)
+    assert.equal((await h.service.adminRateOrder(h.adminId, order.id, { score: 5 }, ctx({ s: 2 }))).status, 200)
+    const detail = await h.service.orderDetail(order.id)
+    assert.deepEqual({ score: detail.rating?.score, comment: detail.rating?.comment, driverId: detail.rating?.driverId }, { score: 5, comment: null, driverId: d.driverId })
+    const [view] = (await h.rt.access.list({})).filter((v) => v.id === d.driverId)
+    assert.deepEqual(view.rating, { average: 5, count: 1 })
+  })
+
+  it('stats (2026-11-17): orders, time to assign, acceptance, cancel reasons and the per-driver table', async () => {
+    await fresh()
+    const d = await eligibleDriver(h, offset(YEREVAN, 400, 0))
+    const done = await createOrder(h)
+    await startDispatch(h, done)
+    await drain(h)
+    await h.service.driverAccept(d.driverId, (await pendingOffer(h, done.id))!.id, ctx())
+    for (const [i, action] of (['EN_ROUTE', 'ARRIVED', 'START_TRANSPORT', 'COMPLETE'] as const).entries()) {
+      await h.service.driverProgress(d.driverId, done.id, action, ctx({ p: i }))
+    }
+    await h.service.adminRateOrder(h.adminId, done.id, { score: 4 }, ctx({ s: 1 }))
+    const dropped = await createOrder(h)
+    await startDispatch(h, dropped)
+    await drain(h)
+    await h.service.driverAccept(d.driverId, (await pendingOffer(h, dropped.id))!.id, ctx({ a: 2 }))
+    await h.service.driverRequest(d.driverId, dropped.id, { kind: 'CANCEL', reason: 'CUSTOMER_WILL_CALL' }, ctx({ r: 1 }))
+
+    const stats = await h.service.adminStats(7)
+    assert.equal(stats.orders.created, 2)
+    assert.equal(stats.orders.completed, 1)
+    assert.equal(stats.offers.accepted, 2)
+    assert.equal(stats.offers.acceptanceRate, 100)
+    assert.equal(stats.timeToAssign.orders, 2)
+    assert.ok(stats.timeToAssign.medianSeconds !== null && stats.timeToAssign.medianSeconds >= 0)
+    assert.deepEqual(stats.cancelReasons, [{ by: 'DRIVER', reason: 'CUSTOMER_WILL_CALL', count: 1 }])
+    const row = stats.drivers.find((x) => x.driverId === d.driverId)
+    assert.deepEqual({ offers: row?.offers, accepted: row?.accepted, completed: row?.completed, cancels: row?.cancels, rating: row?.rating }, { offers: 2, accepted: 2, completed: 1, cancels: 1, rating: { average: 4, count: 1 } })
+    assert.equal(stats.daily.length, 1)
   })
 
   it('manual offer: hard constraints never overridable; soft ones need an audited reason', async () => {

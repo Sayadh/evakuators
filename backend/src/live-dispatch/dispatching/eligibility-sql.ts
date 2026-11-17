@@ -35,7 +35,12 @@ export type LocationSource = 'GPS' | 'BASE'
  * still has to be confirmed as delivered (`offerDeliverySeconds`), so a phone
  * that is really gone costs one short delivery window, not an order.
  */
-export function availabilityPredicate(p: Params, settings: DispatchSettings, source: LocationSource = 'GPS'): string {
+/**
+ * `includeBusy` (2026-11-16, waiting for a free driver): everything above
+ * EXCEPT "free right now" — drivers who hold another order's offer or job.
+ * Used only to know whom a waiting order is waiting FOR; never to offer.
+ */
+export function availabilityPredicate(p: Params, settings: DispatchSettings, source: LocationSource = 'GPS', options: { includeBusy?: boolean } = {}): string {
   const gpsUsable = `(
     lc."measuredAt" >= now() - make_interval(secs => ${p.add(settings.gpsMaxAgeSeconds)}::int)
     AND lc."accuracyM" <= ${p.add(settings.gpsMaxAccuracyMeters)}::real
@@ -65,8 +70,8 @@ export function availabilityPredicate(p: Params, settings: DispatchSettings, sou
     AND ${connection}
     AND ${position}
     AND p."externalBusy" = false
-    AND NOT EXISTS (SELECT 1 FROM "OrderOffer" x WHERE x."driverId" = t."id" AND x."status" = 'PENDING')
-    AND NOT EXISTS (SELECT 1 FROM "OrderAssignment" y WHERE y."driverId" = t."id" AND y."endedAt" IS NULL)
+    ${options.includeBusy ? '' : `AND NOT EXISTS (SELECT 1 FROM "OrderOffer" x WHERE x."driverId" = t."id" AND x."status" = 'PENDING')
+    AND NOT EXISTS (SELECT 1 FROM "OrderAssignment" y WHERE y."driverId" = t."id" AND y."endedAt" IS NULL)`}
   )`
 }
 

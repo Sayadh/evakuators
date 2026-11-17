@@ -165,7 +165,9 @@ describe('DriverAuthService', () => {
     repository = {
       findByMainPhoneAnyStatus: vi.fn(),
       findById: vi.fn(),
-      setPassword: vi.fn().mockResolvedValue(undefined),
+      // setPassword bumps the session version (2026-11-12) and returns the row,
+      // whose id + sessionVersion sign the fresh token changePassword hands back
+      setPassword: vi.fn().mockResolvedValue({ id: 7, sessionVersion: 2 }),
     }
     service = build()
   })

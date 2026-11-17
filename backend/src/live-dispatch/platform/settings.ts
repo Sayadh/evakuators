@@ -101,6 +101,13 @@ export interface DispatchSettings {
   walletTopupBonusPercents: number[]
   /** «Your balance is running low» push when what is left covers fewer than this many base fees */
   walletLowBalanceOrders: number
+  /**
+   * Referred orders (2026-11-17): the referring driver's share of the order's
+   * fee, in percent; the platform keeps the rest (80 → 1 000 ֏ fee = 800 ֏ to
+   * him, 200 ֏ to us). Paid even while billing is off — then from the fee the
+   * schedule would have charged.
+   */
+  walletReferralSharePercent: number
 }
 
 export const DEFAULT_DISPATCH_SETTINGS: DispatchSettings = {
@@ -147,6 +154,7 @@ export const DEFAULT_DISPATCH_SETTINGS: DispatchSettings = {
   walletTopupBonusThresholdsAmd: [20_000, 50_000],
   walletTopupBonusPercents: [5, 10],
   walletLowBalanceOrders: 2,
+  walletReferralSharePercent: 80,
 }
 
 type NumberRange = { min: number; max: number }
@@ -189,6 +197,7 @@ const RANGES: { [K in keyof DispatchSettings]: DispatchSettings[K] extends numbe
   walletTopupBonusThresholdsAmd: { min: 100, max: 5_000_000, length: { min: 1, max: 6 } },
   walletTopupBonusPercents: { min: 1, max: 50, length: { min: 1, max: 6 } },
   walletLowBalanceOrders: { min: 0, max: 50 },
+  walletReferralSharePercent: { min: 0, max: 100 },
 }
 
 export const SETTING_KEYS = Object.keys(DEFAULT_DISPATCH_SETTINGS) as (keyof DispatchSettings)[]

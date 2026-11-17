@@ -10,7 +10,9 @@
     "prebuild": "expo prebuild --clean",
     "typecheck": "tsc --noEmit",
     "test": "npx --yes tsx@4.19.2 --test test/*.test.ts",
-    "doctor": "npx expo-doctor@latest"
+    "doctor": "npx expo-doctor@latest",
+    "update:preview": "node scripts/eas-update.mjs preview",
+    "update:production": "node scripts/eas-update.mjs production"
   },
   "dependencies": {
     "@react-native-firebase/app": "*",
@@ -27,6 +29,7 @@
     "expo-secure-store": "~58.0.0",
     "expo-status-bar": "~58.0.0",
     "expo-task-manager": "~58.0.0",
+    "expo-updates": "~58.0.22",
     "react": "*",
     "react-native": "0.88.*"
   },

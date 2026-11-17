@@ -44,7 +44,8 @@ export interface TabSpec {
   name: TabName
   label: string
   icon: IconName
-  badge?: boolean
+  /** true = a dot; a number = that count (2026-11-17: new pre-orders); 0 / false = nothing */
+  badge?: boolean | number
 }
 
 export function Navigator({
@@ -156,7 +157,13 @@ export function Navigator({
               >
                 <View>
                   <Icon name={spec.icon} size={24} color={active ? colors.primary : colors.muted} />
-                  {spec.badge ? <View style={styles.badge} /> : null}
+                  {typeof spec.badge === 'number' && spec.badge > 0 ? (
+                    <View style={styles.countBadge}>
+                      <Text style={styles.countBadgeText}>{spec.badge > 9 ? '9+' : spec.badge}</Text>
+                    </View>
+                  ) : spec.badge === true ? (
+                    <View style={styles.badge} />
+                  ) : null}
                 </View>
                 <Text style={[styles.tabLabel, { color: active ? colors.primary : colors.muted, fontWeight: active ? '700' : '500' }]} numberOfLines={1}>
                   {spec.label}
@@ -182,4 +189,19 @@ const styles = StyleSheet.create({
   tab: { flex: 1, alignItems: 'center', gap: 3, paddingVertical: 2 },
   tabLabel: { fontSize: 11 },
   badge: { position: 'absolute', top: -2, right: -4, width: 9, height: 9, borderRadius: 5, backgroundColor: colors.accent, borderWidth: 1.5, borderColor: colors.surface },
+  countBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -10,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+    backgroundColor: colors.danger,
+    borderWidth: 1.5,
+    borderColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  countBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700', lineHeight: 13 },
 })

@@ -34,9 +34,24 @@ export type AttentionKind =
   | 'DRIVER_CANCEL_REQUEST'
   | 'DRIVER_PROBLEM'
   | 'OPERATOR_FLAG'
+  | 'CUSTOMER_PENDING'
 
 /** Attention kinds that mean "the SEARCH failed" — no driver is attached */
 export const SEARCH_ATTENTION_KINDS: readonly AttentionKind[] = ['SEARCH_EXHAUSTED', 'SEARCH_TIMEOUT', 'MANUAL_OFFER_FAILED']
+
+/**
+ * Attention kinds with NO driver attached, from which an operator may start a
+ * new search or send a manual offer: a failed search, and (2026-11-17) a
+ * driver released because the customer will call back / declined.
+ */
+export const DRIVERLESS_ATTENTION_KINDS: readonly AttentionKind[] = [...SEARCH_ATTENTION_KINDS, 'CUSTOMER_PENDING']
+
+/**
+ * Driver cancel reasons that are the CUSTOMER's doing (2026-11-17): the driver
+ * is released at once with his fee back, and the order goes to an operator
+ * (CUSTOMER_PENDING), never to an automatic search — the customer has not decided.
+ */
+export const CUSTOMER_CANCEL_REASONS: readonly string[] = ['CUSTOMER_DECLINED', 'CUSTOMER_WILL_CALL']
 
 /** Statuses in which a driver is attached to the order */
 export const ASSIGNED_STATUSES: readonly OrderStatus[] = [
@@ -125,10 +140,10 @@ export const ORDER_TRANSITIONS: readonly TransitionRule[] = [
     // Only before the driver set off (product decision, 2026-11). Once en
     // route, a driver can only report a PROBLEM; the operator decides.
     from: ['PRICE_CONFIRMATION_PENDING', 'ASSIGNED'],
-    to: 'SEARCHING (redispatch: reason is not CUSTOMER_DECLINED and the pickup has coordinates) | NEEDS_ATTENTION (DRIVER_CANCEL_REQUEST)',
+    to: 'NEEDS_ATTENTION (CUSTOMER_PENDING: a customer reason, driver released) | SEARCHING (redispatch: any other reason and the pickup has coordinates) | NEEDS_ATTENTION (DRIVER_CANCEL_REQUEST)',
     actors: ['DRIVER'],
     preconditions:
-      'not yet EN_ROUTE. Redispatch (2026-11): the driver is released and a new automatic search starts without him in the same transaction. Otherwise the assignment is KEPT until an operator decides — a customer who declined may mean the whole order is off',
+      'not yet EN_ROUTE. Customer reasons (2026-11-17): the driver is released at once, his fee refunded, and the order waits for an operator with no driver. Redispatch (2026-11): the driver is released and a new automatic search starts without him in the same transaction. Otherwise (no pickup coordinates) the assignment is KEPT until an operator decides',
   },
   {
     action: 'FLAG_ATTENTION',
@@ -167,7 +182,7 @@ export function planTransition(
   action: OrderAction,
   order: OrderStateSnapshot,
   actor: Actor,
-  extra: { attentionKind?: AttentionKind; restartSearch?: boolean; redispatch?: boolean } = {},
+  extra: { attentionKind?: AttentionKind; restartSearch?: boolean; redispatch?: boolean; customer?: boolean } = {},
 ): PlannedTransition {
   const rule = ORDER_TRANSITIONS.find((candidate) => candidate.action === action)
   if (!rule || !rule.actors.includes(actor)) throw invalid(action, order, actor)
@@ -180,7 +195,7 @@ export function planTransition(
   switch (action) {
     case 'START_DISPATCH':
       if (order.status === 'NEEDS_ATTENTION') {
-        if (order.hasActiveAssignment || !order.attentionKind || !SEARCH_ATTENTION_KINDS.includes(order.attentionKind)) {
+        if (order.hasActiveAssignment || !order.attentionKind || !DRIVERLESS_ATTENTION_KINDS.includes(order.attentionKind)) {
           throw invalid(action, order, actor)
         }
       }
@@ -213,6 +228,7 @@ export function planTransition(
     case 'COMPLETE':
       return plain('COMPLETED')
     case 'DRIVER_CANCEL_REQUEST':
+      if (extra.customer) return { to: 'NEEDS_ATTENTION', statusBeforeAttention: null, attentionKind: 'CUSTOMER_PENDING' }
       if (extra.redispatch) return plain('SEARCHING')
       return { to: 'NEEDS_ATTENTION', statusBeforeAttention: order.status, attentionKind: 'DRIVER_CANCEL_REQUEST' }
     case 'FLAG_ATTENTION': {

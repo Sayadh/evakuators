@@ -117,3 +117,16 @@ Google Routes API-ի փաստերը (ստուգված 2026-11-08 պաշտոնա�
 - Logout / session replacement → session-ի token-ները անվավեր։
 - WebSocket event-ները կրում են `eventId` (outbox row id) — client-ը dedupe է անում push-ի և WS-ի միջև։
 - Ադմինի քարտեզը թարմացվում է viewport-ով polling-ով (10–15 վ), ոչ թե 400 վարորդի ցուցակով ամեն GPS կետի համար. WS-ով գնում են միայն պատվերի/առաջարկի փոփոխությունները։
+
+## Սպասում ազատ վարորդի և FIFO (2026-11-16)
+
+**Խնդիրը.** Վարորդը, որը որոնման պահին զբաղված էր ԱՅԼ պատվերի առաջարկով կամ աշխատանքով, տվյալ attempt-ից ընդմիշտ դուրս էր մնում։ 1 վարորդ + 2 պատվեր → երկրորդը վայրկյանների ընթացքում դառնում էր `NEEDS_ATTENTION (SEARCH_EXHAUSTED)`, թեև վարորդը շուտով ազատվում էր։
+
+**Հիմա** (`engine.ts` `advance`, `offers.repository.ts`), երբ radius ladder-ը նոր թեկնածու չի տալիս․
+1. `requeueFreed` — attempt-ի այն թեկնածուները, որոնք բաց էին թողնված միայն զբաղվածության պատճառով (`TEMPORARY_SKIP_REASONS`: `BUSY`, `RESERVED_CONCURRENTLY`, `YIELDED_TO_OLDER`) և հիմա ազատ են, վերադառնում են հերթ (route-ը նշվում է հին, ուստի վերահաշվարկվում է ներկա դիրքից)։
+2. Ladder-ը նորից սկզբից (`expand(…, { fromStage: 0 })`) — նոր online եկածները։
+3. `rememberBusy` — ամենալայն radius-ում համապատասխան, բայց զբաղված վարորդները պահվում են attempt-ում որպես `SKIPPED/BUSY` (առանց routing-ի)։ Եթե այդպիսիք կան, պատվերը **սպասում է** (`startWaiting`: `DispatchAttempt.waitingSince`, `SEARCH_WAITING` event մեկ անգամ, `dispatch.advance` ամեն `WAIT_RETRY_SECONDS` = 5 վ)՝ մինչև attempt-ի deadline (`searchMaxSeconds`), հետո `SEARCH_TIMEOUT`։ Եթե զբաղված համապատասխան վարորդ էլ չկա՝ անմիջապես `SEARCH_EXHAUSTED`, ինչպես առաջ։
+4. **FIFO.** Ազատ վարորդին առաջարկ ստեղծելուց առաջ (`olderWaitingClaim`)՝ եթե ԱՎԵԼԻ ՀԻՆ սպասող պատվերը նրան պահել է որպես զբաղված թեկնածու, նոր պատվերը զիջում է (`YIELDED_TO_OLDER`, ժամանակավոր) և արթնացնում է հինը։
+- Անփոփոխ երաշխիքներ․ մեկ վարորդ՝ ≤ 1 pending առաջարկ և ≤ 1 ակտիվ պատվեր (unique index-ներ), մերժած վարորդին նույն պատվերը նորից չի առաջարկվում, ակտիվ պատվեր ունեցողին՝ նոր առաջարկ չկա։
+- Ադմինում՝ կապույտ բաններ «սպասում է ազատ վարորդի … մինչև HH:MM» (`frontend/utils/orderIncidents.ts`, `WAITING_FOR_DRIVER`)։
+- Migration՝ `20261116210000_attempt_waiting`։ Թեստեր՝ `test-live/waiting.integration.test.ts`։

@@ -125,3 +125,54 @@ transaction-ում առանձին `TOPUP_BONUS` տող։
 - **App Store** — ֆիզիկական ծառայության միջնորդավճար է, ոչ թե թվային ապրանք, ուստի
   Apple-ի In-App Purchase պարտադիր չէ (Guideline 3.1.3(e)/3.1.5)։ Ինտերֆեյսում գումարը
   դրամ է, ոչ «coin»՝ review-ում «virtual currency» չընկալվելու համար։
+
+### A driver's cancel always refunds the fee (2026-11-17)
+
+Every driver CANCEL refunds the fee in the same transaction as the release
+(`orders.repository.ts` `driverRequest` → `release({ refundDriverFee: true })`),
+whatever the reason — a cancel is only possible before setting off, so the job
+was never done. Customer reasons (`CUSTOMER_WILL_CALL`, `CUSTOMER_DECLINED`) go
+to `NEEDS_ATTENTION / CUSTOMER_PENDING` with the driver free at once; every
+other reason redispatches automatically. The one exception is an order with no
+pickup coordinates: the assignment is kept for the operator, and the refund
+then follows the operator's release (before arrival → refunded).
+An operator's cancel is unchanged: refunded before arrival, after arrival only
+with «the driver came for nothing».
+Tested in `test-live/wallet.integration.test.ts`.
+
+### A minimum-price review dies with its driver (2026-11-17)
+
+`OrderPriceReview` belongs to one assignment. When that driver leaves the order
+(any release: his cancel or an operator's), `release()` marks a PENDING review
+`VOID` and acknowledges its `PRICE_REVIEW` alert (`voidPriceReview`). Before
+this, the review stayed PENDING: the next driver's own minimum price then hit
+the one-pending-per-order unique index and his price confirmation failed, and a
+CORRECT wrote a price onto another driver's negotiation. A cancel or a
+completion does NOT void it — the order keeps that driver's price, so the call
+to the customer still matters. Test: `wallet.integration.test.ts` (fails
+without the fix).
+
+### Referred orders — the referrer's share (2026-11-17)
+
+A driver sometimes hands an order to us (the customer called him). The
+operator marks it on the order: «Փոխանցող վարորդ» (`DispatchOrder.referrerDriverId`,
+create and edit forms; locked once the order is closed). When ANOTHER driver
+completes it, `creditReferrer` (`orders.repository.ts`) credits the referrer
+`walletReferralSharePercent` (setting, default **80**) of the order's fee as a
+`REFERRAL_CREDIT` line, pushes «Ձեր հաշիվը համալրվեց» and records
+`REFERRAL_CREDITED` in the timeline. Example: a 5 001–15 000 ֏ order → fee 1 000 ֏
+→ 800 ֏ to the referrer, 200 ֏ stays with us.
+
+- Base = what the completing driver finally **paid** (after settlements and
+  refunds). Billing off → the fee the schedule would have charged for the
+  final price: he is paid either way (product decision).
+- Waits while a minimum-price review is open (`REFERRAL_WAITING`);
+  `resolvePriceReview` pays it on the operator's decision.
+- Nothing (`REFERRAL_SKIPPED`) when the referrer did the job himself or the
+  share rounds to 0 (free order); nothing at all for a cancelled order.
+- Exactly once: checked in code and by the unique index
+  `WalletEntry_one_referral_per_order`.
+- Shown: order page (status and amount), Wallets summary («Փոխանցված
+  պատվերների բաժիններ»), Stats per driver («Փոխանցել է»), the driver's own
+  statement («Ձեր փոխանցած պատվերի բաժինը»). The order's `netFeeAmd` excludes it.
+- Tests: `backend/test-live/referral.integration.test.ts`.

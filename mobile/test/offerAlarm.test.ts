@@ -39,9 +39,13 @@ describe('alarm readiness', () => {
     assert.equal(blocksAlarm(low), false)
     assert.equal(low.find((c) => c.key === 'volume')?.ok, false)
   })
-  it('DND override and battery optimisation are recommendations, never blockers', () => {
-    const checks = readiness({ platform: 'android', notificationsGranted: true, alarm: { ...ok, channelBypassesDnd: false, ignoringBatteryOptimizations: false } })
+  it('DND override is a recommendation, never a blocker', () => {
+    const checks = readiness({ platform: 'android', notificationsGranted: true, alarm: { ...ok, channelBypassesDnd: false } })
     assert.equal(blocksAlarm(checks), false)
+  })
+  it('battery optimisation blocks (2026-11-14): a locked, still phone loses its connection with it on', () => {
+    const checks = readiness({ platform: 'android', notificationsGranted: true, alarm: { ...ok, ignoringBatteryOptimizations: false } })
+    assert.equal(blocksAlarm(checks), true)
   })
   it('a build without the native module says so (it needs a new build), and blocks', () => {
     const checks = readiness({ platform: 'android', notificationsGranted: true, alarm: null })

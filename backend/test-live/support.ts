@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto'
 import { PlainSqlCandidateFinder } from '../src/live-dispatch/dispatching/candidate-finder'
 import { LiveDispatchService, type MutationContext } from '../src/live-dispatch/live-dispatch.service'
 import { RecordingPushSender } from '../src/live-dispatch/notify/fcm'
+import { RecordingOpsChannel } from '../src/live-dispatch/notify/ops-telegram'
 import { InProcessBus, type RealtimeEvent } from '../src/live-dispatch/notify/realtime-bus'
 import { DEFAULT_DISPATCH_SETTINGS, type DispatchSettings } from '../src/live-dispatch/platform/settings'
 import { FakeRoutingProvider } from '../src/live-dispatch/routing/providers'
@@ -31,6 +32,8 @@ export const TEST_CONFIG: LiveDispatchConfig = {
   fcmServiceAccount: null,
   apnsCriticalAlerts: false,
   redisUrl: '',
+  opsTelegramBotToken: '',
+  frontendUrl: 'https://staging.evakuators.am',
 }
 
 export interface Harness {
@@ -38,6 +41,8 @@ export interface Harness {
   rt: LiveDispatchRuntime
   service: LiveDispatchService
   push: RecordingPushSender
+  /** Operator Telegram messages that would have been sent (2026-11-17) */
+  ops: RecordingOpsChannel
   events: RealtimeEvent[]
   adminId: number
   setSettings(overrides: Partial<DispatchSettings>): Promise<void>
@@ -48,13 +53,15 @@ export async function harness(db: TestDatabase, routing: RoutingProvider = new F
   const bus = new InProcessBus()
   const events: RealtimeEvent[] = []
   bus.subscribe((e) => events.push(e))
-  const rt = createRuntime(db.pool, TEST_CONFIG, { routingProvider: routing, finder: new PlainSqlCandidateFinder(), pushSender: push, bus })
+  const ops = new RecordingOpsChannel()
+  const rt = createRuntime(db.pool, TEST_CONFIG, { routingProvider: routing, finder: new PlainSqlCandidateFinder(), pushSender: push, bus, ops })
   const adminId = await insertAdminUser(db.pool)
   return {
     db,
     rt,
     service: new LiveDispatchService(rt),
     push,
+    ops,
     events,
     adminId,
     async setSettings(overrides) {
@@ -109,7 +116,7 @@ export async function eligibleAppOnlyDriver(
 export const ORDER_BODY = {
   customerPhone: '+37491000001',
   customerName: 'Test Customer',
-  pickup: { ...YEREVAN, address: 'Հանրապետության հրապարակ' },
+  pickup: { ...YEREVAN, address: 'Հանրապետության հրապարակ', precision: 'EXACT' },
   destination: { ...offset(YEREVAN, 5000, 3000), address: 'Arabkir garage' },
   vehicle: { make: 'Toyota', model: 'Camry', plate: '01AA001', weightKg: 1600 },
   problemDescription: 'Engine does not start',

@@ -47,7 +47,9 @@ export function readiness(input: ReadinessInput): ReadinessCheck[] {
     { key: 'fullScreen', ok: a.fullScreenAllowed, required: true, fix: { kind: 'settings', which: 'fullScreen' } },
     { key: 'volume', ok: a.alarmVolume > 0 && a.alarmVolume >= Math.ceil(a.alarmVolumeMax * 0.3), required: a.alarmVolume === 0, fix: { kind: 'volume' } },
     { key: 'dnd', ok: a.channelBypassesDnd, required: false, fix: { kind: 'settings', which: 'channel' } },
-    { key: 'battery', ok: a.ignoringBatteryOptimizations, required: false, fix: { kind: 'settings', which: 'battery' } },
+    // Required since 2026-11-14: with optimisation on, a locked phone that does
+    // not move loses its connection to the server («Կապ չկա») and its offers.
+    { key: 'battery', ok: a.ignoringBatteryOptimizations, required: true, fix: { kind: 'settings', which: 'battery' } },
   )
   return checks
 }

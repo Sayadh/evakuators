@@ -11,7 +11,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { newIdempotencyKey, opsDispatchRepository } from '~/repositories/opsDispatch.repository'
 import { useAdminAuthStore } from '~/stores/adminAuth'
-import type { OpsDriverWallet, OpsPriceReview, OpsWalletEntryKind, OpsWalletRow, OpsWalletSummary } from '~/types/opsDispatch'
+import type { OpsDriverWallet, OpsPriceReview, OpsWalletEntryKind, OpsWalletOrderStatus, OpsWalletRow, OpsWalletSummary } from '~/types/opsDispatch'
 import { formatDateNumeric } from '~/utils/formatters'
 import { formatPrice } from '~/utils/formatPrice'
 import { apiErrorText } from '~/utils/opsDispatchLabels'
@@ -25,6 +25,7 @@ const KIND_LABEL: Record<OpsWalletEntryKind, string> = {
   ORDER_FEE_ADJUSTMENT: 'Միջնորդավճարի ճշգրտում',
   ORDER_FEE_REFUND: 'Վերադարձ',
   ADMIN_CREDIT: 'Մուտքագրում (ձեռքով)',
+  REFERRAL_CREDIT: 'Փոխանցված պատվերի բաժին',
   ADMIN_DEBIT: 'Գանձում (ձեռքով)',
 }
 
@@ -57,13 +58,20 @@ const visible = computed(() => {
   if (!q) return rows.value
   return rows.value.filter((r) => `${r.name ?? ''} ${r.phone ?? ''} ${r.driverId}`.toLowerCase().includes(q))
 })
+/** Mirrors dispatch (backend adminWallets); the reason, not just a colour */
+const ORDER_STATUS: Record<OpsWalletOrderStatus, { label: string; tone: 'ok' | 'bad' | 'muted' }> = {
+  OK: { label: '✅ Պատվեր ստանում է', tone: 'ok' },
+  LOW_BALANCE: { label: '⛔ Չի ստանում', tone: 'bad' },
+  BILLING_OFF: { label: 'Ստանում է (միջնորդավճարն անջատված է)', tone: 'muted' },
+  NOT_ACTIVE: { label: 'Ակտիվ չէ', tone: 'muted' },
+}
 const lowCount = computed(() => rows.value.filter((r) => r.balanceAmd <= 0).length)
 
 async function load() {
   error.value = null
   try {
     const [list, sum, pending] = await Promise.all([
-      opsDispatchRepository.wallets(),
+      opsDispatchRepository.wallets(summaryDays.value),
       opsDispatchRepository.walletSummary(summaryDays.value),
       opsDispatchRepository.priceReviews(),
     ])
@@ -196,6 +204,7 @@ useSeoMetaData({ title: 'Վարորդների հաշիվներ', description: '�
         <div class="stat"><span>Համալրումներ</span><strong>{{ formatPrice(summary.totals.topupsAmd) }}</strong><small>{{ summary.totals.topupsCount }} վճարում · բոնուս {{ formatPrice(summary.totals.bonusesAmd) }}</small></div>
         <div class="stat"><span>Վերադարձներ</span><strong>{{ formatPrice(summary.totals.refundsAmd) }}</strong><small>ձեռքով՝ +{{ formatPrice(summary.totals.adminCreditsAmd) }} / −{{ formatPrice(summary.totals.adminDebitsAmd) }}</small></div>
         <div class="stat"><span>Վարորդների հաշիվներում</span><strong>{{ formatPrice(summary.balances.heldAmd) }}</strong><small>պարտք՝ {{ formatPrice(summary.balances.owedAmd) }} ({{ summary.balances.inDebt }} վարորդ)</small></div>
+        <div v-if="summary.totals.referralsCount" class="stat"><span>Փոխանցված պատվերների բաժիններ</span><strong>{{ formatPrice(summary.totals.referralsAmd ?? 0) }}</strong><small>{{ summary.totals.referralsCount }} պատվեր · վճարվել է վարորդներին</small></div>
         <div class="stat" :class="{ 'stat--warn': summary.balances.belowBaseFee > 0 }"><span>Պատվեր չեն ստանում</span><strong>{{ summary.balances.belowBaseFee }}</strong><small>մնացորդը չի բավարարում</small></div>
         <div class="stat" :class="{ 'stat--warn': summary.pendingPriceReviews > 0 }"><span>Ստուգել գինը</span><strong>{{ summary.pendingPriceReviews }}</strong><small>նվազագույն գներ</small></div>
       </div>
@@ -233,12 +242,17 @@ useSeoMetaData({ title: 'Վարորդների հաշիվներ', description: '�
       </article>
     </section>
 
-    <div class="wallets__layout">
-      <section>
+    <div class="wallets__layout" :class="{ 'wallets__layout--open': selected }">
+      <section class="wallets__list">
         <input v-model="search" class="wallets__search" placeholder="Որոնել՝ անուն, հեռախոս" />
         <table class="wallets__table">
           <thead>
-            <tr><th>Վարորդ</th><th>Մնացորդ</th><th>Պատվեր</th></tr>
+            <tr>
+              <th>Վարորդ</th><th>Մնացորդ</th><th>Կարգավիճակ</th>
+              <th>Համալրվել է<div class="muted small">{{ summaryDays }} օր</div></th>
+              <th>Միջնորդավճար<div class="muted small">{{ summaryDays }} օր</div></th>
+              <th>Պատվեր</th>
+            </tr>
           </thead>
           <tbody>
             <tr v-for="r in visible" :key="r.driverId" :class="{ active: selected?.driverId === r.driverId }" @click="open(r)">
@@ -249,6 +263,17 @@ useSeoMetaData({ title: 'Վարորդների հաշիվներ', description: '�
               <td :class="{ neg: r.balanceAmd <= 0 }">
                 {{ formatPrice(r.balanceAmd) }}
                 <div v-if="r.creditLimitAmd" class="muted small">վարկ՝ {{ formatPrice(r.creditLimitAmd) }}</div>
+              </td>
+              <td>
+                <template v-if="r.orderStatus">
+                  <span class="status" :class="`status--${ORDER_STATUS[r.orderStatus].tone}`">{{ ORDER_STATUS[r.orderStatus].label }}</span>
+                  <div v-if="r.orderStatus === 'LOW_BALANCE' && r.shortfallAmd" class="muted small">պակասում է {{ formatPrice(r.shortfallAmd) }}</div>
+                </template>
+              </td>
+              <td>{{ r.periodInAmd ? `+${formatPrice(r.periodInAmd)}` : '—' }}</td>
+              <td>
+                {{ r.periodFeesAmd ? formatPrice(r.periodFeesAmd) : '—' }}
+                <div v-if="r.periodFeeOrders" class="muted small">{{ r.periodFeeOrders }} պատվեր</div>
               </td>
               <td class="muted">{{ r.completedOrders ?? 0 }}</td>
             </tr>
@@ -341,12 +366,21 @@ useSeoMetaData({ title: 'Վարորդների հաշիվներ', description: '�
   }
   &__layout {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-5);
     align-items: start;
-    @media (max-width: 900px) {
-      grid-template-columns: 1fr;
+    &--open {
+      grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
     }
+    @media (max-width: 900px) {
+      &,
+      &--open {
+        grid-template-columns: 1fr;
+      }
+    }
+  }
+  &__list {
+    overflow-x: auto;
   }
   &__search,
   &__form input:not([type='radio']) {
@@ -395,6 +429,13 @@ useSeoMetaData({ title: 'Վարորդների հաշիվներ', description: '�
   &__topups {
     padding-left: 1.2rem;
   }
+}
+.status {
+  font-size: 0.85rem;
+  white-space: nowrap;
+  &--ok { color: #15803d; }
+  &--bad { color: #b91c1c; font-weight: 600; }
+  &--muted { color: #6b7280; }
 }
 .neg {
   color: var(--color-danger);

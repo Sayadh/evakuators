@@ -4,7 +4,7 @@
  * Deletable the same way NearestModule is: this folder plus one line in
  * app.module.ts. Nothing pre-existing imports from here.
  */
-import { Body, Controller, HttpCode, HttpStatus, Injectable, Module, OnApplicationBootstrap, OnApplicationShutdown, Post, UseFilters } from '@nestjs/common'
+import { Body, Controller, HttpCode, HttpStatus, Injectable, Logger, Module, OnApplicationBootstrap, OnApplicationShutdown, Post, UseFilters } from '@nestjs/common'
 import { adminSessionStillValid } from '../../admin-auth/admin-session-check'
 import { PrismaService } from '../../prisma/prisma.service'
 import { ConfigService } from '@nestjs/config'
@@ -24,6 +24,7 @@ import { NearestService } from '../../nearest/nearest.service'
 import { TowTrucksModule } from '../../tow-trucks/tow-trucks.module'
 import { TowTrucksService } from '../../tow-trucks/tow-trucks.service'
 import { RealtimeGateway } from '../notify/ws-gateway'
+import { BACKUP_CHECK, checkHeartbeat, workerCheck } from '../notify/ops-watch'
 import { NearbyLiveService, PostgisLiveQuery } from '../public/nearby-live.service'
 import { GuardedRouting } from '../routing/routing-provider'
 import { DriverAppGuard, OpsGuard, verifyDriverAppToken, verifyOpsToken } from './auth'
@@ -135,6 +136,42 @@ export class RealtimeGatewayHost implements OnApplicationBootstrap, OnApplicatio
   }
 }
 
+/**
+ * The API process's watchdog (2026-11-17): the worker's heartbeat and the
+ * nightly backup, reported to the operators on Telegram (notify/ops-watch.ts).
+ * The worker watches this process in turn.
+ */
+@Injectable()
+export class OpsWatchHost implements OnApplicationBootstrap, OnApplicationShutdown {
+  private readonly logger = new Logger('OpsWatch')
+  private timer: NodeJS.Timeout | null = null
+
+  constructor(private readonly holder: LiveDispatchRuntimeHolder) {}
+
+  onApplicationBootstrap(): void {
+    const rt = this.holder.runtime
+    const checks = [...(rt.config.enabled ? [workerCheck(process.env.name)] : []), BACKUP_CHECK]
+    const run = async () => {
+      for (const check of checks) {
+        try {
+          const sent = await checkHeartbeat(rt.db, rt.ops, check)
+          if (sent) this.logger.warn(`${check.name}: ${sent}`)
+        } catch (error) {
+          this.logger.error(`${check.name} watch failed: ${(error as Error).message}`)
+        }
+      }
+    }
+    this.timer = setInterval(() => void run(), OPS_WATCH_EVERY_MS)
+    this.timer.unref()
+  }
+
+  onApplicationShutdown(): void {
+    if (this.timer) clearInterval(this.timer)
+  }
+}
+
+const OPS_WATCH_EVERY_MS = 60_000
+
 @Module({
   imports: [
     DriverAuthModule,
@@ -163,6 +200,7 @@ export class RealtimeGatewayHost implements OnApplicationBootstrap, OnApplicatio
     OpsGuard,
     NearbyLiveProvider,
     RealtimeGatewayHost,
+    OpsWatchHost,
     WalletPaymentsRegistrar,
     WalletPayLinks,
   ],

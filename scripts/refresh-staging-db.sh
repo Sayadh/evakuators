@@ -221,6 +221,22 @@ BEGIN
 END $$;
 SQL
 
+# Never let staging reach production's drivers (2026-11-18): the dump carries
+# production's push tokens and its pending outbox. Drop both before anything
+# (the backend, the worker) can use them.
+log "removing copied push tokens and pending outbox messages"
+sudo -u postgres psql -d "$STAGING_DB" -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
+DO $$
+BEGIN
+  -- Copied push tokens would let THIS environment push the source's real
+  -- drivers (same Firebase project). Each phone registers a fresh token with
+  -- this backend on its next launch.
+  IF to_regclass('public."PushDeviceToken"') IS NOT NULL THEN DELETE FROM "PushDeviceToken"; END IF;
+  -- Pending pushes / Telegram alerts queued by the source must not be sent from here
+  IF to_regclass('public."OutboxEvent"') IS NOT NULL THEN DELETE FROM "OutboxEvent" WHERE "processedAt" IS NULL; END IF;
+END $$;
+SQL
+
 log "starting $STAGING_PM2_APP"
 pm2 start "$STAGING_PM2_APP" >/dev/null
 

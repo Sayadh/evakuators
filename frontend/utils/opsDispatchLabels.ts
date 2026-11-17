@@ -2,7 +2,7 @@
  * Armenian words for the live dispatch console. The backend sends codes; this
  * file is the one place they become text (same rule as profileChangeLabels.ts).
  */
-import type { AttentionKind, CancelReason, OpsAvailability, OrderStatus, PaymentStatus } from '~/types/opsDispatch'
+import type { AttentionKind, CancelReason, OpsAvailability, OrderStatus, PaymentStatus, PickupPrecision } from '~/types/opsDispatch'
 
 export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
   DRAFT: 'Սևագիր',
@@ -37,10 +37,20 @@ export const ATTENTION_LABEL: Record<AttentionKind, string> = {
   DRIVER_CANCEL_REQUEST: 'Վարորդը խնդրում է չեղարկել (դեռ նշանակված է)',
   DRIVER_PROBLEM: 'Վարորդը խնդիր է հայտնել',
   OPERATOR_FLAG: 'Նշված է օպերատորի կողմից',
+  CUSTOMER_PENDING: 'Սպասում է հաճախորդի որոշմանը (վարորդն ազատված է)',
 }
 
-/** Attention kinds where NO driver is attached — a new search is allowed */
+/** Attention kinds that mean «the search failed» */
 export const SEARCH_FAILURE_KINDS: AttentionKind[] = ['SEARCH_EXHAUSTED', 'SEARCH_TIMEOUT', 'MANUAL_OFFER_FAILED']
+
+/**
+ * Attention kinds where NO driver is attached — a new search or a manual offer
+ * is allowed. Mirrors DRIVERLESS_ATTENTION_KINDS in backend order-state.ts.
+ */
+export const DRIVERLESS_ATTENTION_KINDS: AttentionKind[] = [...SEARCH_FAILURE_KINDS, 'CUSTOMER_PENDING']
+
+/** Reasons only a driver sends; the operator's cancel form does not offer them (the API refuses them) */
+export const DRIVER_ONLY_CANCEL_REASONS: CancelReason[] = ['NOT_SPECIFIED', 'CUSTOMER_WILL_CALL']
 
 export const CANCEL_REASON_LABEL: Record<CancelReason, string> = {
   DRIVER_CANNOT_PERFORM: 'Վարորդը չի կարող կատարել',
@@ -50,6 +60,17 @@ export const CANCEL_REASON_LABEL: Record<CancelReason, string> = {
   TECHNICAL_PROBLEM: 'Տեխնիկական խնդիր',
   OTHER: 'Այլ (մեկնաբանությամբ)',
   NOT_SPECIFIED: 'Պատճառը չնշվեց',
+  CUSTOMER_WILL_CALL: 'Հաճախորդը կզանգի (մտածում է)',
+}
+
+/** Pickup precision (2026-11-17) — the same words the driver app shows */
+export const PICKUP_PRECISION_LABEL: Record<PickupPrecision, string> = {
+  EXACT: '✅ Հաստատված կետ',
+  APPROXIMATE: '⚠️ Մոտավոր կետ',
+}
+export const PICKUP_PRECISION_HINT: Record<PickupPrecision, string> = {
+  EXACT: 'Հաճախորդն ուղարկել է իր տեղադրությունը կամ հասցեն ճշգրիտ է',
+  APPROXIMATE: 'Մոտավոր է․ վարորդը տեղը կճշտի հաճախորդի հետ',
 }
 
 export const PAYMENT_LABEL: Record<PaymentStatus, string> = {
@@ -90,6 +111,17 @@ export const ALERT_LABEL: Record<string, string> = {
   DRIVER_CANCELLED_REDISPATCHED: 'Վարորդը հրաժարվեց, պատվերն ավտոմատ փոխանցվեց այլ վարորդի',
   DRIVER_PROBLEM: 'Վարորդը խնդիր է հայտնել',
   PRICE_REVIEW: 'Վարորդը գրել է նվազագույն գինը — զանգեք հաճախորդին',
+  DRIVER_CANCEL_STALLED: 'Վարորդը 3 րոպե է բացել է չեղարկման էջը և չի ուղարկում — զանգեք վարորդին',
+}
+
+/**
+ * One alert in words. DRIVER_CANCEL_REQUEST with `released` (2026-11-17) is a
+ * driver who backed out for a CUSTOMER reason and is already free — not a
+ * request waiting for an answer.
+ */
+export function alertLabel(alert: { kind: string; data?: Record<string, unknown> | null }): string {
+  if (alert.kind === 'DRIVER_CANCEL_REQUEST' && alert.data?.released === true) return 'Վարորդն ազատվեց․ հաճախորդը կզանգի կամ հրաժարվեց — զանգեք հաճախորդին'
+  return ALERT_LABEL[alert.kind] ?? alert.kind
 }
 
 export const ERROR_LABEL: Record<string, string> = {
@@ -105,6 +137,9 @@ export const ERROR_LABEL: Record<string, string> = {
   CAPABILITY_MISMATCH: 'Մեքենան չի համապատասխանում պատվերին։',
   INVALID_TRANSITION: 'Այս գործողությունը պատվերի ներկա վիճակում թույլատրված չէ։',
   FEATURE_DISABLED: 'Ավտոմատ բաշխումը դեռ միացված չէ (LIVE_DISPATCH_ENABLED)։',
+  PRE_ORDER_NOT_FOUND: 'Նախապատվերը չի գտնվել։',
+  PRE_ORDER_CLOSED: 'Նախապատվերն արդեն փակված է։',
+  PRE_ORDER_NOTIFY_TOO_SOON: 'Վարորդներին արդեն ծանուցել եք քիչ առաջ․ կրկին կարող եք 2 րոպեից։',
 }
 
 /** One short line an operator reads at a glance */

@@ -38,6 +38,9 @@ import { AppStateProvider, useApp } from './src/state/AppState'
 import { ProfileProvider, useProfile } from './src/state/ProfileState'
 import { MissedOffersProvider, useMissedOffers } from './src/state/missedOffers'
 import { MissedOffersScreen } from './src/screens/MissedOffersScreen'
+import { PreOrdersScreen } from './src/screens/PreOrdersScreen'
+import { PreOrdersProvider, usePreOrders } from './src/state/preOrders'
+import { onPreOrderTapped } from './src/push/preOrderEvents'
 import { WalletScreen } from './src/screens/WalletScreen'
 import { Loading } from './src/ui/kit'
 import { colors } from './src/ui/theme'
@@ -67,6 +70,7 @@ function SignedIn() {
   const app = useApp()
   const { profile } = useProfile()
   const missed = useMissedOffers()
+  const preOrders = usePreOrders()
   const navRef = useRef<Nav | null>(null)
   const [permissionsDone, setPermissionsDone] = useState(false)
   // «Ոչ հիմա»: the app must stay usable without location (App Store 5.1.2,
@@ -86,6 +90,9 @@ function SignedIn() {
     if (activeOrderId === null && lastOrderId.current !== null) navRef.current?.resetStack('home')
     lastOrderId.current = activeOrderId
   }, [activeOrderId])
+
+  // A pre-order push tapped (2026-11-17): open the list — also the tap that cold-started the app
+  useEffect(() => onPreOrderTapped(() => navRef.current?.openOn('orders', 'preOrders')), [])
 
   const s = app.snapshot
   // A live offer covers everything — but over the tabs, not instead of them,
@@ -136,6 +143,8 @@ function SignedIn() {
         return <OrdersScreen />
       case 'missedOffers':
         return <MissedOffersScreen />
+      case 'preOrders':
+        return <PreOrdersScreen />
       case 'wallet':
         return <WalletScreen />
       case 'orderDetail':
@@ -162,7 +171,7 @@ function SignedIn() {
       render={render}
       tabs={[
         { name: 'home', label: t('tabs.home'), icon: 'home', badge: !!s?.activeOrder },
-        { name: 'orders', label: t('tabs.orders'), icon: 'orders', badge: missed.unseen > 0 },
+        { name: 'orders', label: t('tabs.orders'), icon: 'orders', badge: preOrders.unseen > 0 ? preOrders.unseen : missed.unseen > 0 },
         { name: 'profile', label: t('tabs.profile'), icon: 'user', badge: pending },
         { name: 'more', label: t('tabs.more'), icon: 'menu' },
       ]}
@@ -185,7 +194,9 @@ function Root() {
   return (
     <ProfileProvider>
       <MissedOffersProvider>
+        <PreOrdersProvider>
         <SignedIn />
+        </PreOrdersProvider>
       </MissedOffersProvider>
     </ProfileProvider>
   )

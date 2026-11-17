@@ -13,6 +13,7 @@ import { groupByDay, matchesFilter, monthSummary, nextCursor, PAGE_SIZE, type Hi
 import { useLanguage, useT } from '../i18n'
 import { useNav } from '../navigation/Navigator'
 import { useMissedOffers } from '../state/missedOffers'
+import { usePreOrders } from '../state/preOrders'
 import { Icon } from '../ui/Icon'
 import { Badge, Banner, Button, Card, Chips, EmptyState, Loading, Screen, type BadgeTone } from '../ui/kit'
 import { colors, space, type } from '../ui/theme'
@@ -39,6 +40,7 @@ export function OrdersScreen() {
   const [done, setDone] = useState(false)
   const [filter, setFilter] = useState<HistoryFilter>('all')
   const missed = useMissedOffers()
+  const preOrders = usePreOrders()
 
   const load = useCallback(async (before?: string) => {
     if (before) setMore(true)
@@ -75,6 +77,20 @@ export function OrdersScreen() {
             <Text style={[type.display, { color: colors.accent }]}>{formatPrice(summary.earnedAmd)}</Text>
             <Text style={[type.small, { color: 'rgba(255,255,255,0.8)' }]}>{t('history.earned')}</Text>
           </View>
+        </View>
+      </Card>
+
+      <Card onPress={() => nav.push('preOrders')} tone={preOrders.unanswered > 0 ? 'accent' : undefined}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+          <Icon name="document" size={22} color={preOrders.unanswered > 0 ? colors.accentDark : colors.muted} />
+          <View style={{ flex: 1 }}>
+            <Text style={[type.bodyStrong, { color: colors.text }]}>{t('preOrders.title')}</Text>
+            <Text style={[type.small, { color: colors.textSecondary }]}>
+              {preOrders.items.some((p) => p.open) ? t('preOrders.menuSubtitle') : t('preOrders.menuNone')}
+            </Text>
+          </View>
+          {preOrders.unseen > 0 ? <Badge label={t('preOrders.unanswered', { count: String(preOrders.unseen) })} tone="danger" /> : null}
+          <Icon name="chevron-right" size={18} color={colors.muted} />
         </View>
       </Card>
 

@@ -12,7 +12,8 @@ import { enqueue, enqueueRealtime } from './notify/outbox'
 import { availabilityOf } from './fleet/fleet.repository'
 import { trackingPolicy, type IncomingFix } from './fleet/domain/gps'
 import { MANUAL_OVERRIDABLE } from './fleet/domain/availability'
-import { cancelSchema, createOrderSchema, driverRequestSchema, updateOrderSchema } from './orders/domain/order-input'
+import { cancelSchema, createOrderSchema, driverRequestSchema, ratingSchema, updateOrderSchema } from './orders/domain/order-input'
+import { adminPreOrderView, bidSchema, createPreOrderSchema, orderBodyFromPreOrder } from './pre-orders/pre-orders'
 import type { AttentionKind } from './orders/domain/order-state'
 import { missedOutcome, missedReason } from './orders/domain/missed'
 import { adminOrderView, driverActiveOrderView, driverOfferOrderView, readOrder } from './orders/order-row'
@@ -208,6 +209,27 @@ export class LiveDispatchService {
     )
   }
 
+  /** Driver: the pre-orders he was told about (2026-11-17) */
+  driverPreOrders(driverId: number) {
+    return this.rt.preOrders.forDriver(driverId)
+  }
+
+  /** Driver: his price for a pre-order, new or changed */
+  async driverPreOrderBid(driverId: number, preOrderId: number, body: unknown) {
+    const input = parse(bidSchema, body)
+    return this.rt.preOrders.bid(driverId, preOrderId, input.priceAmd)
+  }
+
+  driverPreOrderWithdraw(driverId: number, preOrderId: number) {
+    return this.rt.preOrders.withdraw(driverId, preOrderId)
+  }
+
+  /** The cancel screen has been open for minutes: one alert to the operator (2026-11-17) */
+  async driverCancelStalled(driverId: number, orderId: number) {
+    const raised = await this.rt.db.transaction((tx) => this.rt.orders.driverCancelStalled(tx, orderId, driverId))
+    return { raised }
+  }
+
   async driverHistory(driverId: number, limit: number, before: Date | null) {
     const rows = await this.rt.orders.historyFor(driverId, limit, before)
     // History shows the job, not the customer: contact data is for the live order only.
@@ -385,6 +407,144 @@ export class LiveDispatchService {
   }
 
   /** Operator: approve or correct a minimum price the driver entered */
+  /**
+   * Operator: how the dispatch is doing over the last `days` (2026-11-17) —
+   * the numbers a test run is judged by. Everything is read from what the
+   * system already records (orders, offers, assignments, driver requests,
+   * ratings); nothing is stored for it.
+   *
+   * - time to assign: order's first search start → its FIRST assignment
+   *   (a re-dispatch after a driver left does not restart the clock);
+   * - acceptance: accepted / (accepted + rejected + expired) — an offer
+   *   revoked by the system is not the driver's answer, so it is left out.
+   */
+  async adminStats(days: number) {
+    const span = Number.isFinite(days) ? Math.min(Math.max(Math.round(days), 1), 366) : 7
+    const db = this.rt.db
+    const window = `now() - make_interval(days => $1::int)`
+    const [orders] = await db.query<Record<string, unknown>>(
+      `SELECT count(*) AS "created",
+              count(*) FILTER (WHERE "status" = 'COMPLETED') AS "completed",
+              count(*) FILTER (WHERE "status" = 'CANCELLED') AS "cancelled",
+              count(*) FILTER (WHERE "status" NOT IN ('COMPLETED', 'CANCELLED')) AS "open",
+              count(*) FILTER (WHERE EXISTS (SELECT 1 FROM "OrderEvent" e WHERE e."orderId" = o."id" AND e."type" = 'SEARCH_FAILED')) AS "searchFailed"
+         FROM "DispatchOrder" o WHERE o."createdAt" >= ${window}`,
+      [span],
+    )
+    const [assign] = await db.query<Record<string, unknown>>(
+      `WITH firsts AS (
+         SELECT o."id", EXTRACT(EPOCH FROM (min(a."startedAt") - o."dispatchStartedAt"))::float8 AS "seconds"
+           FROM "DispatchOrder" o JOIN "OrderAssignment" a ON a."orderId" = o."id"
+          WHERE o."createdAt" >= ${window} AND o."dispatchStartedAt" IS NOT NULL
+          GROUP BY o."id", o."dispatchStartedAt")
+       SELECT count(*) AS "n",
+              percentile_cont(0.5) WITHIN GROUP (ORDER BY "seconds") AS "median",
+              percentile_cont(0.9) WITHIN GROUP (ORDER BY "seconds") AS "p90"
+         FROM firsts WHERE "seconds" >= 0`,
+      [span],
+    )
+    const [offers] = await db.query<Record<string, unknown>>(
+      `SELECT count(*) AS "total",
+              count(*) FILTER (WHERE "status" = 'ACCEPTED') AS "accepted",
+              count(*) FILTER (WHERE "status" = 'REJECTED') AS "rejected",
+              count(*) FILTER (WHERE "status" = 'EXPIRED') AS "expired",
+              count(*) FILTER (WHERE "status" = 'REVOKED') AS "revoked"
+         FROM "OrderOffer" WHERE "createdAt" >= ${window}`,
+      [span],
+    )
+    const cancelReasons = await db.query<Record<string, unknown>>(
+      `SELECT 'OPERATOR' AS "by", "cancelReason"::text AS "reason", count(*) AS "n"
+         FROM "DispatchOrder" WHERE "status" = 'CANCELLED' AND "createdAt" >= ${window} AND "cancelReason" IS NOT NULL GROUP BY 2
+       UNION ALL
+       SELECT 'DRIVER', r."reason"::text, count(*)
+         FROM "OrderDriverRequest" r WHERE r."kind" = 'CANCEL' AND r."createdAt" >= ${window} GROUP BY 2
+       ORDER BY 3 DESC`,
+      [span],
+    )
+    const drivers = await db.query<Record<string, unknown>>(
+      `WITH o AS (
+         SELECT "driverId", count(*) AS "offers",
+                count(*) FILTER (WHERE "status" = 'ACCEPTED') AS "accepted",
+                count(*) FILTER (WHERE "status" = 'REJECTED') AS "rejected",
+                count(*) FILTER (WHERE "status" = 'EXPIRED') AS "expired"
+           FROM "OrderOffer" WHERE "createdAt" >= ${window} AND "driverId" IS NOT NULL GROUP BY 1),
+       c AS (SELECT "driverId", count(*) AS "completed" FROM "OrderAssignment" WHERE "endReason" = 'COMPLETED' AND "endedAt" >= ${window} GROUP BY 1),
+       x AS (SELECT "driverId", count(*) AS "cancels" FROM "OrderDriverRequest" WHERE "kind" = 'CANCEL' AND "createdAt" >= ${window} GROUP BY 1),
+       r AS (SELECT "driverId", round(avg("score")::numeric, 1) AS "avg", count(*) AS "n" FROM "OrderRating" GROUP BY 1),
+       f AS (SELECT o2."referrerDriverId" AS "driverId", count(*) AS "referred",
+                    COALESCE(SUM(w."amountAmd"), 0) AS "referralAmd"
+               FROM "DispatchOrder" o2 LEFT JOIN "WalletEntry" w ON w."orderId" = o2."id" AND w."kind" = 'REFERRAL_CREDIT'
+              WHERE o2."referrerDriverId" IS NOT NULL AND o2."createdAt" >= ${window} GROUP BY 1),
+       ids AS (SELECT "driverId" FROM o UNION SELECT "driverId" FROM c UNION SELECT "driverId" FROM x UNION SELECT "driverId" FROM f)
+       SELECT ids."driverId", t."driverName", t."phone",
+              COALESCE(o."offers", 0) AS "offers", COALESCE(o."accepted", 0) AS "accepted",
+              COALESCE(o."rejected", 0) AS "rejected", COALESCE(o."expired", 0) AS "expired",
+              COALESCE(c."completed", 0) AS "completed", COALESCE(x."cancels", 0) AS "cancels",
+              r."avg" AS "ratingAvg", COALESCE(r."n", 0) AS "ratingCount",
+              COALESCE(f."referred", 0) AS "referred", COALESCE(f."referralAmd", 0) AS "referralAmd"
+         FROM ids JOIN "FleetDriverProfile" t ON t."id" = ids."driverId"
+         LEFT JOIN o ON o."driverId" = ids."driverId" LEFT JOIN c ON c."driverId" = ids."driverId"
+         LEFT JOIN x ON x."driverId" = ids."driverId" LEFT JOIN r ON r."driverId" = ids."driverId"
+         LEFT JOIN f ON f."driverId" = ids."driverId"
+        ORDER BY COALESCE(o."offers", 0) DESC, ids."driverId"
+        LIMIT 200`,
+      [span],
+    )
+    const daily = await db.query<Record<string, unknown>>(
+      `SELECT to_char(("createdAt" AT TIME ZONE 'Asia/Yerevan')::date, 'YYYY-MM-DD') AS "day",
+              count(*) AS "created",
+              count(*) FILTER (WHERE "status" = 'COMPLETED') AS "completed",
+              count(*) FILTER (WHERE "status" = 'CANCELLED') AS "cancelled"
+         FROM "DispatchOrder" WHERE "createdAt" >= ${window} GROUP BY 1 ORDER BY 1 DESC`,
+      [span],
+    )
+    const n = (v: unknown) => toNumber(v ?? 0)
+    const nullable = (v: unknown) => (v === null || v === undefined ? null : Math.round(toNumber(v)))
+    const answered = n(offers.accepted) + n(offers.rejected) + n(offers.expired)
+    return {
+      days: span,
+      orders: { created: n(orders.created), completed: n(orders.completed), cancelled: n(orders.cancelled), open: n(orders.open), searchFailed: n(orders.searchFailed) },
+      timeToAssign: { orders: n(assign?.n), medianSeconds: nullable(assign?.median), p90Seconds: nullable(assign?.p90) },
+      offers: {
+        total: n(offers.total),
+        accepted: n(offers.accepted),
+        rejected: n(offers.rejected),
+        expired: n(offers.expired),
+        revoked: n(offers.revoked),
+        /** 0–100, null with no answered offer */
+        acceptanceRate: answered === 0 ? null : Math.round((n(offers.accepted) * 100) / answered),
+      },
+      cancelReasons: cancelReasons.map((r) => ({ by: String(r.by) as 'OPERATOR' | 'DRIVER', reason: String(r.reason), count: n(r.n) })),
+      drivers: drivers.map((d) => ({
+        driverId: n(d.driverId),
+        name: d.driverName === null ? null : String(d.driverName),
+        phone: d.phone === null ? null : String(d.phone),
+        offers: n(d.offers),
+        accepted: n(d.accepted),
+        rejected: n(d.rejected),
+        expired: n(d.expired),
+        completed: n(d.completed),
+        cancels: n(d.cancels),
+        rating: n(d.ratingCount) > 0 ? { average: toNumber(d.ratingAvg), count: n(d.ratingCount) } : null,
+        /** Orders he handed to us in the window, and his share paid for them */
+        referred: n(d.referred),
+        referralAmd: n(d.referralAmd),
+      })),
+      daily: daily.map((d) => ({ day: String(d.day), created: n(d.created), completed: n(d.completed), cancelled: n(d.cancelled) })),
+    }
+  }
+
+  /** Operator: 1–5 for a completed job (2026-11-17) */
+  async adminRateOrder(adminUserId: number, orderId: number, body: unknown, ctx: MutationContext) {
+    const input = parse(ratingSchema, body)
+    return this.mutate(`admin:${adminUserId}:rate:${orderId}`, ctx, (tx) =>
+      asResponse(tx, async () => {
+        await this.rt.orders.rate(tx, orderId, input, adminUserId)
+        return { orderId, score: input.score }
+      }),
+    )
+  }
+
   async adminResolvePriceReview(adminUserId: number, reviewId: number, body: unknown, ctx: MutationContext) {
     const input = parse(priceReviewSchema, body)
     return this.mutate(`admin:${adminUserId}:price-review:${reviewId}`, ctx, (tx) =>
@@ -410,7 +570,9 @@ export class LiveDispatchService {
          COUNT(*) FILTER (WHERE "kind" = 'ORDER_FEE') AS "feeOrders",
          COALESCE(SUM("amountAmd") FILTER (WHERE "kind" = 'ORDER_FEE_REFUND'), 0) AS "refundsAmd",
          COALESCE(SUM("amountAmd") FILTER (WHERE "kind" = 'ADMIN_CREDIT'), 0) AS "adminCreditsAmd",
-         COALESCE(-SUM("amountAmd") FILTER (WHERE "kind" = 'ADMIN_DEBIT'), 0) AS "adminDebitsAmd"
+         COALESCE(-SUM("amountAmd") FILTER (WHERE "kind" = 'ADMIN_DEBIT'), 0) AS "adminDebitsAmd",
+         COALESCE(SUM("amountAmd") FILTER (WHERE "kind" = 'REFERRAL_CREDIT'), 0) AS "referralsAmd",
+         COUNT(*) FILTER (WHERE "kind" = 'REFERRAL_CREDIT') AS "referralsCount"
        FROM "WalletEntry" WHERE "createdAt" >= now() - make_interval(days => $1::int)`,
       [span],
     )
@@ -418,7 +580,12 @@ export class LiveDispatchService {
       `SELECT COALESCE(SUM("balanceAmd") FILTER (WHERE "balanceAmd" > 0), 0) AS "heldAmd",
               COALESCE(-SUM("balanceAmd") FILTER (WHERE "balanceAmd" < 0), 0) AS "owedAmd",
               COUNT(*) FILTER (WHERE "balanceAmd" < 0) AS "inDebt",
-              COUNT(*) FILTER (WHERE "balanceAmd" + "creditLimitAmd" < $1::int) AS "belowBaseFee"
+              -- Every ACTIVE app driver, not only those with a wallet row: a driver
+              -- who never had a top-up has no row, and dispatch reads that as 0
+              -- (wallet-ledger.ts walletPredicate) — the count said 0 while
+              -- three drivers could not get orders (2026-11-16).
+              (SELECT COUNT(*) FROM "FleetDriver" d LEFT JOIN "DriverWallet" dw ON dw."driverId" = d."id"
+                WHERE d."status" = 'ACTIVE' AND COALESCE(dw."balanceAmd", 0) + COALESCE(dw."creditLimitAmd", 0) < $1::int) AS "belowBaseFee"
          FROM "DriverWallet"`,
       [settings.walletFeeBaseAmd],
     )
@@ -445,6 +612,9 @@ export class LiveDispatchService {
         refundsAmd: n(totals.refundsAmd),
         adminCreditsAmd: n(totals.adminCreditsAmd),
         adminDebitsAmd: n(totals.adminDebitsAmd),
+        /** 2026-11-17: shares paid to referring drivers — what the platform gave away from its fees */
+        referralsAmd: n(totals.referralsAmd),
+        referralsCount: n(totals.referralsCount),
       },
       balances: { heldAmd: n(balances.heldAmd), owedAmd: n(balances.owedAmd), inDebt: n(balances.inDebt), belowBaseFee: n(balances.belowBaseFee) },
       pendingPriceReviews: n(reviews?.n),
@@ -461,31 +631,148 @@ export class LiveDispatchService {
     }
   }
 
-  /** Operator: every driver's balance, lowest first (who needs to top up) */
-  async adminWallets() {
+  /**
+   * Operator: every driver's balance, lowest first (who needs to top up), with
+   * whether dispatch will offer him orders right now and his money over the
+   * same `days` window the summary cards use.
+   *
+   * `orderStatus` mirrors dispatch, it does not decide it: `walletPredicate`
+   * compares balance + credit with the fee of the order at hand, and the base
+   * fee is the smallest such fee, so below it the driver is offered nothing
+   * paid (2026-11-16). A free (minimum-price) order needs no balance at all,
+   * which is why LOW_BALANCE reads "no paid orders", not "no orders".
+   */
+  async adminWallets(days = 30) {
+    const span = Number.isFinite(days) ? Math.min(Math.max(Math.round(days), 1), 366) : 30
+    const settings = await this.rt.settings.get()
+    const billingOn = settings.walletBillingEnabled === 1
     const rows = await this.rt.db.query<Record<string, unknown>>(
-      `SELECT t."id" AS "driverId", t."driverName", t."phone", t."kind", COALESCE(w."balanceAmd", 0) AS "balanceAmd",
+      `SELECT t."id" AS "driverId", t."driverName", t."phone", t."kind", t."status", COALESCE(w."balanceAmd", 0) AS "balanceAmd",
               COALESCE(w."creditLimitAmd", 0) AS "creditLimitAmd", w."updatedAt",
-              (SELECT count(*) FROM "OrderAssignment" a WHERE a."driverId" = t."id" AND a."endReason" = 'COMPLETED') AS "completedOrders"
-         FROM "FleetDriverProfile" t LEFT JOIN "DriverWallet" w ON w."driverId" = t."id"
+              (SELECT count(*) FROM "OrderAssignment" a WHERE a."driverId" = t."id" AND a."endReason" = 'COMPLETED') AS "completedOrders",
+              COALESCE(m."inAmd", 0) AS "periodInAmd", COALESCE(m."feesNetAmd", 0) AS "periodFeesAmd", COALESCE(m."feeOrders", 0) AS "periodFeeOrders"
+         FROM "FleetDriverProfile" t
+         LEFT JOIN "DriverWallet" w ON w."driverId" = t."id"
+         LEFT JOIN (
+           SELECT "driverId",
+                  SUM("amountAmd") FILTER (WHERE "kind" IN ('TOPUP', 'TOPUP_BONUS', 'ADMIN_CREDIT', 'REFERRAL_CREDIT')) AS "inAmd",
+                  -SUM("amountAmd") FILTER (WHERE "kind" IN ('ORDER_FEE', 'ORDER_FEE_ADJUSTMENT', 'ORDER_FEE_REFUND')) AS "feesNetAmd",
+                  COUNT(*) FILTER (WHERE "kind" = 'ORDER_FEE') AS "feeOrders"
+             FROM "WalletEntry" WHERE "createdAt" >= now() - make_interval(days => $1::int)
+            GROUP BY "driverId"
+         ) m ON m."driverId" = t."id"
         WHERE t."status" <> 'DELETED'
         ORDER BY COALESCE(w."balanceAmd", 0), t."id"
         LIMIT 500`,
+      [span],
     )
-    return rows.map((row) => ({
-      driverId: toNumber(row.driverId),
-      name: row.driverName === null ? null : String(row.driverName),
-      phone: row.phone === null ? null : String(row.phone),
-      kind: String(row.kind),
-      balanceAmd: toNumber(row.balanceAmd),
-      creditLimitAmd: toNumber(row.creditLimitAmd),
-      /** Completed orders in the app — what an operator weighs before allowing credit */
-      completedOrders: toNumber(row.completedOrders),
-      updatedAt: row.updatedAt ? toDate(row.updatedAt).toISOString() : null,
-    }))
+    return rows.map((row) => {
+      const balanceAmd = toNumber(row.balanceAmd)
+      const creditLimitAmd = toNumber(row.creditLimitAmd)
+      const driverStatus = String(row.status)
+      const shortfallAmd = billingOn ? Math.max(0, settings.walletFeeBaseAmd - (balanceAmd + creditLimitAmd)) : 0
+      const orderStatus: 'OK' | 'LOW_BALANCE' | 'BILLING_OFF' | 'NOT_ACTIVE' =
+        driverStatus !== 'ACTIVE' ? 'NOT_ACTIVE' : !billingOn ? 'BILLING_OFF' : shortfallAmd > 0 ? 'LOW_BALANCE' : 'OK'
+      return {
+        driverId: toNumber(row.driverId),
+        name: row.driverName === null ? null : String(row.driverName),
+        phone: row.phone === null ? null : String(row.phone),
+        kind: String(row.kind),
+        driverStatus,
+        balanceAmd,
+        creditLimitAmd,
+        orderStatus,
+        /** How much more he needs before a base-fee order can be offered */
+        shortfallAmd,
+        /** Completed orders in the app — what an operator weighs before allowing credit */
+        completedOrders: toNumber(row.completedOrders),
+        /** Money in (top-ups, bonuses, manual credits) and net fees over `days` */
+        periodInAmd: toNumber(row.periodInAmd),
+        periodFeesAmd: toNumber(row.periodFeesAmd),
+        periodFeeOrders: toNumber(row.periodFeeOrders),
+        updatedAt: row.updatedAt ? toDate(row.updatedAt).toISOString() : null,
+      }
+    })
   }
 
   // ─── Admin console ────────────────────────────────────────────────────────
+
+  // ─── Pre-orders (2026-11-17) — pre-orders/pre-orders.ts ──────────────────
+
+  /** Operator: describe a job, tell every driver who can do it, collect prices */
+  async createPreOrder(adminUserId: number, body: unknown, ctx: MutationContext) {
+    // Refused while dispatch is off (2026-11-18): the worker idles then, so the pushes would sit in the outbox and fire days later
+    if (!this.rt.config.enabled) throw new DispatchError('FEATURE_DISABLED')
+    const input = parse(createPreOrderSchema, body)
+    return this.mutate(`admin:${adminUserId}:pre-order-create`, ctx, (tx) =>
+      asResponse(
+        tx,
+        async () => {
+          const { preOrder, recipients } = await this.rt.preOrders.create(tx, input, adminUserId)
+          return { preOrder: adminPreOrderView(preOrder), recipients }
+        },
+        201,
+      ),
+    )
+  }
+
+  /** Operator: «Կրկին ծանուցել» — push every active driver again (2026-11-18) */
+  async notifyPreOrder(adminUserId: number, preOrderId: number, ctx: MutationContext) {
+    if (!this.rt.config.enabled) throw new DispatchError('FEATURE_DISABLED')
+    return this.mutate(`admin:${adminUserId}:pre-order-notify:${preOrderId}`, ctx, (tx) => asResponse(tx, () => this.rt.preOrders.notify(tx, preOrderId)))
+  }
+
+  /**
+   * Operator: turn a pre-order into a real order at the price this driver
+   * gave, and offer it to him (an ordinary manual offer — he accepts in the
+   * app and only then sees the customer). Two steps on purpose: the order is
+   * created even if the offer is refused (the driver went offline, took
+   * another job) — the operator then sends it from the order page. Both
+   * steps are idempotent on the same key. The pre-order stays as it is —
+   * it may be given to another driver later (each time a new order); only
+   * the operator closes it.
+   */
+  async convertPreOrder(adminUserId: number, preOrderId: number, body: { driverId?: unknown; customerPhone?: unknown }, ctx: MutationContext) {
+    // Refused while dispatch is off: the order would be created but could never be offered
+    if (!this.rt.config.enabled) throw new DispatchError('FEATURE_DISABLED')
+    const driverId = Number(body?.driverId)
+    if (!Number.isSafeInteger(driverId)) throw new DispatchError('VALIDATION_FAILED', { field: 'driverId' })
+    const preOrder = await this.rt.preOrders.get(this.rt.db, preOrderId)
+    if (!preOrder) throw new DispatchError('PRE_ORDER_NOT_FOUND')
+    const price = await this.rt.preOrders.bidOf(this.rt.db, preOrderId, driverId)
+    if (price === null) throw new DispatchError('VALIDATION_FAILED', { field: 'driverId', reason: 'no price from this driver' })
+    const phone = typeof body?.customerPhone === 'string' && body.customerPhone.trim() ? body.customerPhone : preOrder.customerPhone
+    if (!phone) throw new DispatchError('VALIDATION_FAILED', { field: 'customerPhone' })
+    const input = parse(createOrderSchema, orderBodyFromPreOrder(preOrder, { priceAmd: price, customerPhone: phone }))
+    const created = await this.mutate(`admin:${adminUserId}:pre-order-convert:${preOrderId}`, ctx, (tx) =>
+      asResponse(
+        tx,
+        async () => {
+          const order = await this.rt.orders.create(tx, input, adminUserId)
+          await this.rt.preOrders.recordConversion(tx, { preOrderId, orderId: order.id, driverId, priceAmd: price, adminUserId })
+          return adminOrderView(order)
+        },
+        201,
+      ),
+    )
+    if (created.status !== 201) return created
+    const order = created.body as { id: number; version: number }
+    const offered = await this.manualOffer(
+      adminUserId,
+      order.id,
+      { driverId, overrideReason: `Նախապատվեր #${preOrderId}՝ վարորդի գինը ${price} ֏`, expectedVersion: order.version },
+      { ...ctx, idempotencyKey: `${requireKey(ctx).slice(0, 120)}-offer` },
+    ).catch((error: unknown) => ({ status: 409, body: { code: error instanceof DispatchError ? error.code : 'OFFER_FAILED' }, replayed: false }))
+    return {
+      status: 201,
+      body: {
+        orderId: order.id,
+        offered: offered.status === 201,
+        offerError: offered.status === 201 ? null : ((offered.body as { code?: string })?.code ?? 'OFFER_FAILED'),
+      },
+      replayed: created.replayed,
+    }
+  }
 
   async createOrder(adminUserId: number, body: unknown, ctx: MutationContext) {
     const input = parse(createOrderSchema, body)
@@ -657,7 +944,7 @@ export class LiveDispatchService {
   async orderDetail(orderId: number) {
     const order = await readOrder(this.rt.db, orderId)
     if (!order) throw new DispatchError('ORDER_NOT_FOUND')
-    const [offers, timeline, candidates, assignments, walletEntries, reviews] = await Promise.all([
+    const [offers, timeline, candidates, assignments, walletEntries, reviews, ratings, referrer] = await Promise.all([
       this.rt.offers.offersOfOrder(orderId),
       this.rt.orders.timeline(orderId),
       this.rt.db.query<Record<string, unknown>>(
@@ -687,7 +974,15 @@ export class LiveDispatchService {
            FROM "OrderPriceReview" WHERE "orderId" = $1::int ORDER BY "id" DESC`,
         [orderId],
       ),
+      this.rt.db.query<Record<string, unknown>>(`SELECT "score", "comment", "driverId", "updatedAt" FROM "OrderRating" WHERE "orderId" = $1::int`, [orderId]),
+      order.referrerDriverId === null
+        ? Promise.resolve([] as Record<string, unknown>[])
+        : this.rt.db.query<Record<string, unknown>>(`SELECT "driverName", "phone" FROM "FleetDriverProfile" WHERE "id" = $1::int`, [order.referrerDriverId]),
     ])
+    // Referred order (2026-11-17): who handed it over and where his share stands
+    const referralEntry = walletEntries.find((e) => String(e.kind) === 'REFERRAL_CREDIT')
+    const referralEvent = [...timeline].reverse().find((e) => e.type.startsWith('REFERRAL_'))
+    const feeEntries = walletEntries.filter((e) => String(e.kind) !== 'REFERRAL_CREDIT')
     return {
       order: adminOrderView(order),
       assignments: assignments.map((a) => ({
@@ -700,6 +995,15 @@ export class LiveDispatchService {
         endedAt: a.endedAt ? toDate(a.endedAt).toISOString() : null,
         endReason: a.endReason === null || a.endReason === undefined ? null : String(a.endReason),
       })),
+      /** The operator's 1–5 for the completed job (2026-11-17) */
+      rating: ratings[0]
+        ? {
+            score: toNumber(ratings[0].score),
+            comment: ratings[0].comment === null || ratings[0].comment === undefined ? null : String(ratings[0].comment),
+            driverId: toNumber(ratings[0].driverId),
+            ratedAt: toDate(ratings[0].updatedAt).toISOString(),
+          }
+        : null,
       priceReviews: reviews.map((r) => ({
         id: toNumber(r.id),
         driverId: toNumber(r.driverId),
@@ -710,10 +1014,22 @@ export class LiveDispatchService {
         createdAt: toDate(r.createdAt).toISOString(),
         resolvedAt: r.resolvedAt ? toDate(r.resolvedAt).toISOString() : null,
       })),
+      referral:
+        order.referrerDriverId === null
+          ? null
+          : {
+              driverId: order.referrerDriverId,
+              name: referrer[0]?.driverName === null || referrer[0]?.driverName === undefined ? null : String(referrer[0].driverName),
+              phone: referrer[0]?.phone === null || referrer[0]?.phone === undefined ? null : String(referrer[0].phone),
+              /** CREDITED / WAITING (price review) / SKIPPED (did it himself, free order) / PENDING (not completed yet) */
+              status: referralEntry ? 'CREDITED' : referralEvent?.type === 'REFERRAL_WAITING' ? 'WAITING' : referralEvent?.type === 'REFERRAL_SKIPPED' ? 'SKIPPED' : 'PENDING',
+              creditedAmd: referralEntry ? toNumber(referralEntry.amountAmd) : null,
+              skipReason: referralEvent?.type === 'REFERRAL_SKIPPED' ? String((referralEvent.data as { why?: unknown }).why ?? '') : null,
+            },
       wallet: {
-        /** What the drivers paid for this order in total, after settlements and refunds */
+        /** What the drivers paid for this order in total, after settlements and refunds (the referrer's share is not a fee) */
         // `0 - x`, not `-x`: an order that cost nothing must read 0, not -0
-        netFeeAmd: 0 - walletEntries.reduce((sum, e) => sum + toNumber(e.amountAmd), 0),
+        netFeeAmd: 0 - feeEntries.reduce((sum, e) => sum + toNumber(e.amountAmd), 0),
         entries: walletEntries.map((e) => ({
           id: toNumber(e.id),
           driverId: toNumber(e.driverId),

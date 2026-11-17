@@ -67,6 +67,17 @@ export interface FleetDriverView {
   isActive: boolean
   /** Shown on the website right now (SITE_LINKED with an active card) — informational */
   siteListed: boolean
+  /**
+   * Signed up IN THE APP (2026-11-12 site listing): such a driver is
+   * SITE_LINKED structurally — the profile lives on a TowTruck — but that
+   * truck is hidden (`TowTruck.appOnly`) until the driver asks to be listed.
+   * Lets the admin tell them apart from drivers who registered on the website.
+   */
+  appOnly: boolean
+  /** The last problem alert the driver got (2026-11-16): what, how many times, when — null when none is open */
+  problemAlert: { reason: string; count: number; at: string | null } | null
+  /** The operator's ratings of completed jobs (2026-11-17): average 1–5, null with none */
+  rating: { average: number; count: number } | null
   statusReason: string | null
   block: { reason: string | null; until: string | null; since: string | null } | null
   statusChangedAt: Date
@@ -103,10 +114,14 @@ export interface SiteCandidate {
 const VIEW_SELECT = `
   v."id", v."kind", v."status", v."towTruckId", v."slug", v."driverName", v."phone", v."vehicleType",
   v."capacityTons", v."maxLoadTons", v."manipulator", v."wheelSkates", v."isActive", v."siteListed",
+  COALESCE(tt."appOnly", false) AS "appOnly",
   d."vehicleDescription", d."statusReason", d."statusChangedAt", d."createdAt",
   (bp."dispatchSuspendedAt" IS NOT NULL AND (bp."dispatchSuspendedUntil" IS NULL OR bp."dispatchSuspendedUntil" > now())) AS "blocked",
+  bp."problemAlertReason", bp."problemAlertCount", bp."problemAlertAt",
+  (SELECT round(avg(r."score")::numeric, 1) FROM "OrderRating" r WHERE r."driverId" = v."id") AS "ratingAvg",
+  (SELECT count(*) FROM "OrderRating" r WHERE r."driverId" = v."id") AS "ratingCount",
   bp."dispatchSuspendedReason" AS "blockedReason", bp."dispatchSuspendedUntil" AS "blockedUntil", bp."dispatchSuspendedAt" AS "blockedAt"`
-const VIEW_FROM = `FROM "FleetDriverProfile" v JOIN "FleetDriver" d ON d."id" = v."id" LEFT JOIN "DriverPresence" bp ON bp."driverId" = v."id"`
+const VIEW_FROM = `FROM "FleetDriverProfile" v JOIN "FleetDriver" d ON d."id" = v."id" LEFT JOIN "DriverPresence" bp ON bp."driverId" = v."id" LEFT JOIN "TowTruck" tt ON tt."id" = v."towTruckId"`
 
 function mapView(row: Record<string, unknown>): FleetDriverView {
   return {
@@ -125,6 +140,12 @@ function mapView(row: Record<string, unknown>): FleetDriverView {
     vehicleDescription: row.vehicleDescription == null ? null : String(row.vehicleDescription),
     isActive: Boolean(row.isActive),
     siteListed: Boolean(row.siteListed),
+    appOnly: Boolean(row.appOnly),
+    rating: toNumber(row.ratingCount ?? 0) > 0 ? { average: toNumber(row.ratingAvg), count: toNumber(row.ratingCount) } : null,
+    problemAlert:
+      row.problemAlertReason == null
+        ? null
+        : { reason: String(row.problemAlertReason), count: toNumber(row.problemAlertCount ?? 0), at: toNullableDate(row.problemAlertAt)?.toISOString() ?? null },
     statusReason: row.statusReason == null ? null : String(row.statusReason),
     // Blocked for orders by an operator (DriverPresence), with the reason the driver sees and the end, if any
     block: row.blocked === true

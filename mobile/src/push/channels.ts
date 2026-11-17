@@ -15,6 +15,14 @@ import { ALERT_SOUND_IDS, getAlertSound, soundFile, type AlertSoundId } from './
  */
 export const OFFER_RING_CHANNEL = 'offer_ring'
 
+/**
+ * «GPS-ը չի աշխատում» / «Կապ չկա» / «Ինտերնետ չկա» (2026-11-16): the
+ * server's problem pushes (backend PushService.alertProblemDrivers names this
+ * id) and the app's own no-internet alert. Loud, but not the offer ring — a
+ * driver must never mistake a warning for an order.
+ */
+export const PROBLEM_CHANNEL = 'driver_problems'
+
 export function ringChannelId(sound: AlertSoundId): string {
   return sound === 'classic' ? OFFER_RING_CHANNEL : `${OFFER_RING_CHANNEL}_${sound}`
 }
@@ -59,6 +67,13 @@ async function createChannels(sound: AlertSoundId): Promise<void> {
     // string 'default' is looked up as a bundled file by expo-notifications
     // and logs "Custom sound 'default' not found" (2026-11).
     vibrationPattern: [0, 400, 200, 400],
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+  })
+  await Notifications.setNotificationChannelAsync(PROBLEM_CHANNEL, {
+    name: 'Կապի և GPS-ի խնդիրներ',
+    importance: Notifications.AndroidImportance.MAX,
+    // System notification sound (see 'offers' below for why no `sound` key)
+    vibrationPattern: [0, 800, 400, 800],
     lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
   })
   await Notifications.setNotificationChannelAsync('orders', {

@@ -25,7 +25,16 @@ import { feeRulesOf, orderFeeAmd, type FeeRules } from './domain/fees'
 import type { DispatchSettings } from '../platform/settings'
 import { enqueue } from '../notify/outbox'
 
-export type WalletEntryKind = 'TOPUP' | 'TOPUP_BONUS' | 'ORDER_FEE' | 'ORDER_FEE_ADJUSTMENT' | 'ORDER_FEE_REFUND' | 'ADMIN_CREDIT' | 'ADMIN_DEBIT'
+export type WalletEntryKind =
+  | 'TOPUP'
+  | 'TOPUP_BONUS'
+  | 'ORDER_FEE'
+  | 'ORDER_FEE_ADJUSTMENT'
+  | 'ORDER_FEE_REFUND'
+  | 'ADMIN_CREDIT'
+  | 'ADMIN_DEBIT'
+  /** 2026-11-17: the referring driver's share of a referred order's fee */
+  | 'REFERRAL_CREDIT'
 
 export interface WalletEntryInput {
   driverId: number
@@ -180,6 +189,17 @@ async function assignmentFee(tx: Sql, assignmentId: number): Promise<AssignmentF
     chargedAmd,
     refunded: rows.some((row) => row.kind === 'ORDER_FEE_REFUND'),
   }
+}
+
+/**
+ * What this assignment's driver finally paid for the order (after settlements),
+ * 0 when refunded, null when it was never billed (billing off at accept).
+ * Referred orders (2026-11-17) share THIS amount — what we really earned.
+ */
+export async function netFeeOf(tx: Sql, assignmentId: number): Promise<number | null> {
+  const fee = await assignmentFee(tx, assignmentId)
+  if (!fee) return null
+  return fee.refunded ? 0 : fee.chargedAmd
 }
 
 /**

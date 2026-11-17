@@ -13,6 +13,7 @@ import { DispatchModule } from './dispatch/dispatch.module'
 import { DriverAuthModule } from './driver-auth/driver-auth.module'
 import { FreeRoutesModule } from './free-routes/free-routes.module'
 import { HealthModule } from './health/health.module'
+import { ErrorTrackingModule } from './error-tracking/error-tracking.module'
 import { IdramModule } from './idram/idram.module'
 import { LiveDispatchModule } from './live-dispatch/nest/live-dispatch.module'
 import { ImagesModule } from './images/images.module'
@@ -47,6 +48,7 @@ import { TowTrucksModule } from './tow-trucks/tow-trucks.module'
     // AnalyticsTrackingService (visitor-day retention purge)
     ScheduleModule.forRoot(),
     PrismaModule,
+    ErrorTrackingModule,
     HealthModule,
     StorageModule,
     ImagesModule,

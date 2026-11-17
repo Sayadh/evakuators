@@ -118,6 +118,9 @@
           "ORDER_ALREADY_ASSIGNED",
           "ORDER_CANCELLED",
           "ORDER_NOT_FOUND",
+          "PRE_ORDER_NOT_FOUND",
+          "PRE_ORDER_CLOSED",
+          "PRE_ORDER_NOTIFY_TOO_SOON",
           "ORDER_NOT_SEARCHING",
           "PHONE_ALREADY_REGISTERED",
           "PHONE_BELONGS_TO_SITE_DRIVER",
@@ -195,7 +198,8 @@
           "MANUAL_OFFER_FAILED",
           "DRIVER_CANCEL_REQUEST",
           "DRIVER_PROBLEM",
-          "OPERATOR_FLAG"
+          "OPERATOR_FLAG",
+          "CUSTOMER_PENDING"
         ]
       },
       "CancelReason": {
@@ -207,9 +211,10 @@
           "PRICE_NOT_AGREED",
           "TECHNICAL_PROBLEM",
           "OTHER",
-          "NOT_SPECIFIED"
+          "NOT_SPECIFIED",
+          "CUSTOMER_WILL_CALL"
         ],
-        "description": "NOT_SPECIFIED: only in a driver CANCEL request, sent by the app when the driver picked no reason in time. An operator cancel requires a real reason."
+        "description": "NOT_SPECIFIED: only in a driver CANCEL request, sent by the app when the driver picked no reason in time. CUSTOMER_WILL_CALL: only in a driver CANCEL request — the driver is released with his fee refunded and the order waits for an operator (CUSTOMER_PENDING). An operator cancel requires a real reason."
       },
       "Point": {
         "type": "object",
@@ -368,6 +373,18 @@
                 "type": "string",
                 "minLength": 2,
                 "maxLength": 500
+              },
+              "precision": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "EXACT",
+                  "APPROXIMATE",
+                  null
+                ],
+                "description": "How sure the operator is of the coordinates (2026-11-17). Required whenever latitude/longitude are given; stored as null without them. Shown to the driver under «Նավիգացիա» and on the offer."
               }
             }
           },
@@ -447,6 +464,13 @@
               "null"
             ],
             "maxLength": 2000
+          },
+          "referrerDriverId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "2026-11-17: the app driver (FleetDriver.id) who handed this order to us. When ANOTHER driver completes it, he is credited walletReferralSharePercent of the order's fee (REFERRAL_CREDIT), once; paid even while billing is off."
           }
         }
       },
@@ -535,6 +559,18 @@
                 "type": "string",
                 "minLength": 2,
                 "maxLength": 500
+              },
+              "precision": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "EXACT",
+                  "APPROXIMATE",
+                  null
+                ],
+                "description": "How sure the operator is of the coordinates (2026-11-17). Required whenever latitude/longitude are given; stored as null without them. Shown to the driver under «Նավիգացիա» and on the offer."
               }
             }
           },
@@ -1653,7 +1689,7 @@
             "$ref": "#/components/parameters/IdempotencyKey"
           }
         ],
-        "summary": "CANCEL (only before EN_ROUTE). Reason other than CUSTOMER_DECLINED and the pickup has coordinates → the driver is released and a new automatic search starts without him (response {released:true}); CUSTOMER_DECLINED → assignment KEPT until an operator decides. PROBLEM: any active status, an alert only.",
+        "summary": "CANCEL (only before EN_ROUTE; every cancel refunds the driver's fee, 2026-11-17). Customer reason (CUSTOMER_WILL_CALL, CUSTOMER_DECLINED) → the driver is released and the order waits for an operator (NEEDS_ATTENTION / CUSTOMER_PENDING). Any other reason and the pickup has coordinates → released and a new automatic search starts without him (response {released:true}); no coordinates → assignment KEPT until an operator decides. PROBLEM: any active status, an alert only.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1680,6 +1716,22 @@
                       "null"
                     ],
                     "description": "Required when reason is OTHER"
+                  },
+                  "driverPriceAmd": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "description": "What the driver asked. Required for a CANCEL with reason PRICE_NOT_AGREED"
+                  },
+                  "customerPriceAmd": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "description": "What the customer offered, if known (PRICE_NOT_AGREED)"
                   }
                 }
               }
@@ -1691,6 +1743,32 @@
             "description": "Request recorded; operator alerted"
           },
           "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/driver-app/orders/{orderId}/cancel-stalled": {
+      "post": {
+        "tags": [
+          "driver-app"
+        ],
+        "security": [
+          {
+            "driverApp": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/OrderId"
+          }
+        ],
+        "summary": "The cancel screen has been open for minutes without a reason sent (2026-11-17): raises DRIVER_CANCEL_STALLED for the operator, once per assignment. Changes nothing on the order.",
+        "responses": {
+          "201": {
+            "description": "{ raised: boolean } — false when already raised for this assignment"
+          },
+          "404": {
             "$ref": "#/components/responses/Error"
           }
         }
@@ -4328,6 +4406,354 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/ops/dispatch/orders/{id}/rating": {
+      "put": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "summary": "The operator's 1–5 rating of a COMPLETED job (2026-11-17), for the driver who completed it; rating again replaces it. Information only — not used by dispatch.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "score"
+                ],
+                "properties": {
+                  "score": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5
+                  },
+                  "comment": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 500
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "{ orderId, score }"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/ops/dispatch/stats": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 366,
+              "default": 7
+            }
+          }
+        ],
+        "summary": "How the dispatch is doing over the last N days (2026-11-17): orders, time to first assignment (median/p90), offer acceptance, cancellations by reason (operator/driver), per-driver table with ratings, daily counts. Read-only.",
+        "responses": {
+          "200": {
+            "description": "Stats"
+          }
+        }
+      }
+    },
+    "/ops/dispatch/pre-orders": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "summary": "Pre-order (2026-11-17): a job described WITHOUT the customer's contact. EVERY active driver sees it and gets a push (no capability filter, 2026-11-18); each may answer with his price. Body: pickup, destination (required: address ≥ 2 chars, coordinates optional), vehicle, requirements, comment, optional customerPhone/customerName/internalNote (operator only). No deadline: open until the operator closes it. Refused with FEATURE_DISABLED while LIVE_DISPATCH_ENABLED is off.",
+        "responses": {
+          "201": {
+            "description": "{ preOrder, recipients }"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "OPEN",
+                "CLOSED"
+              ]
+            }
+          }
+        ],
+        "summary": "Pre-orders with recipients count, bids count, the best price and how many orders were made from each",
+        "responses": {
+          "200": {
+            "description": "List"
+          }
+        }
+      }
+    },
+    "/ops/dispatch/pre-orders/{id}": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "summary": "One pre-order: the job, how many drivers were told, every price (cheapest first) with the driver's phone, rating, distance and whether he is busy, and every order made from it with the offer's outcome",
+        "responses": {
+          "200": {
+            "description": "Detail"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/ops/dispatch/pre-orders/{id}/close": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "summary": "No more prices accepted — the ONLY way a pre-order closes",
+        "responses": {
+          "200": {
+            "description": "{ closed }"
+          }
+        }
+      }
+    },
+    "/ops/dispatch/pre-orders/{id}/convert": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "summary": "A real order at this driver's price (FIXED) with a manual offer to him. Does NOT close the pre-order; may be called again for another driver (each call a new order). The order is created even if the offer is refused (offered: false, offerError). Body: driverId, customerPhone (required unless stored on the pre-order). Refused with FEATURE_DISABLED while dispatch is off.",
+        "responses": {
+          "201": {
+            "description": "{ orderId, offered, offerError }"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/driver-app/pre-orders": {
+      "get": {
+        "tags": [
+          "driver-app"
+        ],
+        "security": [
+          {
+            "driverApp": []
+          }
+        ],
+        "summary": "Every open pre-order (all of them — no filter), plus the closed ones he priced in the last 2 days. Never the customer's contact.",
+        "responses": {
+          "200": {
+            "description": "List"
+          }
+        }
+      }
+    },
+    "/driver-app/pre-orders/{id}/bid": {
+      "put": {
+        "tags": [
+          "driver-app"
+        ],
+        "security": [
+          {
+            "driverApp": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "summary": "His price (100–10 000 000 ֏), new or changed, until the operator closes the pre-order. Other drivers never see it.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "priceAmd"
+                ],
+                "properties": {
+                  "priceAmd": {
+                    "type": "integer",
+                    "minimum": 100
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "{ priceAmd }"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "driver-app"
+        ],
+        "security": [
+          {
+            "driverApp": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "summary": "Withdraws his price while it is open",
+        "responses": {
+          "200": {
+            "description": "{ withdrawn }"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/ops/dispatch/pre-orders/{id}/notify": {
+      "post": {
+        "tags": [
+          "ops"
+        ],
+        "security": [
+          {
+            "ops": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "summary": "«Կրկին ծանուցել» (2026-11-18): another push round to every active driver («please take a look»), while the pre-order is open. Refused with FEATURE_DISABLED while dispatch is off. At most once every 2 minutes per pre-order (creation counts as the first round): sooner → 429 PRE_ORDER_NOTIFY_TOO_SOON with details.retryAfterSeconds.",
+        "responses": {
+          "200": {
+            "description": "{ notified, round }"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
           }
         }
       }

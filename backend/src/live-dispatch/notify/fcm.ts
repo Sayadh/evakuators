@@ -62,6 +62,8 @@ export interface PushMessage {
    * push. Used to stop an offer's ring (`type: offer_closed`).
    */
   silent?: boolean
+  /** Android channel the notification is drawn on; default 'offers' (high priority) or 'orders' */
+  androidChannel?: string
 }
 
 export type PushSendResult =
@@ -138,7 +140,7 @@ export class FcmSender implements PushSender {
           ttl: `${ttl}s`,
           priority: message.highPriority ? 'HIGH' : 'NORMAL',
           collapse_key: message.collapseKey,
-          ...(actionable ? {} : { notification: { channel_id: message.highPriority ? 'offers' : 'orders', tag: message.collapseKey } }),
+          ...(actionable ? {} : { notification: { channel_id: message.androidChannel ?? (message.highPriority ? 'offers' : 'orders'), tag: message.collapseKey } }),
         },
         apns: {
           headers: {

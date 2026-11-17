@@ -86,6 +86,23 @@ const config: ExpoConfig = {
   slug: 'evakuators-driver',
   scheme: 'evakuators-driver',
   version: '1.0.0',
+  /**
+   * Over-the-air JS updates (EAS Update, 2026-11-17). An update only reaches
+   * builds with the SAME runtime version, and the runtime version is this app
+   * `version`: JS-only changes ship with `npm run update:preview`, but
+   * anything native (a new package with native code, a permission, a config
+   * plugin, sounds, icons) needs `version` bumped AND a new build — otherwise
+   * the old binary would run JS that calls native code it does not have.
+   * See docs/live-dispatch/06-mobile.md § «Updates without a new APK».
+   */
+  runtimeVersion: { policy: 'appVersion' },
+  updates: {
+    url: 'https://u.expo.dev/5c8014aa-3e17-432c-93ff-cca756db6f48',
+    // Download on launch, apply on the NEXT launch: a driver mid-order never has
+    // the app reload under his thumb, and a slow network never blocks start-up.
+    checkAutomatically: 'ON_LOAD',
+    fallbackToCacheTimeout: 0,
+  },
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',

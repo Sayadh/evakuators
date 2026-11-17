@@ -457,15 +457,15 @@ export const adminRepository = {
 
   /** Publishes an app driver's hidden profile on the site at once */
   publishAppDriverTruck(towTruckId: number): Promise<void> {
-    return apiFetch<void>(`/admin/site-listing-requests/publish/${towTruckId}`, { method: 'POST', headers: authHeader() })
+    return apiFetch<undefined>(`/admin/site-listing-requests/publish/${towTruckId}`, { method: 'POST', headers: authHeader() })
   },
 
   approveSiteListing(id: number): Promise<void> {
-    return apiFetch<void>(`/admin/site-listing-requests/${id}/approve`, { method: 'POST', headers: authHeader() })
+    return apiFetch<undefined>(`/admin/site-listing-requests/${id}/approve`, { method: 'POST', headers: authHeader() })
   },
 
   rejectSiteListing(id: number, reason: string): Promise<void> {
-    return apiFetch<void>(`/admin/site-listing-requests/${id}/reject`, { method: 'POST', body: { reason }, headers: authHeader() })
+    return apiFetch<undefined>(`/admin/site-listing-requests/${id}/reject`, { method: 'POST', body: { reason }, headers: authHeader() })
   },
 
   listRegistrations(

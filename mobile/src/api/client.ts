@@ -11,7 +11,7 @@ import Constants from 'expo-constants'
 import { File as ExpoFile } from 'expo-file-system'
 import { getToken } from '../auth/session'
 import { randomUUID } from 'expo-crypto'
-import type { HistoryItem, MissedOffer, ProfileChangeStatus, ProfileResponse, ProgressAction, SiteListingView, Snapshot, WalletEntry, WalletResponse, WalletTopup } from './types'
+import type { HistoryItem, MissedOffer, PreOrder, ProfileChangeStatus, ProfileResponse, ProgressAction, SiteListingView, Snapshot, WalletEntry, WalletResponse, WalletTopup } from './types'
 import type { Fix } from '../location/buffer'
 import type { TrackingPolicyDto } from './types'
 
@@ -156,8 +156,10 @@ export const api = {
     request<unknown>('POST', `/driver-app/orders/${orderId}/progress`, { action }, { idempotencyKey, mutation: true }),
   confirmPrice: (orderId: number, agreedPriceAmd: number, idempotencyKey: string) =>
     request<unknown>('POST', `/driver-app/orders/${orderId}/price`, { agreedPriceAmd }, { idempotencyKey, mutation: true }),
-  request: (orderId: number, body: { kind: 'CANCEL' | 'PROBLEM'; reason: string; comment: string | null }, idempotencyKey: string) =>
+  request: (orderId: number, body: { kind: 'CANCEL' | 'PROBLEM'; reason: string; comment: string | null; driverPriceAmd?: number | null; customerPriceAmd?: number | null }, idempotencyKey: string) =>
     request<unknown>('POST', `/driver-app/orders/${orderId}/requests`, body, { idempotencyKey, mutation: true }),
+  /** The cancel screen has been open for minutes (2026-11-17): the operator is told, once per assignment */
+  cancelStalled: (orderId: number) => request<{ raised: boolean }>('POST', `/driver-app/orders/${orderId}/cancel-stalled`, {}),
   // ─── Wallet (2026-11-12) ───
   wallet: () => request<WalletResponse>('GET', '/driver-app/me/wallet'),
   walletEntries: (before: number) => request<WalletEntry[]>('GET', `/driver-app/me/wallet/entries?before=${before}`),
@@ -166,6 +168,11 @@ export const api = {
   topup: (paymentId: number) => request<WalletTopup>('GET', `/driver-app/me/wallet/topups/${paymentId}`),
   /** Offers he let run out, newest first; `before` = the last item's `offeredAt` */
   missedOffers: (before?: string) => request<MissedOffer[]>('GET', `/driver-app/orders/missed${before ? `?before=${encodeURIComponent(before)}` : ''}`),
+  // ─── Pre-orders (2026-11-17) ───
+  preOrders: () => request<PreOrder[]>('GET', '/driver-app/pre-orders'),
+  /** His price, new or changed, while the pre-order is open */
+  bidPreOrder: (id: number, priceAmd: number) => request<{ priceAmd: number }>('PUT', `/driver-app/pre-orders/${id}/bid`, { priceAmd }),
+  withdrawPreOrderBid: (id: number) => request<{ withdrawn: boolean }>('DELETE', `/driver-app/pre-orders/${id}/bid`),
   history: (before?: string) => request<HistoryItem[]>('GET', `/driver-app/orders/history${before ? `?before=${encodeURIComponent(before)}` : ''}`),
 }
 

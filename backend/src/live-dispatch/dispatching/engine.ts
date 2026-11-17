@@ -48,12 +48,26 @@ export class DispatchEngine {
       const result = await this.offers.tryCreateNextOffer(orderId, settings)
       if (result.kind === 'need-candidates') {
         const added = await this.expand(orderId, result.attemptId, settings)
-        if (added === 0) {
-          const failed = await this.offers.failSearchIfStillEmpty(orderId, result.attemptId)
-          this.log.info('dispatch: no candidates left', { orderId, attemptId: result.attemptId, failed })
-          return failed ? { kind: 'failed', attentionKind: 'SEARCH_EXHAUSTED' } : { kind: 'idle', reason: 'raced' }
+        if (added > 0) continue
+        // Nobody new on the radius ladder. Before giving up (2026-11-16):
+        // 1. drivers this order skipped only because another order held them,
+        //    and who are free now, go back in line;
+        if ((await this.offers.requeueFreed(orderId, result.attemptId)) > 0) continue
+        // 2. the ladder again from the start — a driver may have come online,
+        //    or become free, since it was walked (no-op while it finds nobody);
+        if ((await this.expand(orderId, result.attemptId, settings, { fromStage: 0 })) > 0) continue
+        // 3. matching drivers who are busy with OTHER orders right now: if
+        //    there are any, wait for them (until the attempt's deadline)
+        //    instead of failing — failing here sent orders to «no driver
+        //    found» seconds before a driver was free.
+        await this.rememberBusy(orderId, result.attemptId, settings)
+        if ((await this.offers.hasWaitable(result.attemptId)) && (await this.offers.startWaiting(orderId, result.attemptId))) {
+          this.log.info('dispatch: waiting for a free driver', { orderId, attemptId: result.attemptId })
+          return { kind: 'idle', reason: 'waiting for a free driver' }
         }
-        continue
+        const failed = await this.offers.failSearchIfStillEmpty(orderId, result.attemptId)
+        this.log.info('dispatch: no candidates left', { orderId, attemptId: result.attemptId, failed })
+        return failed ? { kind: 'failed', attentionKind: 'SEARCH_EXHAUSTED' } : { kind: 'idle', reason: 'raced' }
       }
       if (result.kind === 'need-refresh') {
         await this.refresh(orderId, result.attemptId)
@@ -77,7 +91,7 @@ export class DispatchEngine {
    * therefore always offered before anyone measured from a base. `searchStage`
    * counts across both passes (0…2n-1).
    */
-  private async expand(orderId: number, attemptId: number, settings: DispatchSettings): Promise<number> {
+  private async expand(orderId: number, attemptId: number, settings: DispatchSettings, options: { fromStage?: number } = {}): Promise<number> {
     const order = await readOrder(this.db, orderId)
     const attempt = await openAttempt(this.db, orderId, false)
     if (!order || order.status !== 'SEARCHING' || !attempt || attempt.id !== attemptId) return 0
@@ -91,7 +105,7 @@ export class DispatchEngine {
       settings,
     )
     const stages = radii.length * 2
-    let stage = attempt.searchStage
+    let stage = options.fromStage ?? attempt.searchStage
     let found: Awaited<ReturnType<CandidateFinder['find']>> = []
     while (stage < stages) {
       found = await this.finder.find(
@@ -134,6 +148,38 @@ export class DispatchEngine {
       this.log.warn('dispatch: routing partially failed', { orderId, failed: failedRoutes, of: found.length, provider: matrix.provider })
     }
     return this.offers.addCandidates(orderId, attemptId, stage, ranked, { provider: matrix.provider, computedAt: matrix.computedAt })
+  }
+
+  /**
+   * Waiting (2026-11-16): matching drivers who are busy with another order,
+   * within the widest radius, remembered on the attempt as BUSY — whom this
+   * order waits for, and the claim that gives it a freed driver before newer
+   * orders (offers.repository.ts `olderWaitingClaim`). No routing: they are
+   * re-routed when they come back in line.
+   */
+  private async rememberBusy(orderId: number, attemptId: number, settings: DispatchSettings): Promise<void> {
+    const order = await readOrder(this.db, orderId)
+    if (!order || order.status !== 'SEARCHING' || order.pickupLatitude === null || order.pickupLongitude === null) return
+    const pickup = { latitude: order.pickupLatitude, longitude: order.pickupLongitude }
+    const radii = searchRadii(haversineMeters(pickup.latitude, pickup.longitude, YEREVAN_CENTRE.latitude, YEREVAN_CENTRE.longitude), settings)
+    const widest = radii[radii.length - 1]
+    for (const source of ['GPS', 'BASE'] as const) {
+      const found = await this.finder.find(
+        this.db,
+        {
+          pickup,
+          radiusMeters: widest,
+          limit: settings.candidateBatchSize,
+          requirements: requirementsOf(order),
+          excludeAttemptId: attemptId,
+          source,
+          requiredBalanceAmd: requiredBalanceFor(order, settings),
+          includeBusy: true,
+        },
+        settings,
+      )
+      await this.offers.addBusyCandidates(orderId, attemptId, found)
+    }
   }
 
   /** Drivers move: queued candidates whose road figures are too old are re-routed from their CURRENT fix */

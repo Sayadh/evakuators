@@ -37,6 +37,7 @@ export function Screen({
   refreshing,
   onRefresh,
   contentStyle,
+  scrollRef,
 }: {
   children: React.ReactNode
   title?: string
@@ -48,11 +49,17 @@ export function Screen({
   refreshing?: boolean
   onRefresh?: () => void
   contentStyle?: StyleProp<ViewStyle>
+  /** For a screen that must scroll itself, e.g. to an error below the fold */
+  scrollRef?: React.Ref<React.ComponentRef<typeof ScrollView>>
 }) {
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    // "padding" on Android too: with edge-to-edge (Expo SDK 58) the window no
+    // longer shrinks for the keyboard, so without it the lower fields of a
+    // form stay hidden under the keyboard.
+    <KeyboardAvoidingView style={styles.flex} behavior="padding">
       {header}
       <ScrollView
+        ref={scrollRef}
         style={styles.screen}
         contentContainerStyle={[styles.content, contentStyle]}
         keyboardShouldPersistTaps="handled"

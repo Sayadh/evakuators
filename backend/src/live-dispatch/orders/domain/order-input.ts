@@ -27,7 +27,7 @@ export function normaliseArmenianPhone(input: string): string {
  * come as a pair inside Armenia; they are what the route figures and the
  * driver's navigation need.
  */
-const destinationPoint = z
+export const destinationPoint = z
   .object({
     latitude: z.number().finite().min(-90).max(90).nullable(),
     longitude: z.number().finite().min(-180).max(180).nullable(),
@@ -46,20 +46,26 @@ const destinationPoint = z
  * see `assertAutoDispatchable` in dispatching/offers.repository.ts — but a
  * manual offer to a specific driver does not need one.
  */
-const pickupPoint = z
+export const PICKUP_PRECISIONS = ['EXACT', 'APPROXIMATE'] as const
+export type PickupPrecision = (typeof PICKUP_PRECISIONS)[number]
+
+export const pickupPoint = z
   .object({
     latitude: z.number().finite().min(-90).max(90).nullable(),
     longitude: z.number().finite().min(-180).max(180).nullable(),
     address: z.string().trim().min(2).max(500),
+    /** 2026-11-17: how sure the operator is of the point — required with coordinates */
+    precision: z.enum(PICKUP_PRECISIONS).nullable().optional(),
   })
   .refine((p) => (p.latitude === null) === (p.longitude === null), {
     message: 'latitude and longitude must both be given or both omitted',
   })
   .refine((p) => p.latitude === null || p.longitude === null || isWithinArmenia(p.latitude, p.longitude), { message: 'outside Armenia' })
+  .refine((p) => p.latitude === null || !!p.precision, { message: 'precision required with coordinates', path: ['precision'] })
 
-const triState = z.boolean().nullable()
+export const triState = z.boolean().nullable()
 /** How many wheel skates the job needs — for the driver to read, never a filter */
-const skatesCount = z.number().int().min(1).max(4).nullable()
+export const skatesCount = z.number().int().min(1).max(4).nullable()
 
 export const createOrderSchema = z
   .object({
@@ -91,6 +97,8 @@ export const createOrderSchema = z
       quotedPriceAmd: z.number().int().min(0).max(10_000_000).nullable().optional(),
     }),
     internalNote: z.string().trim().max(2000).nullable().optional(),
+    /** 2026-11-17: the driver who handed this order to us — credited his share of the fee on completion */
+    referrerDriverId: z.number().int().positive().nullable().optional(),
   })
   .strict()
 
@@ -129,6 +137,7 @@ export const updateOrderSchema = z
       })
       .optional(),
     internalNote: z.string().trim().max(2000).nullable().optional(),
+    referrerDriverId: z.number().int().positive().nullable().optional(),
   })
   .strict()
 
@@ -149,6 +158,8 @@ export function updateColumns(input: UpdateOrderInput): { columns: Record<string
     set('pickupLatitude', input.pickup.latitude, true)
     set('pickupLongitude', input.pickup.longitude, true)
     set('pickupAddress', input.pickup.address, true)
+    // No coordinates → no precision to claim
+    set('pickupPrecision', input.pickup.latitude === null ? null : (input.pickup.precision ?? null), true)
   }
   if (input.destination !== undefined) {
     set('destinationLatitude', input.destination?.latitude ?? null, true)
@@ -175,6 +186,7 @@ export function updateColumns(input: UpdateOrderInput): { columns: Record<string
     set('quotedPriceAmd', input.pricing.quotedPriceAmd ?? null, true)
   }
   set('internalNote', input.internalNote, false)
+  set('referrerDriverId', input.referrerDriverId, false)
   return { columns, material }
 }
 
@@ -185,6 +197,7 @@ export const COLUMN_CASTS: Record<string, string> = {
   pickupLatitude: 'numeric',
   pickupLongitude: 'numeric',
   pickupAddress: 'text',
+  pickupPrecision: 'text',
   destinationLatitude: 'numeric',
   destinationLongitude: 'numeric',
   destinationAddress: 'text',
@@ -202,7 +215,16 @@ export const COLUMN_CASTS: Record<string, string> = {
   pricingMode: '"OrderPricingMode"',
   quotedPriceAmd: 'int',
   internalNote: 'text',
+  referrerDriverId: 'int',
 }
+
+/** The operator's rating of a completed job (2026-11-17) */
+export const ratingSchema = z
+  .object({
+    score: z.number().int().min(1).max(5),
+    comment: z.string().trim().max(500).nullable().optional(),
+  })
+  .strict()
 
 export const cancelSchema = z
   .object({
@@ -223,9 +245,17 @@ export const cancelSchema = z
 export const driverRequestSchema = z
   .object({
     kind: z.enum(['CANCEL', 'PROBLEM']),
-    reason: z.enum(['DRIVER_CANNOT_PERFORM', 'CUSTOMER_DECLINED', 'WRONG_DATA', 'PRICE_NOT_AGREED', 'TECHNICAL_PROBLEM', 'OTHER', 'NOT_SPECIFIED']),
+    reason: z.enum(['DRIVER_CANNOT_PERFORM', 'CUSTOMER_DECLINED', 'WRONG_DATA', 'PRICE_NOT_AGREED', 'TECHNICAL_PROBLEM', 'OTHER', 'NOT_SPECIFIED', 'CUSTOMER_WILL_CALL']),
     comment: z.string().trim().max(1000).nullable().optional(),
+    /** «Գինը չհամաձայնեցվեց» (2026-11-17): what the driver asked — required for a CANCEL with that reason */
+    driverPriceAmd: z.number().int().min(0).max(10_000_000).nullable().optional(),
+    /** …and what the customer offered, if the driver knows */
+    customerPriceAmd: z.number().int().min(0).max(10_000_000).nullable().optional(),
   })
   .strict()
   .refine((v) => v.reason !== 'OTHER' || (v.comment ?? '').length > 0, { message: 'comment required for OTHER', path: ['comment'] })
+  .refine((v) => !(v.kind === 'CANCEL' && v.reason === 'PRICE_NOT_AGREED') || typeof v.driverPriceAmd === 'number', {
+    message: 'driverPriceAmd required for PRICE_NOT_AGREED',
+    path: ['driverPriceAmd'],
+  })
   .refine((v) => v.reason !== 'NOT_SPECIFIED' || v.kind === 'CANCEL', { message: 'NOT_SPECIFIED only for a cancel', path: ['reason'] })

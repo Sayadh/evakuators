@@ -330,7 +330,7 @@ describe('races and failures (real Postgres)', { skip: integrationSkip }, () => 
   it('#16 idempotency key misuse: same key, different body → refused; same key, same body → same result', async () => {
     await fresh()
     const key = 'create-order-key-1'
-    const body = { customerPhone: '+37491000002', pickup: { ...YEREVAN, address: 'Abovyan st 1' }, pricing: { mode: 'FIXED', quotedPriceAmd: 1000 } }
+    const body = { customerPhone: '+37491000002', pickup: { ...YEREVAN, address: 'Abovyan st 1', precision: 'EXACT' }, pricing: { mode: 'FIXED', quotedPriceAmd: 1000 } }
     const first = await h.service.createOrder(h.adminId, body, ctx(body, key, '/admin/dispatch-orders'))
     assert.equal(first.status, 201)
     const same = await h.service.createOrder(h.adminId, body, ctx(body, key, '/admin/dispatch-orders'))
@@ -371,31 +371,32 @@ describe('races and failures (real Postgres)', { skip: integrationSkip }, () => 
     assert.equal(priceEvents.length, 1)
   })
 
-  it('#18 cancel request racing a progress update, 15 rounds: exactly one wins, assignment kept', async () => {
+  it('#18 cancel request racing a progress update, 15 rounds: exactly one wins', async () => {
     await fresh()
     for (let round = 0; round < 15; round++) {
       await fresh()
       const { driver, order, offer } = await offeredOrder(offset(YEREVAN, 300 + round, 0))
       await h.service.driverAccept(driver.driverId, offer.id, ctx())
       const [request, progress] = await Promise.all([
-        // CUSTOMER_DECLINED keeps the assignment (a person decides); a
+        // A customer reason releases the driver at once (2026-11-17); a
         // cancel is only allowed BEFORE en route (2026-11), so the two race.
         h.service.driverRequest(driver.driverId, order.id, { kind: 'CANCEL', reason: 'CUSTOMER_DECLINED' }, ctx({ r: round })),
         h.service.driverProgress(driver.driverId, order.id, 'EN_ROUTE', ctx({ p: round })),
       ])
       const row = await orderRow(h, order.id)
-      assert.equal(await activeAssignments(order.id), 1, 'assignment kept')
       const openRequests = await count(h, `SELECT count(*)::int AS n FROM "OrderDriverRequest" WHERE "orderId" = $1::int AND "status" = 'OPEN'`, [order.id])
       if (request.status === 201) {
-        // request first: the order waits for an operator, progress refused
-        assert.equal((progress.body as { code: string }).code, 'INVALID_TRANSITION')
+        // request first: the driver is free, the order waits for an operator, progress refused
+        assert.notEqual(progress.status, 200)
+        assert.equal(await activeAssignments(order.id), 0, 'driver released')
         assert.equal(row.status, 'NEEDS_ATTENTION')
-        assert.equal(row.statusBeforeAttention, 'ASSIGNED')
-        assert.equal(openRequests, 1)
+        assert.equal(row.attentionKind, 'CUSTOMER_PENDING')
+        assert.equal(openRequests, 0, 'answered by the system')
       } else {
         // progress first: en route, the cancel is refused and leaves no trace
         assert.equal(progress.status, 200)
         assert.equal((request.body as { code: string }).code, 'INVALID_TRANSITION')
+        assert.equal(await activeAssignments(order.id), 1, 'assignment kept')
         assert.equal(row.status, 'EN_ROUTE_TO_PICKUP')
         assert.equal(openRequests, 0)
       }

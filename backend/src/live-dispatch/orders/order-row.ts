@@ -31,6 +31,10 @@ export interface OrderRow {
   pickupLatitude: number | null
   pickupLongitude: number | null
   pickupAddress: string
+  /** 2026-11-17: EXACT / APPROXIMATE; null without coordinates or on older orders */
+  pickupPrecision: 'EXACT' | 'APPROXIMATE' | null
+  /** 2026-11-17: the driver who handed this order to us (referred order) */
+  referrerDriverId: number | null
   destinationLatitude: number | null
   destinationLongitude: number | null
   destinationAddress: string | null
@@ -85,7 +89,7 @@ export interface OrderRow {
 
 export const ORDER_COLUMNS = `
   o."id", o."number", o."source", o."createdByUserId", o."customerPhone", o."customerName",
-  o."pickupLatitude", o."pickupLongitude", o."pickupAddress",
+  o."pickupLatitude", o."pickupLongitude", o."pickupAddress", o."pickupPrecision", o."referrerDriverId",
   o."destinationLatitude", o."destinationLongitude", o."destinationAddress",
   o."vehicleMake", o."vehicleModel", o."vehiclePlate", o."vehicleWeightKg", o."problemDescription",
   o."wheelsRoll", o."steeringLocked", o."gearboxLocked", o."needsManipulator", o."needsWheelSkates", o."wheelSkatesCount",
@@ -112,6 +116,8 @@ export function mapOrder(row: Record<string, unknown>): OrderRow {
     pickupLatitude: toNullableNumber(row.pickupLatitude),
     pickupLongitude: toNullableNumber(row.pickupLongitude),
     pickupAddress: String(row.pickupAddress),
+    referrerDriverId: toNullableNumber(row.referrerDriverId),
+    pickupPrecision: row.pickupPrecision === 'EXACT' || row.pickupPrecision === 'APPROXIMATE' ? row.pickupPrecision : null,
     destinationLatitude: toNullableNumber(row.destinationLatitude),
     destinationLongitude: toNullableNumber(row.destinationLongitude),
     destinationAddress: s(row.destinationAddress),
@@ -259,7 +265,7 @@ export function adminOrderView(order: OrderRow) {
     version: order.version,
     termsVersion: order.termsVersion,
     customer: { phone: order.customerPhone, name: order.customerName },
-    pickup: { latitude: order.pickupLatitude, longitude: order.pickupLongitude, address: order.pickupAddress },
+    pickup: { latitude: order.pickupLatitude, longitude: order.pickupLongitude, address: order.pickupAddress, precision: order.pickupPrecision },
     destination:
       // A description alone is a destination too (2026-11); coordinates may be null.
       order.destinationLatitude === null && order.destinationAddress === null
@@ -279,6 +285,8 @@ export function adminOrderView(order: OrderRow) {
     pickupToDestination: routeView(order),
     cancel: order.cancelReason ? { reason: order.cancelReason, comment: order.cancelComment } : null,
     internalNote: order.internalNote,
+    /** 2026-11-17: the driver who handed this order to us */
+    referrerDriverId: order.referrerDriverId,
     timestamps: {
       createdAt: iso(order.createdAt),
       updatedAt: iso(order.updatedAt),
@@ -297,7 +305,7 @@ export function adminOrderView(order: OrderRow) {
 export function driverOfferOrderView(order: OrderRow) {
   return {
     number: order.number,
-    pickup: { latitude: order.pickupLatitude, longitude: order.pickupLongitude, address: order.pickupAddress },
+    pickup: { latitude: order.pickupLatitude, longitude: order.pickupLongitude, address: order.pickupAddress, precision: order.pickupPrecision },
     destination:
       // A description alone is a destination too (2026-11); coordinates may be null.
       order.destinationLatitude === null && order.destinationAddress === null

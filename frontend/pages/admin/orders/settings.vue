@@ -38,6 +38,7 @@ const LABELS: Record<string, string> = {
   walletBillingEnabled: 'Վարորդի հաշվից միջնորդավճար (1 = միացված, 0 = անջատված)',
   walletFeeFreeMaxPriceAmd: 'Անվճար պատվեր՝ մինչև այս գինը ներառյալ (֏, 0 = չկա)',
   walletFeeBaseAmd: 'Միջնորդավճար՝ հիմնական (֏)',
+  walletReferralSharePercent: 'Փոխանցված պատվեր․ փոխանցող վարորդի բաժինը միջնորդավճարից (%, մնացածը՝ մեզ)',
   walletFeeBaseMaxPriceAmd: 'Հիմնական միջնորդավճարը՝ մինչև այս գինը (֏)',
   walletFeePercent: 'Դրանից վեր՝ ամբողջ գնի այսքան տոկոս (%)',
   walletFeeRoundAmd: '… կլորացված այսքան դրամով (֏, օր.՝ 100)',

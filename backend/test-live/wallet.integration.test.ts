@@ -249,4 +249,68 @@ describe('Driver wallet (real Postgres)', { skip: integrationSkip }, () => {
     assert.equal(cancelled.status, 200, JSON.stringify(cancelled.body))
     assert.equal(await balanceOf(h.rt.db, d.driverId), 3000)
   })
+
+  it('driver backs out: every cancel refunds the fee (2026-11-17), whatever the reason', async () => {
+    const cases: Array<[string, boolean]> = [
+      ['CUSTOMER_WILL_CALL', true],
+      ['CUSTOMER_DECLINED', true],
+      ['PRICE_NOT_AGREED', true],
+      ['DRIVER_CANNOT_PERFORM', true],
+      ['NOT_SPECIFIED', true],
+    ]
+    for (const [i, [reason, refunded]] of cases.entries()) {
+      await fresh()
+      const d = await eligibleDriver(h, offset(YEREVAN, 500 + i, 0))
+      await topUp(d, 5000)
+      const order = await createOrder(h, { pricing: { mode: 'NEGOTIATION_REQUIRED' } })
+      await startDispatch(h, order)
+      await drain(h)
+      const offer = await pendingOffer(h, order.id)
+      assert.equal((await h.service.driverAccept(d.driverId, offer!.id, ctx({ a: i }))).status, 200)
+      assert.equal(await balanceOf(h.rt.db, d.driverId), 4000, 'base fee at accept')
+      const body = reason === 'PRICE_NOT_AGREED' ? { kind: 'CANCEL', reason, driverPriceAmd: 20000 } : { kind: 'CANCEL', reason }
+      const asked = await h.service.driverRequest(d.driverId, order.id, body, ctx({ r: i }))
+      assert.equal(asked.status, 201, JSON.stringify(asked.body))
+      assert.equal(await balanceOf(h.rt.db, d.driverId), refunded ? 5000 : 4000, reason)
+      assert.equal((await orderRow(h, order.id)).activeAssignmentId, null, `${reason}: driver released`)
+    }
+  })
+
+  it('a minimum-price review dies with its driver: the next driver can enter the minimum price too (2026-11-17)', async () => {
+    await fresh()
+    const first = await eligibleDriver(h, offset(YEREVAN, 400, 0))
+    const second = await eligibleDriver(h, offset(YEREVAN, 2500, 0))
+    await topUp(first, 2000)
+    await topUp(second, 2000)
+    const order = await createOrder(h, { pricing: { mode: 'NEGOTIATION_REQUIRED' } })
+    await h.db.pool.query(`UPDATE "DispatchOrder" SET "routeMeters" = 3000 WHERE "id" = $1::int`, [order.id])
+    await startDispatch(h, order)
+    await drain(h)
+    const o1 = await pendingOffer(h, order.id)
+    assert.equal(o1?.driverId, first.driverId)
+    await h.service.driverAccept(first.driverId, o1!.id, ctx({ a: 1 }))
+    assert.equal((await h.service.driverConfirmPrice(first.driverId, order.id, 5000, ctx({ p: 1 }))).status, 200)
+    assert.equal((await h.rt.orders.pendingPriceReviews()).length, 1)
+
+    // He backs out (his own reason → redispatch): the review is void, its alert acknowledged
+    const asked = await h.service.driverRequest(first.driverId, order.id, { kind: 'CANCEL', reason: 'DRIVER_CANNOT_PERFORM' }, ctx({ r: 1 }))
+    assert.equal(asked.status, 201, JSON.stringify(asked.body))
+    assert.equal((await h.rt.orders.pendingPriceReviews()).length, 0)
+    const [voided] = await h.db.pool.query<{ status: string }>(`SELECT "status" FROM "OrderPriceReview" WHERE "orderId" = $1::int`, [order.id])
+    assert.equal(voided.status, 'VOID')
+    const openAlerts = await h.db.pool.query(`SELECT 1 FROM "OrderAlert" WHERE "orderId" = $1::int AND "kind" = 'PRICE_REVIEW' AND "acknowledgedAt" IS NULL`, [order.id])
+    assert.equal(openAlerts.length, 0)
+    assert.equal(await balanceOf(h.rt.db, first.driverId), 2000, 'his provisional fee came back')
+
+    // The next driver agrees the minimum price as well — this used to fail on the one-pending-per-order index
+    await drain(h)
+    const o2 = await pendingOffer(h, order.id)
+    assert.equal(o2?.driverId, second.driverId)
+    await h.service.driverAccept(second.driverId, o2!.id, ctx({ a: 2 }))
+    const confirmed = await h.service.driverConfirmPrice(second.driverId, order.id, 5000, ctx({ p: 2 }))
+    assert.equal(confirmed.status, 200, JSON.stringify(confirmed.body))
+    const [review] = await h.rt.orders.pendingPriceReviews()
+    assert.equal(review.driver.id, second.driverId)
+  })
 })
+

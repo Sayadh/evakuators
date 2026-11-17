@@ -10,11 +10,11 @@
  * transaction (`runIdempotent`) — the key, the change and the stored response
  * commit together.
  */
-import { enqueue } from '../notify/outbox'
+import { enqueue, enqueueRealtime } from '../notify/outbox'
 import { raiseAlert, recordEvent, type ActorRef } from '../platform/audit'
 import { DispatchError } from '../platform/errors'
 import { Params, toDate, toNumber } from '../platform/params'
-import type { DispatchSettings } from '../platform/settings'
+import { resolveSettings, type DispatchSettings } from '../platform/settings'
 import type { Sql, SqlDatabase } from '../platform/sql'
 import {
   assertAutoDispatchable,
@@ -24,11 +24,11 @@ import {
   notifyOrderChanged,
   revokePendingOffer,
 } from '../dispatching/offers.repository'
-import { planTransition, type AttentionKind, type OrderAction, type OrderStatus } from './domain/order-state'
+import { CUSTOMER_CANCEL_REASONS, planTransition, type AttentionKind, type OrderAction, type OrderStatus } from './domain/order-state'
 import { COLUMN_CASTS, updateColumns, type CreateOrderInput, type UpdateOrderInput } from './domain/order-input'
 import { lockOrder, mapOrder, ORDER_COLUMNS, readOrder, snapshotOf, type OrderRow } from './order-row'
-import { feePrice, freePriceAllowed, isFreePrice } from '../wallet/domain/fees'
-import { refundOrderFee, settleOrderFee } from '../wallet/wallet-ledger'
+import { feePrice, feeRulesOf, freePriceAllowed, isFreePrice, orderFeeAmd } from '../wallet/domain/fees'
+import { netFeeOf, post, refundOrderFee, settleOrderFee } from '../wallet/wallet-ledger'
 
 const PROGRESS_COLUMN: Partial<Record<OrderAction, string>> = {
   EN_ROUTE: 'enRouteAt',
@@ -100,16 +100,18 @@ export class OrdersRepository {
   // ─── Create / edit ────────────────────────────────────────────────────────
 
   async create(tx: Sql, input: CreateOrderInput, adminUserId: number): Promise<OrderRow> {
+    if (input.referrerDriverId) await assertReferrer(tx, input.referrerDriverId)
     const p = new Params()
     const rows = await tx.query<Record<string, unknown>>(
       `INSERT INTO "DispatchOrder" AS o ("source", "createdByUserId", "customerPhone", "customerName",
-          "pickupLatitude", "pickupLongitude", "pickupAddress",
+          "pickupLatitude", "pickupLongitude", "pickupAddress", "pickupPrecision",
           "destinationLatitude", "destinationLongitude", "destinationAddress",
           "vehicleMake", "vehicleModel", "vehiclePlate", "vehicleWeightKg", "problemDescription",
           "wheelsRoll", "steeringLocked", "gearboxLocked", "needsManipulator", "needsWheelSkates", "wheelSkatesCount",
-          "pricingMode", "quotedPriceAmd", "internalNote")
+          "pricingMode", "quotedPriceAmd", "internalNote", "referrerDriverId")
        VALUES ('ADMIN', ${p.add(adminUserId)}::int, ${p.add(input.customerPhone)}, ${p.add(input.customerName ?? null)},
           ${p.add(input.pickup.latitude)}::numeric, ${p.add(input.pickup.longitude)}::numeric, ${p.add(input.pickup.address)},
+          ${p.add(input.pickup.latitude === null ? null : (input.pickup.precision ?? null))},
           ${p.add(input.destination?.latitude ?? null)}::numeric, ${p.add(input.destination?.longitude ?? null)}::numeric,
           ${p.add(input.destination?.address ?? null)},
           ${p.add(input.vehicle.make ?? null)}, ${p.add(input.vehicle.model ?? null)}, ${p.add(input.vehicle.plate ?? null)},
@@ -119,7 +121,7 @@ export class OrdersRepository {
           ${p.add(input.requirements.needsWheelSkates ?? null)}::boolean,
           ${p.add(input.requirements.needsWheelSkates === true ? (input.requirements.wheelSkatesCount ?? null) : null)}::smallint,
           ${p.add(input.pricing.mode)}::"OrderPricingMode", ${p.add(input.pricing.quotedPriceAmd ?? null)}::int,
-          ${p.add(input.internalNote ?? null)})
+          ${p.add(input.internalNote ?? null)}, ${p.add(input.referrerDriverId ?? null)}::int)
        RETURNING ${ORDER_COLUMNS}`,
       p.values,
     )
@@ -147,6 +149,7 @@ export class OrdersRepository {
       if (!onlyNote) throw new DispatchError('INVALID_TRANSITION', { action: 'EDIT', status: order.status })
     }
     const { columns, material } = updateColumns(input)
+    if (input.referrerDriverId) await assertReferrer(tx, input.referrerDriverId)
     const assigned = order.activeAssignmentId !== null
     if (assigned) {
       const forbidden = material.filter((c) => !['quotedPriceAmd', 'pricingMode', 'destinationLatitude', 'destinationLongitude', 'destinationAddress'].includes(c))
@@ -305,6 +308,10 @@ export class OrdersRepository {
     }
     await bumpOrder(tx, orderId, sets, p)
     await recordEvent(tx, orderId, `PROGRESS_${action}`, actor, { from: order.status, to: planned.to })
+    // Referred order (2026-11-17): the referrer's share — after the fee above is settled
+    if (action === 'COMPLETE' && order.referrerDriverId !== null && order.activeAssignmentId !== null) {
+      await creditReferrer(tx, orderId, order.activeAssignmentId)
+    }
     const updated = await lockOrder(tx, orderId)
     await notifyOrderChanged(tx, updated, `PROGRESS_${action}`, driverId ? [driverId] : [])
     if (actor.type === 'ADMIN' && driverId) await pushToDriver(tx, updated, driverId, `PROGRESS_${action}`)
@@ -425,6 +432,8 @@ export class OrdersRepository {
       `UPDATE "OrderAlert" SET "acknowledgedAt" = now(), "acknowledgedBy" = $2::int WHERE "dedupeKey" = $1 AND "acknowledgedAt" IS NULL`,
       [`price-review:${reviewId}`, adminUserId],
     )
+    // A referred order completed while its price was under review waited for this (2026-11-17)
+    await creditReferrer(tx, orderId, assignmentId)
     const updated = await lockOrder(tx, orderId)
     await notifyOrderChanged(tx, updated, 'PRICE_REVIEW_RESOLVED', [driverId])
     return updated
@@ -524,37 +533,49 @@ export class OrdersRepository {
    * The driver asks out (CANCEL, only before setting off) or reports a PROBLEM.
    *
    * CANCEL (product decision, 2026-11):
-   * - reason CUSTOMER_DECLINED → NEEDS_ATTENTION and the assignment is KEPT:
-   *   the whole order may be off, an operator confirms with the customer.
+   * - a CUSTOMER reason (CUSTOMER_WILL_CALL, CUSTOMER_DECLINED — 2026-11-17)
+   *   → the driver is released at once, his fee refunded (not his doing), and
+   *   the order goes to an operator as NEEDS_ATTENTION / CUSTOMER_PENDING with
+   *   no driver: no automatic search, the customer has not decided. Before
+   *   2026-11-17 the assignment was KEPT until an operator called back, which
+   *   left the driver stuck and unable to take other work.
    * - any other reason (incl. NOT_SPECIFIED, sent by the app when the driver
    *   picked none in time) → the driver is released and a new automatic
    *   search starts without him, in this same transaction; the operator gets
    *   an informational alert. Falls back to the operator when an automatic
    *   search is impossible (no pickup coordinates).
+   * - EVERY cancel refunds the driver's fee (2026-11-17) — he never set off.
+   * - PRICE_NOT_AGREED carries what the driver asked (required) and what the
+   *   customer offered (optional): the price the next driver has to meet.
    * PROBLEM never changes the order: an alert, and the operator decides.
    */
   async driverRequest(
     tx: Sql,
     orderId: number,
     driverId: number,
-    input: { kind: 'CANCEL' | 'PROBLEM'; reason: string; comment?: string | null },
+    input: { kind: 'CANCEL' | 'PROBLEM'; reason: string; comment?: string | null; driverPriceAmd?: number | null; customerPriceAmd?: number | null },
     settings: DispatchSettings,
   ): Promise<OrderRow> {
     const order = await lockOrder(tx, orderId)
     if (order.assignedDriverId !== driverId) throw new DispatchError('ORDER_NOT_FOUND')
     const driver: ActorRef = { type: 'DRIVER', id: driverId }
-    const redispatch =
-      input.kind === 'CANCEL' && input.reason !== 'CUSTOMER_DECLINED' && order.pickupLatitude !== null && order.pickupLongitude !== null
+    const customer = input.kind === 'CANCEL' && CUSTOMER_CANCEL_REASONS.includes(input.reason)
+    const redispatch = input.kind === 'CANCEL' && !customer && order.pickupLatitude !== null && order.pickupLongitude !== null
+    // Every driver cancel gives the fee back (product decision 2026-11-17): he
+    // cancels only before setting off, so the job was never done.
+    const refundDriverFee = input.kind === 'CANCEL'
+    const driverPriceAmd = input.driverPriceAmd ?? null
+    const customerPriceAmd = input.customerPriceAmd ?? null
     // Decide BEFORE writing anything: a refused request leaves no trace.
-    const planned = input.kind === 'CANCEL' ? planTransition('DRIVER_CANCEL_REQUEST', snapshotOf(order), 'DRIVER', { redispatch }) : null
+    const planned = input.kind === 'CANCEL' ? planTransition('DRIVER_CANCEL_REQUEST', snapshotOf(order), 'DRIVER', { redispatch, customer }) : null
     if (order.status === 'COMPLETED' || order.status === 'CANCELLED') throw new DispatchError('INVALID_TRANSITION', { action: 'DRIVER_REQUEST', status: order.status })
     const open = await tx.query(`SELECT 1 FROM "OrderDriverRequest" WHERE "orderId" = $1::int AND "status" = 'OPEN'`, [orderId])
     if (open.length > 0) throw new DispatchError('REQUEST_ALREADY_OPEN')
 
     const [request] = await tx.query<{ id: number }>(
-      `INSERT INTO "OrderDriverRequest" ("orderId", "driverId", "kind", "reason", "comment")
-       VALUES ($1::int, $2::int, $3, $4::"OrderCancelReason", $5) RETURNING "id"`,
-      [orderId, driverId, input.kind, input.reason, input.comment ?? null],
+      `INSERT INTO "OrderDriverRequest" ("orderId", "driverId", "kind", "reason", "comment", "driverPriceAmd", "customerPriceAmd")
+       VALUES ($1::int, $2::int, $3, $4::"OrderCancelReason", $5, $6::int, $7::int) RETURNING "id"`,
+      [orderId, driverId, input.kind, input.reason, input.comment ?? null, driverPriceAmd, customerPriceAmd],
     )
     const requestId = toNumber(request.id)
     await recordEvent(tx, orderId, input.kind === 'CANCEL' ? 'DRIVER_CANCEL_REQUESTED' : 'DRIVER_PROBLEM_REPORTED', driver, {
@@ -562,12 +583,31 @@ export class OrdersRepository {
       reason: input.reason,
       comment: input.comment ?? null,
       redispatch,
+      customer,
+      driverPriceAmd,
+      customerPriceAmd,
     })
+
+    if (planned && customer) {
+      // Same alert kind as before, so the console's sound and banner fire; the
+      // operator now calls the customer with the driver already free.
+      await raiseAlert(tx, orderId, 'DRIVER_CANCEL_REQUEST', `driver-request:${requestId}`, { reason: input.reason, driverId, released: true })
+      return this.release(tx, order, {
+        to: planned.to,
+        attentionKind: planned.attentionKind,
+        actor: driver,
+        reason: `DRIVER_CANCELLED: ${input.reason}`,
+        restartSearch: false,
+        resolution: 'RELEASED_TO_OPERATOR',
+        settings,
+        refundDriverFee: true,
+      })
+    }
 
     if (planned && redispatch) {
       // The request is answered by the system right away (resolution below);
       // the operator is told, not asked.
-      await raiseAlert(tx, orderId, 'DRIVER_CANCELLED_REDISPATCHED', `driver-request:${requestId}`, { reason: input.reason, driverId })
+      await raiseAlert(tx, orderId, 'DRIVER_CANCELLED_REDISPATCHED', `driver-request:${requestId}`, { reason: input.reason, driverId, driverPriceAmd, customerPriceAmd })
       return this.release(tx, order, {
         to: planned.to,
         actor: driver,
@@ -575,6 +615,7 @@ export class OrdersRepository {
         restartSearch: true,
         resolution: 'AUTO_REDISPATCHED',
         settings,
+        refundDriverFee,
       })
     }
 
@@ -601,6 +642,39 @@ export class OrdersRepository {
     return updated
   }
 
+
+  /**
+   * The operator rates a COMPLETED job, 1–5 (2026-11-17), for the driver who
+   * completed it; rating again replaces it. Information only — not dispatch.
+   */
+  async rate(tx: Sql, orderId: number, input: { score: number; comment?: string | null }, adminUserId: number): Promise<void> {
+    const order = await lockOrder(tx, orderId)
+    if (order.status !== 'COMPLETED') throw new DispatchError('INVALID_TRANSITION', { action: 'RATE', status: order.status })
+    const [assignment] = await tx.query<{ id: number; driverId: number }>(
+      `SELECT "id", "driverId" FROM "OrderAssignment" WHERE "orderId" = $1::int AND "endReason" = 'COMPLETED' ORDER BY "endedAt" DESC LIMIT 1`,
+      [orderId],
+    )
+    if (!assignment) throw new DispatchError('INVALID_TRANSITION', { action: 'RATE', reason: 'no completed assignment' })
+    await tx.query(
+      `INSERT INTO "OrderRating" ("orderId", "assignmentId", "driverId", "score", "comment", "ratedByUserId")
+       VALUES ($1::int, $2::int, $3::int, $4::smallint, $5, $6::int)
+       ON CONFLICT ("orderId") DO UPDATE SET "score" = EXCLUDED."score", "comment" = EXCLUDED."comment",
+         "ratedByUserId" = EXCLUDED."ratedByUserId", "updatedAt" = now()`,
+      [orderId, assignment.id, assignment.driverId, input.score, input.comment?.trim() || null, adminUserId],
+    )
+    await recordEvent(tx, orderId, 'ORDER_RATED', { type: 'ADMIN', id: adminUserId }, { score: input.score, driverId: toNumber(assignment.driverId) })
+  }
+
+  /**
+   * The driver has had the cancel screen open for minutes without sending it
+   * (2026-11-17 — the 45 s auto-send was removed): tell the operator, once per
+   * assignment, so he calls the driver. Changes nothing on the order.
+   */
+  async driverCancelStalled(tx: Sql, orderId: number, driverId: number): Promise<boolean> {
+    const order = await lockOrder(tx, orderId)
+    if (order.assignedDriverId !== driverId || order.activeAssignmentId === null) throw new DispatchError('ORDER_NOT_FOUND')
+    return raiseAlert(tx, orderId, 'DRIVER_CANCEL_STALLED', `cancel-stalled:${order.activeAssignmentId}`, { driverId })
+  }
 
   async flagAttention(tx: Sql, orderId: number, kind: AttentionKind, note: string, expectedVersion: number, adminUserId: number): Promise<OrderRow> {
     const order = await lockOrder(tx, orderId)
@@ -686,21 +760,35 @@ export class OrdersRepository {
   private async release(
     tx: Sql,
     order: OrderRow,
-    input: { to: OrderStatus; actor: ActorRef; reason: string; restartSearch: boolean; resolution: string; settings: DispatchSettings; refundDriverFee?: boolean },
+    input: {
+      to: OrderStatus
+      actor: ActorRef
+      reason: string
+      restartSearch: boolean
+      resolution: string
+      settings: DispatchSettings
+      refundDriverFee?: boolean
+      /** Only with `to: NEEDS_ATTENTION` — a driverless attention (CUSTOMER_PENDING) */
+      attentionKind?: AttentionKind | null
+    },
   ): Promise<OrderRow> {
     const orderId = order.id
     const adminUserId = input.actor.type === 'ADMIN' ? input.actor.id : null
     // Driver wallet (2026-11-12): an OPERATOR took the order away before the
-    // driver arrived → his fee comes back. His own cancel (actor DRIVER) does not.
-    if (input.actor.type === 'ADMIN' && order.activeAssignmentId !== null && (order.arrivedAt === null || input.refundDriverFee === true)) {
+    // driver arrived → his fee comes back. His own cancel (actor DRIVER) does
+    // not — unless the reason was the customer's (2026-11-17, refundDriverFee).
+    const refund =
+      input.actor.type === 'ADMIN' ? order.arrivedAt === null || input.refundDriverFee === true : input.actor.type === 'DRIVER' && input.refundDriverFee === true
+    if (refund && order.activeAssignmentId !== null) {
       await refundOrderFee(tx, order.activeAssignmentId, `RELEASED: ${input.reason}`)
     }
+    if (order.activeAssignmentId !== null) await voidPriceReview(tx, order.activeAssignmentId, adminUserId, input.reason)
     const releasedDriverId = await endActiveAssignment(tx, order, `RELEASED: ${input.reason}`, adminUserId)
     await resolveOpenRequest(tx, orderId, adminUserId, input.resolution)
     const p = new Params()
     const sets = [
       `"status" = ${p.add(input.to)}::"DispatchOrderStatus"`,
-      `"attentionKind" = NULL`,
+      input.attentionKind ? `"attentionKind" = ${p.add(input.attentionKind)}::"OrderAttentionKind"` : `"attentionKind" = NULL`,
       `"statusBeforeAttention" = NULL`,
       `"activeAssignmentId" = NULL`,
       `"assignedAt" = NULL`,
@@ -922,6 +1010,96 @@ async function openPriceReview(tx: Sql, input: { orderId: number; assignmentId: 
   const id = toNumber(row.id)
   await raiseAlert(tx, input.orderId, 'PRICE_REVIEW', `price-review:${id}`, { reviewId: id, priceAmd: input.priceAmd, driverId: input.driverId })
   return id
+}
+
+/**
+ * The driver who entered a minimum price left the order (2026-11-17): his
+ * review is void, and its alert with it. Left PENDING it blocked the next
+ * driver's minimum price (one pending review per order) and a CORRECT would
+ * write a price onto another driver's negotiation. Not for a cancel or a
+ * completion — the order keeps that driver's price, so the call still matters.
+ */
+async function voidPriceReview(tx: Sql, assignmentId: number, adminUserId: number | null, reason: string): Promise<void> {
+  const rows = await tx.query<{ id: number }>(
+    `UPDATE "OrderPriceReview" SET "status" = 'VOID', "resolvedAt" = now(), "resolvedByUserId" = $2::int, "note" = $3
+      WHERE "assignmentId" = $1::int AND "status" = 'PENDING' RETURNING "id"`,
+    [assignmentId, adminUserId, `ASSIGNMENT_RELEASED: ${reason}`],
+  )
+  for (const row of rows) {
+    await tx.query(`UPDATE "OrderAlert" SET "acknowledgedAt" = now(), "acknowledgedBy" = $2::int WHERE "dedupeKey" = $1 AND "acknowledgedAt" IS NULL`, [
+      `price-review:${toNumber(row.id)}`,
+      adminUserId,
+    ])
+  }
+}
+
+/** A referrer must be a real, not-deleted app driver (2026-11-17) */
+async function assertReferrer(tx: Sql, driverId: number): Promise<void> {
+  const rows = await tx.query(`SELECT 1 FROM "FleetDriver" WHERE "id" = $1::int AND "status" <> 'DELETED'`, [driverId])
+  if (rows.length === 0) throw new DispatchError('VALIDATION_FAILED', { field: 'referrerDriverId' })
+}
+
+/**
+ * Referred orders (2026-11-17): a driver handed this order to us; another
+ * driver completed it. The referrer gets walletReferralSharePercent of the
+ * order's fee on his app balance, once.
+ *
+ * - The base is what the completing driver finally PAID (after settlements and
+ *   refunds). While billing is off nothing was paid, so it is the fee the
+ *   schedule would have charged for the final price — the referrer is paid the
+ *   same either way (product decision).
+ * - Waits while a minimum-price review is open (the fee may still change);
+ *   resolvePriceReview calls this again.
+ * - Nothing when the order is not COMPLETED, the referrer did the job himself,
+ *   or the share rounds to 0 (a free order). Every outcome is in the timeline.
+ * - Exactly once: checked here, and a unique index on the credit line.
+ */
+export async function creditReferrer(tx: Sql, orderId: number, assignmentId: number): Promise<'credited' | 'waiting' | 'skipped'> {
+  const order = await lockOrder(tx, orderId)
+  if (order.referrerDriverId === null || order.status !== 'COMPLETED') return 'skipped'
+  const referrerId = order.referrerDriverId
+  const already = await tx.query(`SELECT 1 FROM "WalletEntry" WHERE "orderId" = $1::int AND "kind" = 'REFERRAL_CREDIT'`, [orderId])
+  if (already.length > 0) return 'skipped'
+  const system: ActorRef = { type: 'SYSTEM', id: null }
+  if (await pendingPriceReview(tx, orderId)) {
+    await recordEvent(tx, orderId, 'REFERRAL_WAITING', system, { referrerDriverId: referrerId, why: 'PRICE_REVIEW' })
+    return 'waiting'
+  }
+  const [assignment] = await tx.query<{ driverId: number }>(`SELECT "driverId" FROM "OrderAssignment" WHERE "id" = $1::int`, [assignmentId])
+  if (assignment && toNumber(assignment.driverId) === referrerId) {
+    await recordEvent(tx, orderId, 'REFERRAL_SKIPPED', system, { referrerDriverId: referrerId, why: 'REFERRER_DID_THE_JOB' })
+    return 'skipped'
+  }
+  const settings = resolveSettings(await tx.query<{ key: string; value: unknown }>(`SELECT "key", "value" FROM "DispatchSetting"`))
+  const paid = await netFeeOf(tx, assignmentId)
+  const baseAmd = paid ?? orderFeeAmd(feePrice(order), feeRulesOf(settings))
+  const shareAmd = Math.round((baseAmd * settings.walletReferralSharePercent) / 100)
+  if (shareAmd <= 0) {
+    await recordEvent(tx, orderId, 'REFERRAL_SKIPPED', system, { referrerDriverId: referrerId, why: 'NO_FEE', baseAmd })
+    return 'skipped'
+  }
+  const balanceAmd = await post(tx, {
+    driverId: referrerId,
+    kind: 'REFERRAL_CREDIT',
+    amountAmd: shareAmd,
+    orderId,
+    note: `Ձեր փոխանցած պատվերը ավարտվեց · ${order.number}`,
+  })
+  await recordEvent(tx, orderId, 'REFERRAL_CREDITED', system, {
+    referrerDriverId: referrerId,
+    amountAmd: shareAmd,
+    baseAmd,
+    percent: settings.walletReferralSharePercent,
+    billed: paid !== null,
+  })
+  await enqueueRealtime(tx, `wallet:referral:${orderId}`, [`driver:${referrerId}`], 'wallet.updated', { balanceAmd })
+  await enqueue(tx, {
+    topic: 'push.walletCredited',
+    payload: { driverId: referrerId, amountAmd: shareAmd, balanceAmd },
+    dedupeKey: `wallet-referral:${orderId}`,
+    maxAttempts: 3,
+  })
+  return 'credited'
 }
 
 async function pendingPriceReview(tx: Sql, orderId: number): Promise<number | null> {

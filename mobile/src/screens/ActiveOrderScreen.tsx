@@ -43,6 +43,7 @@ export function ActiveOrderScreen({
   const pickupPoint = cleanTarget(order.pickup)
   const destinationPoint = cleanTarget(order.destination)
   const stepTarget = plan.navigateTo ? cleanTarget(plan.navigateTo) : null
+  const navigatingToPickup = !!stepTarget && !!pickupPoint && stepTarget.latitude === pickupPoint.latitude && stepTarget.longitude === pickupPoint.longitude
   const [mapsOpen, setMapsOpen] = useState(false)
   const [mapsTarget, setMapsTarget] = useState<'pickup' | 'destination'>('pickup')
   const [apps, setApps] = useState<MapsApp[]>(orderedApps(Platform.OS, null))
@@ -118,6 +119,10 @@ export function ActiveOrderScreen({
       ) : null}
 
       {stepTarget ? <Button variant="outline" icon="navigation" label={t('order.navigate')} onPress={openMaps} /> : null}
+      {/* 2026-11-17: an approximate pickup means «call the customer for the exact spot» — only while heading there */}
+      {navigatingToPickup && order.pickup.precision ? (
+        <Note tone={order.pickup.precision === 'EXACT' ? 'success' : 'warn'}>{t(`order.precision.${order.pickup.precision}`)}</Note>
+      ) : null}
 
       <Sheet visible={mapsOpen} onClose={() => setMapsOpen(false)} title={t('order.maps.title')}>
         {pickupPoint && destinationPoint ? (

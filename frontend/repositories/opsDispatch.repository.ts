@@ -18,7 +18,11 @@ import type {
   OpsOrder,
   OpsDriverWallet,
   OpsOrderDetail,
+  OpsPreOrder,
+  OpsPreOrderDetail,
+  OpsPreOrderListItem,
   OpsPriceReview,
+  OpsStats,
   OpsWalletRow,
   OpsWalletSummary,
   ProgressAction,
@@ -85,8 +89,8 @@ export const opsDispatchRepository = {
     return apiFetch<{ ok: true }>(`${base}/alerts/${id}/ack`, { method: 'POST', headers: auth() })
   },
   /** Driver wallet (2026-11-12): every balance, lowest first */
-  wallets() {
-    return apiFetch<OpsWalletRow[]>(`${base}/wallets`, { headers: auth() })
+  wallets(days = 30) {
+    return apiFetch<OpsWalletRow[]>(`${base}/wallets`, { headers: auth(), query: { days } })
   },
   driverWallet(driverId: number, before?: number) {
     return apiFetch<OpsDriverWallet>(`${base}/drivers/${driverId}/wallet`, { headers: auth(), query: { before } })
@@ -104,8 +108,37 @@ export const opsDispatchRepository = {
     })
   },
   /** Minimum prices drivers entered, waiting for a call */
+  // ─── Pre-orders (2026-11-17) ───────────────────────────────────────────
+  preOrders(status: 'OPEN' | 'CLOSED') {
+    return apiFetch<OpsPreOrderListItem[]>(`${base}/pre-orders`, { headers: auth(), query: { status } })
+  },
+  preOrder(id: number) {
+    return apiFetch<OpsPreOrderDetail>(`${base}/pre-orders/${id}`, { headers: auth() })
+  },
+  createPreOrder(body: Record<string, unknown>, key: string) {
+    return apiFetch<{ preOrder: OpsPreOrder; recipients: number }>(`${base}/pre-orders`, { method: 'POST', headers: auth(key), body })
+  },
+  /** «Կրկին ծանուցել»: push every active driver again */
+  notifyPreOrder(id: number, key: string) {
+    return apiFetch<{ notified: number; round: number }>(`${base}/pre-orders/${id}/notify`, { method: 'POST', headers: auth(key) })
+  },
+  closePreOrder(id: number) {
+    return apiFetch<{ closed: boolean }>(`${base}/pre-orders/${id}/close`, { method: 'POST', headers: auth() })
+  },
+  /** A real FIXED order at this driver's price, offered to him; the order exists even when the offer is refused */
+  convertPreOrder(id: number, body: { driverId: number; customerPhone?: string | null }, key: string) {
+    return apiFetch<{ orderId: number; offered: boolean; offerError: string | null }>(`${base}/pre-orders/${id}/convert`, { method: 'POST', headers: auth(key), body })
+  },
   priceReviews() {
     return apiFetch<OpsPriceReview[]>(`${base}/price-reviews`, { headers: auth() })
+  },
+  /** How the dispatch is doing over the last N days (2026-11-17) */
+  stats(days: number) {
+    return apiFetch<OpsStats>(`${base}/stats`, { headers: auth(), query: { days } })
+  },
+  /** The operator's 1–5 for a completed job (2026-11-17); rating again replaces it */
+  rateOrder(id: number, body: { score: number; comment?: string | null }, key: string) {
+    return apiFetch<{ orderId: number; score: number }>(`${base}/orders/${id}/rating`, { method: 'PUT', headers: auth(key), body })
   },
   resolvePriceReview(id: number, body: { decision: 'APPROVE' | 'CORRECT'; correctedPriceAmd?: number; note?: string }, key: string) {
     return apiFetch<OpsOrder>(`${base}/price-reviews/${id}`, { method: 'POST', headers: auth(key), body })

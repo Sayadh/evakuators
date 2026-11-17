@@ -17,7 +17,7 @@
 import { MANUAL_OVERRIDABLE } from '../fleet/domain/availability'
 import { availabilityOf, DRIVER_STATE_FROM, DRIVER_STATE_SELECT, mapDriverState } from '../fleet/fleet.repository'
 import { capabilityMismatches } from '../orders/domain/requirements'
-import { planTransition, SEARCH_ATTENTION_KINDS, type AttentionKind } from '../orders/domain/order-state'
+import { DRIVERLESS_ATTENTION_KINDS, planTransition, type AttentionKind } from '../orders/domain/order-state'
 import { lockOrder, requirementsOf, snapshotOf, type OrderRow } from '../orders/order-row'
 import { enqueue, enqueueRealtime } from '../notify/outbox'
 import { raiseAlert, recordEvent, SYSTEM, type ActorRef } from '../platform/audit'
@@ -37,6 +37,17 @@ import { chargeOrderFee, walletOf, walletPredicate } from '../wallet/wallet-ledg
  * and cannot be locked itself; locking the base row is what makes an admin's
  * suspend/revoke (an UPDATE of this row) and an accept/offer strictly ordered.
  */
+/**
+ * Skip reasons that only mean «busy with ANOTHER order right now»
+ * (2026-11-16). Such a candidate is not gone: a waiting order puts him back
+ * in line the moment he is free (`requeueFreed`). Every other skip is final
+ * for the attempt.
+ */
+export const TEMPORARY_SKIP_REASONS = ['BUSY', 'RESERVED_CONCURRENTLY', 'YIELDED_TO_OLDER'] as const
+
+/** How often a waiting order looks again for a free driver */
+export const WAIT_RETRY_SECONDS = 5
+
 async function lockFleetDriver(tx: Sql, driverId: number): Promise<void> {
   await tx.query(`SELECT 1 FROM "FleetDriver" WHERE "id" = $1::int FOR SHARE`, [driverId])
 }
@@ -264,11 +275,34 @@ export class OffersRepository {
         ...(await this.eligibleAmong(tx, bySource('BASE'), order, settings, 'BASE')),
       ])
 
+      // Ineligible only because another order holds them (an offer or a job):
+      // temporarily skipped, so a waiting order can take them back (2026-11-16)
+      const busyIds = await busyAmong(
+        tx,
+        queued.map((row) => toNumber(row.driverId)).filter((id) => !eligibleIds.has(id)),
+      )
+
       for (const row of queued) {
         const driverId = toNumber(row.driverId)
         const candidateId = toNumber(row.id)
         if (!eligibleIds.has(driverId)) {
-          await tx.query(`UPDATE "DispatchCandidate" SET "status" = 'SKIPPED', "skipReason" = 'NOT_ELIGIBLE_AT_OFFER' WHERE "id" = $1::bigint`, [candidateId])
+          await tx.query(`UPDATE "DispatchCandidate" SET "status" = 'SKIPPED', "skipReason" = $2 WHERE "id" = $1::bigint`, [
+            candidateId,
+            busyIds.has(driverId) ? 'BUSY' : 'NOT_ELIGIBLE_AT_OFFER',
+          ])
+          continue
+        }
+        // First come, first served (2026-11-16): an OLDER order that has been
+        // waiting for this very driver gets him first. This order steps aside
+        // for now (temporary skip) and the older one is woken to make the offer.
+        const claim = await olderWaitingClaim(tx, order.id, driverId)
+        if (claim) {
+          await tx.query(`UPDATE "DispatchCandidate" SET "status" = 'SKIPPED', "skipReason" = 'YIELDED_TO_OLDER' WHERE "id" = $1::bigint`, [candidateId])
+          await enqueue(tx, {
+            topic: 'dispatch.advance',
+            payload: { orderId: claim.orderId, attemptId: claim.attemptId },
+            dedupeKey: `advance:${claim.attemptId}:yield:${driverId}:${Math.floor(Date.now() / 5000)}`,
+          })
           continue
         }
         const routed = row.routeOk === true
@@ -300,7 +334,8 @@ export class OffersRepository {
         }
         const offer = mapOffer(inserted[0])
         await tx.query(`UPDATE "DispatchCandidate" SET "status" = 'OFFERED' WHERE "id" = $1::bigint`, [candidateId])
-        await tx.query(`UPDATE "DispatchAttempt" SET "offersMade" = "offersMade" + 1 WHERE "id" = $1::int`, [attempt.id])
+        // An offer ends the wait (if there was one)
+        await tx.query(`UPDATE "DispatchAttempt" SET "offersMade" = "offersMade" + 1, "waitingSince" = NULL WHERE "id" = $1::int`, [attempt.id])
         await this.announceOffer(tx, order, offer)
         return { kind: 'offered', offerId: offer.id, driverId }
       }
@@ -468,6 +503,95 @@ export class OffersRepository {
   }
 
   /** No candidates anywhere in range: the engine's terminal step for an attempt */
+  /**
+   * Waiting (2026-11-16): candidates skipped only because another order held
+   * them, who are free now, go back in line — with their road figures marked
+   * stale, so they are re-routed from where they are now before the offer.
+   */
+  async requeueFreed(orderId: number, attemptId: number): Promise<number> {
+    return withRetryingTransaction(this.db, async (tx) => {
+      const order = await lockOrder(tx, orderId)
+      const attempt = await openAttempt(tx, orderId, true)
+      if (order.status !== 'SEARCHING' || !attempt || attempt.id !== attemptId) return 0
+      const rows = await tx.query(
+        `UPDATE "DispatchCandidate" c SET "status" = 'QUEUED', "skipReason" = NULL, "routedAt" = to_timestamp(0)
+          WHERE c."attemptId" = $1::int AND c."status" = 'SKIPPED' AND c."skipReason" = ANY($2::text[])
+            AND NOT EXISTS (SELECT 1 FROM "OrderOffer" x WHERE x."driverId" = c."driverId" AND x."status" = 'PENDING')
+            AND NOT EXISTS (SELECT 1 FROM "OrderAssignment" y WHERE y."driverId" = c."driverId" AND y."endedAt" IS NULL)
+          RETURNING 1`,
+        [attemptId, pgArray([...TEMPORARY_SKIP_REASONS])],
+      )
+      return rows.length
+    })
+  }
+
+  /** Busy drivers who match the order: remembered (skipped, BUSY) so the order knows whom it is waiting for */
+  async addBusyCandidates(orderId: number, attemptId: number, found: { driverId: number; straightLineMeters: number; source: LocationSource }[]): Promise<number> {
+    if (found.length === 0) return 0
+    return withRetryingTransaction(this.db, async (tx) => {
+      const order = await lockOrder(tx, orderId)
+      const attempt = await openAttempt(tx, orderId, true)
+      if (order.status !== 'SEARCHING' || !attempt || attempt.id !== attemptId) return 0
+      const [{ batch }] = await tx.query<{ batch: number }>(
+        `SELECT COALESCE(max("batch"), -1) + 1 AS "batch" FROM "DispatchCandidate" WHERE "attemptId" = $1::int`,
+        [attemptId],
+      )
+      const p = new Params()
+      const sorted = [...found].sort((a, b) => a.straightLineMeters - b.straightLineMeters)
+      const tuples = sorted.map(
+        (c, i) =>
+          `(${p.add(attemptId)}::int, ${p.add(c.driverId)}::int, ${p.add(batch)}::int, ${p.add(batch * 1000 + i)}::int, ${p.add(c.straightLineMeters)}::int,
+            false, 'SKIPPED', 'BUSY', ${p.add(c.source)})`,
+      )
+      const rows = await tx.query(
+        `INSERT INTO "DispatchCandidate" ("attemptId", "driverId", "batch", "rank", "straightLineMeters", "routeOk", "status", "skipReason", "locationSource")
+         VALUES ${tuples.join(', ')}
+         ON CONFLICT ("attemptId", "driverId") DO NOTHING
+         RETURNING 1`,
+        p.values,
+      )
+      return rows.length
+    })
+  }
+
+  /** Is anybody this attempt could still get — just busy right now? */
+  async hasWaitable(attemptId: number): Promise<boolean> {
+    const rows = await this.db.query(
+      `SELECT 1 FROM "DispatchCandidate" WHERE "attemptId" = $1::int AND "status" = 'SKIPPED' AND "skipReason" = ANY($2::text[]) LIMIT 1`,
+      [attemptId, pgArray([...TEMPORARY_SKIP_REASONS])],
+    )
+    return rows.length > 0
+  }
+
+  /**
+   * Every matching driver is busy with another order: instead of failing, the
+   * search waits — looking again every WAIT_RETRY_SECONDS — until one is free
+   * or the attempt's deadline (searchMaxSeconds) ends it as SEARCH_TIMEOUT.
+   * The first time, the timeline and the console are told. Returns false when
+   * the order is no longer waiting-able (state changed, deadline passed).
+   */
+  async startWaiting(orderId: number, attemptId: number): Promise<boolean> {
+    return withRetryingTransaction(this.db, async (tx) => {
+      const order = await lockOrder(tx, orderId)
+      const attempt = await openAttempt(tx, orderId, true)
+      if (order.status !== 'SEARCHING' || !attempt || attempt.id !== attemptId || attempt.deadlinePassed) return false
+      // The attempt row is already locked (openAttempt … FOR UPDATE)
+      const [{ waitingSince }] = await tx.query<{ waitingSince: Date | null }>(`SELECT "waitingSince" FROM "DispatchAttempt" WHERE "id" = $1::int`, [attemptId])
+      if (waitingSince === null) {
+        await tx.query(`UPDATE "DispatchAttempt" SET "waitingSince" = now() WHERE "id" = $1::int`, [attemptId])
+        await recordEvent(tx, orderId, 'SEARCH_WAITING', SYSTEM, { attemptId, deadlineAt: attempt.deadlineAt.toISOString() })
+        await notifyOrderChanged(tx, order, 'SEARCH_WAITING')
+      }
+      await enqueue(tx, {
+        topic: 'dispatch.advance',
+        payload: { orderId, attemptId },
+        dedupeKey: `advance:${attemptId}:wait:${Math.floor(Date.now() / (WAIT_RETRY_SECONDS * 1000))}`,
+        availableAtSql: `now() + make_interval(secs => ${WAIT_RETRY_SECONDS})`,
+      })
+      return true
+    })
+  }
+
   async failSearchIfStillEmpty(orderId: number, attemptId: number): Promise<boolean> {
     return withRetryingTransaction(this.db, async (tx) => {
       const order = await lockOrder(tx, orderId)
@@ -485,6 +609,7 @@ export class OffersRepository {
   }
 
   private async failSearch(tx: Sql, order: OrderRow, attempt: AttemptRow, kind: AttentionKind): Promise<void> {
+    await tx.query(`UPDATE "DispatchAttempt" SET "waitingSince" = NULL WHERE "id" = $1::int`, [attempt.id])
     const planned = planTransition('SEARCH_FAILED', snapshotOf(order), 'SYSTEM', { attentionKind: kind })
     await tx.query(`UPDATE "DispatchAttempt" SET "endedAt" = now(), "endReason" = $2 WHERE "id" = $1::int`, [attempt.id, kind])
     const p = new Params()
@@ -690,7 +815,7 @@ export class OffersRepository {
     const startable =
       order.status === 'DRAFT' ||
       order.status === 'SEARCHING' ||
-      (order.status === 'NEEDS_ATTENTION' && order.activeAssignmentId === null && !!order.attentionKind && SEARCH_ATTENTION_KINDS.includes(order.attentionKind))
+      (order.status === 'NEEDS_ATTENTION' && order.activeAssignmentId === null && !!order.attentionKind && DRIVERLESS_ATTENTION_KINDS.includes(order.attentionKind))
     if (!startable) throw new DispatchError('INVALID_TRANSITION', { action: 'MANUAL_OFFER', status: order.status })
     const pending = await tx.query(`SELECT 1 FROM "OrderOffer" WHERE "orderId" = $1::int AND "status" = 'PENDING'`, [order.id])
     if (pending.length > 0) throw new DispatchError('INVALID_TRANSITION', { action: 'MANUAL_OFFER', reason: 'stop the pending offer first' })
@@ -918,4 +1043,37 @@ export async function createAttempt(
     if (error instanceof SqlError && isUniqueViolation(error)) throw new DispatchError('INVALID_TRANSITION', { reason: 'attempt already open' })
     throw error
   }
+}
+
+
+/** Of these drivers, the ones another order holds right now — a pending offer or an active job */
+async function busyAmong(tx: Sql, driverIds: number[]): Promise<Set<number>> {
+  if (driverIds.length === 0) return new Set()
+  const rows = await tx.query<{ driverId: number }>(
+    `SELECT DISTINCT d AS "driverId" FROM unnest($1::int[]) d
+      WHERE EXISTS (SELECT 1 FROM "OrderOffer" x WHERE x."driverId" = d AND x."status" = 'PENDING')
+         OR EXISTS (SELECT 1 FROM "OrderAssignment" y WHERE y."driverId" = d AND y."endedAt" IS NULL)`,
+    [pgArray(driverIds)],
+  )
+  return new Set(rows.map((r) => toNumber(r.driverId)))
+}
+
+/**
+ * An older order that is WAITING for this driver (it remembered him as busy).
+ * First come, first served: it gets him before `orderId` does (2026-11-16).
+ */
+async function olderWaitingClaim(tx: Sql, orderId: number, driverId: number): Promise<{ orderId: number; attemptId: number } | null> {
+  const rows = await tx.query<{ orderId: number; attemptId: number }>(
+    `SELECT w."id" AS "orderId", a."id" AS "attemptId"
+       FROM "DispatchCandidate" c
+       JOIN "DispatchAttempt" a ON a."id" = c."attemptId" AND a."endedAt" IS NULL AND a."mode" = 'AUTO' AND a."waitingSince" IS NOT NULL
+       JOIN "DispatchOrder" w ON w."id" = a."orderId" AND w."status" = 'SEARCHING'
+      WHERE c."driverId" = $1::int AND c."status" = 'SKIPPED' AND c."skipReason" = ANY($3::text[])
+        AND w."id" <> $2::int
+        AND w."createdAt" < (SELECT "createdAt" FROM "DispatchOrder" WHERE "id" = $2::int)
+      ORDER BY w."createdAt", w."id"
+      LIMIT 1`,
+    [driverId, orderId, pgArray([...TEMPORARY_SKIP_REASONS])],
+  )
+  return rows[0] ? { orderId: toNumber(rows[0].orderId), attemptId: toNumber(rows[0].attemptId) } : null
 }

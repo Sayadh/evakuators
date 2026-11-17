@@ -172,11 +172,19 @@ ol {
   padding: 0;
 }
 
-/* Keyboard focus */
-:focus-visible {
-  outline: 3px solid rgba(20, 48, 79, 0.45);
-  outline-offset: 2px;
-  border-radius: 4px;
+/*
+ * No focus outline anywhere (product decision, 2026-11-17): no ring on
+ * inputs, buttons, links or anything else, mouse or keyboard. `!important`
+ * on purpose — it also overrides the component-level :focus-visible rules
+ * (AppCheckbox, AppChoiceChips, HeroSection, …) so none can bring it back.
+ * A field's own border-colour change on focus is not an outline and stays.
+ */
+*,
+*::before,
+*::after,
+*:focus,
+*:focus-visible {
+  outline: none !important;
 }
 
 /* ── Layout helpers ── */

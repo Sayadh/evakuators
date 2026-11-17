@@ -30,7 +30,9 @@
 import * as Location from 'expo-location'
 import * as TaskManager from 'expo-task-manager'
 import { File, Paths } from 'expo-file-system'
-import { api, ApiError } from '../api/client'
+import { api, ApiError, NetworkError, UncertainError } from '../api/client'
+import { dismissNoInternetNotification, showNoInternetNotification } from '../push/problemNotification'
+import { onNetFailure, onNetSuccess, type NetAlertState } from './netAlert'
 import type { TrackingPolicyDto } from '../api/types'
 import { addFixes, nextChunk, removeSent, type Fix } from './buffer'
 import { DEFAULT_POLICY, fixIsDue, jittered, keepFix, needsRestart, osIntervalSeconds, serviceClass, shouldTrack, type ServiceClass, type TrackingPolicy } from './policy'
@@ -45,6 +47,8 @@ interface Persisted {
   lastHeartbeatAt: number
   /** measuredAt (ms) of the newest fix kept — drives thinning and the foreground floor */
   lastFixAt?: number | null
+  /** «Ինտերնետ չկա» (2026-11-16, netAlert.ts) */
+  net?: NetAlertState
 }
 
 const store = new File(Paths.document, 'evk-tracking.json')
@@ -107,13 +111,37 @@ async function flushNow(): Promise<TrackingPolicy | null> {
       state = { ...state, lastHeartbeatAt: Date.now() }
       await save(state)
     }
+    // Reached the server: an outage (if any) is over
+    if (state.net?.failSince != null) {
+      const { state: net, dismiss } = onNetSuccess(state.net)
+      await save({ ...state, net })
+      if (dismiss) await dismissNoInternetNotification()
+    }
     return policy
   } catch (error) {
     // Offline or server down: fixes stay buffered (bounded) for the next run.
     if (error instanceof ApiError && error.code === 'SESSION_REVOKED') await stopTracking()
+    else if (error instanceof NetworkError || error instanceof UncertainError) await noteNetworkFailure()
     return null
   } finally {
     flushing = false
+  }
+}
+
+/**
+ * A send failed for lack of network (2026-11-16): after two minutes of that,
+ * tell the driver — the server's own alerts cannot reach a phone with no
+ * internet. Runs inside the serialized writer (flushNow), never throws.
+ */
+async function noteNetworkFailure(): Promise<void> {
+  try {
+    const state = await load()
+    if (!shouldTrack(state.policy)) return
+    const { state: net, alert } = onNetFailure(state.net, Date.now())
+    await save({ ...state, net })
+    if (alert) await showNoInternetNotification()
+  } catch {
+    // best effort
   }
 }
 
@@ -331,6 +359,35 @@ async function freshFixNow(high: boolean): Promise<boolean> {
     return false
   } finally {
     asking = false
+  }
+}
+
+/**
+ * The server's «wake» push (2026-11-14, backend PushService.wakeStaleDrivers):
+ * the phone is locked and still, Android delivers no fixes, so no background
+ * heartbeat went out and the console was about to show «Կապ չկա». Heartbeat
+ * FIRST (that alone keeps the driver eligible), then a fresh fix from the
+ * running task — or a restart of a task the OS stopped. Never throws: it runs
+ * in the FCM background handler.
+ */
+export async function wakeFromPush(): Promise<void> {
+  try {
+    await api.heartbeat()
+    await serialized(async () => {
+      const state = await load()
+      await save({ ...state, lastHeartbeatAt: Date.now() })
+    })
+  } catch (error) {
+    if (error instanceof ApiError && error.code === 'SESSION_REVOKED') {
+      await stopTracking().catch(() => undefined)
+      return
+    }
+  }
+  try {
+    const state = await load()
+    await healTracking(state.policy)
+  } catch {
+    // best effort: the next wake tries again
   }
 }
 

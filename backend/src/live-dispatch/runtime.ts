@@ -19,6 +19,7 @@ import { FleetRepository } from './fleet/fleet.repository'
 import { OrdersRepository } from './orders/orders.repository'
 import { FcmSender, RecordingPushSender, type PushSender, type ServiceAccount } from './notify/fcm'
 import { OutboxProcessor, type OutboxHandler } from './notify/outbox-processor'
+import type { ClaimedMessage } from './notify/outbox'
 import { PushService } from './notify/push.service'
 import { InProcessBus, RedisBus, type RealtimeBus } from './notify/realtime-bus'
 import { parseRedisUrl } from './notify/redis-resp'
@@ -28,6 +29,8 @@ import { createRoutingProvider, FakeRoutingProvider } from './routing/providers'
 import { GuardedRouting, type RoutingProvider } from './routing/routing-provider'
 import { ROUTE_ORS_DISPATCH_DAILY_SHARE } from '../routing/routing.constants'
 
+import { loadAlertForText, opsAlertText, TelegramOpsChannel, type OpsChannel } from './notify/ops-telegram'
+import { PreOrdersRepository } from './pre-orders/pre-orders'
 export interface LiveDispatchConfig {
   enabled: boolean
   trackingEnabled: boolean
@@ -51,6 +54,10 @@ export interface LiveDispatchConfig {
    */
   apnsCriticalAlerts: boolean
   redisUrl: string
+  /** 2026-11-17: operator alerts on Telegram via the ADMIN bot; '' = off */
+  opsTelegramBotToken: string
+  /** For links in those alerts and the «[staging…]» prefix */
+  frontendUrl: string
 }
 
 export function readLiveDispatchConfig(env: NodeJS.ProcessEnv): LiveDispatchConfig {
@@ -93,6 +100,8 @@ export function readLiveDispatchConfig(env: NodeJS.ProcessEnv): LiveDispatchConf
     fcmServiceAccount,
     apnsCriticalAlerts: flag('APNS_CRITICAL_ALERTS'),
     redisUrl: env.REDIS_URL ?? '',
+    opsTelegramBotToken: env.ADMIN_TELEGRAM_BOT_TOKEN ?? '',
+    frontendUrl: (env.FRONTEND_URL ?? 'https://evakuators.am').replace(/\/$/, ''),
   }
 }
 
@@ -124,7 +133,12 @@ export interface LiveDispatchRuntime {
   push: PushService
   pushSender: PushSender
   bus: RealtimeBus
-  createProcessor(): OutboxProcessor
+  /** Operator alerts on Telegram (2026-11-17) */
+  ops: OpsChannel
+  /** Pre-orders: price collection before an order (2026-11-17) */
+  preOrders: PreOrdersRepository
+  /** `onError`: a handler that threw (the worker records persistent ones, error-tracking) */
+  createProcessor(onError?: (message: ClaimedMessage, error: unknown) => void): OutboxProcessor
 }
 
 export function createRuntime(
@@ -137,6 +151,7 @@ export function createRuntime(
     bus?: RealtimeBus
     logger?: EngineLogger
     passwordHasher?: PasswordHasher
+    ops?: OpsChannel
   } = {},
 ): LiveDispatchRuntime {
   const settings = new SettingsRepository(db)
@@ -175,6 +190,8 @@ export function createRuntime(
   const push = new PushService(db, pushSender, undefined, { criticalAlerts: config.apnsCriticalAlerts })
   const bus = overrides.bus ?? (config.redisUrl ? new RedisBus(parseRedisUrl(config.redisUrl)) : new InProcessBus())
 
+  const ops = overrides.ops ?? new TelegramOpsChannel(db, { botToken: config.opsTelegramBotToken, frontendUrl: config.frontendUrl })
+
   const handlers: Record<string, OutboxHandler> = {
     'dispatch.advance': async (message) => {
       await engine.advance(Number(message.payload.orderId))
@@ -197,6 +214,15 @@ export function createRuntime(
       (await push.sendOrderPush(Number(message.payload.orderId), Number(message.payload.driverId), String(message.payload.kind))) === 'retry'
         ? 'retry'
         : 'done',
+    'push.preOrder': async (message) =>
+      (await push.sendPreOrderPush(Number(message.payload.preOrderId), Number(message.payload.driverId), message.payload.reminder === true)) === 'retry' ? 'retry' : 'done',
+    'ops.alert': async (message) => {
+      const alert = await loadAlertForText(db, Number(message.payload.alertId))
+      const text = alert ? opsAlertText(alert, config.frontendUrl) : null
+      // A send that reached nobody throws: the processor retries it
+      if (text) await ops.send(text)
+      return 'done'
+    },
     realtime: async (message) => {
       await bus.publish({
         eventId: message.id,
@@ -224,6 +250,8 @@ export function createRuntime(
     push,
     pushSender,
     bus,
-    createProcessor: () => new OutboxProcessor(db, handlers),
+    ops,
+    preOrders: new PreOrdersRepository(db),
+    createProcessor: (onError) => new OutboxProcessor(db, handlers, undefined, onError),
   }
 }

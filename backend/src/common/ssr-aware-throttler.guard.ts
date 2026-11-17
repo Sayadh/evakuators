@@ -79,6 +79,8 @@ export class SsrAwareThrottlerGuard extends ThrottlerGuard {
    * for the snapshot the app re-reads every 10 s — and all of them start
    * getting 429 together. Everything else (and an invalid token) stays by IP.
    */
+  // `any` is ThrottlerGuard's own signature for this override — narrowing it breaks the override
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   protected async getTracker(req: Record<string, any>): Promise<string> {
     const driverId = driverIdForThrottle(req.headers?.authorization, process.env.DRIVER_JWT_SECRET ?? '')
     if (driverId !== null) return `driver:${driverId}`

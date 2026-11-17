@@ -203,7 +203,7 @@ async function main() {
         const pickup = jitterPoint(Math.floor(Math.random() * 1000))
         const body = {
           customerPhone: '+37491000001',
-          pickup: { ...pickup, address: 'Load test pickup' },
+          pickup: { ...pickup, address: 'Load test pickup', precision: 'EXACT' },
           vehicle: { weightKg: 1500 },
           requirements: { wheelsRoll: true, steeringLocked: false, gearboxLocked: false, needsManipulator: false },
           pricing: { mode: 'FIXED', quotedPriceAmd: 15000 },

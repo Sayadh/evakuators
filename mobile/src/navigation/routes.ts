@@ -18,6 +18,8 @@ export interface RouteParams {
   orders: undefined
   orderDetail: { item: HistoryItem }
   missedOffers: undefined
+  /** 2026-11-17 */
+  preOrders: undefined
   wallet: undefined
   profile: undefined
   profileEdit: { section: ProfileSection }

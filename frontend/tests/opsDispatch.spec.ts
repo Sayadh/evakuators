@@ -7,6 +7,7 @@ import {
   ORDER_STATUS_LABEL,
   REASON_LABEL,
   SEARCH_FAILURE_KINDS,
+  DRIVERLESS_ATTENTION_KINDS,
   availabilitySummary,
   formatArmenianPhone,
   formatMeters,
@@ -25,8 +26,12 @@ describe('live dispatch console', () => {
     const availability = read('../backend/src/live-dispatch/fleet/domain/availability.ts')
     const reasons = /export type IneligibleReason =([\s\S]*?)\n\n/.exec(availability)![1].match(/'([A-Z_]+)'/g)!.map((s) => s.slice(1, -1))
     expect(Object.keys(REASON_LABEL).sort()).toEqual([...reasons].sort())
-    expect(Object.keys(ATTENTION_LABEL)).toHaveLength(6)
+    const attention = /export type AttentionKind =([\s\S]*?)\n\n/.exec(states)![1].match(/'([A-Z_]+)'/g)!.map((s) => s.slice(1, -1))
+    expect(Object.keys(ATTENTION_LABEL).sort()).toEqual([...attention].sort())
     expect(SEARCH_FAILURE_KINDS).toEqual(['SEARCH_EXHAUSTED', 'SEARCH_TIMEOUT', 'MANUAL_OFFER_FAILED'])
+    // A new search / manual offer is allowed from the same driverless kinds as the backend
+    expect(states).toContain("DRIVERLESS_ATTENTION_KINDS: readonly AttentionKind[] = [...SEARCH_ATTENTION_KINDS, 'CUSTOMER_PENDING']")
+    expect(DRIVERLESS_ATTENTION_KINDS).toEqual([...SEARCH_FAILURE_KINDS, 'CUSTOMER_PENDING'])
   })
 
   it('formats distances and times without inventing precision', () => {

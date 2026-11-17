@@ -72,4 +72,5 @@ export const ENTRY_ICON: Record<WalletEntryKind, 'plus' | 'truck' | 'refresh' | 
   ORDER_FEE_REFUND: 'refresh',
   ADMIN_CREDIT: 'wallet',
   ADMIN_DEBIT: 'wallet',
+  REFERRAL_CREDIT: 'star',
 }

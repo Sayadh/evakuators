@@ -18,6 +18,10 @@ export type OutboxTopic =
   | 'push.walletLow'
   | 'push.walletCredited'
   | 'realtime'
+  /** 2026-11-17: an operator alert to Telegram (notify/ops-telegram.ts) */
+  | 'ops.alert'
+  /** 2026-11-17: «a new pre-order» to one driver */
+  | 'push.preOrder'
 
 export interface OutboxMessage {
   topic: OutboxTopic

@@ -12,6 +12,7 @@ import type { ActiveOrder } from '../api/types'
 import { parseAmd, planOrderScreen } from '../domain/orderSteps'
 import { useT } from '../i18n'
 import { useApp } from '../state/AppState'
+import { isBusy, latestFor } from '../state/pendingActions'
 import { Button, Card, colors, Header, ListGroup, ListItem, Note, Row, Screen, Sheet } from '../ui/kit'
 import { cleanTarget, orderedApps, type MapsApp } from '../domain/mapsApps'
 import { lastMapsApp, openInMaps } from '../state/mapsChoice'
@@ -33,10 +34,15 @@ export function ActiveOrderScreen({
   const [priceText, setPriceText] = useState('')
   const price = parseAmd(priceText)
 
-  const mine = (kind: 'PROGRESS' | 'PRICE') => app.pending.find((p) => p.kind === kind && p.targetId === String(order.id) && p.status !== 'CONFIRMED')
-  const pendingProgress = mine('PROGRESS')
-  const pendingPrice = mine('PRICE')
-  const progressLocked = !!pendingProgress && pendingProgress.status !== 'FAILED'
+  // The NEWEST action of each kind (latestFor). A progress result belongs to
+  // the step it was pressed in: once the order moved on, an old failure or
+  // «uncertain» is not shown under the next step (2026-11-19).
+  const target = String(order.id)
+  const progress = latestFor(app.pending, 'PROGRESS', target)
+  const pendingProgress = progress && progress.payload.fromStatus === order.status ? progress : undefined
+  const pendingPrice = latestFor(app.pending, 'PRICE', target)
+  const progressLocked = isBusy(app.pending, 'PROGRESS', target) && !!pendingProgress
+  const priceLocked = isBusy(app.pending, 'PRICE', target)
 
   // «Նավիգացիա»: where to (the step's point, or the other one if the driver
   // wants it), and in which app. The last app used comes first.
@@ -108,12 +114,13 @@ export function ActiveOrderScreen({
           <Button
             label={pendingPrice?.status === 'SENDING' ? t('order.pending') : t('order.priceSave')}
             busy={pendingPrice?.status === 'SENDING'}
-            disabled={price === null || (!!pendingPrice && pendingPrice.status !== 'FAILED')}
+            disabled={price === null || priceLocked}
             onPress={async () => {
               if (price === null) return
               if (await app.setPrice(order.id, price)) setPriceText('')
             }}
           />
+          {pendingPrice?.status === 'UNCERTAIN' ? <Note tone="warn">{t('order.uncertain')}</Note> : null}
           {pendingPrice?.status === 'FAILED' ? <Note tone="danger">{t('order.failed', { reason: t(`errors.${pendingPrice.errorCode ?? 'UNKNOWN'}`) })}</Note> : null}
         </Card>
       ) : null}
@@ -162,7 +169,7 @@ export function ActiveOrderScreen({
           onPress={() => void app.progress(order.id, plan.primary!)}
         />
       ) : null}
-      {pendingProgress?.status === 'UNCERTAIN' ? <Note tone="warn">{t('offer.uncertain')}</Note> : null}
+      {pendingProgress?.status === 'UNCERTAIN' ? <Note tone="warn">{t('order.uncertain')}</Note> : null}
       {pendingProgress?.status === 'FAILED' ? <Note tone="danger">{t('order.failed', { reason: t(`errors.${pendingProgress.errorCode ?? 'UNKNOWN'}`) })}</Note> : null}
 
       {plan.secondary === 'CANCEL' ? <Button variant="outline" label={t('order.cancel')} onPress={onCancel} /> : null}

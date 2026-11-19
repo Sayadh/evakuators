@@ -185,6 +185,7 @@ export const hy = {
       CANCELLED: 'Չեղարկված',
     } as Record<string, string>,
     pending: 'Ուղարկվում է…',
+    uncertain: 'Կապը ընդհատվեց։ Ստուգում ենք՝ հասա՞վ, և ինքնաշխատ կուղարկենք նորից…',
     failed: 'Չհաջողվեց։ {reason}',
   },
   request: {

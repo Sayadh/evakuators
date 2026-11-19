@@ -21,6 +21,7 @@ import { isAlarmAvailable, muteAlarm, ringingOfferId, showAlarm, stopAlarm } fro
 import { alarmTexts } from '../push/push'
 import { dismissOfferNotification } from '../push/offerNotification'
 import { useApp } from '../state/AppState'
+import { latestFor } from '../state/pendingActions'
 import { Button, Card, colors, Note, Row, Screen } from '../ui/kit'
 
 function km(meters: number | null): string {
@@ -36,7 +37,10 @@ export function OfferScreen({ offer }: { offer: CurrentOffer }) {
     return () => clearInterval(timer)
   }, [])
   const left = secondsLeft(offer.expiresAt, app.clock, now)
-  const action = app.pending.find((p) => p.targetId === offer.offerId && (p.kind === 'ACCEPT' || p.kind === 'REJECT'))
+  // The newest answer to THIS offer, accept or reject
+  const action = [latestFor(app.pending, 'ACCEPT', offer.offerId), latestFor(app.pending, 'REJECT', offer.offerId)]
+    .filter((a) => a !== undefined)
+    .sort((x, y) => y.createdAt - x.createdAt)[0]
   const sending = action?.status === 'SENDING'
   const uncertain = action?.status === 'UNCERTAIN'
   const failed = action?.status === 'FAILED'

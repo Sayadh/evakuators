@@ -25,7 +25,7 @@ import { emitPreOrderTapped } from '../push/preOrderEvents'
 import { preOrderIdOf } from '../push/preOrderNotification'
 import { syncAlarmSound } from '../push/alertSoundChoice'
 import { connectRealtime } from '../realtime/socket'
-import { reconcile, type PendingAction, type PendingKind } from './pendingActions'
+import { dueForRetry, isBusy, isNewerSnapshot, reconcile, track, update, type PendingAction, type PendingKind, type PendingStatus } from './pendingActions'
 
 /** Fallback re-read while foreground + online: worst-case delay for a missed offer hint. */
 const SAFETY_REFRESH_MS = 10_000
@@ -65,7 +65,12 @@ interface Ctx {
   progress(orderId: number, action: ProgressAction): Promise<void>
   /** The price agreed with the customer by phone; true when the server took it */
   setPrice(orderId: number, agreedPriceAmd: number): Promise<boolean>
-  sendRequest(orderId: number, body: { kind: 'CANCEL' | 'PROBLEM'; reason: string; comment: string | null; driverPriceAmd?: number | null; customerPriceAmd?: number | null }): Promise<boolean>
+  /**
+   * The cancel / problem request. UNCERTAIN is not a failure: the SAME request
+   * (same key) is re-sent by itself until the server answers — the screen
+   * waits on `id` instead of letting the driver send a second one.
+   */
+  sendRequest(orderId: number, body: { kind: 'CANCEL' | 'PROBLEM'; reason: string; comment: string | null; driverPriceAmd?: number | null; customerPriceAmd?: number | null }): Promise<{ id: string; status: PendingStatus }>
   /** When the test alarm (Alerts setup) last opened the app — proof it works on this phone */
   alarmTestSeenAt: number | null
   /** The phone's location switch and permissions, re-read every few seconds while the app is open */
@@ -97,7 +102,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   snapshotRef.current = snapshot
   const [clock, setClock] = useState<ServerClock>({ offsetMs: 0 })
   const [connected, setConnected] = useState(false)
-  const [pending, setPending] = useState<PendingAction[]>([])
+  const [pending, setPendingState] = useState<PendingAction[]>([])
   const [lastError, setLastError] = useState<string | null>(null)
   const [alarmTestSeenAt, setAlarmTestSeenAt] = useState<number | null>(null)
   const [health, setHealth] = useState<LocationHealth | null>(null)
@@ -106,8 +111,16 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const recoveringRef = useRef(false)
   const lastHealRef = useRef(0)
   const healMissesRef = useRef(0)
-  const pendingRef = useRef(pending)
-  pendingRef.current = pending
+  // The ref is the source of truth and is written synchronously, so two taps
+  // in the same frame see each other (isBusy) — React state alone lags a render.
+  const pendingRef = useRef<PendingAction[]>([])
+  const setPending = useCallback((change: (list: PendingAction[]) => PendingAction[]) => {
+    pendingRef.current = change(pendingRef.current)
+    setPendingState(pendingRef.current)
+  }, [])
+  /** serverTime (ms) of the snapshot on screen — older ones are dropped (isNewerSnapshot) */
+  const lastSnapshotAtRef = useRef<number | null>(null)
+  const runPendingRef = useRef<(action: PendingAction) => Promise<PendingStatus>>(async () => 'FAILED')
 
   const forceLogout = useCallback(async () => {
     await stopAlarm()
@@ -115,7 +128,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     await setToken(null)
     setLoggedIn(false)
     setSnapshot(null)
-  }, [])
+    // Nothing of this driver's may reach the next one who signs in on this
+    // phone: an UNCERTAIN accept would otherwise be re-sent under his token.
+    setPending(() => [])
+    lastSnapshotAtRef.current = null
+    setClock({ offsetMs: 0 })
+  }, [setPending])
 
   useEffect(() => {
     configureClient({ token: getToken, onSessionRevoked: () => void forceLogout() })
@@ -125,11 +143,17 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     })
   }, [forceLogout])
 
-  const refresh = useCallback(async () => {
-    try {
-      const sent = Date.now()
-      const next = await api.snapshot()
-      setClock(measureClock(next.serverTime, (sent + Date.now()) / 2))
+  /**
+   * Puts a server snapshot on screen — unless a newer one is already there
+   * (isNewerSnapshot). Then resolves UNCERTAIN actions against it and re-sends
+   * the ones it cannot resolve, with their original keys. Returns false when
+   * the snapshot was stale and dropped.
+   */
+  const applySnapshot = useCallback(
+    (next: Snapshot): boolean => {
+      if (!isNewerSnapshot(next.serverTime, lastSnapshotAtRef.current)) return false
+      const at = Date.parse(next.serverTime)
+      if (!Number.isNaN(at)) lastSnapshotAtRef.current = at
       setSnapshot(next)
       // A ring for an offer that is no longer this driver's (answered on
       // another path, withdrawn, expired while the push was late): silence.
@@ -140,14 +164,30 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           currentOfferId: next.currentOffer?.offerId ?? null,
           activeOrderId: next.activeOrder?.id ?? null,
           activeOrderStatus: next.activeOrder?.status ?? null,
+          activeOrderAgreedAmd: next.activeOrder?.price.agreedAmd ?? null,
         }),
       )
+      // Still uncertain after the server spoke: send it again (same key). This
+      // used to happen only when the WebSocket reconnected — a timeout on a
+      // live socket left the order's next step locked (2026-11-19).
+      for (const action of dueForRetry(pendingRef.current, Date.now())) void runPendingRef.current(action)
+      return true
+    },
+    [setPending],
+  )
+
+  const refresh = useCallback(async () => {
+    try {
+      const sent = Date.now()
+      const next = await api.snapshot()
+      if (!applySnapshot(next)) return
+      setClock(measureClock(next.serverTime, (sent + Date.now()) / 2))
       await applyPolicy(next.tracking)
       setLastError(null)
     } catch (error) {
       setLastError(error instanceof ApiError ? error.code : 'NETWORK')
     }
-  }, [])
+  }, [applySnapshot])
 
   // Live channels while logged in
   useEffect(() => {
@@ -266,35 +306,56 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     }
   }, [loggedIn, recheckLocation])
 
-  // Uncertain actions: retry with the SAME key until the server answers
+  // Back online: everything still uncertain goes again at once (same key)
   useEffect(() => {
     if (!connected) return
-    for (const action of pendingRef.current.filter((a) => a.status === 'UNCERTAIN')) void runPending(action)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    for (const action of dueForRetry(pendingRef.current, Date.now(), 0)) void runPendingRef.current(action)
   }, [connected])
 
-  async function runPending(action: PendingAction): Promise<boolean> {
-    setPending((list) => [...list.filter((a) => a.id !== action.id), { ...action, status: 'SENDING' }])
+  /**
+   * Sends one action with its own key; the result is final unless UNCERTAIN.
+   * A RETRY of an action already in flight is skipped — one request at a time.
+   */
+  async function runPending(action: PendingAction, fresh = false): Promise<PendingStatus> {
+    if (!fresh) {
+      if (pendingRef.current.some((a) => a.id === action.id && a.status === 'SENDING')) return 'SENDING'
+      setPending((list) => update(list, action.id, { status: 'SENDING', lastAttemptAt: Date.now() }))
+    }
+    let status: PendingStatus
     try {
       if (action.kind === 'ACCEPT') await api.accept(action.targetId, action.idempotencyKey)
       else if (action.kind === 'REJECT') await api.reject(action.targetId, action.idempotencyKey, (action.payload.reason as string | null) ?? null)
       else if (action.kind === 'PROGRESS') await api.progress(Number(action.targetId), action.payload.action as ProgressAction, action.idempotencyKey)
       else if (action.kind === 'PRICE') await api.confirmPrice(Number(action.targetId), action.payload.agreedPriceAmd as number, action.idempotencyKey)
-      else await api.request(Number(action.targetId), action.payload as never, action.idempotencyKey)
-      setPending((list) => list.map((a) => (a.id === action.id ? { ...a, status: 'CONFIRMED' } : a)))
-      await refresh()
-      return true
+      else await api.request(Number(action.targetId), action.payload.body as never, action.idempotencyKey)
+      status = 'CONFIRMED'
+      setPending((list) => update(list, action.id, { status, errorCode: null }))
     } catch (error) {
-      const status = error instanceof UncertainError ? 'UNCERTAIN' : 'FAILED'
+      status = error instanceof UncertainError ? 'UNCERTAIN' : 'FAILED'
       const code = error instanceof ApiError ? error.code : error instanceof UncertainError ? null : 'NETWORK'
-      setPending((list) => list.map((a) => (a.id === action.id ? { ...a, status, errorCode: code } : a)))
-      await refresh()
-      return false
+      setPending((list) => update(list, action.id, { status, errorCode: code }))
     }
+    await refresh()
+    // The snapshot may have resolved an UNCERTAIN one already
+    return pendingRef.current.find((a) => a.id === action.id)?.status ?? status
   }
+  runPendingRef.current = (action) => runPending(action)
 
-  const start = (kind: PendingKind, targetId: string, payload: Record<string, unknown> = {}) =>
-    runPending({ id: newKey(), kind, idempotencyKey: newKey(), targetId, payload, status: 'SENDING', errorCode: null, createdAt: Date.now() })
+  /**
+   * A new action from a tap. A second tap while the first is still on its way
+   * (or uncertain) for the same thing is ignored — two keys would be two
+   * requests to the server.
+   */
+  const start = async (kind: PendingKind, targetId: string, payload: Record<string, unknown> = {}): Promise<{ id: string; status: PendingStatus }> => {
+    const busy = isBusy(pendingRef.current, kind, targetId)
+    if (busy) {
+      const current = pendingRef.current.find((a) => a.kind === kind && a.targetId === targetId && (a.status === 'SENDING' || a.status === 'UNCERTAIN'))!
+      return { id: current.id, status: current.status }
+    }
+    const action: PendingAction = { id: newKey(), kind, idempotencyKey: newKey(), targetId, payload, status: 'SENDING', errorCode: null, createdAt: Date.now(), lastAttemptAt: Date.now() }
+    setPending((list) => track(list, action))
+    return { id: action.id, status: await runPending(action, true) }
+  }
 
   // «Ընդունել» / «Մերժել» pressed on the offer NOTIFICATION (offerNotification.ts).
   // The press opened the app; the answer goes through the same idempotent
@@ -413,11 +474,11 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       },
       refresh,
       async setOnline(v) {
-        setSnapshot(await api.setAvailability({ wantsOnline: v }))
+        applySnapshot(await api.setAvailability({ wantsOnline: v }))
         await refresh()
       },
       async setExternalBusy(v) {
-        setSnapshot(await api.setAvailability({ externalBusy: v }))
+        applySnapshot(await api.setAvailability({ externalBusy: v }))
         await refresh()
       },
       async consent() {
@@ -436,12 +497,14 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       },
       accept: async (offerId) => void (await start('ACCEPT', offerId)),
       reject: async (offerId, reason = null) => void (await start('REJECT', offerId, { reason })),
-      progress: async (orderId, action) => void (await start('PROGRESS', String(orderId), { action })),
-      setPrice: (orderId, agreedPriceAmd) => start('PRICE', String(orderId), { agreedPriceAmd }),
-      sendRequest: (orderId, body) => start('REQUEST', String(orderId), body),
+      // `fromStatus`: lets the next snapshot tell whether this step took effect (reconcile)
+      progress: async (orderId, action) =>
+        void (await start('PROGRESS', String(orderId), { action, fromStatus: snapshotRef.current?.activeOrder?.status ?? null })),
+      setPrice: async (orderId, agreedPriceAmd) => (await start('PRICE', String(orderId), { agreedPriceAmd })).status === 'CONFIRMED',
+      sendRequest: (orderId, body) => start('REQUEST', String(orderId), { body }),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [ready, loggedIn, snapshot, clock, connected, pending, lastError, alarmTestSeenAt, health, gpsRecovering, recheckLocation, refresh, forceLogout],
+    [ready, loggedIn, snapshot, clock, connected, pending, lastError, alarmTestSeenAt, health, gpsRecovering, recheckLocation, refresh, forceLogout, applySnapshot],
   )
 
   return <AppCtx.Provider value={value}>{children}</AppCtx.Provider>

@@ -52,6 +52,14 @@ export function RequestScreen({ orderId, mode, onDone }: { orderId: number; mode
   const [customerPrice, setCustomerPrice] = useState('')
   const [busy, setBusy] = useState(false)
   const sent = useRef(false)
+  /**
+   * A request that timed out (UNCERTAIN) is NOT sent again from here: AppState
+   * re-sends the same one, same key, until the server answers (2026-11-19 — a
+   * second tap used to make a second request). The screen waits on its id.
+   */
+  const [waitingId, setWaitingId] = useState<string | null>(null)
+  const waiting = waitingId ? app.pending.find((a) => a.id === waitingId) : undefined
+  const [failure, setFailure] = useState<string | null>(null)
 
   const needsComment = reason === 'OTHER' && comment.trim().length === 0
   const asksPrice = mode === 'CANCEL' && reason === 'PRICE_NOT_AGREED'
@@ -66,11 +74,27 @@ export function RequestScreen({ orderId, mode, onDone }: { orderId: number; mode
     sent.current = true
     setBusy(true)
     const prices = chosen === 'PRICE_NOT_AGREED' && mode === 'CANCEL' ? { driverPriceAmd: driverAmd, customerPriceAmd: customerAmd } : {}
-    const ok = await app.sendRequest(orderId, { kind: mode, reason: chosen, comment: comment.trim() || null, ...prices })
+    setFailure(null)
+    const { id, status } = await app.sendRequest(orderId, { kind: mode, reason: chosen, comment: comment.trim() || null, ...prices })
     setBusy(false)
-    if (ok) onDone()
-    else sent.current = false
+    if (status === 'CONFIRMED') onDone()
+    else if (status === 'FAILED') {
+      sent.current = false
+      setFailure(app.pending.find((a) => a.id === id)?.errorCode ?? 'UNKNOWN')
+    } else setWaitingId(id)
   }
+
+  // The re-sent request got its answer
+  useEffect(() => {
+    if (!waiting) return
+    if (waiting.status === 'CONFIRMED') onDone()
+    else if (waiting.status === 'FAILED') {
+      setWaitingId(null)
+      sent.current = false
+      setFailure(waiting.errorCode ?? 'UNKNOWN')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [waiting?.status])
 
   // Reminder while the cancel screen stays open — nothing is ever sent for him.
   useEffect(() => {
@@ -109,7 +133,7 @@ export function RequestScreen({ orderId, mode, onDone }: { orderId: number; mode
         : t('request.cancelRedispatch')
 
   return (
-    <Screen header={<Header title={mode === 'CANCEL' ? t('request.titleCancel') : t('request.titleProblem')} onBack={busy ? undefined : onDone} />}>
+    <Screen header={<Header title={mode === 'CANCEL' ? t('request.titleCancel') : t('request.titleProblem')} onBack={busy || waitingId ? undefined : onDone} />}>
       {mode === 'CANCEL' ? (
         <Card style={{ borderColor: colors.danger, borderWidth: 2 }}>
           <Text style={{ fontSize: 18, fontWeight: '800', color: colors.danger }}>{t('request.remindTitle')}</Text>
@@ -139,10 +163,12 @@ export function RequestScreen({ orderId, mode, onDone }: { orderId: number; mode
       <Button
         variant={mode === 'CANCEL' ? 'danger' : 'primary'}
         label={mode === 'CANCEL' ? t('request.submitCancel') : t('request.submit')}
-        busy={busy}
-        disabled={reason === null || needsComment || priceInvalid || busy}
+        busy={busy || !!waitingId}
+        disabled={reason === null || needsComment || priceInvalid || busy || !!waitingId}
         onPress={() => reason !== null && void send(reason)}
       />
+      {waitingId ? <Note tone="warn">{t('order.uncertain')}</Note> : null}
+      {failure ? <Note tone="danger">{t('order.failed', { reason: t(`errors.${failure}`) })}</Note> : null}
     </Screen>
   )
 }

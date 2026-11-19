@@ -3,7 +3,7 @@ import { describe, it } from 'node:test'
 import { measureClock, secondsLeft } from '../src/domain/countdown'
 import { addFixes, nextChunk, removeSent, MAX_FIXES_PER_REQUEST, type Fix } from '../src/location/buffer'
 import { fixIsDue, jittered, keepFix, needsRestart, osIntervalSeconds, DEFAULT_POLICY, IDLE_OS_SECONDS } from '../src/location/policy'
-import { reconcile, type PendingAction } from '../src/state/pendingActions'
+import { dueForRetry, isBusy, isNewerSnapshot, latestFor, reconcile, track, RETRY_GAP_MS, type PendingAction, type ServerView } from '../src/state/pendingActions'
 
 describe('countdown uses the server clock', () => {
   it('a phone 5 minutes slow still shows the true remaining time (minus a 1 s margin)', () => {
@@ -81,16 +81,88 @@ describe('tracking policy', () => {
 describe('pending actions never show success the server did not confirm', () => {
   const accept: PendingAction = { id: 'a', kind: 'ACCEPT', idempotencyKey: 'k1', targetId: 'offer-1', payload: {}, status: 'UNCERTAIN', errorCode: null, createdAt: 0 }
   it('uncertain accept → confirmed only when the server shows the order', () => {
-    assert.equal(reconcile([accept], { currentOfferId: null, activeOrderId: 12, activeOrderStatus: 'ASSIGNED' })[0].status, 'CONFIRMED')
+    assert.equal(reconcile([accept], { currentOfferId: null, activeOrderId: 12, activeOrderStatus: 'ASSIGNED', activeOrderAgreedAmd: null })[0].status, 'CONFIRMED')
   })
   it('uncertain accept → failed when the offer is gone and no order exists', () => {
-    const [r] = reconcile([accept], { currentOfferId: null, activeOrderId: null, activeOrderStatus: null })
+    const [r] = reconcile([accept], { currentOfferId: null, activeOrderId: null, activeOrderStatus: null, activeOrderAgreedAmd: null })
     assert.equal(r.status, 'FAILED')
     assert.equal(r.errorCode, 'OFFER_EXPIRED')
   })
   it('still offered → stays uncertain (retry with the SAME key)', () => {
-    const [r] = reconcile([accept], { currentOfferId: 'offer-1', activeOrderId: null, activeOrderStatus: null })
+    const [r] = reconcile([accept], { currentOfferId: 'offer-1', activeOrderId: null, activeOrderStatus: null, activeOrderAgreedAmd: null })
     assert.equal(r.status, 'UNCERTAIN')
     assert.equal(r.idempotencyKey, 'k1')
+  })
+})
+
+describe('pending actions on the order (2026-11-19)', () => {
+  const base: PendingAction = { id: 'p', kind: 'PROGRESS', idempotencyKey: 'kp', targetId: '12', payload: { action: 'ARRIVED', fromStatus: 'EN_ROUTE' }, status: 'UNCERTAIN', errorCode: null, createdAt: 0 }
+  const view = (patch: Partial<ServerView> = {}): ServerView => ({ currentOfferId: null, activeOrderId: 12, activeOrderStatus: 'EN_ROUTE', activeOrderAgreedAmd: null, ...patch })
+
+  it('an uncertain step is confirmed once the order moved on — the next step is not locked', () => {
+    assert.equal(reconcile([base], view({ activeOrderStatus: 'ARRIVED' }))[0].status, 'CONFIRMED')
+    assert.equal(reconcile([base], view({ activeOrderId: null, activeOrderStatus: null }))[0].status, 'CONFIRMED', 'order over')
+  })
+  it('…and stays uncertain (same key, re-sent) while the order still waits for it', () => {
+    const [r] = reconcile([base], view())
+    assert.equal(r.status, 'UNCERTAIN')
+    assert.equal(r.idempotencyKey, 'kp')
+  })
+  it('an uncertain price is confirmed when the order shows it', () => {
+    const price: PendingAction = { ...base, id: 'pr', kind: 'PRICE', payload: { agreedPriceAmd: 15000 } }
+    assert.equal(reconcile([price], view({ activeOrderAgreedAmd: 15000 }))[0].status, 'CONFIRMED')
+    assert.equal(reconcile([price], view({ activeOrderAgreedAmd: 12000 }))[0].status, 'UNCERTAIN')
+  })
+  it('an uncertain request is confirmed when the order is no longer his', () => {
+    const request: PendingAction = { ...base, id: 'rq', kind: 'REQUEST', payload: { body: { kind: 'CANCEL' } } }
+    assert.equal(reconcile([request], view({ activeOrderId: null }))[0].status, 'CONFIRMED')
+    assert.equal(reconcile([request], view())[0].status, 'UNCERTAIN')
+  })
+
+  it('re-sends an uncertain action — but not more often than the gap', () => {
+    const just = { ...base, lastAttemptAt: 10_000 }
+    assert.deepEqual(dueForRetry([just], 10_000 + RETRY_GAP_MS - 1), [])
+    assert.equal(dueForRetry([just], 10_000 + RETRY_GAP_MS).length, 1)
+    assert.equal(dueForRetry([{ ...just, status: 'SENDING' }], 99_999).length, 0, 'in flight')
+    assert.equal(dueForRetry([just], 10_001, 0).length, 1, 'reconnect: at once')
+  })
+
+  it('a second tap while one is on its way is busy; a settled one is not', () => {
+    assert.equal(isBusy([{ ...base, status: 'SENDING' }], 'PROGRESS', '12'), true)
+    assert.equal(isBusy([base], 'PROGRESS', '12'), true, 'uncertain')
+    assert.equal(isBusy([{ ...base, status: 'FAILED' }], 'PROGRESS', '12'), false)
+    assert.equal(isBusy([{ ...base, status: 'SENDING' }], 'PROGRESS', '13'), false, 'another order')
+  })
+
+  it('a new action replaces the old settled ones of its kind — an old failure does not stay under the next step', () => {
+    const failed = { ...base, id: 'old', status: 'FAILED' as const, errorCode: 'CONFLICT' }
+    const price = { ...base, id: 'price', kind: 'PRICE' as const, status: 'FAILED' as const }
+    const next = { ...base, id: 'new', status: 'SENDING' as const, createdAt: 5 }
+    const list = track([failed, price], next)
+    assert.deepEqual(list.map((a) => a.id).sort(), ['new', 'price'])
+    assert.equal(latestFor(list, 'PROGRESS', '12')?.id, 'new')
+  })
+  it('keeps the settled tail bounded over a long shift', () => {
+    let list: PendingAction[] = []
+    for (let i = 0; i < 100; i++) list = track(list, { ...base, id: `a${i}`, targetId: String(i), status: 'CONFIRMED', createdAt: i })
+    assert.ok(list.length <= 21)
+    assert.equal(latestFor(list, 'PROGRESS', '99')?.id, 'a99')
+  })
+  it('latestFor picks the newest, not the first in the list', () => {
+    const older = { ...base, id: 'x', status: 'FAILED' as const, createdAt: 1 }
+    const newer = { ...base, id: 'y', status: 'SENDING' as const, createdAt: 2 }
+    assert.equal(latestFor([older, newer], 'PROGRESS', '12')?.id, 'y')
+    assert.equal(latestFor([newer, older], 'PROGRESS', '12')?.id, 'y')
+  })
+})
+
+describe('out-of-order snapshots are dropped (2026-11-19)', () => {
+  it('applies the same or a newer server time, drops an older one', () => {
+    const t = Date.parse('2026-11-19T10:00:05.000Z')
+    assert.equal(isNewerSnapshot('2026-11-19T10:00:05.000Z', t), true)
+    assert.equal(isNewerSnapshot('2026-11-19T10:00:06.000Z', t), true)
+    assert.equal(isNewerSnapshot('2026-11-19T10:00:04.999Z', t), false)
+    assert.equal(isNewerSnapshot('2026-11-19T10:00:00.000Z', null), true, 'first one')
+    assert.equal(isNewerSnapshot('garbage', t), true, 'never blocks on a bad stamp')
   })
 })

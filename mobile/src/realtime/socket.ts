@@ -58,7 +58,3 @@ export function connectRealtime(options: {
     socket?.close(1000)
   }
 }
-
-export function sendAck(socket: WebSocket | null, offerId: string): void {
-  socket?.send(JSON.stringify({ type: 'ack', offerId }))
-}

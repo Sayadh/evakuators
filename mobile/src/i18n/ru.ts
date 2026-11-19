@@ -187,6 +187,7 @@ export const ru: Dictionary = {
       CANCELLED: 'Отменён',
     },
     pending: 'Отправка…',
+    uncertain: 'Связь прервалась. Проверяем, дошло ли, и отправим снова автоматически…',
     failed: 'Не удалось. {reason}',
   },
   request: {

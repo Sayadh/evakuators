@@ -48,6 +48,19 @@ const EXACT = new Set(['/', '/regions', '/yerevan', '/evakuator'])
  */
 const LOCALE_PREFIX = /^\/(ru|en)(?=\/|$)/
 
+/**
+ * Site design 2 (2026-11-18, phone first): the floating call button on EVERY
+ * visitor page, phones only — except the driver's and the operator's own
+ * pages, where it would be a button for calling ourselves.
+ */
+const NEVER_PREFIXES = ['/admin', '/dashboard', '/driver-app', '/payment', '/login']
+
+export function showsDispatchBarForDesign(path: string, phoneFirst: boolean): boolean {
+  if (!phoneFirst) return showsDispatchBar(path)
+  const normalized = (path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path).replace(LOCALE_PREFIX, '') || '/'
+  return !NEVER_PREFIXES.some((prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`))
+}
+
 export function showsDispatchBar(path: string): boolean {
   // Trailing slash is not a different page; Nuxt will serve both.
   const trimmed = path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path

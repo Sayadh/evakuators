@@ -803,3 +803,13 @@ Set via PM2's `env` block in production, or a local `.env` for dev:
 | `NUXT_PUBLIC_API_BASE_URL` | Full backend URL including `/api/v1`, as the **browser** calls it. Empty = mock mode (see `docs/architecture.md`) |
 | `NUXT_INTERNAL_API_BASE_URL` | Same API as the **server** calls it during SSR — `http://127.0.0.1:4002/api/v1` in production. Empty = fall back to the public URL (fine locally, where both are localhost). Not optional in production: without it every server-rendered page shares one rate-limit bucket, see `docs/auth-and-security.md` § "SSR is exempt" |
 | `PORT` | Reserved `3002` |
+
+## Site design switch (2026-11-18)
+
+`/admin` → «Կայքի դիզայն»՝ դիզայն 1 / դիզայն 2 (ADMIN only)։ Պահվում է `SiteSetting` աղյուսակում
+(raw SQL, schema.prisma-ում չկա, migration `20261118110000_site_settings`), կարդացվում է
+`GET /api/v1/site-settings`-ով ամեն էջի SSR-ի ժամանակ (backend-ում 10 վ cache, գրելիս մաքրվում է)։
+Դիզայն 2՝ «Ազատ երթուղիներ» և «Գտնել մոտակա» կոճակները թաքցված են ամենուր (hero, «nearest» բաններներ,
+/links)՝ բայց ոչ մենյուում (header և հեռախոսի մենյու՝ նույնը երկու դիզայնում), hero-ն լրացնում է առաջին էկրանը (մեծ վերնագիր, տեքստ, կետեր) և հեռախոսահամարը՝ մեծ դեղին կոճակ hero-ում, «Զանգահարել» բաններներ, header-ում մեծ դեղին
+համար (միայն համակարգչում, հեռախոսում header-ում չկա), հեռախոսներում զանգի կոճակ բոլոր այցելուի էջերում։ /free-routes և /evakuator էջերը բացվում են
+ուղիղ հղումով։ Գլխավոր էջի մարզերի բաժնում «Ընտրեք ձեր տարածքը» վերնագիրը թաքցված է (visually-hidden), քարտերում քաղաքների chip-երը չկան։ Frontend՝ `composables/useSiteDesign.ts`, `plugins/site-settings.ts`։

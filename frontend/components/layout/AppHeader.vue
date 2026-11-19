@@ -13,6 +13,8 @@ watch(
     isMobileMenuOpen.value = false
   },
 )
+// The nav is the same in both site designs (owner's call, 2026-11-18)
+const navLinks = NAV_LINKS
 </script>
 
 <template>
@@ -23,7 +25,7 @@ watch(
       </NuxtLinkLocale>
 
       <nav class="header__nav" :aria-label="t('a11y.mainNav')">
-        <NuxtLinkLocale v-for="link in NAV_LINKS" :key="link.to" :to="link.to" class="header__link">
+        <NuxtLinkLocale v-for="link in navLinks" :key="link.to" :to="link.to" class="header__link">
           {{ t(link.labelKey) }}
         </NuxtLinkLocale>
       </nav>

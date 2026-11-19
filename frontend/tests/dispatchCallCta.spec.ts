@@ -40,7 +40,8 @@ describe('DispatchCallCta wiring', () => {
     // slips in unclassed.
     const anchors = component.match(/:href="phoneHref"/g) ?? []
     const classed = component.match(/class="dispatch-cta__call/g) ?? []
-    expect(anchors.length).toBe(5)
+    // 6 since 2026-11-18: `primary`, site design 2's big gold button
+    expect(anchors.length).toBe(6)
     expect(classed.length).toBe(anchors.length)
   })
 
@@ -156,7 +157,8 @@ describe('DispatchCallCta placements', () => {
   })
 
   it('renders the floating button once, in the layout, behind the route rule', () => {
-    expect(layout).toContain('showsDispatchBar(route.path)')
+    // Through the design-aware rule since 2026-11-18 (design 2: every visitor page)
+    expect(layout).toContain('showsDispatchBarForDesign(route.path')
     expect(layout).toContain('<DispatchCallCta v-if="showDispatchBar" variant="bar" />')
   })
 

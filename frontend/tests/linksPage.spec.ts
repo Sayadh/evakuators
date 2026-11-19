@@ -22,7 +22,8 @@ describe('/links', () => {
     // prompt on a page nobody opened for that, and a browser that refuses once
     // remembers — which would cost the site the prompt it wants on the page
     // where the visitor chose this.
-    expect(page).toContain('<NuxtLinkLocale to="/evakuator"')
+    // Hidden in site design 2 (2026-11-18), hence the v-if
+    expect(page).toContain('<NuxtLinkLocale v-if="!phoneFirst" to="/evakuator"')
     expect(page).not.toContain('useGeolocation(')
     expect(page).not.toContain('useNearestSearch(')
   })
@@ -32,7 +33,7 @@ describe('/links', () => {
     // and the borrowed one is what makes someone recognise the thing. Taking
     // the heading rather than retyping it is what keeps the two pages calling
     // it the same thing.
-    expect(page).toContain('<NuxtLinkLocale to="/free-routes"')
+    expect(page).toContain('<NuxtLinkLocale v-if="!phoneFirst" to="/free-routes"')
     expect(page).toContain("t('freeRoutes.h1')")
     expect(page).not.toContain('Ազատ երթուղ')
   })

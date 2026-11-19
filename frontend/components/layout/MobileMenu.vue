@@ -11,6 +11,8 @@ interface Props {
 defineProps<Props>()
 
 const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
+// The nav is the same in both site designs (owner's call, 2026-11-18)
+const navLinks = NAV_LINKS
 </script>
 
 <template>
@@ -22,7 +24,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
   >
     <nav class="mobile-menu" :aria-label="t('a11y.mobileNav')">
       <NuxtLinkLocale
-        v-for="link in NAV_LINKS"
+        v-for="link in navLinks"
         :key="link.to"
         :to="link.to"
         class="mobile-menu__link"

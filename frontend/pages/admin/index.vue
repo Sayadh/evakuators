@@ -1496,6 +1496,14 @@ async function rejectReview(review: AdminReview): Promise<void> {
     </div>
 
     <template v-else>
+      <!-- Site design switch (2026-11-18): design 1 / design 2 — components/admin/SiteDesignSwitch.vue -->
+      <section v-if="adminAuth.role === 'ADMIN'" class="admin-section">
+        <div class="admin-section__header">
+          <h2>Կայքի դիզայն</h2>
+        </div>
+        <SiteDesignSwitch />
+      </section>
+
       <!-- Site traffic first: it's the question the panel gets opened for -->
       <section class="admin-section">
         <div class="admin-section__header">

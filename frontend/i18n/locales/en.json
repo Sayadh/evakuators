@@ -93,7 +93,9 @@
     "callUs": "Call us",
     "callUsWithNumber": "Call us: {phone}",
     "modalText": "Our dispatcher will pick a suitable tow truck and put you in touch with the driver.",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "bannerTitle": "Not sure which tow truck to pick?",
+    "bannerText": "Call us — we will find the nearest free tow truck and put you in touch with the driver."
   },
   "vehicleTypeNav": {
     "manipulator": "Crane trucks",

@@ -7,6 +7,8 @@ import { getCityRoute, getDistrictRoute, getRegionRoute, getYerevanRoute } from 
 const { t, locale } = useI18n()
 const plural = usePlural()
 const placeName = usePlaceName()
+// Site design 2 (2026-11-18): no section title on screen and no town chips in the cards
+const { phoneFirst } = useSiteDesign()
 
 const { data: regions, pending } = useRegions()
 // Distinct trucks serving Yerevan (servesYerevan) — NOT a sum of each
@@ -79,7 +81,8 @@ const cards = computed<AreaCard[]>(() => {
 <template>
   <section id="areas" class="areas section" aria-labelledby="areas-title">
     <div class="container">
-      <h2 id="areas-title" class="section-title">{{ t('home.chooseArea') }}</h2>
+      <!-- Design 2: kept for screen readers and the hero's #areas-title anchor, hidden on screen -->
+      <h2 id="areas-title" class="section-title" :class="{ 'visually-hidden': phoneFirst }">{{ t('home.chooseArea') }}</h2>
 
       <div v-if="pending" class="areas__grid">
         <LoadingSkeleton variant="card" :count="8" />
@@ -95,7 +98,7 @@ const cards = computed<AreaCard[]>(() => {
             <AppIcon name="truck" :size="16" />
             {{ plural('card.towTrucks', card.truckCount) }}
           </p>
-          <ul class="area-card__towns" :aria-label="card.name">
+          <ul v-if="!phoneFirst" class="area-card__towns" :aria-label="card.name">
             <li v-for="place in card.places" :key="place.slug">
               <NuxtLinkLocale :to="place.to" class="area-card__town">{{ place.label }}</NuxtLinkLocale>
             </li>

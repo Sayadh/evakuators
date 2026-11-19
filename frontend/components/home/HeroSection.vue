@@ -1,11 +1,15 @@
 <script setup lang="ts">
 /** Static copy lives in i18n/locales — see nuxt.config's i18n block */
 const { t } = useI18n()
+// Site design (2026-11-18, switched in /admin): 2 = phone first — no routes / nearest buttons, the number leads
+const { phoneFirst } = useSiteDesign()
 </script>
 
 <template>
-  <section class="hero">
-    <div class="container">
+  <!-- Design 2: a calmer, centred hero — title, one gold call button, search,
+       three reassurance chips. No «choose your area» hint, no forced height. -->
+  <section class="hero" :class="{ 'hero--phone': phoneFirst }">
+    <div class="container hero__inner">
       <div class="hero__content">
         <!-- The brand is IN the H1, not only in the header logo, because this
              is the site's single most authoritative line of text about itself —
@@ -28,7 +32,11 @@ const { t } = useI18n()
       <!-- Three buttons above the search (2026-11-12): shared routes (white,
            first), «nearest» (gold) and our own number (outlined). The region
            cards right under this hero are the next way in. -->
-      <div class="hero__actions">
+      <!-- Design 2 (phone first, 2026-11-18): our number is the one big action -->
+      <div v-if="phoneFirst" class="hero__actions hero__actions--phone">
+        <DispatchCallCta variant="primary" />
+      </div>
+      <div v-else class="hero__actions">
         <!-- Shared routes («Պապուտի», 2026-11-12; label = the page's own H1): a driver already heading
              somewhere takes a car on the way, usually cheaper. FIRST and
              solid white (2026-11-12, owner's call): it has to be seen. -->
@@ -55,7 +63,8 @@ const { t } = useI18n()
            JavaScript, and the page's global `scroll-behavior: smooth` animates
            it. It lands on the section's heading, which carries a
            `scroll-margin-top` that leaves the whole hero above the fold. -->
-      <a href="#areas-title" class="hero__more">
+      <!-- Design 2: no hint — the call button is the page's one action -->
+      <a v-if="!phoneFirst" href="#areas-title" class="hero__more">
         {{ t('home.chooseArea') }}
         <AppIcon name="chevron-down" :size="30" class="hero__more-icon" />
       </a>
@@ -359,6 +368,104 @@ const { t } = useI18n()
 
   50% {
     transform: translateY(3px);
+  }
+}
+.hero__actions--phone {
+  justify-content: center;
+  margin-block: var(--space-4);
+}
+
+// Design 2 (2026-11-18): one centred column, sized by its content (no
+// forced 100vh — that only produced an empty band under the hint).
+.hero--phone {
+  position: relative;
+  overflow: hidden;
+  // Generous top/bottom room (owner's call, 2026-11-18). The phone's bottom
+  // value also clears the floating call button that overlaps the hero's end.
+  padding: var(--space-8) 0 calc(var(--space-8) + var(--space-4));
+
+  @media (max-width: 639px) {
+    padding: var(--space-7) 0 calc(var(--space-8) + var(--space-4));
+  }
+
+  // A soft gold glow behind the call button: depth without a picture
+  &::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 46%;
+    width: min(900px, 140vw);
+    height: 520px;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(closest-side, rgba(246, 168, 33, 0.14), transparent 70%);
+    pointer-events: none;
+  }
+
+  .hero__inner {
+    position: relative;
+  }
+
+  .hero__content {
+    max-width: 780px;
+    margin-bottom: var(--space-5);
+  }
+
+  .hero__title {
+    font-size: clamp(1.9rem, 3.4vw, 2.6rem);
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    margin-bottom: var(--space-3);
+
+    @media (max-width: 767px) {
+      font-size: clamp(24px, 6.6vw, 28px);
+      line-height: 1.25;
+    }
+  }
+
+  .hero__subtitle {
+    max-width: 620px;
+    margin-inline: auto;
+    font-size: 1.1rem;
+    line-height: 1.55;
+    color: rgba(255, 255, 255, 0.78);
+
+    @media (max-width: 767px) {
+      display: block;
+      font-size: 15px;
+    }
+  }
+
+  .hero__actions--phone {
+    margin-block: 0 var(--space-6);
+
+    @media (max-width: 639px) {
+      margin-bottom: var(--space-5);
+    }
+  }
+
+  .hero__search {
+    max-width: 560px;
+  }
+
+  // Three quiet chips instead of a loose row of text
+  .hero__points {
+    gap: var(--space-2);
+    margin-top: var(--space-5);
+
+    li {
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      font-size: 0.88rem;
+      color: rgba(255, 255, 255, 0.9);
+
+      @media (max-width: 639px) {
+        font-size: 0.8rem;
+        padding: 5px 11px;
+      }
+    }
   }
 }
 </style>

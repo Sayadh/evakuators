@@ -65,12 +65,20 @@ interface Props {
    *              that is deliberately filled and first (see its rule in the
    *              stylesheet for why that does not contradict the hero's).
    */
-  variant: 'header' | 'hero' | 'bar' | 'empty' | 'links'
+  variant: 'header' | 'hero' | 'bar' | 'empty' | 'links' | 'primary'
 }
+/*
+ * `primary` (2026-11-18, site design 2 — composables/useSiteDesign.ts): the
+ * number as THE call to action — a big filled gold button, «Զանգահարել մեզ»
+ * above the number. Used by the hero and by the «call us» banners that take
+ * the «nearest» banners' place in that design.
+ */
 
 const props = defineProps<Props>()
 
 const phoneHref = getPhoneHref(CONTACT_PHONE)
+// Design 2 (phone first): the header number is larger, gold and shown on phones too
+const { phoneFirst } = useSiteDesign()
 
 /**
  * Whether the floating button's confirmation is open.
@@ -100,6 +108,7 @@ function onClick(): void {
     v-if="variant === 'header'"
     :href="phoneHref"
     class="dispatch-cta__call dispatch-cta__call--header"
+    :class="{ 'dispatch-cta__call--header-big': phoneFirst }"
     :aria-label="t('dispatch.callUsWithNumber', { phone: CONTACT_PHONE })"
     @click="onClick"
   >
@@ -177,6 +186,22 @@ function onClick(): void {
        this is a page someone scans with a thumb, and a line of copy under
        the one green thing on it only delays the press. The `aria-label`
        still says «Զանգահարել մեզ՝ +374…», so what it does is spoken. -->
+  <!-- Design 2's main call to action: big, filled, gold — the brand's accent, not the «links» green -->
+  <!-- The «Զանգահարել մեզ» line sits ABOVE the button (owner's call,
+       2026-11-18): inside it, a small label over a big number looked cramped. -->
+  <div v-else-if="variant === 'primary'" class="dispatch-cta__primary">
+    <span class="dispatch-cta__primary-label">{{ t('dispatch.callUs') }}</span>
+    <a
+      :href="phoneHref"
+      class="dispatch-cta__call dispatch-cta__call--primary"
+      :aria-label="t('dispatch.callUsWithNumber', { phone: CONTACT_PHONE })"
+      @click="onClick"
+    >
+      <AppIcon name="phone" :size="24" />
+      <span class="dispatch-cta__number">{{ CONTACT_PHONE }}</span>
+    </a>
+  </div>
+
   <a
     v-else-if="variant === 'links'"
     :href="phoneHref"
@@ -428,6 +453,73 @@ function onClick(): void {
     @media (min-width: 768px) {
       display: inline;
     }
+  }
+}
+
+/* ---- primary (site design 2, 2026-11-18): the number IS the main action ---- */
+.dispatch-cta__primary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.dispatch-cta__primary-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: inherit;
+  opacity: 0.85;
+}
+
+.dispatch-cta__call--primary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 14px var(--space-6, 32px);
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  color: var(--color-primary-dark, #0f2338);
+  box-shadow: 0 10px 28px rgba(246, 168, 33, 0.35);
+  font-size: 1.35rem;
+  line-height: 1.1;
+
+  &:hover {
+    filter: brightness(1.05);
+    color: var(--color-primary-dark, #0f2338);
+  }
+
+  .dispatch-cta__number {
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+  }
+
+  @media (min-width: 768px) {
+    font-size: 1.6rem;
+  }
+}
+
+/* ---- header in design 2: larger, gold — desktop only. On a phone it is hidden
+   (owner's call, 2026-11-18): the floating call button and the hero's big
+   gold button already carry the number there. ---- */
+.dispatch-cta__call--header.dispatch-cta__call--header-big {
+  background: var(--color-accent);
+  color: var(--color-primary-dark, #0f2338);
+  font-size: 1rem;
+  border-radius: var(--radius-full);
+
+  &:hover {
+    background: var(--color-accent);
+    filter: brightness(1.05);
+  }
+
+  .dispatch-cta__number {
+    display: inline;
+  }
+
+  @media (max-width: 767px) {
+    display: none;
   }
 }
 </style>

@@ -68,7 +68,10 @@ async function bootstrap(): Promise<void> {
 
   app.enableCors({
     origin: config.getOrThrow<string[]>('corsOrigins'),
-    methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+    // PUT is needed by the admin panel (site design, wallet credit limit, order
+    // rating). Without it the browser's preflight fails with a CORS error,
+    // because the frontend calls api.evakuators.am from another origin.
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   })
 
   app.useGlobalPipes(

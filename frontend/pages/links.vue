@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { SITE_NAME, SOCIAL_LINKS } from '~/constants/site'
 
+// Site design 2 (2026-11-18): no «free routes» / «nearest» entries — composables/useSiteDesign.ts
+const { phoneFirst } = useSiteDesign()
+
 /**
  * The link-in-bio page — what an Instagram or TikTok profile points at, since
  * those bios allow exactly one URL and we have six destinations.
@@ -155,7 +158,7 @@ const siteHost = SITE_NAME.toLowerCase()
            called; the borrowed one is what makes someone recognise it, and a
            card that dropped it would be naming a thing its reader has heard of
            under a name they have not. -->
-      <NuxtLinkLocale to="/free-routes" class="free">
+      <NuxtLinkLocale v-if="!phoneFirst" to="/free-routes" class="free">
         <span class="free__plate" aria-hidden="true">
           <AppIcon name="truck" :size="22" />
         </span>
@@ -183,7 +186,7 @@ const siteHost = SITE_NAME.toLowerCase()
            false: that is the site-wide decision recorded in
            `constants/features.ts` — the entry points stay, and the page they
            lead to says the feature is coming. -->
-      <NuxtLinkLocale to="/evakuator" class="near">
+      <NuxtLinkLocale v-if="!phoneFirst" to="/evakuator" class="near">
         <span class="near__plate" aria-hidden="true">
           <AppIcon name="map-pin" :size="22" />
         </span>

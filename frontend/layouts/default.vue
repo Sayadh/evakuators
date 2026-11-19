@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { showsDispatchBar } from '~/utils/showsDispatchBar'
+import { showsDispatchBarForDesign } from '~/utils/showsDispatchBar'
 
 const route = useRoute()
 
@@ -11,7 +11,9 @@ const route = useRoute()
  * the message twice. The banner is gone, so the button is now the one offer on
  * those pages and has no reason to wait.
  */
-const showDispatchBar = computed(() => showsDispatchBar(route.path))
+// Site design 2 (2026-11-18): on every visitor page — utils/showsDispatchBar.ts
+const { phoneFirst } = useSiteDesign()
+const showDispatchBar = computed(() => showsDispatchBarForDesign(route.path, phoneFirst.value))
 </script>
 
 <template>

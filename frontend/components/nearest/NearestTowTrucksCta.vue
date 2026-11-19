@@ -36,13 +36,20 @@ interface Props {
 }
 
 withDefaults(defineProps<Props>(), { variant: 'banner', withRoutes: false })
+// Site design 2 (2026-11-18): no «nearest» / routes buttons anywhere — a «call us» banner takes this block's place
+const { phoneFirst } = useSiteDesign()
 </script>
 
 <template>
   <!-- Rendered unconditionally, including while NEAREST_SEARCH_ENABLED is
        false: this block is how a visitor finds out the feature is coming, and
        the page it links to says so plainly. See constants/features.ts. -->
-  <div class="nearest-cta" :class="[`nearest-cta--${variant}`, { 'nearest-cta--with-routes': withRoutes }]">
+  <div v-if="phoneFirst" class="call-cta" :class="`call-cta--${variant}`">
+    <p class="call-cta__title">{{ t('dispatch.bannerTitle') }}</p>
+    <p class="call-cta__text">{{ t('dispatch.bannerText') }}</p>
+    <DispatchCallCta variant="primary" />
+  </div>
+  <div v-else class="nearest-cta" :class="[`nearest-cta--${variant}`, { 'nearest-cta--with-routes': withRoutes }]">
     <NuxtLinkLocale v-if="withRoutes" to="/free-routes" class="nearest-cta__routes">
       <AppIcon name="truck" :size="20" />
       {{ t('freeRoutes.h1') }}
@@ -170,5 +177,43 @@ withDefaults(defineProps<Props>(), { variant: 'banner', withRoutes: false })
   &--inline {
     display: block;
   }
+}
+
+/* Site design 2 (2026-11-18): the «call us» banner in place of «nearest» */
+.call-cta {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-4);
+  border-radius: var(--radius-lg, 16px);
+  background: linear-gradient(160deg, var(--color-primary-dark) 0%, var(--color-primary) 100%);
+  color: #fff;
+  text-align: center;
+
+  &__title {
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 700;
+  }
+
+  &__text {
+    margin: 0 0 var(--space-2);
+    max-width: 520px;
+    font-size: 0.92rem;
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  &--inline {
+    padding: var(--space-4) var(--space-3);
+
+    :deep(.dispatch-cta__call--primary) {
+      font-size: 1.15rem;
+    }
+  }
+}
+
+// The banner's own text already says «call us» — no second label above the button
+.call-cta :deep(.dispatch-cta__primary-label) {
+  display: none;
 }
 </style>

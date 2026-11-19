@@ -90,7 +90,7 @@ function buildArmenian(): PriceGuideContent {
     tableTitle: 'Բնորոշ գներն ըստ ծառայության',
     columns: { service: 'Ծառայություն', range: 'Բնորոշ գին', median: 'Միջին' },
     rows: [
-      row('cityCallout', 'Կանչ քաղաքի ներսում', 'Մեկնարկային գին', city, formatPrice(P.cityCallout.median)),
+      row('cityCallout', 'Կանչ քաղաքի ներսում', 'Նվազագույն գին՝ մոտավորապես մինչև 3 կմ', city, formatPrice(P.cityCallout.median)),
       row(
         'largerTruckCallout',
         'Կանչ 3.5 տոննայից մեծ էվակուատորով',
@@ -184,7 +184,7 @@ function buildRussian(): PriceGuideContent {
     tableTitle: 'Типичные цены по услугам',
     columns: { service: 'Услуга', range: 'Типичная цена', median: 'В среднем' },
     rows: [
-      row('cityCallout', 'Вызов по городу', 'Начальная цена', city, formatPrice(P.cityCallout.median)),
+      row('cityCallout', 'Вызов по городу', 'Минимальная цена, примерно до 3 км', city, formatPrice(P.cityCallout.median)),
       row(
         'largerTruckCallout',
         'Вызов эвакуатора грузоподъёмностью более 3,5 т',

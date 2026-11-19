@@ -117,6 +117,10 @@
     "kindDistrict": "district",
     "kindCity": "town"
   },
+  "appStatus": {
+    "free": "Available",
+    "busy": "Busy"
+  },
   "card": {
     "towTrucks": {
       "one": "{count} tow truck",

@@ -799,6 +799,25 @@ has to justify it. When a distance feature eventually needs these, what it needs
 is a *distance* — a number the backend can return without handing out the point
 it was computed from.
 
+### `appStatus` — «Ազատ է / Զբաղված է» (2026-11-19)
+
+Both the card and the profile carry an optional `appStatus: 'FREE' | 'BUSY'`,
+read from the driver app's live state **at request time** (one raw-SQL query per
+page, `backend/src/tow-trucks/app-status.ts`). It is not pushed and not refreshed
+while a page stays open. The key is **absent** — not `null` — for:
+
+- a truck with no ACTIVE `FleetDriver` (no app), or a suspended app access;
+- a driver who is Offline (`wantsOnline = false`), including auto-offline;
+- a driver silent for over 7 days, or blocked from orders by an operator;
+- every truck while `LIVE_DISPATCH_ENABLED` is not `true`.
+
+`BUSY` = an open `OrderAssignment` or `externalBusy`; otherwise an Online driver
+is `FREE` — including one whose phone lost connection (owner's decision; auto-
+offline handles a phone that stopped receiving offers). It publishes the two
+words only: no location, order or timestamp. A failing query never fails the
+listing — cards go out without the key. Real-Postgres test:
+`backend/test-live/app-status.integration.test.ts`.
+
 ## Pagination
 
 - **Public listing** — `limit` defaults to 200 and is capped at 200, with an

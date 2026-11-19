@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { ReviewsRepository } from '../reviews/reviews.repository'
 import type { ListTowTrucksQuery } from './dto/list-tow-trucks.query'
+import { appStatusEnabled, appStatusOf, type AppStatus } from './app-status'
 import { pickListingOrder, type ListingPlace } from './listing-order'
 import { toTowTruckApi, toTowTruckCardApi, toTowTruckCoverageApi } from './tow-truck.mapper'
 import type {
@@ -50,7 +51,7 @@ export class TowTrucksService {
       )
     }
 
-    const cards = await this.attachRatings(trucks)
+    const cards = await this.withAppStatus(await this.attachRatings(trucks))
 
     return this.ordered(cards, query)
   }
@@ -101,7 +102,8 @@ export class TowTrucksService {
     if (!truck) {
       throw new NotFoundException('Էվակուատորը չի գտնվել')
     }
-    return toTowTruckApi(truck)
+    const [profile] = await this.withAppStatus([toTowTruckApi(truck)])
+    return profile!
   }
 
   /**
@@ -129,7 +131,27 @@ export class TowTrucksService {
    */
   async getCardsByIds(ids: number[]): Promise<TowTruckCardApi[]> {
     const trucks = await this.repository.findCardsByIds(ids)
-    return this.attachRatings(trucks)
+    return this.withAppStatus(await this.attachRatings(trucks))
+  }
+
+  /**
+   * «Ազատ է / Զբաղված է» (app-status.ts): one query for the whole page. A
+   * driver without the app gets no key. Never fails the listing — if the
+   * live-dispatch tables are missing or the query errors, cards go out as before.
+   */
+  private async withAppStatus<T extends { id: number; appStatus?: AppStatus }>(cards: T[]): Promise<T[]> {
+    if (cards.length === 0 || !appStatusEnabled()) return cards
+    try {
+      const rows = await this.repository.findAppPresence(cards.map((card) => card.id))
+      const statusById = new Map(rows.map((row) => [Number(row.towTruckId), appStatusOf(row)]))
+      return cards.map((card) => {
+        const status = statusById.get(card.id)
+        return status ? { ...card, appStatus: status } : card
+      })
+    } catch (error) {
+      this.logger.warn(`App status skipped: ${error instanceof Error ? error.message : String(error)}`)
+      return cards
+    }
   }
 
 

@@ -158,8 +158,13 @@ export interface TowTruckCoverage extends TowTruckGeography {
  * `TowTruck` extends this, so anything typed `TowTruckCard` also accepts a full
  * profile object — including the local mock fixtures, which are full objects.
  */
+/** Driver-app state at request time — mirrors backend `tow-trucks/app-status.ts` */
+export type AppStatus = 'FREE' | 'BUSY'
+
 export interface TowTruckCard {
   id: number
+  /** Absent for drivers without the app, or Offline — show nothing then */
+  appStatus?: AppStatus
   slug: string
   driverName: string
   companyName?: string

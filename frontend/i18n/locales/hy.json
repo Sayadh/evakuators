@@ -117,6 +117,10 @@
     "kindDistrict": "վարչական շրջան",
     "kindCity": "քաղաք"
   },
+  "appStatus": {
+    "free": "Ազատ է",
+    "busy": "Զբաղված է"
+  },
   "card": {
     "towTrucks": {
       "one": "{count} էվակուատոր"

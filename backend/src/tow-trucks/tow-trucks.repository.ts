@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common'
 import type { DeactivationReason, DriverPrivacyConsent, Prisma, TowTruck } from '@prisma/client'
 import { IMAGE_ORDER } from '../images/image-order'
+import { pgArray } from '../live-dispatch/platform/sql'
+import { APP_PRESENCE_SQL, APP_STATUS_MAX_SILENCE_SECONDS, type AppPresenceRow } from './app-status'
 import { sqlUtc } from '../common/sql-utc'
 import { PrismaService } from '../prisma/prisma.service'
 import { PRIVACY_POLICY_VERSION } from '../privacy-consent/privacy-consent.text'
@@ -183,6 +185,20 @@ export class TowTrucksRepository {
       where: { slug, isActive: true },
       include: { images: { orderBy: IMAGE_ORDER } },
     })
+  }
+
+  /**
+   * The driver-app state behind «Ազատ է / Զբաղված է» (app-status.ts), for a page
+   * of cards in ONE query. Raw SQL: the live-dispatch tables are deliberately
+   * not in schema.prisma. Only trucks with ACTIVE app access come back.
+   */
+  findAppPresence(towTruckIds: number[]): Promise<AppPresenceRow[]> {
+    if (towTruckIds.length === 0) return Promise.resolve([])
+    return this.prisma.$queryRawUnsafe<AppPresenceRow[]>(
+      APP_PRESENCE_SQL,
+      pgArray(towTruckIds),
+      APP_STATUS_MAX_SILENCE_SECONDS,
+    )
   }
 
   /**

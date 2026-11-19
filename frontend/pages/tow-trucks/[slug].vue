@@ -98,6 +98,7 @@ onMounted(() => {
           <div class="profile__head-top">
             <h1 class="profile__name">{{ displayName }}</h1>
             <AppBadge v-if="towTruck.works24Hours" variant="accent">24/7</AppBadge>
+          <AppStatusBadge :status="towTruck.appStatus" />
           </div>
           <p v-if="towTruck.companyName" class="profile__driver">
             {{ t('towTruckPage.driverLabel', { name: towTruck.driverName }) }}

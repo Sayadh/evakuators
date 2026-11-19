@@ -85,9 +85,12 @@ const hoursLabel = computed(() =>
     </div>
 
     <div class="truck-card__body">
-      <h3 class="truck-card__name">
-        <NuxtLinkLocale :to="getTowTruckRoute(towTruck.slug)">{{ displayName }}</NuxtLinkLocale>
-      </h3>
+      <div class="truck-card__title">
+        <h3 class="truck-card__name">
+          <NuxtLinkLocale :to="getTowTruckRoute(towTruck.slug)">{{ displayName }}</NuxtLinkLocale>
+        </h3>
+        <AppStatusBadge :status="towTruck.appStatus" />
+      </div>
 
       <ul class="truck-card__specs">
         <li>
@@ -183,6 +186,13 @@ const hoursLabel = computed(() =>
     gap: var(--space-3);
     padding: var(--space-4);
     flex: 1;
+  }
+
+  &__title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
   }
 
   &__name {

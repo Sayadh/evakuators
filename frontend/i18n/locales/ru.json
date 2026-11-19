@@ -117,6 +117,10 @@
     "kindDistrict": "административный район",
     "kindCity": "город"
   },
+  "appStatus": {
+    "free": "Свободен",
+    "busy": "Занят"
+  },
   "card": {
     "towTrucks": {
       "one": "{count} эвакуатор",

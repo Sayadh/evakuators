@@ -1,3 +1,4 @@
+import type { AppStatus } from './app-status'
 import type { Prisma, TowTruck, TowTruckImage } from '@prisma/client'
 
 export type TowTruckWithImages = TowTruck & { images: TowTruckImage[] }
@@ -59,6 +60,8 @@ export interface TowTruckFilters {
 
 export interface TowTruckCardApi {
   id: number
+  /** Driver-app state at request time — absent for drivers without the app (app-status.ts) */
+  appStatus?: AppStatus
   slug: string
   driverName: string
   companyName?: string
@@ -202,6 +205,8 @@ export interface ServiceAreaJson {
 /** API shape — mirrors the frontend `TowTruck` interface exactly */
 export interface TowTruckApi {
   id: number
+  /** Driver-app state at request time — absent for drivers without the app (app-status.ts) */
+  appStatus?: AppStatus
   slug: string
   driverName: string
   companyName?: string

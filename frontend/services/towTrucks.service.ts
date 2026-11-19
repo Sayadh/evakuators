@@ -8,6 +8,7 @@ import type {
   TowTruckCard,
   TowTruckCoverage,
   TowTruckGeography,
+  TowTruckInactivePlacement,
 } from '~/types/towTruck'
 import { getRegionCitySlugs, getRegionServiceZoneSlugs } from '~/utils/geography'
 import type { ListingOrderRequest } from '~/utils/listingOrder'
@@ -205,6 +206,12 @@ export const towTrucksService = {
   getBySlug(slug: string): Promise<TowTruck | null> {
     if (isApiEnabled()) return towTruckRepository.getBySlug(slug)
     return mockRequest(() => mockTowTrucks.find((truck) => truck.slug === slug) ?? null)
+  },
+
+  /** Mock data has no deactivated trucks, so mock mode always answers null */
+  getInactivePlacement(slug: string): Promise<TowTruckInactivePlacement | null> {
+    if (isApiEnabled()) return towTruckRepository.getInactivePlacement(slug)
+    return mockRequest(() => null)
   },
 
   getByCitySlug(

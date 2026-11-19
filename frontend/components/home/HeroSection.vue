@@ -3,6 +3,7 @@
 const { t } = useI18n()
 // Site design (2026-11-18, switched in /admin): 2 = phone first — no routes / nearest buttons, the number leads
 const { phoneFirst } = useSiteDesign()
+const hasFreeRoutes = useHasActiveFreeRoutes()
 </script>
 
 <template>
@@ -39,8 +40,10 @@ const { phoneFirst } = useSiteDesign()
       <div v-else class="hero__actions">
         <!-- Shared routes («Պապուտի», 2026-11-12; label = the page's own H1): a driver already heading
              somewhere takes a car on the way, usually cheaper. FIRST and
-             solid white (2026-11-12, owner's call): it has to be seen. -->
-        <NuxtLinkLocale to="/free-routes" class="hero__routes">
+             solid white (2026-11-12, owner's call): it has to be seen.
+             Only while a route is live (2026-11-19, owner's call): the first
+             button on the page must not lead to an empty list. -->
+        <NuxtLinkLocale v-if="hasFreeRoutes" to="/free-routes" class="hero__routes">
           <AppIcon name="truck" :size="22" />
           {{ t('freeRoutes.h1') }}
         </NuxtLinkLocale>

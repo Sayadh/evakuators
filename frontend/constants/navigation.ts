@@ -85,6 +85,7 @@ export const REGISTER_LINK: NavLink = { labelKey: 'nav.register', to: '/register
 export const LOGIN_LINK: NavLink = { labelKey: 'nav.login', to: '/login' }
 
 export const FOOTER_PAGES: NavLink[] = [
+  { labelKey: 'nav.prices', to: '/gner' },
   { labelKey: 'nav.about', to: '/about' },
   { labelKey: 'nav.contact', to: '/contact' },
   // Site-wide, not only in the consent dialog. The dialog links to it too, but

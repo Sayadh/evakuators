@@ -9,6 +9,8 @@ import { buildLocationSeo } from '~/utils/seoContent'
 import { localizedWherePhrase, type PlaceKind } from '~/i18n/placeNames'
 import { displayBaseName } from '~/utils/primaryArea'
 
+definePageMeta({ middleware: 'inactive-tow-truck' })
+
 const route = useRoute()
 const slug = route.params.slug as string
 

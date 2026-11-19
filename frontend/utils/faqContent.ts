@@ -17,7 +17,7 @@ export function buildHomeFaq(locale = 'hy'): FaqItem[] {
       {
         question: 'Сколько стоит вызвать эвакуатор',
         answer:
-          'Цены обычно начинаются с 9 000 – 15 000 драмов и зависят от типа машины, расстояния и времени суток. На карточке каждого водителя видна начальная цена, поэтому сравнить варианты и выбрать самый дешёвый эвакуатор в своём районе несложно.',
+          'Цены обычно начинаются с 5 000 – 10 000 драмов и зависят от типа машины, расстояния и времени суток. На карточке каждого водителя видна начальная цена, поэтому сравнить варианты и выбрать самый дешёвый эвакуатор в своём районе несложно.',
       },
       {
         question: 'Есть ли эвакуатор, который работает 24 часа',
@@ -62,7 +62,7 @@ export function buildHomeFaq(locale = 'hy'): FaqItem[] {
       {
         question: 'How much does it cost to call a tow truck?',
         answer:
-          'Prices usually start at 9,000–15,000 drams, depending on the vehicle, the distance and the time of day. Every driver card shows a starting price, so comparing them and picking the cheapest tow truck in your area is straightforward.',
+          'Prices usually start at 5,000–10,000 drams, depending on the vehicle, the distance and the time of day. Every driver card shows a starting price, so comparing them and picking the cheapest tow truck in your area is straightforward.',
       },
       {
         question: 'Is there a tow truck that works 24 hours?',
@@ -106,7 +106,7 @@ export function buildHomeFaq(locale = 'hy'): FaqItem[] {
     {
       question: 'Ինչքա՞ն արժե էժան էվակուատոր կանչել',
       answer:
-        'Գները սովորաբար սկսվում են 9 000 – 15 000 դրամից, կախված մեքենայի տեսակից, հեռավորությունից և ժամից։ Ամեն վարորդի քարտի վրա երևում է մեկնարկային գինը, ուստի հեշտությամբ կարող եք համեմատել և ընտրել ամենաէժան էվակուատորը Ձեր տարածքում։',
+        'Գները սովորաբար սկսվում են 5 000 – 10 000 դրամից, կախված մեքենայի տեսակից, հեռավորությունից և ժամից։ Ամեն վարորդի քարտի վրա երևում է մեկնարկային գինը, ուստի հեշտությամբ կարող եք համեմատել և ընտրել ամենաէժան էվակուատորը Ձեր տարածքում։',
     },
     {
       question: 'Կա՞ 24 ժամ աշխատող էվակուատոր',
@@ -287,7 +287,7 @@ export function buildCityFaq(cityName: string, locale = 'hy', slug?: string): Fa
     return [
       {
         question: `Сколько стоит вызвать эвакуатор в городе ${name}`,
-        answer: `Вызов эвакуатора в городе ${name} обычно начинается от 9 000 – 15 000 драмов. Итоговая цена зависит от типа машины, её состояния и расстояния. У водителей, указавших цену, стартовая стоимость видна прямо на карточке.`,
+        answer: `Вызов эвакуатора в городе ${name} обычно начинается от 5 000 – 10 000 драмов. Итоговая цена зависит от типа машины, её состояния и расстояния. У водителей, указавших цену, стартовая стоимость видна прямо на карточке.`,
       },
       {
         question: `За сколько приезжает эвакуатор в городе ${name}`,
@@ -308,7 +308,7 @@ export function buildCityFaq(cityName: string, locale = 'hy', slug?: string): Fa
     return [
       {
         question: `How much does a tow truck cost in ${name}`,
-        answer: `A call-out in ${name} usually starts at 9,000–15,000 AMD. The final price depends on the type and condition of the vehicle and on the distance. Drivers who have set a price show their starting rate on the card itself.`,
+        answer: `A call-out in ${name} usually starts at 5,000–10,000 AMD. The final price depends on the type and condition of the vehicle and on the distance. Drivers who have set a price show their starting rate on the card itself.`,
       },
       {
         question: `How quickly does a tow truck arrive in ${name}`,
@@ -328,7 +328,7 @@ export function buildCityFaq(cityName: string, locale = 'hy', slug?: string): Fa
   return [
     {
       question: `Ինչքա՞ն արժե էվակուատոր կանչելը ${cityName}ում`,
-      answer: `${cityName}ում էվակուատորի կանչի արժեքը սովորաբար սկսվում է 9 000 – 15 000 դրամից։ Վերջնական գինը կախված է մեքենայի տեսակից, վիճակից և հեռավորությունից։ Գին նշած վարորդների քարտերում կտեսնեք մեկնարկային գինը։`,
+      answer: `${cityName}ում էվակուատորի կանչի արժեքը սովորաբար սկսվում է 5 000 – 10 000 դրամից։ Վերջնական գինը կախված է մեքենայի տեսակից, վիճակից և հեռավորությունից։ Գին նշած վարորդների քարտերում կտեսնեք մեկնարկային գինը։`,
     },
     {
       question: `Ինչքա՞ն ժամանակում է հասնում էվակուատորը ${cityName}ում`,

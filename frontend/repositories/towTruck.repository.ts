@@ -1,4 +1,9 @@
-import type { TowTruck, TowTruckCard, TowTruckCoverage } from '~/types/towTruck'
+import type {
+  TowTruck,
+  TowTruckCard,
+  TowTruckCoverage,
+  TowTruckInactivePlacement,
+} from '~/types/towTruck'
 import type { ListingOrderRequest } from '~/utils/listingOrder'
 import { apiFetch, isNotFoundError } from './apiClient'
 
@@ -132,5 +137,12 @@ export const towTruckRepository = {
       if (isNotFoundError(error)) return null
       throw error
     }
+  },
+
+  async getInactivePlacement(slug: string): Promise<TowTruckInactivePlacement | null> {
+    const { placement } = await apiFetch<{ placement: TowTruckInactivePlacement | null }>(
+      `/tow-trucks/${encodeURIComponent(slug)}/inactive-placement`,
+    )
+    return placement
   },
 }

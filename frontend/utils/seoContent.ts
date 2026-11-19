@@ -1,5 +1,6 @@
 import { SITE_NAME, SITE_TAGLINE } from '~/constants/site'
 import { localizedPlaceName, type PlaceKind } from '~/i18n/placeNames'
+import { formatPrice, formatStartingPrice } from '~/utils/formatPrice'
 
 /**
  * SEO keyword strategy.
@@ -139,6 +140,56 @@ export function buildLocationSeo(
       `ejan evakuator ${translit}`,
     ].join(', '),
   }
+}
+
+/** «43 վարորդ» / «43 водителя» / «43 drivers» */
+function driverCount(count: number, locale: string): string {
+  if (locale === 'ru') {
+    const lastTwo = count % 100
+    const last = count % 10
+    const word =
+      lastTwo >= 11 && lastTwo <= 14
+        ? 'водителей'
+        : last === 1
+          ? 'водитель'
+          : last >= 2 && last <= 4
+            ? 'водителя'
+            : 'водителей'
+    return `${count} ${word}`
+  }
+  if (locale === 'en') return `${count} ${count === 1 ? 'driver' : 'drivers'}`
+  return `${count} վարորդ`
+}
+
+/**
+ * The `/yerevan` title: the count and the lowest listed price, the two facts a
+ * person comparing search results wants. The Latin «Evakuator erevan» stays
+ * because that spelling is how most of this page's searches are typed.
+ *
+ * Returns `null` until there is a real count; the caller keeps the regular
+ * location title. A missing price only drops the price.
+ */
+export function buildYerevanListingTitle(
+  prices: readonly (number | null | undefined)[],
+  locale = 'hy',
+): string | null {
+  const count = prices.length
+  if (count === 0) return null
+
+  const listed = prices.filter((price): price is number => typeof price === 'number' && price > 0)
+  const facts = [
+    driverCount(count, locale),
+    ...(listed.length > 0 ? [localizedFromPrice(Math.min(...listed), locale)] : []),
+  ].join(', ')
+
+  if (locale === 'ru') return `Эвакуатор Ереван · Evakuator erevan 24/7 — ${facts}`
+  if (locale === 'en') return `Tow truck in Yerevan · Evakuator erevan 24/7 — ${facts}`
+  return `Էվակուատոր Երևանում · Evakuator erevan 24/7 — ${facts}`
+}
+
+/** «5 000 ֏-ից» reads naturally in Armenian; the others put the word first. */
+function localizedFromPrice(amount: number, locale: string): string {
+  return locale === 'hy' ? `${formatPrice(amount)}-ից` : formatStartingPrice(amount, locale)
 }
 
 export function buildRegionSeo(regionNameHy: string, slug: string, locale = 'hy'): LocationSeo {

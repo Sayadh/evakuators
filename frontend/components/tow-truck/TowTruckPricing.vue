@@ -57,11 +57,19 @@ const rows = computed<PricingRow[]>(() => {
       </div>
     </dl>
     <p class="truck-pricing__note">{{ t('pricing.note') }}</p>
+    <NuxtLinkLocale to="/gner" class="truck-pricing__compare">{{ t('pricing.compareLink') }}</NuxtLinkLocale>
   </section>
 </template>
 
 <style scoped lang="scss">
 .truck-pricing {
+  &__compare {
+    display: inline-block;
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-top: var(--space-2);
+  }
+
   &__title {
     margin-bottom: var(--space-4);
   }

@@ -3,7 +3,12 @@ import { ReviewsRepository } from '../reviews/reviews.repository'
 import type { ListTowTrucksQuery } from './dto/list-tow-trucks.query'
 import { pickListingOrder, type ListingPlace } from './listing-order'
 import { toTowTruckApi, toTowTruckCardApi, toTowTruckCoverageApi } from './tow-truck.mapper'
-import type { TowTruckApi, TowTruckCardApi, TowTruckCoverageApi } from './tow-truck.types'
+import type {
+  TowTruckApi,
+  TowTruckCardApi,
+  TowTruckCoverageApi,
+  TowTruckInactivePlacementApi,
+} from './tow-truck.types'
 import { TOW_TRUCK_LIST_DEFAULT_LIMIT } from './tow-trucks.constants'
 import { TowTrucksRepository, type TowTruckCardRow } from './tow-trucks.repository'
 
@@ -97,6 +102,16 @@ export class TowTrucksService {
       throw new NotFoundException('Էվակուատորը չի գտնվել')
     }
     return toTowTruckApi(truck)
+  }
+
+  /**
+   * `placement` is null for an active or unknown slug. Wrapped in an object
+   * because a bare `null` reaches the client as an empty response body.
+   */
+  async getInactivePlacement(
+    slug: string,
+  ): Promise<{ placement: TowTruckInactivePlacementApi | null }> {
+    return { placement: await this.repository.findInactivePlacement(slug) }
   }
 
   /**

@@ -19,8 +19,8 @@ export interface PriceGuideFigure {
 export const PRICE_GUIDE_UPDATED = { year: 2026, month: 11 } as const
 
 export const PRICE_GUIDE = {
-  cityCallout: { low: 5000, high: 7000, median: 5000, drivers: 128 },
-  largerTruckCallout: { low: 5000, high: 10000, median: 6000, drivers: 43 },
+  cityCallout: { low: 5000, high: 7000, median: 6000, drivers: 128 },
+  largerTruckCallout: { low: 5000, high: 10000, median: 7000, drivers: 43 },
   perKm: { low: 300, high: 500, median: 400, drivers: 46 },
   nightSurchargePercent: { low: 10, high: 30, median: 20, drivers: 40 },
   waitingPerHour: { low: 1000, high: 5000, median: 3000, drivers: 40 },

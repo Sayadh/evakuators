@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { SITE_NAME } from '~/constants/site'
-import { freeRoutesService } from '~/services'
 import { buildFreeRoutesFaq } from '~/utils/faqContent'
 
 const { t, locale } = useI18n()
@@ -14,9 +13,7 @@ useSeoMetaData({
 const { forFreeRoutes } = useBreadcrumbs()
 const faqItems = computed(() => buildFreeRoutesFaq(locale.value))
 
-const { data: routes, pending } = useAsyncData('free-routes', () => freeRoutesService.getActive(), {
-  default: () => [],
-})
+const { data: routes, pending } = useActiveFreeRoutes()
 
 /**
  * The second number the admin panel tracks: how many people actually open

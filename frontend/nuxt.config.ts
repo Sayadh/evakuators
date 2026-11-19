@@ -52,10 +52,12 @@ export default defineNuxtConfig({
     // Absolute hreflang and canonical URLs — relative ones are ignored by
     // search engines in `<link rel="alternate">`.
     baseUrl: 'https://evakuators.am',
+    // `ru` and `en` carry no region on purpose: `ru-RU` / `en-US` would say these
+    // versions are for Russia and the US, while their readers are in Armenia.
     locales: [
       { code: 'hy', language: 'hy-AM', name: 'Հայերեն', file: 'hy.json', dir: 'ltr' },
-      { code: 'ru', language: 'ru-RU', name: 'Русский', file: 'ru.json', dir: 'ltr' },
-      { code: 'en', language: 'en-US', name: 'English', file: 'en.json', dir: 'ltr' },
+      { code: 'ru', language: 'ru', name: 'Русский', file: 'ru.json', dir: 'ltr' },
+      { code: 'en', language: 'en', name: 'English', file: 'en.json', dir: 'ltr' },
     ],
     lazy: true,
     detectBrowserLanguage: false,

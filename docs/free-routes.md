@@ -127,6 +127,9 @@ here must never fail the driver's request.
   range via `formatDepartureRange()` in `frontend/utils/formatters.ts` — falls
   back to the single-instant `formatDepartureAt()` when a route has no
   `estimatedArrivalAt`).
+- `frontend/composables/useActiveFreeRoutes.ts` — the shared public list.
+  The homepage hero and `NearestTowTrucksCta` show their button to
+  `/free-routes` only while at least one route is live; the nav link stays.
 - `frontend/components/dashboard/FreeRoutesManager.vue` — driver's own
   create/edit/delete UI, embedded in `/dashboard`. Uses **two independent**
   `useLocationPicker()` instances (start and end), a `date` `AppInput` plus

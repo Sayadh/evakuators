@@ -1,6 +1,11 @@
 import { Controller, Get, Param, Query } from '@nestjs/common'
 import { ListTowTrucksQuery } from './dto/list-tow-trucks.query'
-import type { TowTruckApi, TowTruckCardApi, TowTruckCoverageApi } from './tow-truck.types'
+import type {
+  TowTruckApi,
+  TowTruckCardApi,
+  TowTruckCoverageApi,
+  TowTruckInactivePlacementApi,
+} from './tow-truck.types'
 import { TowTrucksService } from './tow-trucks.service'
 
 @Controller('tow-trucks')
@@ -24,6 +29,17 @@ export class TowTrucksController {
   @Get('coverage')
   getCoverage(): Promise<TowTruckCoverageApi[]> {
     return this.towTrucksService.getCoverage()
+  }
+
+  /**
+   * Lets the profile page send a deactivated driver's visitors to the listing
+   * of the same area. Geography and vehicle type only, no contact details.
+   */
+  @Get(':slug/inactive-placement')
+  getInactivePlacement(
+    @Param('slug') slug: string,
+  ): Promise<{ placement: TowTruckInactivePlacementApi | null }> {
+    return this.towTrucksService.getInactivePlacement(slug)
   }
 
   @Get(':slug')

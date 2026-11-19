@@ -2,6 +2,14 @@ import type { Prisma, TowTruck, TowTruckImage } from '@prisma/client'
 
 export type TowTruckWithImages = TowTruck & { images: TowTruckImage[] }
 
+/** The public geography of a deactivated truck — see `getInactivePlacement` */
+export interface TowTruckInactivePlacementApi {
+  regionSlug: string | null
+  citySlug: string | null
+  districtSlug: string | null
+  vehicleType: string
+}
+
 export interface TowTruckFilters {
   citySlug?: string
   districtSlug?: string

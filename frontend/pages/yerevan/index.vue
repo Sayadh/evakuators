@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { buildLocationSeo, buildTranslitParagraph } from '~/utils/seoContent'
+import {
+  buildLocationSeo,
+  buildTranslitParagraph,
+  buildYerevanListingTitle,
+} from '~/utils/seoContent'
 
 const { data: districts, pending } = useDistricts()
 const { data: towTrucks, pending: towTrucksPending } = useTowTrucksInYerevan()
@@ -13,9 +17,27 @@ const seoParagraphs = computed(() => [
   buildTranslitParagraph('Երևան', 'erevan', locale.value),
 ])
 
+const locationSeo = buildLocationSeo('Երևան', 'erevan', locale.value)
+
 useSeoMetaData({
-  ...buildLocationSeo('Երևան', 'erevan', locale.value),
+  ...locationSeo,
   path: '/yerevan',
+})
+
+// Reactive because the listing is not awaited above: the server resolves it
+// before the head is rendered, so the crawler gets the final title.
+const listingTitle = computed(
+  () =>
+    buildYerevanListingTitle(
+      towTrucks.value.map((truck) => truck.startingPrice),
+      locale.value,
+    ) ?? locationSeo.title,
+)
+
+useSeoMeta({
+  title: listingTitle,
+  ogTitle: listingTitle,
+  twitterTitle: listingTitle,
 })
 </script>
 

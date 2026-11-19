@@ -83,6 +83,14 @@ export interface ServiceArea {
   type: LocationType
 }
 
+/** Where a deactivated truck's visitors are sent — geography and type only */
+export interface TowTruckInactivePlacement {
+  regionSlug: string | null
+  citySlug: string | null
+  districtSlug: string | null
+  vehicleType: string
+}
+
 export interface TowTruckLocation {
   /** Region slug for cities outside Yerevan */
   regionSlug?: string

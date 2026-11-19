@@ -30,20 +30,24 @@ interface Props {
   /**
    * Shared routes («Պապուտի», 2026-11-12) as a second, navy button ABOVE
    * this one — the listing pages' counterpart of the homepage hero's white
-   * button (a white button would vanish on these light pages).
+   * button (a white button would vanish on these light pages). Shown only
+   * while a route is live — see `useHasActiveFreeRoutes`.
    */
   withRoutes?: boolean
 }
 
-withDefaults(defineProps<Props>(), { variant: 'banner', withRoutes: false })
+const props = withDefaults(defineProps<Props>(), { variant: 'banner', withRoutes: false })
+
+// Asked only where the button can appear, so a CTA without it costs no request.
+const hasFreeRoutes = props.withRoutes ? useHasActiveFreeRoutes() : ref(false)
 </script>
 
 <template>
   <!-- Rendered unconditionally, including while NEAREST_SEARCH_ENABLED is
        false: this block is how a visitor finds out the feature is coming, and
        the page it links to says so plainly. See constants/features.ts. -->
-  <div class="nearest-cta" :class="[`nearest-cta--${variant}`, { 'nearest-cta--with-routes': withRoutes }]">
-    <NuxtLinkLocale v-if="withRoutes" to="/free-routes" class="nearest-cta__routes">
+  <div class="nearest-cta" :class="[`nearest-cta--${variant}`, { 'nearest-cta--with-routes': hasFreeRoutes }]">
+    <NuxtLinkLocale v-if="hasFreeRoutes" to="/free-routes" class="nearest-cta__routes">
       <AppIcon name="truck" :size="20" />
       {{ t('freeRoutes.h1') }}
     </NuxtLinkLocale>

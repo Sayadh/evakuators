@@ -4,7 +4,12 @@ import { IMAGE_ORDER } from '../images/image-order'
 import { sqlUtc } from '../common/sql-utc'
 import { PrismaService } from '../prisma/prisma.service'
 import { PRIVACY_POLICY_VERSION } from '../privacy-consent/privacy-consent.text'
-import type { TowTruckFilters, TowTruckWhere, TowTruckWithImages } from './tow-truck.types'
+import type {
+  TowTruckFilters,
+  TowTruckInactivePlacementApi,
+  TowTruckWhere,
+  TowTruckWithImages,
+} from './tow-truck.types'
 import {
   HEAVY_DUTY_VEHICLE_TYPE,
   MANIPULATOR_VEHICLE_TYPE,
@@ -177,6 +182,17 @@ export class TowTrucksRepository {
     return this.prisma.towTruck.findFirst({
       where: { slug, isActive: true },
       include: { images: { orderBy: IMAGE_ORDER } },
+    })
+  }
+
+  /**
+   * Where a deactivated truck's visitors should go instead. Selects only the
+   * public geography, and matches nothing for an active truck.
+   */
+  findInactivePlacement(slug: string): Promise<TowTruckInactivePlacementApi | null> {
+    return this.prisma.towTruck.findFirst({
+      where: { slug, isActive: false },
+      select: { regionSlug: true, citySlug: true, districtSlug: true, vehicleType: true },
     })
   }
 

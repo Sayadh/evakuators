@@ -85,7 +85,14 @@ export interface Snapshot {
   serverTime: string
   /** hasBase: dispatch falls back to his base location when the GPS is lost */
   /** blocked: an operator blocked him for orders — why, since and until when (null = until lifted) */
-  driver: { name: string; kind: 'SITE_LINKED' | 'APP_ONLY'; hasBase?: boolean; blocked?: { reason: string | null; until: string | null; since: string } | null }
+  /** autoOffline (2026-11-18): taken Offline because 3 offers in a row never reached this phone; cleared by pressing Online */
+  driver: {
+    name: string
+    kind: 'SITE_LINKED' | 'APP_ONLY'
+    hasBase?: boolean
+    blocked?: { reason: string | null; until: string | null; since: string } | null
+    autoOffline?: { reason: string; at: string } | null
+  }
   availability: Availability
   switches: { wantsOnline: boolean; externalBusy: boolean }
   trackingConsentVersion: number | null

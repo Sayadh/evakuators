@@ -7,4 +7,13 @@
   -->
   <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
   <uses-permission android:name="android.permission.VIBRATE" />
+  <!--
+    2026-11-18: lets «Մարտկոց → Թույլատրել» open the system dialog «Allow the
+    app to run in the background without restrictions?» directly, instead of a
+    list where the driver has to find the app. Exempt from Doze is what keeps a
+    locked phone that lies still reachable (heartbeat, GPS). Play allows it for
+    apps whose core function needs it — dispatch for tow trucks is one
+    (docs/live-dispatch/12-store-submission.md).
+  -->
+  <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 </manifest>

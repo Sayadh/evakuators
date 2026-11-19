@@ -125,6 +125,13 @@ export function HomeScreen() {
         </Banner>
       ) : null}
 
+      {/* Taken Offline automatically (2026-11-18): offers stopped reaching this phone — say why, Online brings him back */}
+      {!s.driver.blocked && s.driver.autoOffline && !s.switches.wantsOnline ? (
+        <Banner tone="warn" title={t('autoOffline.title')}>
+          {t('autoOffline.body')}
+        </Banner>
+      ) : null}
+
       {s.driver.blocked ? null : (
       <View style={[styles.power, { backgroundColor: online ? colors.primary : colors.surface, borderColor: online ? colors.primary : colors.border }]}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>

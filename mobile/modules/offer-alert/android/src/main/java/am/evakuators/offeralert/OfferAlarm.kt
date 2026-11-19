@@ -365,6 +365,13 @@ object OfferAlarm {
     }
   }
 
+  private fun isIgnoringBatteryOptimizations(context: Context): Boolean {
+    val power = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+    return power.isIgnoringBatteryOptimizations(context.packageName)
+  }
+
+  // BatteryLife: the direct «ignore battery optimizations» request is this app's core use (tow-truck dispatch on a locked phone)
+  @SuppressLint("BatteryLife")
   fun openSettings(context: Context, which: String): Boolean {
     val pkg = context.packageName
     val details = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg"))
@@ -377,19 +384,31 @@ object OfferAlarm {
           .putExtra(Settings.EXTRA_CHANNEL_ID, channelId(context))
       which == "notifications" && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ->
         Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, pkg)
+      // Not exempt yet: the one-tap system dialog for THIS app (2026-11-18).
+      // Already exempt (or a phone without the dialog): the list, as before.
+      which == "battery" && !isIgnoringBatteryOptimizations(context) ->
+        Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$pkg"))
       which == "battery" -> Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
       else -> details
     }
-    return try {
-      context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-      true
-    } catch (notFound: ActivityNotFoundException) {
+    // The first screen this phone can open, in order: the wanted one, then —
+    // for battery, where some vendors hide the one-tap dialog — the list, then
+    // the app's own page. False only if none opens.
+    val candidates = buildList {
+      add(intent)
+      if (which == "battery") add(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+      add(details)
+    }
+    for (candidate in candidates) {
       try {
-        context.startActivity(details.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        true
+        context.startActivity(candidate.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        return true
+      } catch (notFound: ActivityNotFoundException) {
+        continue
       } catch (failed: Exception) {
-        false
+        continue
       }
     }
+    return false
   }
 }

@@ -85,7 +85,9 @@ const config: ExpoConfig = {
   name: 'Evakuators Driver',
   slug: 'evakuators-driver',
   scheme: 'evakuators-driver',
-  version: '1.0.0',
+  // 1.0.1 (2026-11-18): native change (REQUEST_IGNORE_BATTERY_OPTIMIZATIONS) — a new
+  // runtime, so OTA updates for 1.0.1 never reach a 1.0.0 binary that lacks it
+  version: '1.0.1',
   /**
    * Over-the-air JS updates (EAS Update, 2026-11-17). An update only reaches
    * builds with the SAME runtime version, and the runtime version is this app

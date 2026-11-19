@@ -198,7 +198,7 @@ export async function ensureFreshFix(): Promise<void> {
   asking = true
   try {
     const location = await Location.getCurrentPositionAsync({
-      accuracy: applied.mode === 'ACTIVE_ORDER' ? Location.Accuracy.High : Location.Accuracy.Balanced,
+      accuracy: Location.Accuracy.High, // see startLocationUpdatesAsync below
     })
     await record([location], true)
   } catch {
@@ -246,7 +246,12 @@ async function startFor(policy: TrackingPolicy): Promise<void> {
   }
   const active = policy.mode === 'ACTIVE_ORDER'
   await Location.startLocationUpdatesAsync(LOCATION_TASK, {
-    accuracy: active ? Location.Accuracy.High : Location.Accuracy.Balanced,
+    // High in EVERY mode (2026-11-18): «Balanced» answers from Wi-Fi and cell
+    // towers, which on a locked phone indoors is often coarser than the
+    // server's gpsMaxAccuracyMeters — the fix arrives and is refused, and the
+    // driver shows as «GPS չկա». Real GPS at ~1 fix a minute while waiting
+    // costs a little battery; a driver who looks unreachable costs orders.
+    accuracy: Location.Accuracy.High,
     timeInterval: Math.round(jittered(osIntervalSeconds(policy), policy.jitterSeconds) * 1000),
     // 0 = every fix; `record` thins by time. Never a distance gate (see top).
     distanceInterval: policy.distanceFilterMeters ?? 0,
@@ -326,7 +331,7 @@ export async function recoverTracking(policy: TrackingPolicy | null): Promise<bo
   applied = null
   await stopTracking().catch(() => undefined)
   await applyPolicy(target)
-  return freshFixNow(target.mode === 'ACTIVE_ORDER')
+  return freshFixNow()
 }
 
 /**
@@ -340,16 +345,16 @@ export async function healTracking(policy: TrackingPolicy | null): Promise<boole
   const target = policy ?? applied
   if (!target || !shouldTrack(target)) return false
   const running = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK).catch(() => false)
-  if (running && applied && (await freshFixNow(target.mode === 'ACTIVE_ORDER'))) return true
+  if (running && applied && (await freshFixNow())) return true
   return recoverTracking(target)
 }
 
-async function freshFixNow(high: boolean): Promise<boolean> {
+async function freshFixNow(): Promise<boolean> {
   if (asking) return false
   asking = true
   try {
     const location = await Promise.race([
-      Location.getCurrentPositionAsync({ accuracy: high ? Location.Accuracy.High : Location.Accuracy.Balanced }),
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }), // always GPS, see startLocationUpdatesAsync
       new Promise<null>((resolve) => setTimeout(() => resolve(null), RECOVERY_FIX_TIMEOUT_MS)),
     ])
     if (!location) return false

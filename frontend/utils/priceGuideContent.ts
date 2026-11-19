@@ -277,7 +277,7 @@ function buildEnglish(): PriceGuideContent {
     tableTitle: 'Typical prices by service',
     columns: { service: 'Service', range: 'Typical price', median: 'Midpoint' },
     rows: [
-      row('cityCallout', 'City call-out', 'Starting price', city, formatPrice(P.cityCallout.median)),
+      row('cityCallout', 'City call-out', 'Minimum price, roughly up to 3 km', city, formatPrice(P.cityCallout.median)),
       row(
         'largerTruckCallout',
         'Call-out with a tow truck rated above 3.5 t',

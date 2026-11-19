@@ -28,7 +28,9 @@ export type LocationSource = 'GPS' | 'BASE'
  * (a driver who never sent a fix has no "DriverLocationCurrent" row).
  *
  * Connection for `BASE`: a fresh heartbeat, OR one within
- * `baseHeartbeatMaxAgeSeconds` when the phone can still be rung — a live push
+ * `baseHeartbeatMaxAgeSeconds` (default 7 days, 2026-11-18: an Online driver
+ * asleep with the phone locked is at his base and must still get orders) when
+ * the phone can still be rung — a live push
  * token on a live session. Switching GPS off (or locking the phone) also stops
  * the background heartbeat, which rides on location updates; without this the
  * fallback would never reach the very drivers it exists for. The offer itself

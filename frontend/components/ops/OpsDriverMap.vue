@@ -12,7 +12,7 @@
  */
 import { computed, ref } from 'vue'
 import type { OpsMapDriver } from '~/types/opsDispatch'
-import { availabilitySummary, formatAge } from '~/utils/opsDispatchLabels'
+import { availabilitySummary, formatAge, gpsDiagnosis } from '~/utils/opsDispatchLabels'
 
 const props = defineProps<{
   drivers: OpsMapDriver[]
@@ -89,6 +89,7 @@ function mapsLink(d: OpsMapDriver): string {
         />
         <title>
           {{ p.d.driverName }} · {{ availabilitySummary(p.d.availability).text }} · GPS {{ formatAge(p.d.availability.gpsAgeSeconds) }}
+          {{ gpsDiagnosis(p.d.availability, p.d.position?.accuracyM) ?? '' }}
         </title>
       </g>
       <g v-if="pickupPoint" class="ops-map__pickup">

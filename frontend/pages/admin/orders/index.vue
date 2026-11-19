@@ -28,6 +28,7 @@ import {
   ORDER_STATUS_VARIANT,
   apiErrorText,
   availabilitySummary,
+  gpsDiagnosis,
   formatAge,
   formatArmenianPhone,
 } from '~/utils/opsDispatchLabels'
@@ -351,6 +352,7 @@ useSeoMetaData({ title: 'Պատվերներ', description: 'Պատվերների
               <strong>{{ d.driverName }}</strong>
               <span :class="`tone-${availabilitySummary(d.availability).tone}`">{{ availabilitySummary(d.availability).text }}</span>
               <span class="ops__muted">GPS {{ formatAge(d.availability.gpsAgeSeconds) }}<template v-if="d.position?.accuracyM"> · ±{{ Math.round(d.position.accuracyM) }} մ</template></span>
+              <span v-if="gpsDiagnosis(d.availability, d.position?.accuracyM)" class="ops__diagnosis">{{ gpsDiagnosis(d.availability, d.position?.accuracyM) }}</span>
               <NuxtLink v-if="d.activeOrderId" :to="`/admin/orders/${d.activeOrderId}`">պատվեր #{{ d.activeOrderId }}</NuxtLink>
               <a
                 v-if="d.position"
@@ -592,5 +594,11 @@ useSeoMetaData({ title: 'Պատվերներ', description: 'Պատվերների
 }
 .tone-off {
   color: var(--color-text-muted);
+}
+.ops__diagnosis {
+  display: block;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--color-warning, #8a4b00);
 }
 </style>

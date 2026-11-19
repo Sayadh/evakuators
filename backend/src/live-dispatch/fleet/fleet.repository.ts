@@ -54,6 +54,8 @@ export interface DriverStateRow {
   dispatchSuspendedReason?: string | null
   /** When the block lifts by itself; null = until an operator lifts it */
   dispatchSuspendedUntil?: Date | null
+  /** Taken Offline automatically (2026-11-18, fleet/auto-offline.ts): why and when; null once he pressed Online */
+  autoOffline?: { reason: string; at: Date } | null
   wantsOnline: boolean
   externalBusy: boolean
   lastHeartbeatAt: Date | null
@@ -76,6 +78,7 @@ export const DRIVER_STATE_SELECT = `
   t."id" AS "driverId", t."kind", t."towTruckId", t."slug", t."driverName", t."phone", t."vehicleType", t."isActive",
   CASE WHEN p."dispatchSuspendedUntil" IS NOT NULL AND p."dispatchSuspendedUntil" <= now() THEN NULL ELSE p."dispatchSuspendedAt" END AS "dispatchSuspendedAt",
   p."dispatchSuspendedReason", p."dispatchSuspendedUntil",
+  p."autoOfflineReason", p."autoOfflineAt",
   COALESCE(p."wantsOnline", false) AS "wantsOnline",
   COALESCE(p."externalBusy", false) AS "externalBusy", p."lastHeartbeatAt",
   p."trackingConsentVersion", p."availableSince",
@@ -105,6 +108,7 @@ export function mapDriverState(row: Record<string, unknown>): DriverStateRow {
     dispatchSuspendedAt: toNullableDate(row.dispatchSuspendedAt),
     dispatchSuspendedReason: row.dispatchSuspendedAt == null || row.dispatchSuspendedReason == null ? null : String(row.dispatchSuspendedReason),
     dispatchSuspendedUntil: row.dispatchSuspendedAt == null ? null : toNullableDate(row.dispatchSuspendedUntil),
+    autoOffline: row.autoOfflineAt == null || row.autoOfflineReason == null ? null : { reason: String(row.autoOfflineReason), at: toNullableDate(row.autoOfflineAt) as Date },
     wantsOnline: Boolean(row.wantsOnline),
     externalBusy: Boolean(row.externalBusy),
     lastHeartbeatAt: toNullableDate(row.lastHeartbeatAt),
@@ -364,6 +368,9 @@ export class FleetRepository {
         `"externalBusyChangedAt" = CASE WHEN "externalBusy" <> ${newBusy} THEN now() ELSE "externalBusyChangedAt" END`,
         `"wantsOnline" = ${newWants}`,
         `"externalBusy" = ${newBusy}`,
+        // Pressing Online again is how a driver comes back from auto-Offline (fleet/auto-offline.ts)
+        `"autoOfflineAt" = CASE WHEN ${newWants} THEN NULL ELSE "autoOfflineAt" END`,
+        `"autoOfflineReason" = CASE WHEN ${newWants} THEN NULL ELSE "autoOfflineReason" END`,
         `"updatedAt" = now()`,
       ]
       await tx.query(`UPDATE "DriverPresence" SET ${sets.join(', ')} WHERE "driverId" = ${p.add(driverId)}::int`, p.values)

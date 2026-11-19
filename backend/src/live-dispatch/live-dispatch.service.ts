@@ -131,6 +131,8 @@ export class LiveDispatchService {
         blocked: state.dispatchSuspendedAt
           ? { reason: state.dispatchSuspendedReason ?? null, until: state.dispatchSuspendedUntil?.toISOString() ?? null, since: state.dispatchSuspendedAt.toISOString() }
           : null,
+        // Taken Offline after offers stopped reaching this phone (2026-11-18): the app says so until he presses Online
+        autoOffline: state.autoOffline ? { reason: state.autoOffline.reason, at: state.autoOffline.at.toISOString() } : null,
       },
       availability: {
         ...availability,

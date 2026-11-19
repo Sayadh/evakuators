@@ -14,6 +14,7 @@
  * 3. Deadlines are compared with the DATABASE clock (`now()`), inside the
  *    transaction holding the lock. No process clock, no setTimeout, no Redis.
  */
+import { autoOfflineIfUnreachable } from '../fleet/auto-offline'
 import { MANUAL_OVERRIDABLE } from '../fleet/domain/availability'
 import { availabilityOf, DRIVER_STATE_FROM, DRIVER_STATE_SELECT, mapDriverState } from '../fleet/fleet.repository'
 import { capabilityMismatches } from '../orders/domain/requirements'
@@ -738,6 +739,8 @@ export class OffersRepository {
       const offer = await lockOffer(tx, offerId)
       if (offer.status !== 'PENDING' || offer.beforeDeadline) return false
       await this.closeOffer(tx, order, offer, 'EXPIRED', 'TIMEOUT', SYSTEM)
+      // Never reached the phone: the 3rd in a row takes him Offline (2026-11-18, fleet/auto-offline.ts)
+      if (offer.deliveredAt === null) await autoOfflineIfUnreachable(tx, offer.driverId)
       return true
     })
   }

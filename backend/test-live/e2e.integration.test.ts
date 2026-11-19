@@ -122,7 +122,7 @@ describe('E2E flows (real Postgres)', { skip: integrationSkip }, () => {
     const view = await h.rt.access.get(d.driverId)
     assert.equal(view.problemAlert?.reason, 'GPS')
     assert.equal(view.problemAlert?.count, 1)
-    // Not again within 5 minutes
+    // Not again within the hour (PROBLEM_ALERT_EVERY_SECONDS)
     assert.equal(await h.rt.push.alertProblemDrivers(settings), 0)
     // Fixed → reset
     await h.db.pool.query(`UPDATE "DriverLocationCurrent" SET "measuredAt" = now() WHERE "driverId" = $1::int`, [d.driverId])
@@ -238,7 +238,8 @@ describe('E2E flows (real Postgres)', { skip: integrationSkip }, () => {
       return d
     }
     const unreachable = await silentWithBase(5, false)
-    const tooLong = await silentWithBase(45, true)
+    // Beyond baseHeartbeatMaxAgeSeconds (7 days, 2026-11-18): the phone is gone, not asleep
+    const tooLong = await silentWithBase(8 * 24 * 60, true)
     const reachable = await silentWithBase(5, true)
     const order = await createOrder(h)
     await startDispatch(h, order)
@@ -252,6 +253,19 @@ describe('E2E flows (real Postgres)', { skip: integrationSkip }, () => {
       [reachable.driverId],
     )
     assert.equal(locationSource, 'BASE')
+  })
+
+  it('Online, asleep 7 hours with the phone locked and no GPS: still offered by his base (2026-11-18)', async () => {
+    await fresh()
+    const home = offset(YEREVAN, 800, 0)
+    const d = await eligibleDriver(h, home)
+    await h.db.pool.query(`UPDATE "TowTruck" SET "latitude" = $2, "longitude" = $3 WHERE "id" = $1::int`, [d.towTruckId, home.latitude, home.longitude])
+    await h.db.pool.query(`UPDATE "DriverLocationCurrent" SET "measuredAt" = now() - interval '7 hours' WHERE "driverId" = $1::int`, [d.driverId])
+    await h.db.pool.query(`UPDATE "DriverPresence" SET "lastHeartbeatAt" = now() - interval '7 hours' WHERE "driverId" = $1::int`, [d.driverId])
+    const order = await createOrder(h)
+    await startDispatch(h, order)
+    await drain(h)
+    assert.equal((await pendingOffer(h, order.id))?.driverId, d.driverId)
   })
 
   it('the radius widens stage by stage before giving up', async () => {

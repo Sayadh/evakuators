@@ -372,6 +372,9 @@ useSeoMetaData({ title: 'Հավելվածի վարորդներ', description: '�
                 <div v-if="d.problemAlert" class="fleet__blocked">
                   🔔 {{ d.problemAlert.reason === 'GPS' ? 'GPS-ը չի աշխատում' : 'Կապ չկա' }} · ծանուցված է{{ d.problemAlert.at ? ` ${formatClockTime(new Date(d.problemAlert.at))}` : '' }} ({{ d.problemAlert.count }}/3)
                 </div>
+                <div v-if="d.autoOffline" class="fleet__blocked">
+                  📴 Ավտոմատ Offline{{ ` ${formatDateNumeric(d.autoOffline.at)} ${formatClockTime(new Date(d.autoOffline.at))}` }}․ 3 առաջարկ անընդմեջ չհասան հեռախոսին (անջատված է, լիցքը նստած կամ ինտերնետ չկա)։ Կվերադառնա, երբ բացի հավելվածը և սեղմի Online։
+                </div>
                 <div v-if="d.block" class="fleet__blocked">
                   ⛔ Արգելափակված {{ d.block.until ? `մինչև ${formatDateNumeric(d.block.until)}` : '(անժամկետ)' }}
                   <div v-if="d.block.reason" class="small">«{{ d.block.reason }}»</div>

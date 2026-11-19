@@ -37,6 +37,7 @@ import {
   apiErrorCode,
   apiErrorText,
   availabilitySummary,
+  gpsDiagnosis,
   formatAge,
   formatArmenianPhone,
   formatMeters,
@@ -544,6 +545,9 @@ useSeoMetaData({ title: `Պատվեր #${orderId}`, description: 'Պատվերի
             <div class="muted">
               {{ availabilitySummary(assignedDriver.availability).text }} · GPS {{ formatAge(assignedDriver.availability.gpsAgeSeconds) }}
               <template v-if="assignedDriver.position?.accuracyM"> · ±{{ Math.round(assignedDriver.position.accuracyM) }} մ</template>
+              <div v-if="gpsDiagnosis(assignedDriver.availability, assignedDriver.position?.accuracyM)">
+                {{ gpsDiagnosis(assignedDriver.availability, assignedDriver.position?.accuracyM) }}
+              </div>
             </div>
           </div>
 

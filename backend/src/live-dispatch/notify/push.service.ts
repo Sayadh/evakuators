@@ -391,7 +391,7 @@ export class PushService {
   /**
    * Problem alerts (2026-11-16, problem-alert.ts): an Online driver — or one
    * with an active order — who lost his connection or GPS is told so, with a
-   * sound, at once, then every 5 minutes, at most 3 times per problem. The
+   * sound, after a 3-minute grace, then once an hour, at most 3 times per problem. The
    * state lives on DriverPresence so the console can show «Ծանուցված է».
    * Called by the worker.
    */

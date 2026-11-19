@@ -76,6 +76,8 @@ export interface FleetDriverView {
   appOnly: boolean
   /** The last problem alert the driver got (2026-11-16): what, how many times, when — null when none is open */
   problemAlert: { reason: string; count: number; at: string | null } | null
+  /** Taken Offline automatically (2026-11-18): 3 offers in a row never reached his phone */
+  autoOffline: { reason: string; at: string } | null
   /** The operator's ratings of completed jobs (2026-11-17): average 1–5, null with none */
   rating: { average: number; count: number } | null
   statusReason: string | null
@@ -118,6 +120,7 @@ const VIEW_SELECT = `
   d."vehicleDescription", d."statusReason", d."statusChangedAt", d."createdAt",
   (bp."dispatchSuspendedAt" IS NOT NULL AND (bp."dispatchSuspendedUntil" IS NULL OR bp."dispatchSuspendedUntil" > now())) AS "blocked",
   bp."problemAlertReason", bp."problemAlertCount", bp."problemAlertAt",
+  bp."autoOfflineReason", bp."autoOfflineAt",
   (SELECT round(avg(r."score")::numeric, 1) FROM "OrderRating" r WHERE r."driverId" = v."id") AS "ratingAvg",
   (SELECT count(*) FROM "OrderRating" r WHERE r."driverId" = v."id") AS "ratingCount",
   bp."dispatchSuspendedReason" AS "blockedReason", bp."dispatchSuspendedUntil" AS "blockedUntil", bp."dispatchSuspendedAt" AS "blockedAt"`
@@ -146,6 +149,10 @@ function mapView(row: Record<string, unknown>): FleetDriverView {
       row.problemAlertReason == null
         ? null
         : { reason: String(row.problemAlertReason), count: toNumber(row.problemAlertCount ?? 0), at: toNullableDate(row.problemAlertAt)?.toISOString() ?? null },
+    autoOffline:
+      row.autoOfflineAt == null || row.autoOfflineReason == null
+        ? null
+        : { reason: String(row.autoOfflineReason), at: (toNullableDate(row.autoOfflineAt) as Date).toISOString() },
     statusReason: row.statusReason == null ? null : String(row.statusReason),
     // Blocked for orders by an operator (DriverPresence), with the reason the driver sees and the end, if any
     block: row.blocked === true

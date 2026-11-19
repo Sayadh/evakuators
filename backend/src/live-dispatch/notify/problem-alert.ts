@@ -1,7 +1,7 @@
 /**
  * Problem alerts (2026-11-16, owner's decision): an Online driver (or one with
  * an active order) who has lost his connection or his GPS is TOLD, with a
- * sound, what is wrong and what to do — at once, then every
+ * sound, what is wrong and what to do — once the grace below has passed, then every
  * PROBLEM_ALERT_EVERY_SECONDS, at most PROBLEM_ALERT_MAX times per problem.
  * A new problem (or the same one after it cleared) starts over.
  *
@@ -18,12 +18,20 @@
  */
 export type ProblemReason = 'CONNECTION' | 'GPS'
 
-export const PROBLEM_ALERT_EVERY_SECONDS = 300
+/** Once an hour (2026-11-18, owner's decision; was every 5 minutes): told, not nagged */
+export const PROBLEM_ALERT_EVERY_SECONDS = 3600
 export const PROBLEM_ALERT_MAX = 3
-/** On top of heartbeatMaxAgeSeconds: the wake push gets this long to work first */
-export const CONNECTION_GRACE_SECONDS = 60
-/** On top of gpsMaxAgeSeconds: one missed fix is not a problem yet */
-export const GPS_GRACE_SECONDS = 30
+/**
+ * On top of heartbeatMaxAgeSeconds: the wake push gets this long to work
+ * first. 3 minutes (2026-11-18): a locked phone lying still drops into
+ * Android's deep Doze, the app goes quiet for a few minutes and the wake push
+ * brings it back by itself — an alert in that window was a false alarm the
+ * driver could do nothing about. A phone that is really off or offline is
+ * still reported, just ~2 minutes later.
+ */
+export const CONNECTION_GRACE_SECONDS = 180
+/** On top of gpsMaxAgeSeconds: a Doze window without a fix is not a problem yet (same reasoning, 2026-11-18) */
+export const GPS_GRACE_SECONDS = 180
 
 export interface ProblemInput {
   heartbeatAgeSeconds: number | null

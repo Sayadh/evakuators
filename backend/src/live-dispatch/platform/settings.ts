@@ -115,7 +115,10 @@ export const DEFAULT_DISPATCH_SETTINGS: DispatchSettings = {
   gpsMaxAccuracyMeters: 150,
   gpsRejectAccuracyMeters: 2000,
   heartbeatMaxAgeSeconds: 90,
-  baseHeartbeatMaxAgeSeconds: 1800,
+  // 7 days (2026-11-18, product decision): an Online driver without GPS keeps
+  // getting orders by his base — even after a night's sleep with the phone
+  // locked; he is at home, i.e. at his base. Going Offline is how he stops.
+  baseHeartbeatMaxAgeSeconds: 7 * 24 * 3600,
   gpsFutureToleranceSeconds: 30,
   gpsMaxHistoryAgeHours: 24,
   gpsSuspiciousSpeedMps: 70,
@@ -164,7 +167,7 @@ const RANGES: { [K in keyof DispatchSettings]: DispatchSettings[K] extends numbe
   gpsMaxAccuracyMeters: { min: 5, max: 2000 },
   gpsRejectAccuracyMeters: { min: 50, max: 20_000 },
   heartbeatMaxAgeSeconds: { min: 15, max: 1800 },
-  baseHeartbeatMaxAgeSeconds: { min: 15, max: 43_200 },
+  baseHeartbeatMaxAgeSeconds: { min: 15, max: 30 * 24 * 3600 },
   gpsFutureToleranceSeconds: { min: 0, max: 600 },
   gpsMaxHistoryAgeHours: { min: 1, max: 168 },
   gpsSuspiciousSpeedMps: { min: 20, max: 300 },

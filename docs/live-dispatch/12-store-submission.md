@@ -41,6 +41,7 @@
    - Test account (տես ներքևում)։
 4. **Foreground service** declaration (Android 14+)՝ type `location`, նույն use case + վիդեո։
 4a. **Full-screen intent** declaration (App content → *Full-screen intent*, 2026-11)․ հավելվածը օգտագործում է `USE_FULL_SCREEN_INTENT`, որ նոր պատվերի առաջարկը կողպված հեռախոսին բացվի ինչպես մուտքային զանգ/զարթուցիչ (ժամկետով առաջարկ, որին վարորդը պետք է պատասխանի վայրկյանների ընթացքում)։ Google-ը այն լռելյայն տալիս է միայն calling/alarm հավելվածներին․ մնացածի դեպքում վարորդը թույլատրում է ինքը (հավելվածը տանում է կարգավորման էջ)։ Կցեք կարճ վիդեո՝ կողպված հեռախոս → առաջարկը բացվում է → «Ընդունել»։
+4b. **`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`** (2026-11-18)․ «Մարտկոց → Թույլատրել»-ը բացում է համակարգի «Թույլատրե՞լ աշխատել առանց սահմանափակման» պատուհանը։ Առանց դրա կողպված և անշարժ հեռախոսը մտնում է Doze, և dispatch-ը կորցնում է կապը վարորդի հետ։ Play-ի policy-ն թույլ է տալիս այն հավելվածներին, որոնց հիմնական ֆունկցիան դա պահանջում է (իրական ժամանակի dispatch)։ Review-ի ժամանակ նշեք՝ «tow-truck dispatch: drivers must stay reachable with the screen off»։
 5. **Precise location declaration** — պարտադիր **2027-01-27**-ից (Oct 2026 policy update)։
 6. **Trader status** (EU DSA) և developer verification՝ եթե դեռ արված չէ։
 7. **App access**՝ demo վարորդի հեռախոս/գաղտնաբառ + նշում (պատրաստի տեքստը՝ § «App Review account»)։

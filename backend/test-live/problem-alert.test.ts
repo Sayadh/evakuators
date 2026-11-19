@@ -10,9 +10,13 @@ describe('problem alerts (2026-11-16)', () => {
     assert.deepEqual(decideProblemAlert({ heartbeatAgeSeconds: 10, gpsAgeSeconds: 20, stored: none }, rules), { kind: 'none' })
     assert.deepEqual(decideProblemAlert({ heartbeatAgeSeconds: 10, gpsAgeSeconds: 20, stored: { reason: 'GPS', count: 2, lastAtAgeSeconds: 30 } }, rules), { kind: 'clear' })
   })
-  it('connection: only after the console limit plus the wake push grace', () => {
+  it('connection: only after the console limit plus the wake push grace (3 min — a Doze nap is not a problem)', () => {
     assert.equal(decideProblemAlert({ heartbeatAgeSeconds: 120, gpsAgeSeconds: 500, stored: none }, rules).kind, 'none')
-    assert.deepEqual(decideProblemAlert({ heartbeatAgeSeconds: 200, gpsAgeSeconds: 500, stored: none }, rules), { kind: 'send', reason: 'CONNECTION', count: 1 })
+    assert.equal(decideProblemAlert({ heartbeatAgeSeconds: 260, gpsAgeSeconds: 500, stored: none }, rules).kind, 'none', 'a few minutes of deep Doze: no alert')
+    assert.deepEqual(decideProblemAlert({ heartbeatAgeSeconds: 300, gpsAgeSeconds: 500, stored: none }, rules), { kind: 'send', reason: 'CONNECTION', count: 1 })
+  })
+  it('GPS: a short gap (Doze) is quiet; a lasting one is told', () => {
+    assert.equal(decideProblemAlert({ heartbeatAgeSeconds: 10, gpsAgeSeconds: 280, stored: none }, rules).kind, 'none')
   })
   it('GPS: the app answers but no fresh fix (or none at all)', () => {
     assert.deepEqual(decideProblemAlert({ heartbeatAgeSeconds: 10, gpsAgeSeconds: 400, stored: none }, rules), { kind: 'send', reason: 'GPS', count: 1 })

@@ -241,6 +241,8 @@ export interface FleetDriver {
   appOnly?: boolean
   /** The driver was told about a lost connection / GPS (2026-11-16) */
   problemAlert?: { reason: 'CONNECTION' | 'GPS' | string; count: number; at: string | null } | null
+  /** Taken Offline automatically (2026-11-18): 3 offers in a row never reached his phone; cleared when he presses Online */
+  autoOffline?: { reason: 'UNDELIVERED_OFFERS' | string; at: string } | null
   /** The operator's 1–5 ratings of completed jobs (2026-11-17) */
   rating?: { average: number; count: number } | null
   statusReason: string | null

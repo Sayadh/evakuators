@@ -12,6 +12,7 @@ import {
   formatArmenianPhone,
   formatMeters,
   formatSeconds,
+  gpsDiagnosis,
 } from '~/utils/opsDispatchLabels'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
@@ -77,5 +78,19 @@ describe('live dispatch console', () => {
     expect(page).toContain('combined.results.filter((r) => !r.live)')
     expect(page).not.toContain('remember(combined')
     expect(page).not.toContain('remember(liveResult')
+  })
+})
+
+describe('gpsDiagnosis (2026-11-18)', () => {
+  const base = { preference: 'ONLINE' as const, connection: 'FRESH' as const, gps: 'FRESH' as const, gpsAgeSeconds: 20, heartbeatAgeSeconds: 10 }
+  it('nothing to explain: fresh, or Offline', () => {
+    expect(gpsDiagnosis(base, 12)).toBeNull()
+    expect(gpsDiagnosis({ ...base, preference: 'OFFLINE', connection: 'STALE' }, null)).toBeNull()
+  })
+  it('names the cause: asleep, coarse, no fix, fake', () => {
+    expect(gpsDiagnosis({ ...base, connection: 'STALE', heartbeatAgeSeconds: 300 }, null)).toMatch(/Doze/)
+    expect(gpsDiagnosis({ ...base, gps: 'INACCURATE' }, 420.4)).toMatch(/±420 մ/)
+    expect(gpsDiagnosis({ ...base, gps: 'STALE', gpsAgeSeconds: 600 }, null)).toMatch(/10 ր առաջ/)
+    expect(gpsDiagnosis({ ...base, gps: 'SUSPICIOUS' }, null)).toMatch(/կեղծ/)
   })
 })

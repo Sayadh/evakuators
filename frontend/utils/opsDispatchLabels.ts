@@ -170,6 +170,33 @@ export function formatAge(seconds: number | null | undefined): string {
   return `${Math.round(seconds / 3600)} ժ առաջ`
 }
 
+/**
+ * WHY an Online driver has no usable position, in the operator's words
+ * (2026-11-18) — so a «GPS չկա» complaint is diagnosed, not guessed:
+ * - the app is silent → the phone is asleep (Android Doze) or offline;
+ * - the app answers but the fix is too coarse → indoors / network location;
+ * - the app answers but no fix comes → location off or no sky;
+ * - a fix the server refused as fake.
+ * Null when there is nothing to explain (a fresh fix, or an Offline driver).
+ */
+export function gpsDiagnosis(
+  a: Pick<OpsAvailability, 'preference' | 'connection' | 'gps' | 'gpsAgeSeconds' | 'heartbeatAgeSeconds'>,
+  accuracyM: number | null | undefined,
+): string | null {
+  if (a.preference !== 'ONLINE') return null
+  if (a.connection === 'STALE') {
+    return `Հավելվածը չի պատասխանում ${formatAge(a.heartbeatAgeSeconds)}․ հեռախոսը «քնած» է (Doze) կամ ինտերնետ չկա — ստուգեք մարտկոցի «Առանց սահմանափակման» կարգավորումը`
+  }
+  if (a.connection === 'NEVER') return 'Հավելվածը դեռ չի միացել'
+  if (a.gps === 'INACCURATE') {
+    return `Դիրքը անճշգրիտ է${accuracyM ? ` (±${Math.round(accuracyM)} մ)` : ''}․ հեռախոսը շենքի ներսում է կամ GPS-ը չի որսում արբանյակներ`
+  }
+  if (a.gps === 'STALE') return `Հավելվածը կապի մեջ է, բայց նոր դիրք չկա ${formatAge(a.gpsAgeSeconds)}․ տեղորոշումն անջատված է կամ երկինքը չի երևում`
+  if (a.gps === 'NONE') return 'Հեռախոսը դեռ ոչ մի դիրք չի ուղարկել․ տեղորոշման թույլտվությունը ստուգեք'
+  if (a.gps === 'SUSPICIOUS') return 'Դիրքը մերժվել է որպես կասկածելի (հնարավոր է՝ կեղծ GPS հավելված)'
+  return null
+}
+
 /** "+37491000001" → "+374 91 00 00 01" for reading on the phone */
 export function formatArmenianPhone(phone: string): string {
   const m = /^\+374(\d{2})(\d{2})(\d{2})(\d{2})$/.exec(phone)

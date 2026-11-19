@@ -2,7 +2,7 @@
 import { getRegionCities } from '~/utils/geography'
 import { buildRegionFaq } from '~/utils/faqContent'
 import { getRegionRoute } from '~/utils/routeHelpers'
-import { buildRegionSeo, buildTranslitParagraph } from '~/utils/seoContent'
+import { buildRegionSeo, buildTranslitParagraph, summarizeListing } from '~/utils/seoContent'
 
 const route = useRoute()
 const { t, locale } = useI18n()
@@ -27,7 +27,11 @@ const plural = usePlural()
 /** The marz's own name, in the language being read */
 const regionName = computed(() => placeName('region', regionSlug, region.value?.name ?? ''))
 
-const faqItems = buildRegionFaq(region.value.name, locale.value, regionSlug)
+// Reactive: the listing is not awaited, the server resolves it before rendering.
+const listingStats = computed(() => summarizeListing(towTrucks.value))
+const faqItems = computed(() =>
+  buildRegionFaq(region.value!.name, locale.value, regionSlug, listingStats.value),
+)
 const seoParagraphs = [buildTranslitParagraph(region.value.name, regionSlug, locale.value, 'region')]
 
 /**
@@ -49,9 +53,24 @@ const regionDescription = computed(() => {
   return t('page.regionDescription', { place: regionName.value, towns })
 })
 
+const baseSeo = buildRegionSeo(region.value.name, regionSlug, locale.value)
+
 useSeoMetaData({
-  ...buildRegionSeo(region.value.name, regionSlug, locale.value),
+  ...baseSeo,
   path: getRegionRoute(regionSlug),
+})
+
+// The live count and price, once the listing is in (same pattern as /yerevan)
+const liveSeo = computed(() =>
+  buildRegionSeo(region.value!.name, regionSlug, locale.value, listingStats.value),
+)
+useSeoMeta({
+  title: () => liveSeo.value.title,
+  ogTitle: () => liveSeo.value.title,
+  twitterTitle: () => liveSeo.value.title,
+  description: () => liveSeo.value.description,
+  ogDescription: () => liveSeo.value.description,
+  twitterDescription: () => liveSeo.value.description,
 })
 </script>
 
@@ -102,7 +121,7 @@ useSeoMetaData({
       </ul>
     </section>
 
-    <FaqSection :items="faqItems" class="region-page__section" />
+    <FaqSection :key="listingStats.count" :items="faqItems" class="region-page__section" />
 
     <SeoTextSection
       :title="t('page.seoRegionTitle', { place: regionName })"

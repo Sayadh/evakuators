@@ -97,7 +97,7 @@ export interface LocationSeo {
  * Where the body text does need a preposition it uses «в городе X», which is
  * grammatical with the nominative and correct for every name.
  */
-export function buildLocationSeo(
+function baseLocationSeo(
   nameHy: string,
   slug: string,
   locale = 'hy',
@@ -246,7 +246,7 @@ export function buildYerevanListingDescription(
   )
 }
 
-export function buildRegionSeo(regionNameHy: string, slug: string, locale = 'hy'): LocationSeo {
+function baseRegionSeo(regionNameHy: string, slug: string, locale = 'hy'): LocationSeo {
   const translit = translitFromSlug(slug)
   const name = localizedPlaceName('region', slug, regionNameHy, locale)
 
@@ -429,4 +429,120 @@ export function buildTranslitParagraph(
   }
 
   return `Evakuator ${translit} — էվակուատորի ծառայություն ${nameHy}ում ցանկացած ժամի՝ ներառյալ գիշերային կանչերը (evakuator 24 jam)։ Մատչելի գներ (ejan evakuator), մանիպուլյատորով էվակուատոր տարբերակ ծանր մեքենաների համար, նոր վարորդներ, արագ ժամանում և ուղիղ կապ վարորդի հետ՝ առանց միջնորդների։`
+}
+
+/** Every listing page's facts — the same shape the Yerevan page reads */
+export type ListingStats = YerevanListingStats
+export const summarizeListing = summarizeYerevanListing
+
+/** «25 վարորդ, 5 000 ֏-ից» — null when the listing is empty or unknown */
+export function listingFacts(stats: ListingStats | undefined, locale = 'hy'): string | null {
+  if (!stats || stats.count === 0) return null
+  return [
+    driverCount(stats.count, locale),
+    ...(stats.lowestPrice === null ? [] : [localizedFromPrice(stats.lowestPrice, locale)]),
+  ].join(', ')
+}
+
+/**
+ * A listing title that survives Google's ~60-character cut: the query and the
+ * facts first, the Latin spelling last — it still matches «evakuator arabkir»
+ * when it is cut off, and the brand is shown by Google as the site name anyway.
+ */
+export function factsTitle(lead: string, facts: string, translitTail: string): string {
+  return `${lead} — ${facts} · ${translitTail}`
+}
+
+function factsDescription(lead: string, drivers: string, price: string | null, locale: string, tail: string): string {
+  if (locale === 'ru') return `${lead}: ${drivers}${price ? `, цены ${price}` : ''}. ${tail}`
+  if (locale === 'en') return `${lead}: ${drivers}${price ? `, prices ${price}` : ''}. ${tail}`
+  return `${lead}. ${drivers}${price ? `, գները՝ ${price}` : ''}։ ${tail}`
+}
+
+const CALL_TAIL: Record<string, string> = {
+  hy: 'Իրական նկարներ և գներ, զանգեք վարորդին ուղիղ։',
+  ru: 'Реальные фото и цены — звоните водителю напрямую.',
+  en: 'Real photos and prices — call the driver directly.',
+}
+
+/**
+ * City, district and corridor-free town pages. With the listing's `stats` the
+ * title and description quote the live driver count and lowest price; without
+ * them (or with an empty listing) they stay the regular templated copy.
+ */
+export function buildLocationSeo(
+  nameHy: string,
+  slug: string,
+  locale = 'hy',
+  kind: PlaceKind = 'city',
+  stats?: ListingStats,
+): LocationSeo {
+  const base = baseLocationSeo(nameHy, slug, locale, kind)
+  const facts = listingFacts(stats, locale)
+  if (!facts || !stats) return base
+
+  const translit = translitFromSlug(slug)
+  const name = localizedPlaceName(kind, slug, nameHy, locale)
+  const drivers = driverCount(stats.count, locale)
+  const price = stats.lowestPrice === null ? null : localizedFromPrice(stats.lowestPrice, locale)
+  const tail = CALL_TAIL[locale] ?? CALL_TAIL.hy
+
+  if (locale === 'ru') {
+    const where = kind === 'district' ? `в районе ${name}` : `в городе ${name}`
+    return {
+      ...base,
+      title: factsTitle(`Эвакуатор ${name} 24/7`, facts, `Evakuator ${translit}`),
+      description: factsDescription(`Вызвать эвакуатор ${where} круглосуточно`, drivers, price, locale, tail),
+    }
+  }
+  if (locale === 'en') {
+    return {
+      ...base,
+      title: factsTitle(`Tow truck in ${name} 24/7`, facts, `Evakuator ${translit}`),
+      description: factsDescription(`Call a tow truck in ${name} 24/7`, drivers, price, locale, tail),
+    }
+  }
+  return {
+    ...base,
+    title: factsTitle(`Էվակուատոր ${nameHy}ում 24/7`, facts, `Evakuator ${translit}`),
+    description: factsDescription(`Էվակուատոր ${nameHy}ում 24/7`, drivers, price, locale, tail),
+  }
+}
+
+/** Marz pages — the same live facts as `buildLocationSeo` */
+export function buildRegionSeo(
+  regionNameHy: string,
+  slug: string,
+  locale = 'hy',
+  stats?: ListingStats,
+): LocationSeo {
+  const base = baseRegionSeo(regionNameHy, slug, locale)
+  const facts = listingFacts(stats, locale)
+  if (!facts || !stats) return base
+
+  const translit = translitFromSlug(slug)
+  const name = localizedPlaceName('region', slug, regionNameHy, locale)
+  const drivers = driverCount(stats.count, locale)
+  const price = stats.lowestPrice === null ? null : localizedFromPrice(stats.lowestPrice, locale)
+  const tail = CALL_TAIL[locale] ?? CALL_TAIL.hy
+
+  if (locale === 'ru') {
+    return {
+      ...base,
+      title: factsTitle(`Эвакуатор ${name} 24/7`, facts, `Evakuator ${translit}`),
+      description: factsDescription(`Вызвать эвакуатор в марзе ${name} круглосуточно`, drivers, price, locale, tail),
+    }
+  }
+  if (locale === 'en') {
+    return {
+      ...base,
+      title: factsTitle(`Tow truck in ${name} region 24/7`, facts, `Evakuator ${translit}`),
+      description: factsDescription(`Call a tow truck in ${name} region 24/7`, drivers, price, locale, tail),
+    }
+  }
+  return {
+    ...base,
+    title: factsTitle(`Էվակուատոր ${regionNameHy}ի մարզում 24/7`, facts, `Evakuator ${translit}`),
+    description: factsDescription(`Էվակուատոր ${regionNameHy}ի մարզում 24/7`, drivers, price, locale, tail),
+  }
 }

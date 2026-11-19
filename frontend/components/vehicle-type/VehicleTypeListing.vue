@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { summarizeListing } from '~/utils/seoContent'
 import type { VehicleTypeGeo, VehicleTypePage } from '~/constants/vehicleTypePages'
 import {
   countryLocative,
@@ -73,7 +74,6 @@ const localGeo = computed(() =>
 const heading = computed(() =>
   buildVehicleTypeHeading(localPage.value, localGeo.value, locale.value),
 )
-const seo = computed(() => buildVehicleTypeSeo(localPage.value, localGeo.value, locale.value))
 const seoParagraphs = computed(() =>
   buildVehicleTypeParagraphs(localPage.value, localGeo.value, locale.value),
 )
@@ -102,6 +102,11 @@ const { data: towTrucks, pending } = props.geo
  * page the nav links to; if it is empty the honest answer is an empty state on
  * an indexable page, not a hole in the site.
  */
+// Title and description quote the live count and lowest price (utils/vehicleTypeSeo.ts)
+const seo = computed(() =>
+  buildVehicleTypeSeo(localPage.value, localGeo.value, locale.value, summarizeListing(towTrucks.value)),
+)
+
 const isThinAreaPage = computed(() => Boolean(props.geo) && towTrucks.value.length === 0)
 
 useSeoMetaData({

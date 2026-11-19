@@ -307,6 +307,20 @@ canonical set, `BreadcrumbList` + `FAQPage` JSON-LD emitted by
 SSR-rendered content) and still never announced to crawlers. If you add a page
 under `pages/`, add it here too.
 
+## Listing titles quote live facts (2026-11-19)
+
+Area and vehicle-type listings (`/yerevan`, districts, cities, marzes,
+`/manipulator`, `/tsanr-tehnika` and their area pages) build their `<title>` and
+meta description from the listing itself: driver count and lowest starting
+price (`summarizeListing`, `listingFacts`, `factsTitle` in
+`utils/seoContent.ts`; `buildVehicleTypeSeo` in `utils/vehicleTypeSeo.ts`).
+Order: query, facts, then the Latin spelling — Google shows about 60
+characters, and the facts must be in that part. An empty listing keeps the
+regular templated copy. The area FAQs (`buildCityFaq`, `buildRegionFaq`,
+`buildYerevanFaq`) quote the same numbers and the `/gner` price range, so the
+pages do not share one text and never contradict the price guide. The homepage
+title is deliberately not part of this: it stays brand-first (below).
+
 ## Brand identity surfaces
 
 The site's name is `Evakuators.am`, spelled that way everywhere. A singular

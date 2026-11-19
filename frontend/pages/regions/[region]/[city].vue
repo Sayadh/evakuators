@@ -7,7 +7,7 @@ import { isLandingSettlement } from '~/utils/locationSearch'
 import { findSettlement, findSettlementTargetCity } from '~/utils/settlements'
 import { getCityRoute, getRegisterRoute } from '~/utils/routeHelpers'
 import { buildTowTruckListSchema } from '~/utils/schemaOrg'
-import { buildLocationSeo, buildTranslitParagraph } from '~/utils/seoContent'
+import { buildLocationSeo, buildTranslitParagraph, summarizeListing } from '~/utils/seoContent'
 
 /**
  * One route, two kinds of area: `/regions/:region/:slug` resolves to a city or
@@ -131,8 +131,13 @@ const breadcrumbs =
 // asked here. `areaName` is already localized (see above), so it is passed
 // with no slug — buildCityFaq would otherwise look a CITY slug up a second
 // time and, for a landing settlement, find nothing at all.
+// Facts from the whole listing (not the filtered view): what the page offers, not what one visitor ticked.
+const listingStats = computed(() => summarizeListing(towTrucks.value))
+
 const faqItems = computed(() =>
-  isZone || isLanding ? [] : buildCityFaq(areaName.value, locale.value),
+  isZone || isLanding
+    ? []
+    : buildCityFaq(areaName.value, locale.value, undefined, listingStats.value),
 )
 
 /** The marz this page belongs to, in the language being read */
@@ -185,7 +190,7 @@ useSeoMetaData(
           path: getCityRoute(regionSlug, citySlug),
         }
       : {
-          ...buildLocationSeo(areaName.value, citySlug, locale.value),
+          ...buildLocationSeo(areaName.value, citySlug, locale.value, 'city', listingStats.value),
           path: getCityRoute(regionSlug, citySlug),
         },
 )

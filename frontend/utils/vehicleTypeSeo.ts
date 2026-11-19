@@ -1,6 +1,7 @@
 import type { VehicleTypeGeo, VehicleTypePage } from '~/constants/vehicleTypePages'
 import { SITE_NAME } from '~/constants/site'
 import { countryLocative, countryName } from '~/i18n/vehicleTypeCopy'
+import { factsTitle, listingFacts, type ListingStats } from '~/utils/seoContent'
 
 /**
  * The `<title>`, description, keywords, `<h1>` and body copy of every
@@ -101,7 +102,7 @@ export function buildVehicleTypeHeading(
  * not first: unlike the homepage these are landing pages for a query, and the
  * query belongs at the front where it is not truncated.
  */
-export function buildVehicleTypeSeo(
+function baseVehicleTypeSeo(
   page: VehicleTypePage,
   geo?: VehicleTypeGeo,
   locale = 'hy',
@@ -250,4 +251,31 @@ export function buildVehicleTypeSeoTitle(
 ): string {
   const place = geo ? geo.locative : countryLocative(locale)
   return `${page.heading} ${place} ${SEO_TITLE_TAIL[locale] ?? SEO_TITLE_TAIL.hy}`
+}
+
+/**
+ * With the listing's `stats`, the title leads with the live driver count and
+ * lowest price — the same rule as the area pages (`factsTitle`) — and the
+ * description opens with them. An empty listing keeps the regular copy.
+ */
+export function buildVehicleTypeSeo(
+  page: VehicleTypePage,
+  geo?: VehicleTypeGeo,
+  locale = 'hy',
+  stats?: ListingStats,
+): VehicleTypeSeo {
+  const base = baseVehicleTypeSeo(page, geo, locale)
+  const facts = listingFacts(stats, locale)
+  if (!facts) return base
+
+  const lead = geo ? `${page.heading} ${geo.locative}` : page.title
+  const tail = geo ? `${page.seo.keywordTranslit} ${geo.translit}` : page.seo.keywordTranslit
+  // The area description already opens with «heading place (translit)»: the
+  // facts go right after it, so the query terms stay first and nothing repeats.
+  // The country page's hand-written description gets them as its own opener.
+  const stop = FULL_STOP[locale] ?? FULL_STOP.hy
+  const description = geo
+    ? base.description.replace(/^([^)]*\))/, `$1 — ${facts}`)
+    : `${lead} — ${facts}${stop} ${base.description}`
+  return { ...base, title: factsTitle(lead, facts, tail), description }
 }

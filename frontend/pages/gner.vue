@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { getRegionsRoute, getYerevanRoute } from '~/utils/routeHelpers'
+import { findCityLocation } from '~/utils/geography'
+import { getCityRoute, getRegionsRoute, getYerevanRoute } from '~/utils/routeHelpers'
 import { buildBreadcrumbSchema } from '~/utils/schemaOrg'
 import { buildPriceGuide } from '~/utils/priceGuideContent'
 
@@ -8,6 +9,22 @@ const { forPriceGuide } = useBreadcrumbs()
 
 const content = computed(() => buildPriceGuide(locale.value))
 const breadcrumbs = forPriceGuide()
+const placeName = usePlaceName()
+
+/**
+ * The towns people search for most (Search Console, Nov 2026), linked from the
+ * one page every area's FAQ points to — internal links to the listings that
+ * already earn clicks, in the visitor's own language.
+ */
+const POPULAR_CITY_SLUGS = ['gyumri', 'vanadzor', 'abovyan', 'ashtarak', 'artashat', 'masis', 'sevan', 'dilijan']
+const popularCities = computed(() =>
+  POPULAR_CITY_SLUGS.flatMap((slug) => {
+    const city = findCityLocation(slug)
+    return city
+      ? [{ slug, name: placeName('city', slug, city.name), to: getCityRoute(city.regionSlug, slug) }]
+      : []
+  }),
+)
 
 useSeoMetaData({
   title: content.value.title,
@@ -98,6 +115,9 @@ useJsonLd([buildBreadcrumbSchema(breadcrumbs)])
       <NearestTowTrucksCta />
       <nav class="price-guide__links" :aria-label="content.ctaTitle">
         <NuxtLinkLocale :to="getYerevanRoute()">{{ t('footer.yerevan') }}</NuxtLinkLocale>
+        <NuxtLinkLocale v-for="city in popularCities" :key="city.slug" :to="city.to">
+          {{ city.name }}
+        </NuxtLinkLocale>
         <NuxtLinkLocale :to="getRegionsRoute()">{{ t('footer.regions') }}</NuxtLinkLocale>
       </nav>
     </section>

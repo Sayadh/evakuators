@@ -2,7 +2,12 @@ import type { FaqItem } from '~/types/common'
 import { localizedPlaceName } from '~/i18n/placeNames'
 import { PRICE_GUIDE } from '~/constants/priceGuide'
 import { formatPriceRange } from '~/utils/formatPrice'
-import { localizedFromPrice, type YerevanListingStats } from '~/utils/seoContent'
+import {
+  driverCount,
+  localizedFromPrice,
+  type ListingStats,
+  type YerevanListingStats,
+} from '~/utils/seoContent'
 
 /**
  * Homepage-only FAQ — targets the exact query variants people search on Google.
@@ -283,7 +288,7 @@ export function buildFreeRoutesFaq(locale = 'hy'): FaqItem[] {
  * reads to match «сколько стоит эвакуатор ереван», so it has to be written in
  * the language rather than converted into it.
  */
-export function buildCityFaq(cityName: string, locale = 'hy', slug?: string): FaqItem[] {
+function baseCityFaq(cityName: string, locale = 'hy', slug?: string): FaqItem[] {
   const name = slug ? localizedPlaceName('city', slug, cityName, locale) : cityName
 
   if (locale === 'ru') {
@@ -349,7 +354,7 @@ export function buildCityFaq(cityName: string, locale = 'hy', slug?: string): Fa
   ]
 }
 
-export function buildRegionFaq(regionName: string, locale = 'hy', slug?: string): FaqItem[] {
+function baseRegionFaq(regionName: string, locale = 'hy', slug?: string): FaqItem[] {
   const name = slug ? localizedPlaceName('region', slug, regionName, locale) : regionName
 
   if (locale === 'ru') {
@@ -516,4 +521,66 @@ export function buildYerevanFaq(stats: YerevanListingStats, locale = 'hy'): FaqI
         'Կռունկով բարձրացման համար կա առանձին «Մանիպուլյատորով էվակուատոր» էջ։',
     },
   ]
+}
+
+/** The price answer every area FAQ shares: the /gner range plus this area's lowest card price */
+function areaPriceAnswer(place: string, stats: ListingStats, locale: string): string {
+  const typical = formatPriceRange(PRICE_GUIDE.cityCallout.low, PRICE_GUIDE.cityCallout.high)
+  const lowest = stats.lowestPrice === null ? null : localizedFromPrice(stats.lowestPrice, locale)
+  if (locale === 'ru') {
+    return `Вызов эвакуатора (${place}) обычно стоит ${typical}${lowest ? `, у водителей на этой странице — ${lowest}` : ''}. Итоговая цена зависит от машины, её состояния и расстояния — уточните её у водителя до погрузки.`
+  }
+  if (locale === 'en') {
+    return `A call-out (${place}) usually costs ${typical}${lowest ? `; drivers on this page start ${lowest}` : ''}. The final price depends on the vehicle, its condition and the distance — confirm it with the driver before loading.`
+  }
+  return `Էվակուատորի կանչը (${place}) սովորաբար արժե ${typical}${lowest ? `, այս էջի վարորդների մոտ՝ ${lowest}` : ''}։ Վերջնական գինը կախված է մեքենայից, վիճակից և հեռավորությունից․ ճշտեք այն վարորդից մինչև բեռնումը։`
+}
+
+function area24Answer(stats: ListingStats, locale: string): string | null {
+  if (stats.works24 === 0) return null
+  if (locale === 'ru') return `Да. На этой странице ${stats.works24} из ${stats.count} — с отметкой 24/7: они работают ночью и в праздники. Включите фильтр «Работает 24/7», чтобы видеть только их.`
+  if (locale === 'en') return `Yes. ${stats.works24} of the ${stats.count} drivers on this page are marked 24/7 and work nights and holidays. Use the "Works 24/7" filter to see only them.`
+  return `Այո։ Այս էջի ${stats.count} վարորդից ${stats.works24}-ը աշխատում է 24/7՝ ներառյալ գիշերը և տոն օրերը։ Օգտագործեք «Աշխատում է 24/7» ֆիլտրը՝ միայն նրանց տեսնելու համար։`
+}
+
+/**
+ * City and district FAQ. With the listing's `stats` the price and 24/7 answers
+ * quote this page's own numbers, so ~800 area pages stop sharing one text.
+ * Without them (empty listing, mock mode) the regular copy stays.
+ */
+export function buildCityFaq(
+  cityName: string,
+  locale = 'hy',
+  slug?: string,
+  stats?: ListingStats,
+): FaqItem[] {
+  const items = baseCityFaq(cityName, locale, slug)
+  if (!stats || stats.count === 0) return items
+  const place = slug ? localizedPlaceName('city', slug, cityName, locale) : cityName
+  const answer24 = area24Answer(stats, locale)
+  return items.map((item, index) => {
+    if (index === 0) return { ...item, answer: areaPriceAnswer(place, stats, locale) }
+    if (index === 2 && answer24) return { ...item, answer: answer24 }
+    return item
+  })
+}
+
+/** Marz FAQ — the first answer opens with the marz's live count and lowest price */
+export function buildRegionFaq(
+  regionName: string,
+  locale = 'hy',
+  slug?: string,
+  stats?: ListingStats,
+): FaqItem[] {
+  const items = baseRegionFaq(regionName, locale, slug)
+  if (!stats || stats.count === 0) return items
+  const drivers = driverCount(stats.count, locale)
+  const lowest = stats.lowestPrice === null ? null : localizedFromPrice(stats.lowestPrice, locale)
+  const lead =
+    locale === 'ru'
+      ? `В марзе на сайте ${drivers}${lowest ? `, цены ${lowest}` : ''}. `
+      : locale === 'en'
+        ? `The region has ${drivers} on the site${lowest ? `, prices ${lowest}` : ''}. `
+        : `Մարզում կայքում կա ${drivers}${lowest ? `, գները՝ ${lowest}` : ''}։ `
+  return items.map((item, index) => (index === 0 ? { ...item, answer: lead + item.answer } : item))
 }

@@ -2,7 +2,7 @@
 import { buildCityFaq } from '~/utils/faqContent'
 import { getDistrictRoute, getRegisterRoute } from '~/utils/routeHelpers'
 import { buildTowTruckListSchema } from '~/utils/schemaOrg'
-import { buildLocationSeo, buildTranslitParagraph } from '~/utils/seoContent'
+import { buildLocationSeo, buildTranslitParagraph, summarizeListing } from '~/utils/seoContent'
 
 const route = useRoute()
 const { t, locale } = useI18n()
@@ -42,7 +42,12 @@ const districtName = computed(() => placeName('district', districtSlug, district
 // `buildCityFaq` looks a slug up in the CITY name map, so a district slug
 // passed straight through would silently miss and fall back to Armenian.
 // The name is translated here instead, and handed over with no slug.
-const faqItems = computed(() => buildCityFaq(districtName.value, locale.value))
+// Facts from the whole listing (not the filtered view): what the page offers, not what one visitor ticked.
+const listingStats = computed(() => summarizeListing(towTrucks.value))
+
+const faqItems = computed(() =>
+  buildCityFaq(districtName.value, locale.value, undefined, listingStats.value),
+)
 
 const seoParagraphs = computed(() => [
   t('districtPage.intro', { place: districtName.value }),
@@ -50,7 +55,13 @@ const seoParagraphs = computed(() => [
 ])
 
 useSeoMetaData({
-  ...buildLocationSeo(district.value.name, districtSlug, locale.value, 'district'),
+  ...buildLocationSeo(
+    district.value.name,
+    districtSlug,
+    locale.value,
+    'district',
+    listingStats.value,
+  ),
   path: getDistrictRoute(districtSlug),
 })
 

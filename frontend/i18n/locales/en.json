@@ -12,6 +12,7 @@
     "description": "Find tow trucks and crane trucks in every region of Armenia and in each district of Yerevan. See photos of the vehicles, the services and the prices — and call the driver directly."
   },
   "nav": {
+    "prices": "Prices",
     "nearest": "Tow trucks near me",
     "freeRoutes": "Shared routes",
     "register": "List your tow truck",
@@ -137,6 +138,7 @@
     "imageAlt": "{name} — {vehicle} tow truck"
   },
   "breadcrumb": {
+    "prices": "Prices",
     "home": "Home",
     "regions": "Regions",
     "freeRoutes": "Shared routes"
@@ -311,6 +313,7 @@
     "explain": "{value} — what this means"
   },
   "pricing": {
+    "compareLink": "Compare prices across Armenia",
     "title": "Prices",
     "cityCallout": "Call-out within the city",
     "intercity": "Intercity transport",

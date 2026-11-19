@@ -20,6 +20,11 @@ export function formatPrice(amount: number): string {
   return `${formatCount(amount)} ֏`
 }
 
+/** 5000, 7000 → "5 000 – 7 000 ֏" */
+export function formatPriceRange(low: number, high: number): string {
+  return `${formatCount(low)} – ${formatPrice(high)}`
+}
+
 /**
  * The dram sign is NOT translated — «֏» is the currency, not a word, and it is
  * what a price tag in Armenia says in any language. Only the words around it

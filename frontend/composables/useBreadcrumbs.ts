@@ -35,6 +35,7 @@ export function useBreadcrumbs() {
   const forRegions = (): BreadcrumbItem[] => [HOME, { label: t('breadcrumb.regions') }]
 
   const forFreeRoutes = (): BreadcrumbItem[] => [HOME, { label: t('breadcrumb.freeRoutes') }]
+  const forPriceGuide = (): BreadcrumbItem[] => [HOME, { label: t('breadcrumb.prices') }]
 
   /**
    * Two levels, not three: a vehicle-type page hangs directly off the home
@@ -129,6 +130,7 @@ export function useBreadcrumbs() {
   return {
     forRegions,
     forFreeRoutes,
+    forPriceGuide,
     forVehicleType,
     forVehicleTypeGeo,
     forRegion,

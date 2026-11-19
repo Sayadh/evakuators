@@ -248,6 +248,7 @@ function buildEntries(
     // turns over faster than any other non-listing page on the site.
     { path: '/free-routes', priority: '0.8', changefreq: 'daily' },
     { path: '/regions', priority: '0.8', changefreq: 'weekly' },
+    { path: '/gner', priority: '0.8', changefreq: 'monthly' },
     // The vehicle-type landing pages. Derived from the same list the header
     // reads, so a page can never be in the nav and missing from here — which is
     // exactly what happened to /free-routes once (see the note above it).

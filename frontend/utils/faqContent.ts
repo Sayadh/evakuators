@@ -1,5 +1,8 @@
 import type { FaqItem } from '~/types/common'
 import { localizedPlaceName } from '~/i18n/placeNames'
+import { PRICE_GUIDE } from '~/constants/priceGuide'
+import { formatPriceRange } from '~/utils/formatPrice'
+import { localizedFromPrice, type YerevanListingStats } from '~/utils/seoContent'
 
 /**
  * Homepage-only FAQ — targets the exact query variants people search on Google.
@@ -396,6 +399,121 @@ export function buildRegionFaq(regionName: string, locale = 'hy', slug?: string)
       question: 'Հնարավո՞ր է միջմարզային տեղափոխում',
       answer:
         'Այո, «Միջքաղաքային տեղափոխում» ծառայությամբ վարորդները տեղափոխում են մեքենաներ մարզից մարզ, ներառյալ Երևան։ Գինը հաշվարկվում է ըստ կիլոմետրաժի։',
+    },
+  ]
+}
+
+/** «у 21 водителя», «у 37 водителей» — the genitive the Russian answer needs */
+function russianDriversGenitive(count: number): string {
+  return `${count} ${count % 10 === 1 && count % 100 !== 11 ? 'водителя' : 'водителей'}`
+}
+
+/**
+ * The `/yerevan` FAQ. It answers what the page's searches ask — price, 24/7,
+ * how to call — with the live count from the listing on the same page, and the
+ * typical price range from the `/gner` snapshot so the two pages never disagree.
+ * Without drivers (a failed request) it answers without numbers.
+ */
+export function buildYerevanFaq(stats: YerevanListingStats, locale = 'hy'): FaqItem[] {
+  const typical = formatPriceRange(PRICE_GUIDE.cityCallout.low, PRICE_GUIDE.cityCallout.high)
+  const night = `${PRICE_GUIDE.nightSurchargePercent.low}–${PRICE_GUIDE.nightSurchargePercent.high}%`
+  const lowest = stats.lowestPrice === null ? null : localizedFromPrice(stats.lowestPrice, locale)
+  const known = stats.count > 0
+
+  if (locale === 'ru') {
+    return [
+      {
+        question: 'Сколько стоит эвакуатор в Ереване',
+        answer:
+          `Вызов эвакуатора по Еревану обычно стоит ${typical}${lowest ? ` (на сайте — ${lowest})` : ''}. ` +
+          `Ночью некоторые водители добавляют ${night}. Итоговую цену уточните у водителя до погрузки — подробнее на странице «Цены».`,
+      },
+      {
+        question: 'Есть ли эвакуатор в Ереване круглосуточно',
+        answer: known && stats.works24 > 0
+          ? `Да. Отметка 24/7 есть у ${russianDriversGenitive(stats.works24)} в Ереване — они работают ночью и в праздники. На странице района включите фильтр «Работает 24/7», чтобы видеть только их.`
+          : 'Да, многие водители работают круглосуточно, включая ночь и праздники. На странице района включите фильтр «Работает 24/7», чтобы видеть только их.',
+      },
+      {
+        question: 'Как вызвать эвакуатор в Ереване',
+        answer:
+          'Выберите свой район или нажмите «Эвакуатор рядом», чтобы увидеть ближайших водителей, и позвоните водителю напрямую. ' +
+          'Сразу назовите адрес, марку машины и что с ней случилось — так водитель быстрее назовёт цену и время приезда.',
+      },
+      {
+        question: 'В каких районах Еревана есть эвакуаторы',
+        answer: `Во всех 12 административных районах Еревана${known ? ` — на сайте ${stats.count} водителей, работающих в городе` : ''}. У каждого района своя страница со списком водителей.`,
+      },
+      {
+        question: 'Нужен эвакуатор после ДТП или с заблокированными колёсами',
+        answer:
+          'Многие водители перевозят машины после ДТП и неисправные автомобили, а у части есть подкатные ролики для заблокированных колёс — это видно в фильтрах на странице района. ' +
+          'Для подъёма краном есть отдельная страница «Эвакуатор с манипулятором».',
+      },
+    ]
+  }
+
+  if (locale === 'en') {
+    return [
+      {
+        question: 'How much does a tow truck cost in Yerevan?',
+        answer:
+          `A tow truck call-out within Yerevan usually costs ${typical}${lowest ? ` (on this site, ${lowest})` : ''}. ` +
+          `Some drivers add ${night} at night. Confirm the final price with the driver before loading — see the Prices page for more.`,
+      },
+      {
+        question: 'Is there a 24-hour tow truck in Yerevan?',
+        answer: known && stats.works24 > 0
+          ? `Yes. ${stats.works24} of the ${stats.count} drivers in Yerevan are marked 24/7 and work nights and holidays. On a district page, tick “Works 24/7” to see only them.`
+          : 'Yes, many drivers work around the clock, nights and holidays included. On a district page, tick “Works 24/7” to see only them.',
+      },
+      {
+        question: 'How do I call a tow truck in Yerevan?',
+        answer:
+          'Pick your district, or tap “Tow trucks near me” to see the closest drivers, and call the driver directly. ' +
+          'Give the address, the car and what happened straight away — the driver can then quote a price and an arrival time faster.',
+      },
+      {
+        question: 'Which Yerevan districts have tow trucks?',
+        answer: `All 12 districts of Yerevan${known ? `, with ${stats.count} drivers working in the city` : ''}. Each district has its own page with its drivers.`,
+      },
+      {
+        question: 'I need a tow truck after an accident or with locked wheels',
+        answer:
+          'Many drivers carry accident-damaged and non-running cars, and some have wheel skates for locked wheels — the filters on a district page show which. ' +
+          'For lifting with a crane there is a separate “Crane tow truck” page.',
+      },
+    ]
+  }
+
+  return [
+    {
+      question: 'Ինչքա՞ն արժե էվակուատորը Երևանում',
+      answer:
+        `Երևանում էվակուատորի կանչը սովորաբար արժե ${typical}${lowest ? ` (կայքում՝ ${lowest})` : ''}։ ` +
+        `Գիշերը որոշ վարորդներ ավելացնում են ${night}։ Վերջնական գինը ճշտեք վարորդից մինչև բեռնումը, մանրամասները՝ «Գներ» էջում։`,
+    },
+    {
+      question: 'Կա՞ 24 ժամ աշխատող էվակուատոր Երևանում',
+      answer: known && stats.works24 > 0
+        ? `Այո։ Երևանում ${stats.works24} վարորդ աշխատում է 24/7՝ ներառյալ գիշերը և տոն օրերը։ Վարչական շրջանի էջում նշեք «Աշխատում է 24/7» ֆիլտրը՝ միայն նրանց տեսնելու համար։`
+        : 'Այո, շատ վարորդներ աշխատում են շուրջօրյա՝ ներառյալ գիշերը և տոն օրերը։ Վարչական շրջանի էջում նշեք «Աշխատում է 24/7» ֆիլտրը՝ միայն նրանց տեսնելու համար։',
+    },
+    {
+      question: 'Ինչպե՞ս կանչել էվակուատոր Երևանում',
+      answer:
+        'Ընտրեք Ձեր վարչական շրջանը կամ սեղմեք «Գտնել մոտակա էվակուատորները» և զանգեք վարորդին ուղիղ։ ' +
+        'Միանգամից ասեք հասցեն, մեքենայի մակնիշը և ինչ է պատահել․ այդպես վարորդն ավելի արագ կասի գինը և ժամանման ժամանակը։',
+    },
+    {
+      question: 'Երևանի ո՞ր վարչական շրջաններում կան էվակուատորներ',
+      answer: `Երևանի բոլոր 12 վարչական շրջաններում${known ? `․ կայքում քաղաքում աշխատող ${stats.count} վարորդ կա` : ''}։ Յուրաքանչյուր շրջան ունի իր էջը՝ վարորդների ցանկով։`,
+    },
+    {
+      question: 'Էվակուատոր է պետք վթարից հետո կամ փակ անիվներով մեքենայի համար',
+      answer:
+        'Շատ վարորդներ տեղափոխում են վթարված և չաշխատող մեքենաներ, իսկ մի մասը ունի անիվային ռոլիկներ փակ անիվների համար․ դա երևում է վարչական շրջանի էջի ֆիլտրերում։ ' +
+        'Կռունկով բարձրացման համար կա առանձին «Մանիպուլյատորով էվակուատոր» էջ։',
     },
   ]
 }

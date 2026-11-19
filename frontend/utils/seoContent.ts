@@ -143,7 +143,7 @@ export function buildLocationSeo(
 }
 
 /** «43 վարորդ» / «43 водителя» / «43 drivers» */
-function driverCount(count: number, locale: string): string {
+export function driverCount(count: number, locale: string): string {
   if (locale === 'ru') {
     const lastTwo = count % 100
     const last = count % 10
@@ -188,8 +188,62 @@ export function buildYerevanListingTitle(
 }
 
 /** «5 000 ֏-ից» reads naturally in Armenian; the others put the word first. */
-function localizedFromPrice(amount: number, locale: string): string {
+export function localizedFromPrice(amount: number, locale: string): string {
   return locale === 'hy' ? `${formatPrice(amount)}-ից` : formatStartingPrice(amount, locale)
+}
+
+/** The facts the `/yerevan` title, description and FAQ quote, read from one listing */
+export interface YerevanListingStats {
+  count: number
+  /** Lowest positive starting price, or null when no driver listed one */
+  lowestPrice: number | null
+  /** Drivers marked 24/7 */
+  works24: number
+}
+
+export function summarizeYerevanListing(
+  trucks: readonly { startingPrice?: number | null; works24Hours: boolean }[],
+): YerevanListingStats {
+  const prices = trucks
+    .map((truck) => truck.startingPrice)
+    .filter((price): price is number => typeof price === 'number' && price > 0)
+  return {
+    count: trucks.length,
+    lowestPrice: prices.length > 0 ? Math.min(...prices) : null,
+    works24: trucks.filter((truck) => truck.works24Hours).length,
+  }
+}
+
+/**
+ * The `/yerevan` meta description, built from the same listing as the title.
+ * The Russian one leads with «вызвать … круглосуточно», the phrasing Russian
+ * searches for this page use. Returns `null` without drivers, so the caller
+ * keeps the regular location description.
+ */
+export function buildYerevanListingDescription(
+  stats: YerevanListingStats,
+  locale = 'hy',
+): string | null {
+  if (stats.count === 0) return null
+  const drivers = driverCount(stats.count, locale)
+  const price = stats.lowestPrice === null ? null : localizedFromPrice(stats.lowestPrice, locale)
+
+  if (locale === 'ru') {
+    return (
+      `Вызвать эвакуатор в Ереване круглосуточно: ${drivers} во всех 12 районах` +
+      `${price ? `, цены ${price}` : ''}. Реальные фото и цены — звоните водителю напрямую.`
+    )
+  }
+  if (locale === 'en') {
+    return (
+      `Call a tow truck in Yerevan 24/7: ${drivers} across all 12 districts` +
+      `${price ? `, prices ${price}` : ''}. Real photos and prices — call the driver directly.`
+    )
+  }
+  return (
+    `Էվակուատոր Երևանում 24/7. ${drivers} բոլոր 12 վարչական շրջաններում` +
+    `${price ? `, գները՝ ${price}` : ''}։ Իրական նկարներ և գներ, զանգեք վարորդին ուղիղ։`
+  )
 }
 
 export function buildRegionSeo(regionNameHy: string, slug: string, locale = 'hy'): LocationSeo {

@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import { buildYerevanFaq } from '~/utils/faqContent'
 import {
   buildLocationSeo,
   buildTranslitParagraph,
+  buildYerevanListingDescription,
   buildYerevanListingTitle,
+  summarizeYerevanListing,
 } from '~/utils/seoContent'
 
 const { data: districts, pending } = useDistricts()
@@ -34,11 +37,21 @@ const listingTitle = computed(
     ) ?? locationSeo.title,
 )
 
+const listingStats = computed(() => summarizeYerevanListing(towTrucks.value))
+const listingDescription = computed(
+  () => buildYerevanListingDescription(listingStats.value, locale.value) ?? locationSeo.description,
+)
+
 useSeoMeta({
   title: listingTitle,
   ogTitle: listingTitle,
   twitterTitle: listingTitle,
+  description: listingDescription,
+  ogDescription: listingDescription,
+  twitterDescription: listingDescription,
 })
+
+const faqItems = computed(() => buildYerevanFaq(listingStats.value, locale.value))
 </script>
 
 <template>
@@ -72,6 +85,14 @@ useSeoMeta({
       </h2>
       <TowTruckList :tow-trucks="towTrucks" :pending="towTrucksPending" :skeleton-count="6" />
     </section>
+
+    <!-- Below the listing: it is for search, nobody in a hurry scrolls past it.
+         Keyed by the count so its FAQPage JSON-LD follows the numbers it quotes. -->
+    <FaqSection
+      :key="listingStats.count"
+      :items="faqItems"
+      class="yerevan-page__section"
+    />
 
     <SeoTextSection
       :title="t('yerevanPage.seoTitle')"
